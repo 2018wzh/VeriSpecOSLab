@@ -152,9 +152,10 @@ POST /v1/responses
 对内连接：
 
 ```text
-- 课程 Spec
-- 学生 Spec
-- Agent-generated Spec
+- 本地项目 Spec
+- 云端课程约束投影
+- 云端隐藏验证约束
+- 平台派生运行时 Spec
 - Git 仓库
 - CI 日志
 - Judge 结果
@@ -1317,7 +1318,7 @@ ReviewAgent 只能进行风险提示，不能单独判定作弊。
     ↓
 DesignAgent 检查初始方向与 non-goals
     ↓
-平台发布当前 StageGate
+平台发布当前 StageGate 的公开投影
     ↓
 学生提交当前阶段 ArchitectureSlice
     ↓

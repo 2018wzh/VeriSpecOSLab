@@ -1560,9 +1560,9 @@ ReviewAgent
 
 ```bash
 vos init
-vos arch lint specs/architecture/design_goal.yaml
-vos arch derive-tests specs/architecture/design_goal.yaml
-vos spec lint specs/memory/page_allocator.yaml
+vos arch lint spec/architecture/seed.yaml
+vos arch derive-tests spec/architecture/seed.yaml
+vos spec lint spec/modules/memory/page_allocator.yaml
 vos build
 vos run qemu
 vos verify base

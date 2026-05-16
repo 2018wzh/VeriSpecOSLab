@@ -22,16 +22,18 @@ Spec → Agent → Patch → Build → Test → Validate → Feedback → Spec /
 
 ## 2. 总体架构
 
-整体采用四层结构：
+整体采用五层结构：
 
 ```text
 IDE / Editor / CLI
     ↓ OpenAI-compatible API
 Agent Gateway
     ↓
+Cloud Spec Service
+    ↓
 Project Agent Runtime
     ↓
-DevBox / Toolchain / CI / QEMU / Test / Spec Repo
+DevBox / Toolchain / CI / QEMU / Test / Project Repo
 ```
 
 展开如下：
@@ -52,6 +54,16 @@ VS Code / JetBrains / Cursor / Continue / Cline / Aider
 | - streaming support            |
 | - tool call normalization      |
 | - audit and policy enforcement |
++--------------------------------+
+        |
+        v
++--------------------------------+
+| Cloud Spec Service             |
+| - course spec store            |
+| - hidden verification spec     |
+| - derived runtime spec         |
+| - role-based projection        |
+| - versioning and audit         |
 +--------------------------------+
         |
         v
@@ -79,7 +91,7 @@ VS Code / JetBrains / Cursor / Continue / Cline / Aider
 +--------------------------------+
 ```
 
-对外表现为标准 OpenAI-compatible API 服务；对内则是项目感知的 Agent 系统。IDE 只需要配置 `base_url`、`api_key` 和 `model`，不需要理解项目内部工具链、规格结构和测试矩阵。
+对外表现为标准 OpenAI-compatible API 服务；对内则是“项目仓库 + 云端 Spec Service + 本地工具链”协同工作的 Agent 系统。IDE 只需要配置 `base_url`、`api_key` 和 `model`，不需要理解项目内部工具链、云端 Spec 访问和测试矩阵生成细节。
 
 ---
 
@@ -105,22 +117,29 @@ verispecoslab/
     devcontainer.json
     Dockerfile
 
-  specs/
+  spec/
     architecture/
-      design_goal.yaml
+      seed.yaml
+      slices/
+      decisions/
       composition.yaml
-      validation_binding.yaml
-    memory/
-    trap/
-    scheduler/
-    syscall/
-    ipc/
-    capability/
-    object/
-    namespace/
-    vfs/
-    fs/
-    hardware/
+      final-synthesis.yaml
+    modules/
+      boot/
+      memory/
+      trap/
+      scheduler/
+      syscall/
+      ipc/
+      capability/
+      object/
+      namespace/
+      vfs/
+      fs/
+      driver/
+    goals/
+    evolution/
+    reports/
 
   src/
     arch/
@@ -168,6 +187,8 @@ verispecoslab/
     github-actions/
     gitlab-ci/
 ```
+
+学生仓库中只保留与项目设计直接相关的 `spec/`。课程规则、隐藏验证规则和平台派生 Spec 不进入学生仓库，而是保存在云端 Spec Service 中，由 Gateway 按权限投影给学生界面、Agent 和教师界面。
 
 ### 3.3 DevBox 内置工具链
 
@@ -217,9 +238,9 @@ OS 开发：
 
 ```bash
 vos init
-vos spec lint specs/memory/page_allocator.yaml
-vos arch lint specs/architecture/design_goal.yaml
-vos arch derive-tests specs/architecture/design_goal.yaml
+vos spec lint spec/modules/memory/page_allocator.yaml
+vos arch lint spec/architecture/seed.yaml
+vos arch derive-tests spec/architecture/seed.yaml
 vos build
 vos run qemu
 vos test
@@ -713,35 +734,37 @@ ArchitectureCompositionSpec:
 
 ## 8. 上下文组织策略
 
-不要把整个 OS 仓库直接塞给模型。Gateway 应统一构造上下文。
+不要把整个 OS 仓库直接塞给模型。Gateway 应统一构造“本地项目 Spec + 云端约束投影 + 最近证据”的最小上下文包。
 
 上下文优先级：
 
 ```text
 1. 当前打开文件
 2. 当前选区
-3. 当前 StageGate
+3. 当前阶段的公开 StageGate 摘要
 4. 当前 ArchitectureSlice
 5. 已批准的历史 Slice / 相关 ADR
 6. 对应 ModuleSpec / InterfaceSpec / ConcurrencySpec
 7. ArchitectureCompositionSpec
 8. 当前测试失败日志与最近验证证据
 9. 最近 SpecPatch
-10. 相关接口头文件与少量相邻实现
+10. 任务相关的 agent-only hidden property 标签
+11. 相关接口头文件与少量相邻实现
 ```
 
 示例：当学生修改 `src/kernel/mm/page_allocator.c` 时，Agent 自动注入：
 
 ```text
-course-specs/stage-gates.yaml 中 memory 阶段要求
-student-specs/architecture/slices/02-memory.yaml
-student-specs/architecture/decisions/ADR-001-memory-layout.yaml
-specs/memory/page_allocator.yaml
-specs/memory/memory_map.yaml
+云端 StageGate 中 memory 阶段的公开要求投影
+spec/architecture/slices/02-memory.yaml
+spec/architecture/decisions/ADR-001-memory-layout.yaml
+spec/modules/memory/page_allocator.yaml
+spec/modules/memory/memory_map.yaml
 include/kernel/mm/page_allocator.h
 tests/unit/test_page_allocator.c
 最近一次 vos verify stage memory-management 日志
 最近一次单元测试日志
+与 page allocator 相关的 hidden risk 标签摘要
 ```
 
 避免注入：
@@ -788,11 +811,11 @@ IDE 请求：
   “帮我实现 PageAllocator 的 free_page”
 
 Gateway：
-  - 找到当前 StageGate
+  - 找到当前阶段的公开约束投影
   - 找到当前 ArchitectureSlice 与历史 Slice
-  - 找到 page_allocator spec
-  - 找到当前代码
-  - 找到测试
+  - 找到 page allocator 的本地 spec
+  - 拉取任务相关的 hidden constraint 标签
+  - 找到当前代码和最近证据
 
 Agent：
   - 先检查 spec
@@ -912,8 +935,8 @@ vos arch lint
 vos agent ask "根据 MemorySpec 检查当前 page allocator"
 vos agent fix --test tests/unit/test_page_allocator.c
 vos agent debug --log build/qemu/serial.log
-vos agent spec refine specs/trap/trap.yaml
-vos agent arch review specs/architecture/design_goal.yaml
+vos agent spec refine spec/modules/trap/trap.yaml
+vos agent arch review spec/architecture/seed.yaml
 ```
 
 ---
@@ -993,7 +1016,7 @@ vos agent arch review specs/architecture/design_goal.yaml
 
 ## 13. 个性化架构与个性化目标验证
 
-### 13.1 三层验证模型
+### 13.1 分层验证模型
 
 ```text
 验证体系 =
@@ -1005,7 +1028,7 @@ vos agent arch review specs/architecture/design_goal.yaml
 
 公共核心验证保证所有学生的 OS 至少具备 boot、内存、trap、执行单元、用户态、syscall/IPC 入口、基础 I/O 等能力。
 
-架构特性验证根据 `ArchitectureSeed`、当前 `ArchitectureSlice`、历史切片和 `FinalArchitectureSynthesis` 中声明的具体机制自动选择测试。
+架构特性验证根据本地 `spec/architecture/` 中的 `ArchitectureSeed`、当前 `ArchitectureSlice`、历史切片和 `FinalArchitectureSynthesis` 自动选择测试。
 
 架构组合一致性验证根据 `ArchitectureCompositionSpec` 检查跨机制不变量。
 
@@ -1051,7 +1074,7 @@ BaseTestSuite:
 
 ### 13.3 Feature-Based 架构验证
 
-平台根据学生声明的 feature 自动生成测试矩阵，而不是根据 `*-like profile` 加载测试包。
+平台根据学生在本地 `spec/` 中声明的 feature 自动生成测试矩阵，再结合云端 hidden verification spec 扩展私有验证，而不是根据 `*-like profile` 加载固定测试包。
 
 示例声明：
 
@@ -1220,8 +1243,8 @@ AICollaborationLog.md
   "project": "...",
   "task": "implement page allocator free_page",
   "files": [
-    "specs/architecture/design_goal.yaml",
-    "specs/memory/page_allocator.yaml",
+    "spec/architecture/seed.yaml",
+    "spec/modules/memory/page_allocator.yaml",
     "src/kernel/mm/page_allocator.c"
   ],
   "agent": "CodeGenAgent",
