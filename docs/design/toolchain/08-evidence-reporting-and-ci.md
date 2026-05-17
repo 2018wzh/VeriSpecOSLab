@@ -142,5 +142,5 @@ verification:
 ## 相关文档
 
 - [09-roadmap-and-acceptance.md](./09-roadmap-and-acceptance.md)
-- [../platform.md](../platform.md)
+- [../platform/README.md](../platform/README.md)
 - [../workflow.md](../workflow.md)
