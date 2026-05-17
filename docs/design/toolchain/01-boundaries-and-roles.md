@@ -22,20 +22,47 @@
 两者必须严格区分：
 
 - `ToolchainSpec`
-  - 是学生项目的构建 / 链接 / 镜像 / 运行 / 调试契约
+  - 是学生项目的**工具无关的语义构建规范**
   - 存放在 `spec/toolchain/`
-  - 决定项目“应该怎样 build / run / debug”
+  - 决定项目”编译哪些源文件、使用什么标志、如何链接、什么依赖关系”（不关心 Makefile 还是 xtask）
 - `VOS Runtime`
   - 是 `vos` 的实现体系
   - 存放在 `docs/design/toolchain/` 中进行设计
-  - 决定“如何读取 spec、如何选择 adapter、如何执行命令、如何采集证据”
+  - 决定”如何读取 spec、选择生成器、调用生成器生成工具特定配置、执行配置、采集证据”
 
 因此：
 
 ```text
-ToolchainSpec = 项目构建真相
-VOS Runtime   = 规范消费与执行编排器
+ToolchainSpec = 项目构建语义（工具无关）
+VOS Runtime   = 规范消费、生成器协调、执行编排器
 ```
+
+### 1.1 工具无关的生成器协调
+
+VOS Runtime 的新职责是**生成器协调**：
+
+```
+ToolchainSpec (语义: 源文件、编译标志、链接脚本...)
+    ↓ [vos-spec 解析与验证]
+    ↓ [生成器选择（自动或显式）]
+生成器 (Makefile生成器 | Xtask生成器 | CMake生成器 | ...)
+    ↓ [生成器调用]
+工具特定配置 (Makefile | task.rs | CMakeLists.txt)
+    ↓ [vos-runtime 执行]
+执行输出 + 工件
+    ↓ [证据采集与映射]
+证据束 (回溯到 spec 的语义阶段)
+```
+
+关键变化：
+
+- **过去**：vos runtime 直接解析 spec 中的命令字段，执行 gcc、ld 等
+- **现在**：vos runtime 调用生成器（Makefile gen、Xtask gen 等），生成器输出 Makefile/task.rs，vos 执行生成的配置
+
+生成器必须实现**生成器契约**：
+- 输入：语义 spec（源文件模式、编译标志、链接脚本等）
+- 输出：工具特定配置 + 元数据（来源、stage、所有阶段名等）
+- 性质：幂等性（相同输入 → 相同输出）
 
 ## 2. `vos` vs 任意 shell
 
@@ -145,6 +172,13 @@ VosPolicy:
 
 ## 相关文档
 
+**Spec 与生成器（新）：**
+- [../spec/05-toolchain-spec.md](../spec/05-toolchain-spec.md) - 工具无关的 ToolchainSpec
+- [../spec/05a-semantic-build-schema.md](../spec/05a-semantic-build-schema.md) - 语义构建字段定义
+- [../spec/05b-vos-toolchain-generation-contract.md](../spec/05b-vos-toolchain-generation-contract.md) - VOS 生成与执行契约
+- [../spec/05c-generator-reference.md](../spec/05c-generator-reference.md) - 生成器参考实现（Makefile、Xtask、CMake 示例）
+
+**VOS Runtime 架构：**
 - [02-architecture.md](./02-architecture.md)
 - [07-agent-gateway.md](./07-agent-gateway.md)
 - [08-evidence-reporting-and-ci.md](./08-evidence-reporting-and-ci.md)
