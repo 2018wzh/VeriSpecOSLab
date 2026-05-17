@@ -143,4 +143,4 @@ verification:
 
 - [09-roadmap-and-acceptance.md](./09-roadmap-and-acceptance.md)
 - [../platform/README.md](../platform/README.md)
-- [../workflow.md](../workflow.md)
+- [../workflow/README.md](../workflow/README.md)

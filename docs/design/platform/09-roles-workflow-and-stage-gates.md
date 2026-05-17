@@ -10,7 +10,7 @@
 
 - [04-experiment-and-spec-management.md](./04-experiment-and-spec-management.md)
 - [05-project-lifecycle-and-repository-provisioning.md](./05-project-lifecycle-and-repository-provisioning.md)
-- [../workflow.md](../workflow.md)
+- [../workflow/README.md](../workflow/README.md)
 
 下游消费者：
 

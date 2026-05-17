@@ -10,7 +10,7 @@
 
 - [03-domain-model.md](./03-domain-model.md)
 - [../spec/README.md](../spec/README.md)
-- [../workflow.md](../workflow.md)
+- [../workflow/README.md](../workflow/README.md)
 
 下游消费者：
 

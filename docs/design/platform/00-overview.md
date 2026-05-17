@@ -8,7 +8,7 @@
 
 上游依赖文档：
 
-- [../workflow.md](../workflow.md)
+- [../workflow/README.md](../workflow/README.md)
 - [../spec/00-overview.md](../spec/00-overview.md)
 - [../toolchain/00-overview.md](../toolchain/00-overview.md)
 

@@ -12,7 +12,7 @@
 - [../spec/README.md](../spec/README.md)
 - [../toolchain/README.md](../toolchain/README.md)
 - [../arch.md](../arch.md)
-- [../workflow.md](../workflow.md)
+- [../workflow/README.md](../workflow/README.md)
 
 下游消费者：
 
@@ -73,9 +73,9 @@
 
 具体 prompt、索引器、workspace tool adapter 仍由 `arch.md` 负责。
 
-### 2.4 `workflow.md`
+### 2.4 `workflow/`
 
-`workflow.md` 负责定义课程递进式工作流本身。平台文档只负责回答：
+`workflow/` 负责定义课程递进式工作流本身。平台文档只负责回答：
 
 - 平台如何支撑这些工作流
 - 工作流涉及哪些状态机和系统事件

@@ -11,7 +11,7 @@
 - [`../spec/`](../spec/README.md) 定义学生仓库中的本地规格真相。
 - [`../toolchain/`](../toolchain/README.md) 定义 `vos` 的运行时消费与执行编排真相。
 - [`../arch.md`](../arch.md) 定义 Agent Runtime / DevBox / OpenAI-compatible 接入的实现设计。
-- [`../workflow.md`](../workflow.md) 定义课程递进式工作流与教学过程。
+- [`../workflow/README.md`](../workflow/README.md) 定义课程递进式工作流与教学过程。
 
 本目录只描述“平台实现设计”，不是课程讲义，也不是学生仓库规范。
 

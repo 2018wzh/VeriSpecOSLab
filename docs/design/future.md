@@ -860,4 +860,4 @@ SpecPatch
 FinalDesignSynthesis
 ```
 
-完整教师 / 学生操作流程见 `workflow.md`。
+完整教师 / 助教 / 学生操作流程见 [`workflow/README.md`](./workflow/README.md)。
