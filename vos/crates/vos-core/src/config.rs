@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use crate::progress::ProgressEvent;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ProviderConfig {
+pub struct ProviderProfile {
     pub kind: Option<String>,
     pub model: Option<String>,
     pub base_url: Option<String>,
@@ -24,11 +25,13 @@ pub struct AppConfig {
     #[serde(default)]
     pub build: BuildConfig,
     #[serde(default)]
-    pub provider: ProviderConfig,
+    pub providers: BTreeMap<String, ProviderProfile>,
+    pub default_provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DoctorReport {
+    pub active_provider: String,
     pub provider_api_key_present: bool,
     pub provider_kind: String,
     pub api_key_env: String,

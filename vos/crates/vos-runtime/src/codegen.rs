@@ -5,7 +5,7 @@ use vos_core::{NormalizedSpecBundle, RegionEdit, Result, VosError};
 
 use crate::config::ProgressSink;
 use crate::progress::{emit_entity, emit};
-use crate::provider::call_json_prompt;
+use crate::rig::{RigStage, RigWorkflow};
 
 pub(crate) async fn generate_module_waves(
     project_root: &Path,
@@ -64,7 +64,10 @@ pub(crate) async fn generate_module_waves(
                 Some(queue.waves.len()),
             );
             set.spawn(async move {
-                let raw = call_json_prompt(&config, &module_run_dir, &prompt).await?;
+                let workflow = RigWorkflow::new(&config);
+                let raw = workflow
+                    .run_prompt_stage(&module_run_dir, RigStage::ProviderCall, &prompt)
+                    .await?;
                 vos_prompt::parse_module_batch_response(&raw).map_err(VosError::Message)
             });
         }

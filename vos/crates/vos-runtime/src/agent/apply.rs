@@ -12,8 +12,8 @@ use crate::patch::{
 };
 use crate::codegen::generate_module_waves;
 use crate::progress::emit;
-use crate::provider::call_json_prompt;
 use crate::provider::validate_provider_config;
+use crate::rig::{RigStage, RigWorkflow};
 use crate::run_qemu::run_qemu_with_progress;
 use crate::scope::{current_stage, resolve_spec_root};
 
@@ -68,12 +68,14 @@ pub async fn agent_apply_patch(
         emit(progress, "projecting_skeleton", "requesting skeleton projection");
         let skeleton_prompt =
             vos_prompt::build_skeleton_projection_prompt(&normalized, &compose, project_root);
-        let skeleton_response = call_json_prompt(
-            &config,
-            &run_dir.join("skeleton_projection"),
-            &skeleton_prompt,
-        )
-        .await?;
+        let workflow = RigWorkflow::new(&config);
+        let skeleton_response = workflow
+            .run_prompt_stage(
+                &run_dir.join("skeleton_projection"),
+                RigStage::ProviderCall,
+                &skeleton_prompt,
+            )
+            .await?;
         let skeleton = vos_prompt::parse_skeleton_projection_response(&skeleton_response)
             .map_err(VosError::Message)?;
         let batch_region_edits = generate_module_waves(

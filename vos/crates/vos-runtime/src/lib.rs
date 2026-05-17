@@ -10,6 +10,7 @@ mod patch;
 mod process;
 mod progress;
 mod provider;
+mod rig;
 mod run_qemu;
 mod scope;
 mod spec;

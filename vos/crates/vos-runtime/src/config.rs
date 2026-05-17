@@ -6,8 +6,8 @@ use vos_core::{AppConfig, DoctorReport, ProgressEvent, Result, ToolchainLintResu
 use crate::fs_guard::is_writable;
 use crate::process::derive_build_command;
 use crate::provider::{
-    load_project_dotenv, resolve_api_key_env, resolve_base_url, resolve_model, resolve_provider_kind,
-    validate_provider_config,
+    load_project_dotenv, resolve_active_provider, resolve_api_key_env, resolve_base_url,
+    resolve_model, resolve_provider_kind, validate_provider_config,
 };
 
 pub type ProgressSink = dyn Fn(ProgressEvent) + Send + Sync;
@@ -33,6 +33,7 @@ pub fn load_config(project_root: &Path) -> Result<AppConfig> {
 pub async fn doctor(project_root: &Path) -> Result<DoctorReport> {
     let config = load_config(project_root)?;
     validate_provider_config(&config)?;
+    let active_provider = resolve_active_provider(&config)?;
     let spec_root = crate::scope::resolve_spec_root(project_root, None, &config)?;
     let build_command = if spec_root.exists() {
         Some(derive_build_command(
@@ -43,11 +44,12 @@ pub async fn doctor(project_root: &Path) -> Result<DoctorReport> {
         None
     };
     Ok(DoctorReport {
-        provider_api_key_present: std::env::var(resolve_api_key_env(&config)).is_ok(),
-        provider_kind: resolve_provider_kind(&config),
-        api_key_env: resolve_api_key_env(&config).to_string(),
-        model: resolve_model(&config),
-        base_url: resolve_base_url(&config),
+        active_provider: active_provider.name.clone(),
+        provider_api_key_present: std::env::var(resolve_api_key_env(&active_provider.profile)).is_ok(),
+        provider_kind: resolve_provider_kind(&active_provider.profile),
+        api_key_env: resolve_api_key_env(&active_provider.profile).to_string(),
+        model: resolve_model(&active_provider.profile),
+        base_url: resolve_base_url(&active_provider.profile),
         build_command,
         project_root: project_root.to_path_buf(),
         writable: is_writable(project_root),
