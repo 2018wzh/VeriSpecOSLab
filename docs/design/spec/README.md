@@ -7,6 +7,8 @@
 - `vos` 在 lint、build、verify、report 时依赖哪些结构化字段
 - 平台如何把本地 Spec、云端课程约束和验证证据拼成可审计闭环
 
+Spec 标准的消费与执行编排见 [`../toolchain/README.md`](../toolchain/README.md)。
+
 建议阅读顺序：
 
 1. [00-overview.md](./00-overview.md)

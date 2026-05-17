@@ -1,5 +1,21 @@
 # ToolchainSpec 标准
 
+## 0. 与 VOS Runtime 的边界
+
+`ToolchainSpec` 是学生项目的构建 / 链接 / 镜像 / 运行契约；`VOS Runtime` 则是 `vos` 的规范消费、执行编排与证据采集体系。
+
+- `ToolchainSpec` 文档位于 `spec/toolchain/` 与本文件中。
+- `VOS Runtime` 文档位于 [`../toolchain/README.md`](../toolchain/README.md)。
+
+两者的关系是：
+
+```text
+ToolchainSpec
+  -> 提供项目构建真相
+VOS Runtime
+  -> 消费 ToolchainSpec 并驱动 lint / build / run / test / verify
+```
+
 ## 1. 角色定位
 
 VeriSpecOSLab 引入 `ToolchainSpec`，但其目标不是要求学生自行构建完整编译工具链。
