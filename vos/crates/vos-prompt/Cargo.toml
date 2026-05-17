@@ -1,0 +1,13 @@
+[package]
+name = "vos-prompt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+serde_yaml.workspace = true
+vos-core = { path = "../vos-core" }
+
+[dev-dependencies]
+vos-spec = { path = "../vos-spec" }
