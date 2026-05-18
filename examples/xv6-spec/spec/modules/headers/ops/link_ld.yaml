@@ -12,7 +12,7 @@ purpose: >
   symbol is _start. Discards .eh_frame and .note sections.
 
 related_slice: slice-01-boot
-related_adr: []
+related_adr: null
 depends_on:
   requires_modules:
     - headers

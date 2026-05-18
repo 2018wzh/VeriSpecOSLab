@@ -12,6 +12,8 @@ related_adr: null
 depends_on:
   requires_modules:
     - memory
+    - boot
+    - headers
   requires_ops: []
 
 rely:

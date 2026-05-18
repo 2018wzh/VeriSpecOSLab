@@ -12,8 +12,7 @@ purpose: >
   w_tp, intr_on, intr_off, intr_get and all PTE_* flags.
 
 related_slice: slice-02-memory
-related_adr:
-  - ADR-001 (Sv39 paging model)
+related_adr: "ADR-001 (Sv39 paging model)"
 depends_on:
   requires_modules:
     - headers

@@ -11,8 +11,7 @@ purpose: >
   (MAXVA-PGSIZE), TRAPFRAME (TRAMPOLINE-PGSIZE).
 
 related_slice: slice-02-memory
-related_adr:
-  - ADR-001
+related_adr: ADR-001
 depends_on:
   requires_modules:
     - headers

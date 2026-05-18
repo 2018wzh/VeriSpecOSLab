@@ -44,27 +44,23 @@ rely:
 
 guarantee:
   returns:
-    - uservec: never returns directly; jumps to usertrap
-    - userret: never returns directly; executes sret to U-mode
+    - "uservec: never returns directly; jumps to usertrap"
+    - "userret: never returns directly; executes sret to U-mode"
   state_updates: []
   side_effects:
-    - uservec: saves all 32 user registers to trapframe,
-      loads kernel satp/stack/trap handler address from
-      trapframe, switches satp to kernel page table
-    - userret: restores all 32 user registers from trapframe,
-      switches satp to user page table, executes sret
+    - "uservec: saves all 32 user registers to trapframe, loads kernel satp/stack/trap handler address from trapframe, switches satp to kernel page table"
+    - "userret: restores all 32 user registers from trapframe, switches satp to user page table, executes sret"
   emitted_events:
     - none
 
 preconditions:
-  - uservec: stvec points to uservec address in trampoline
-  - uservec: satp currently holds user page table
-  - userret: satp currently holds kernel page table
-  - userret: TRAPFRAME page contains valid register state
+  - "uservec: stvec points to uservec address in trampoline"
+  - "uservec: satp currently holds user page table"
+  - "userret: satp currently holds kernel page table"
+  - "userret: TRAPFRAME page contains valid register state"
 postconditions:
-  - uservec: execution is in kernel context with kernel
-    page table active
-  - userret: execution returns to U-mode at sepc
+  - "uservec: execution is in kernel context with kernel page table active"
+  - "userret: execution returns to U-mode at sepc"
 invariants_preserved:
   - no user registers leak to kernel (saved in trapframe)
   - page table switch is safe (TRAMPOLINE mapped identically)

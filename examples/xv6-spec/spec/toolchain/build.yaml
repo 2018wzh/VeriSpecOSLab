@@ -16,15 +16,6 @@ build:
   features: []
   forbidden_flags: []
   generated_artifacts:
-    - build/kernel/boot.o
-    - build/kernel/memory.o
-    - build/kernel/process.o
-    - build/kernel/trap.o
-    - build/kernel/syscall.o
-    - build/kernel/entry.o
-    - build/kernel/kernelvec.o
-    - build/kernel/trampoline.o
-    - build/kernel/swtch.o
     - build/kernel.elf
     - build/kernel.bin
     - build/kernel.asm

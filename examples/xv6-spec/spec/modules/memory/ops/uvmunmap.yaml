@@ -41,7 +41,7 @@ preconditions:
   - va is page-aligned
   - npages > 0
 postconditions:
-  - [va, va+npages*PGSIZE) has no valid mappings
+  - "[va, va+npages*PGSIZE) has no valid mappings"
 invariants_preserved:
   - page table consistency
 failure_semantics:

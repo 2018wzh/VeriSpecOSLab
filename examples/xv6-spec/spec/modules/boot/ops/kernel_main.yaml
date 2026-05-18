@@ -15,9 +15,7 @@ related_adr: null
 depends_on:
   requires_modules:
     - boot
-    - memory
-    - process
-    - trap
+    - headers
   requires_ops:
     - boot_banner
     - console_write
@@ -61,7 +59,7 @@ postconditions:
   - kernel is fully operational
   - scheduler is running
 invariants_preserved:
-  - init order: memory → trap → process → scheduler
+  - "init order: memory -> trap -> process -> scheduler"
 failure_semantics:
   - panics on any subsystem initialization failure
 

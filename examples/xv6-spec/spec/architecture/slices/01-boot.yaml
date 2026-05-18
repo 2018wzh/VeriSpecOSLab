@@ -15,6 +15,7 @@ mechanisms:
   - boot banner display
   - shutdown via SBI SRST
 affected_modules:
+  - headers
   - boot
 new_operations:
   - boot.boot_banner

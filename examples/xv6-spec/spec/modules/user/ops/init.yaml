@@ -10,7 +10,7 @@ purpose: >
   freestanding RISC-V user binary with user/user.ld.
 
 related_slice: slice-04-process
-related_adr: []
+related_adr: null
 depends_on:
   requires_modules:
     - user
@@ -63,7 +63,7 @@ observability:
   traces: []
   counters: []
   expected_logs:
-    - "init: starting" appears in console output
+    - '"init: starting" appears in console output'
 
 test_obligations:
   public:
