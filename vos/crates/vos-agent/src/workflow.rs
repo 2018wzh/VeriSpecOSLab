@@ -112,6 +112,7 @@ pub(crate) async fn execute_generation_workflow(
             &files_to_create,
             &files_to_update,
             &region_edits,
+            progress,
             &mut created_files,
             &mut updated_regions,
         )?;
@@ -229,6 +230,7 @@ fn prepare_generation_context(
     let run_id = vos_core::new_run_id();
     let run_dir = project_root.join(".vos").join("runs").join(&run_id);
     fs::create_dir_all(&run_dir)?;
+    vos_runtime::emit(progress, "planning_generation", "prepared generation plan");
     vos_runtime::write_json(&run_dir.join("normalized-bundle.json"), &normalized)?;
     vos_runtime::write_json(&run_dir.join("consistency-report.json"), &consistency)?;
     vos_runtime::write_json(&run_dir.join("compose-result.json"), &selection.compose)?;
@@ -496,6 +498,19 @@ async fn generate_patch_artifacts(
             &prepared.selection.modules,
             &parsed,
         );
+        vos_runtime::emit_entity(
+            progress,
+            "validating_skeleton",
+            if report.ok {
+                "skeleton projection passed validation"
+            } else {
+                "skeleton projection failed validation"
+            },
+            "attempt",
+            Some(&attempts.to_string()),
+            Some(attempts as usize),
+            Some(max_attempts as usize),
+        );
         let report_path = prepared.run_dir.join("skeleton-validation.json");
         vos_runtime::write_json(&report_path, &report)?;
         if report.ok {
@@ -612,9 +627,12 @@ fn apply_generation_outputs(
     files_to_create: &[SkeletonFileEdit],
     files_to_update: &[RegionEdit],
     region_edits: &[RegionEdit],
+    progress: Option<&ProgressSink>,
     created_files: &mut Vec<PathBuf>,
     updated_regions: &mut Vec<PathBuf>,
 ) -> Result<()> {
+    let total_writes = files_to_create.len() + files_to_update.len() + region_edits.len();
+    let mut written = 0usize;
     for file in files_to_create {
         let absolute = project_root.join(&file.path);
         if let Some(parent) = absolute.parent() {
@@ -622,12 +640,32 @@ fn apply_generation_outputs(
         }
         fs::write(&absolute, &file.content)?;
         created_files.push(file.path.clone());
+        written += 1;
+        vos_runtime::emit_entity(
+            progress,
+            "applying_code",
+            "created generated skeleton file",
+            "file",
+            Some(&file.path.display().to_string()),
+            Some(written),
+            Some(total_writes),
+        );
     }
     for edit in files_to_update.iter().chain(region_edits.iter()) {
         apply_region_edit(project_root, edit)?;
         if !updated_regions.contains(&edit.file) {
             updated_regions.push(edit.file.clone());
         }
+        written += 1;
+        vos_runtime::emit_entity(
+            progress,
+            "applying_code",
+            "updated generated editable region",
+            "file",
+            Some(&edit.file.display().to_string()),
+            Some(written),
+            Some(total_writes),
+        );
     }
     Ok(())
 }

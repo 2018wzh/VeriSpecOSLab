@@ -17,6 +17,9 @@ pub(crate) async fn generate_module_waves(
     run_dir: &Path,
 ) -> Result<Vec<RegionEdit>> {
     let mut edits = Vec::new();
+    let total_modules = queue.jobs.len();
+    let mut launched_modules = 0usize;
+    let mut completed_modules = 0usize;
     for (wave_index, wave) in queue.waves.iter().enumerate() {
         let mut set = JoinSet::new();
         for module_name in wave {
@@ -56,26 +59,42 @@ pub(crate) async fn generate_module_waves(
             };
             let module_run_dir = run_dir.join(format!("module_{}", module_name));
             let config = config.clone();
+            launched_modules += 1;
             vos_runtime::emit_entity(
                 progress,
                 "generating_module",
                 "sending module batch prompt",
                 "module",
                 Some(module_name),
-                Some(wave_index + 1),
-                Some(queue.waves.len()),
+                Some(launched_modules),
+                Some(total_modules),
             );
+            let module_name = module_name.clone();
             set.spawn(async move {
                 let workflow = RigWorkflow::new(&config);
                 let raw = workflow
                     .run_prompt_stage(&module_run_dir, RigStage::ProviderCall, &prompt)
                     .await?;
-                vos_prompt::parse_module_batch_response::<crate::ModuleBatchCodegenResponse>(&raw)
-                    .map_err(VosError::Message)
+                let parsed = vos_prompt::parse_module_batch_response::<
+                    crate::ModuleBatchCodegenResponse,
+                >(&raw)
+                .map_err(VosError::Message)?;
+                Ok::<_, VosError>((module_name, parsed))
             });
         }
         while let Some(joined) = set.join_next().await {
-            let batch = joined.map_err(|err| VosError::Message(err.to_string()))??;
+            let (module_name, batch) =
+                joined.map_err(|err| VosError::Message(err.to_string()))??;
+            completed_modules += 1;
+            vos_runtime::emit_entity(
+                progress,
+                "generated_module",
+                &format!("module batch completed in wave {}", wave_index + 1),
+                "module",
+                Some(&module_name),
+                Some(completed_modules),
+                Some(total_modules),
+            );
             edits.extend(batch.region_edits);
         }
     }
