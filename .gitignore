@@ -1,3 +1,5 @@
 .tmp*
 .deepseek
 .claude
+.idea
+.vscode
