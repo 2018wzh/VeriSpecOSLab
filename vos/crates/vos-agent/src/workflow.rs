@@ -7,7 +7,7 @@ use vos_core::{
     ArchitectureComposeResult, BuildResult, GenerationQueue, NormalizedSpecBundle, QemuRunResult,
     Result, VosError,
 };
-use vos_runtime::ProgressSink;
+use vos_runtime::{ProgressPlan, ProgressSink, ProgressStageDefinition};
 
 use crate::codegen::generate_module_waves;
 use crate::patch::{
@@ -76,7 +76,8 @@ pub(crate) async fn execute_generation_workflow(
     progress: Option<&ProgressSink>,
 ) -> Result<GenerationWorkflowResult> {
     validate_generation_flags(&options)?;
-    let prepared = prepare_generation_context(project_root, &options, progress)?;
+    let progress_plan = generation_progress_plan(&options);
+    let prepared = prepare_generation_context(project_root, &options, progress, &progress_plan)?;
     let PatchArtifacts {
         files_to_create,
         files_to_update,
@@ -85,7 +86,7 @@ pub(crate) async fn execute_generation_workflow(
         retry_record_path,
     } = match &options.patch_path {
         Some(path) => load_patch_artifacts(path)?,
-        None => generate_patch_artifacts(project_root, &prepared, progress).await?,
+        None => generate_patch_artifacts(project_root, &prepared, progress, &progress_plan).await?,
     };
 
     validate_generation_outputs(
@@ -102,9 +103,9 @@ pub(crate) async fn execute_generation_workflow(
     let mut run_result = None;
 
     if options.apply {
-        vos_runtime::emit(
+        progress_plan.emit_stage(
             progress,
-            "applying_code",
+            "apply_code",
             "writing generated skeleton and region edits",
         );
         apply_generation_outputs(
@@ -113,12 +114,18 @@ pub(crate) async fn execute_generation_workflow(
             &files_to_update,
             &region_edits,
             progress,
+            &progress_plan,
             &mut created_files,
             &mut updated_regions,
         )?;
     }
 
     if options.apply && options.execute_build {
+        progress_plan.emit_stage(
+            progress,
+            "build_generated_system",
+            "building generated system",
+        );
         let build = vos_runtime::build_with_progress(
             project_root,
             None,
@@ -129,14 +136,15 @@ pub(crate) async fn execute_generation_workflow(
                 dry_run: false,
                 toolchain_path: None,
             },
-            progress,
+            None,
         )
         .await?;
-        vos_runtime::emit(progress, "building_system", "built generated system");
+        progress_plan.finish_stage(progress, "build_generated_system", "built generated system");
         build_result = Some(build.clone());
         if options.execute_run {
-            let run = vos_runtime::run_qemu_with_progress(project_root, None, progress).await?;
-            vos_runtime::emit(progress, "running_boot_smoke", "ran qemu boot smoke");
+            progress_plan.emit_stage(progress, "run_generated_system", "running generated system");
+            let run = vos_runtime::run_qemu_with_progress(project_root, None, None).await?;
+            progress_plan.finish_stage(progress, "run_generated_system", "ran qemu boot smoke");
             run_result = Some(run);
         }
     }
@@ -168,7 +176,12 @@ pub(crate) async fn execute_generation_workflow(
         retry_record_path,
     };
     vos_runtime::write_json(&prepared.run_dir.join("generation-result.json"), &result)?;
-    vos_runtime::emit(progress, "finished", "generation workflow finished");
+    progress_plan.finish_stage(
+        progress,
+        "write_manifest",
+        "wrote generation manifest and result",
+    );
+    progress_plan.finish(progress, "generation workflow finished");
     Ok(result)
 }
 
@@ -190,6 +203,7 @@ fn prepare_generation_context(
     project_root: &Path,
     options: &GenerationWorkflowOptions,
     progress: Option<&ProgressSink>,
+    progress_plan: &ProgressPlan,
 ) -> Result<PreparedGenerationContext> {
     let config = vos_runtime::load_config(project_root)?;
     if options.patch_path.is_none() {
@@ -197,16 +211,24 @@ fn prepare_generation_context(
     }
     let spec_root = vos_runtime::resolve_spec_root(project_root, None, &config)?;
     let normalized = vos_runtime::normalize_spec(project_root, Some(&spec_root))?;
-    vos_runtime::emit(
+    progress_plan.emit_stage_count(
         progress,
-        "normalizing_spec",
+        "prepare_generation_context",
         "normalized strict spec bundle",
+        Some("step"),
+        Some("normalize"),
+        1,
+        5,
     );
     let consistency = vos_spec::check_consistency(project_root, &spec_root, &normalized)?;
-    vos_runtime::emit(
+    progress_plan.emit_stage_count(
         progress,
-        "checking_consistency",
+        "prepare_generation_context",
         "checked cross-spec consistency",
+        Some("step"),
+        Some("consistency"),
+        2,
+        5,
     );
     if !consistency.ok {
         return Err(VosError::Message(format!(
@@ -215,22 +237,38 @@ fn prepare_generation_context(
         )));
     }
     let selection = resolve_target_selection(project_root, &normalized, &spec_root, options)?;
-    vos_runtime::emit(
+    progress_plan.emit_stage_count(
         progress,
-        "composing_architecture",
+        "prepare_generation_context",
         "composed architecture graph",
+        Some("step"),
+        Some("compose"),
+        3,
+        5,
     );
     let _tests = vos_spec::derive_tests(project_root, &spec_root, &selection.stage)?;
-    vos_runtime::emit(
+    progress_plan.emit_stage_count(
         progress,
-        "deriving_tests",
+        "prepare_generation_context",
         "derived public build/run checks",
+        Some("step"),
+        Some("tests"),
+        4,
+        5,
     );
     let allowed = vos_runtime::allowed_paths(&normalized, project_root);
     let run_id = vos_core::new_run_id();
     let run_dir = project_root.join(".vos").join("runs").join(&run_id);
     fs::create_dir_all(&run_dir)?;
-    vos_runtime::emit(progress, "planning_generation", "prepared generation plan");
+    progress_plan.emit_stage_count(
+        progress,
+        "prepare_generation_context",
+        "prepared generation plan",
+        Some("step"),
+        Some("plan"),
+        5,
+        5,
+    );
     vos_runtime::write_json(&run_dir.join("normalized-bundle.json"), &normalized)?;
     vos_runtime::write_json(&run_dir.join("consistency-report.json"), &consistency)?;
     vos_runtime::write_json(&run_dir.join("compose-result.json"), &selection.compose)?;
@@ -439,6 +477,7 @@ async fn generate_patch_artifacts(
     project_root: &Path,
     prepared: &PreparedGenerationContext,
     progress: Option<&ProgressSink>,
+    progress_plan: &ProgressPlan,
 ) -> Result<PatchArtifacts> {
     let workflow = RigWorkflow::new(&prepared.config);
     let allowed = &prepared.allowed_paths;
@@ -451,9 +490,9 @@ async fn generate_patch_artifacts(
 
     loop {
         attempts += 1;
-        vos_runtime::emit(
+        progress_plan.emit_stage(
             progress,
-            "projecting_skeleton",
+            "project_skeleton",
             "requesting skeleton projection",
         );
         let skeleton_prompt = if feedback.is_empty() {
@@ -495,6 +534,7 @@ async fn generate_patch_artifacts(
             &skeleton_response,
         )
         .map_err(VosError::Message)?;
+        progress_plan.finish_stage(progress, "project_skeleton", "received skeleton projection");
         let report = validate_skeleton_projection(
             project_root,
             allowed,
@@ -502,15 +542,20 @@ async fn generate_patch_artifacts(
             &prepared.selection.modules,
             &parsed,
         );
-        vos_runtime::emit_entity(
+        progress_plan.emit_stage_progress(
             progress,
-            "validating_skeleton",
+            "validate_skeleton",
             if report.ok {
                 "skeleton projection passed validation"
             } else {
                 "skeleton projection failed validation"
             },
-            "attempt",
+            if report.ok {
+                100
+            } else {
+                ((attempts * 100) / max_attempts).min(100) as u8
+            },
+            Some("attempt"),
             Some(&attempts.to_string()),
             Some(attempts as usize),
             Some(max_attempts as usize),
@@ -584,6 +629,7 @@ async fn generate_patch_artifacts(
         &prepared.selection.queue,
         &concurrency_specs,
         progress,
+        progress_plan,
         &prepared.run_dir,
     )
     .await?;
@@ -632,11 +678,16 @@ fn apply_generation_outputs(
     files_to_update: &[RegionEdit],
     region_edits: &[RegionEdit],
     progress: Option<&ProgressSink>,
+    progress_plan: &ProgressPlan,
     created_files: &mut Vec<PathBuf>,
     updated_regions: &mut Vec<PathBuf>,
 ) -> Result<()> {
     let total_writes = files_to_create.len() + files_to_update.len() + region_edits.len();
     let mut written = 0usize;
+    if total_writes == 0 {
+        progress_plan.finish_stage(progress, "apply_code", "no generated file edits to apply");
+        return Ok(());
+    }
     for file in files_to_create {
         let absolute = project_root.join(&file.path);
         if let Some(parent) = absolute.parent() {
@@ -645,14 +696,14 @@ fn apply_generation_outputs(
         fs::write(&absolute, &file.content)?;
         created_files.push(file.path.clone());
         written += 1;
-        vos_runtime::emit_entity(
+        progress_plan.emit_stage_count(
             progress,
-            "applying_code",
+            "apply_code",
             "created generated skeleton file",
-            "file",
+            Some("file"),
             Some(&file.path.display().to_string()),
-            Some(written),
-            Some(total_writes),
+            written,
+            total_writes,
         );
     }
     for edit in files_to_update.iter().chain(region_edits.iter()) {
@@ -661,17 +712,71 @@ fn apply_generation_outputs(
             updated_regions.push(edit.file.clone());
         }
         written += 1;
-        vos_runtime::emit_entity(
+        progress_plan.emit_stage_count(
             progress,
-            "applying_code",
+            "apply_code",
             "updated generated editable region",
-            "file",
+            Some("file"),
             Some(&edit.file.display().to_string()),
-            Some(written),
-            Some(total_writes),
+            written,
+            total_writes,
         );
     }
     Ok(())
+}
+
+fn generation_progress_plan(options: &GenerationWorkflowOptions) -> ProgressPlan {
+    let mut stages = vec![ProgressStageDefinition {
+        key: "prepare_generation_context",
+        label: "准备生成上下文",
+        weight: 15,
+    }];
+    if options.patch_path.is_none() {
+        stages.extend([
+            ProgressStageDefinition {
+                key: "project_skeleton",
+                label: "骨架投影",
+                weight: 15,
+            },
+            ProgressStageDefinition {
+                key: "validate_skeleton",
+                label: "骨架校验/重试",
+                weight: 10,
+            },
+            ProgressStageDefinition {
+                key: "generate_modules",
+                label: "模块批量生成",
+                weight: 35,
+            },
+        ]);
+    }
+    if options.apply {
+        stages.push(ProgressStageDefinition {
+            key: "apply_code",
+            label: "应用代码变更",
+            weight: 10,
+        });
+    }
+    if options.apply && options.execute_build {
+        stages.push(ProgressStageDefinition {
+            key: "build_generated_system",
+            label: "构建生成结果",
+            weight: 10,
+        });
+    }
+    if options.apply && options.execute_run {
+        stages.push(ProgressStageDefinition {
+            key: "run_generated_system",
+            label: "运行生成结果",
+            weight: 3,
+        });
+    }
+    stages.push(ProgressStageDefinition {
+        key: "write_manifest",
+        label: "写 manifest 与收尾",
+        weight: 2,
+    });
+    ProgressPlan::new(stages)
 }
 
 fn validate_skeleton_projection(
@@ -955,10 +1060,7 @@ mod tests {
         assert_eq!(selection.kind, "stage");
         assert_eq!(selection.value, "phase-two");
         assert_eq!(selection.stage, "phase-two");
-        assert_eq!(
-            selection.modules,
-            vec!["alpha", "beta"]
-        );
+        assert_eq!(selection.modules, vec!["alpha", "beta"]);
     }
 
     #[test]
@@ -986,7 +1088,7 @@ mod tests {
                     non_goals: Vec::new(),
                     constraints: Vec::new(),
                     initial_validation_binding: Vec::new(),
-                }, 
+                },
                 slices: Vec::new(),
                 composition: ArchitectureCompositionSpec::default(),
                 toolchain: dummy_toolchain_bundle(),
@@ -1016,6 +1118,56 @@ mod tests {
             err.to_string(),
             "default whole-system generation requires spec to define a current stage"
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires VOS_E2E_LLM_API_KEY plus VOS_E2E_LLM_MODEL to call a real provider"]
+    async fn real_provider_can_execute_minimal_agent_generation() {
+        let temp = tempdir().expect("tempdir");
+        let project_root = temp.path().to_path_buf();
+        write_real_provider_fixture(&project_root);
+
+        let result = execute_generation_workflow(
+            &project_root,
+            GenerationWorkflowOptions {
+                command_name: "vos agent generate".into(),
+                target: Some("boot".into()),
+                patch_path: None,
+                apply: true,
+                execute_build: false,
+                execute_run: false,
+                stage_override: None,
+            },
+            None,
+        )
+        .await
+        .expect("live provider generation should succeed");
+
+        assert!(result.applied);
+        assert_eq!(result.target_kind, "module");
+        assert_eq!(result.target_value, "boot");
+        assert_eq!(result.selected_modules, vec!["boot"]);
+        assert_eq!(result.generated_waves, vec![vec!["boot".to_string()]]);
+        assert!(result.manifest_path.exists());
+        assert!(
+            result
+                .skeleton_validation_path
+                .as_ref()
+                .is_some_and(|path| path.exists())
+        );
+        assert!(
+            result
+                .retry_record_path
+                .as_ref()
+                .is_some_and(|path| path.exists())
+        );
+
+        let generated = fs::read_to_string(project_root.join("kernel").join("main.c"))
+            .expect("generated file should exist");
+        assert!(generated.contains("VOS_BOOT_OK"));
+        assert!(generated.contains("boot_banner"));
+        assert!(generated.contains("/* VOS-EDIT-START:boot.boot_banner */"));
+        assert!(generated.contains("/* VOS-EDIT-END:boot.boot_banner */"));
     }
 
     fn example_xv6_context() -> (std::path::PathBuf, std::path::PathBuf, NormalizedSpecBundle) {
@@ -1110,6 +1262,85 @@ mod tests {
         let normalized =
             vos_spec::load_normalized_spec_bundle(&project_root, &spec_root).expect("normalized");
         (temp, project_root, spec_root, normalized)
+    }
+
+    fn write_real_provider_fixture(project_root: &Path) {
+        let provider =
+            std::env::var("VOS_E2E_LLM_PROVIDER").unwrap_or_else(|_| "openai-compatible".into());
+        let model = std::env::var("VOS_E2E_LLM_MODEL")
+            .expect("VOS_E2E_LLM_MODEL must be set for the live provider test");
+        let _api_key = std::env::var("VOS_E2E_LLM_API_KEY")
+            .expect("VOS_E2E_LLM_API_KEY must be set for the live provider test");
+        let base_url = std::env::var("VOS_E2E_LLM_BASE_URL").ok();
+        let use_completions_api = std::env::var("VOS_E2E_LLM_USE_COMPLETIONS_API").ok();
+
+        let spec_root = project_root.join("spec");
+        fs::create_dir_all(project_root.join(".vos")).expect("create .vos dir");
+        fs::create_dir_all(project_root.join("kernel")).expect("create kernel dir");
+        fs::create_dir_all(project_root.join("include")).expect("create include dir");
+        fs::create_dir_all(spec_root.join("architecture").join("slices"))
+            .expect("create slices dir");
+        fs::create_dir_all(spec_root.join("modules").join("boot").join("ops"))
+            .expect("create boot ops dir");
+        fs::create_dir_all(spec_root.join("toolchain")).expect("create toolchain dir");
+
+        let mut config = format!(
+            "spec_root = \"spec\"\n\n[agent]\nprovider = \"{provider}\"\nmodel = \"{model}\"\ntimeout_secs = 120\n"
+        );
+        if let Some(base_url) = base_url {
+            config.push_str(&format!("base_url = \"{base_url}\"\n"));
+        }
+        if let Some(flag) = use_completions_api {
+            config.push_str(&format!("use_completions_api = {flag}\n"));
+        }
+        config.push_str(
+            "\n[agent.auth]\nenv = \"VOS_E2E_LLM_API_KEY\"\n\n[agent.retry]\nmax_attempts = 1\n",
+        );
+        fs::write(project_root.join(".vos").join("config.toml"), config).expect("write config");
+
+        fs::write(
+            spec_root.join("architecture").join("seed.yaml"),
+            "id: seed\nproject: demo\ndomain: os\ntarget_platform: riscv64\narchitecture_name: demo\narchitecture_summary: Minimal boot banner generation fixture\n",
+        )
+        .expect("write seed");
+        fs::write(
+            spec_root.join("architecture").join("composition.yaml"),
+            "cross_component_rules: []\n",
+        )
+        .expect("write composition");
+        fs::write(
+            spec_root.join("architecture").join("slices").join("01-boot.yaml"),
+            "id: slice-boot\nstage: boot\ntitle: Boot\nsummary: generate a single boot banner function\naffected_modules:\n  - boot\n",
+        )
+        .expect("write slice");
+
+        fs::write(
+            spec_root.join("modules").join("boot").join("module.yaml"),
+            "id: boot\nmodule: boot\nstage: boot\npurpose: implement a minimal boot banner helper\nowned_state:\n  - boot banner string\nexported_interfaces:\n  - const char *boot_banner(void)\n",
+        )
+        .expect("write module");
+        fs::write(
+            spec_root.join("modules").join("boot").join("ops").join("boot_banner.yaml"),
+            "id: boot.boot_banner\nstage: boot\nmodule: boot\noperation: boot_banner\npurpose: Return the literal string VOS_BOOT_OK from boot_banner.\npostconditions:\n  - returns the literal string VOS_BOOT_OK\nllm_codegen:\n  editable_region:\n    file: kernel/main.c\n    start_marker: \"/* VOS-EDIT-START:boot.boot_banner */\"\n    end_marker: \"/* VOS-EDIT-END:boot.boot_banner */\"\n",
+        )
+        .expect("write operation");
+
+        fs::write(
+            spec_root.join("toolchain").join("toolchain.yaml"),
+            "toolchain:\n  target_arch: riscv64\n  target_triple: riscv64-unknown-elf\n  c_compiler: gcc\n  asm_compiler: gcc\n  linker: ld\n  archiver: ar\nbuild:\n  include_paths:\n    - include\n  sources:\n    - kernel/main.c\n  generated_artifacts:\n    - build/kernel.elf\n  phases:\n    - name: compile_kernel\n      semantic:\n        type: custom\n        command: echo build\n        sources:\n          - pattern: kernel/main.c\n        include_dirs:\n          - include\n        expected_outputs:\n          - build/kernel.elf\nlink:\n  linker_script: kernel/link.ld\n  entry_symbol: vos_entry\n  relocation_model: static\nimage:\n  output_kind: kernel\n  required_artifacts:\n    - build/kernel.elf\nrun:\n  emulator: qemu-system-riscv64\n  machine: virt\n  cpu: rv64\n  memory: 128M\n  bios: none\n  kernel_arg: -kernel\n  success_signal: VOS_BOOT_OK\n  timeout_secs: 1\n",
+        )
+        .expect("write toolchain");
+
+        fs::write(
+            project_root.join("kernel").join("main.c"),
+            "#include <stddef.h>\n\nconst char *boot_banner(void) {\n    /* VOS-EDIT-START:boot.boot_banner */\n    /* VOS-EDIT-END:boot.boot_banner */\n}\n\nvoid vos_entry(void) {\n    (void)boot_banner();\n}\n",
+        )
+        .expect("write main.c");
+        fs::write(
+            project_root.join("kernel").join("link.ld"),
+            "ENTRY(vos_entry)\nSECTIONS\n{\n  .text : { *(.text*) }\n}\n",
+        )
+        .expect("write link.ld");
     }
 
     fn dummy_toolchain_bundle() -> ToolchainSpecBundle {

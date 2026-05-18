@@ -11,7 +11,7 @@ use crate::generator::{
     GeneratedToolchain, generate_toolchain_artifact, load_prebuilt_toolchain_artifact,
 };
 use crate::process::program_with_timeout_env;
-use crate::progress::{ProgressSink, emit};
+use crate::progress::{ProgressPlan, ProgressSink, ProgressStageDefinition};
 use crate::scope::resolve_spec_root;
 use vos_platform::summarize_program_command;
 
@@ -37,10 +37,12 @@ pub async fn build_with_progress(
     request: ToolchainGenerationRequest,
     progress: Option<&ProgressSink>,
 ) -> Result<BuildResult> {
-    emit(progress, "building_system", "resolving toolchain spec");
+    let progress_plan = build_progress_plan();
+    progress_plan.emit_stage(progress, "resolve_toolchain", "resolving toolchain spec");
     let config = load_config(project_root)?;
     let spec_root = resolve_spec_root(project_root, None, &config)?;
     let toolchain = vos_spec::load_toolchain_spec(project_root, &spec_root)?;
+    progress_plan.finish_stage(progress, "resolve_toolchain", "resolved toolchain spec");
 
     let run_dir = project_root
         .join(".vos")
@@ -50,22 +52,46 @@ pub async fn build_with_progress(
     write_json(&run_dir.join("toolchain-resolved.json"), &toolchain)?;
 
     let generated = if let Some(path) = &request.toolchain_path {
-        emit(
+        progress_plan.emit_stage(
             progress,
-            "building_system",
+            "prepare_toolchain_artifact",
             "loading pre-generated toolchain artifact",
         );
-        load_prebuilt_toolchain_artifact(project_root, path, &spec_root, &toolchain, &request)?
-    } else {
-        emit(
+        let generated =
+            load_prebuilt_toolchain_artifact(project_root, path, &spec_root, &toolchain, &request)?;
+        progress_plan.finish_stage(
             progress,
-            "building_system",
+            "prepare_toolchain_artifact",
+            "loaded pre-generated toolchain artifact",
+        );
+        generated
+    } else {
+        progress_plan.emit_stage(
+            progress,
+            "prepare_toolchain_artifact",
             "generating makefile toolchain artifact",
         );
-        generate_toolchain_artifact(project_root, &spec_root, &toolchain, &request, &run_dir)?
+        let generated =
+            generate_toolchain_artifact(project_root, &spec_root, &toolchain, &request, &run_dir)?;
+        progress_plan.finish_stage(
+            progress,
+            "prepare_toolchain_artifact",
+            "generated toolchain artifact",
+        );
+        generated
     };
 
     if request.dry_run {
+        progress_plan.finish_stage(
+            progress,
+            "check_environment",
+            "skipped toolchain environment checks for dry-run",
+        );
+        progress_plan.finish_stage(
+            progress,
+            "execute_build_phases",
+            "skipped build phase execution for dry-run",
+        );
         let log_path = run_dir.join("build.log");
         let summary = summarize_program_command(
             &generated.command_program,
@@ -73,6 +99,8 @@ pub async fn build_with_progress(
             Some(&generated.metadata.entry_target),
         );
         std::fs::write(&log_path, format!("# dry-run\n{}\n", summary))?;
+        progress_plan.finish_stage(progress, "finalize_build", "wrote dry-run build log");
+        progress_plan.finish(progress, "build finished");
         return Ok(BuildResult {
             command: summary,
             success: true,
@@ -87,8 +115,26 @@ pub async fn build_with_progress(
         });
     }
 
+    progress_plan.emit_stage(
+        progress,
+        "check_environment",
+        "checking required toolchain environment",
+    );
     ensure_toolchain_environment(&toolchain)?;
-    execute_generated_toolchain(project_root, &toolchain, &run_dir, generated).await
+    progress_plan.finish_stage(
+        progress,
+        "check_environment",
+        "validated required toolchain environment",
+    );
+    execute_generated_toolchain(
+        project_root,
+        &toolchain,
+        &run_dir,
+        generated,
+        progress,
+        &progress_plan,
+    )
+    .await
 }
 
 async fn execute_generated_toolchain(
@@ -96,14 +142,25 @@ async fn execute_generated_toolchain(
     toolchain: &vos_core::ToolchainSpecBundle,
     run_dir: &Path,
     generated: GeneratedToolchain,
+    progress: Option<&ProgressSink>,
+    progress_plan: &ProgressPlan,
 ) -> Result<BuildResult> {
     let mut phase_results = Vec::new();
     let mut artifact_checks = Vec::new();
     let mut aggregate_log = String::new();
     let mut final_exit = Some(0);
     let mut success = true;
+    let total_phases = generated.phase_order.len();
+    progress_plan.emit_stage(
+        progress,
+        "execute_build_phases",
+        "starting generated build phases",
+    );
+    if total_phases == 0 {
+        progress_plan.finish_stage(progress, "execute_build_phases", "no build phases selected");
+    }
 
-    for phase_name in &generated.phase_order {
+    for (phase_index, phase_name) in generated.phase_order.iter().enumerate() {
         let phase = toolchain
             .build
             .phases
@@ -157,6 +214,15 @@ async fn execute_generated_toolchain(
             stderr_excerpt: String::new(),
             artifacts_produced: phase_declared_outputs(phase),
         });
+        progress_plan.emit_stage_count(
+            progress,
+            "execute_build_phases",
+            &format!("completed build phase {}", phase.name),
+            Some("phase"),
+            Some(&phase.name),
+            phase_index + 1,
+            total_phases,
+        );
 
         if !phase_ok {
             success = false;
@@ -167,6 +233,12 @@ async fn execute_generated_toolchain(
 
     let build_log = run_dir.join("build.log");
     std::fs::write(&build_log, aggregate_log)?;
+    progress_plan.finish_stage(
+        progress,
+        "finalize_build",
+        "wrote build log and output checks",
+    );
+    progress_plan.finish(progress, "build finished");
     Ok(BuildResult {
         command: summarize_program_command(
             &generated.command_program,
@@ -183,6 +255,36 @@ async fn execute_generated_toolchain(
         generation_metadata: Some(generated.metadata),
         degraded: false,
     })
+}
+
+fn build_progress_plan() -> ProgressPlan {
+    ProgressPlan::new(vec![
+        ProgressStageDefinition {
+            key: "resolve_toolchain",
+            label: "解析工具链",
+            weight: 10,
+        },
+        ProgressStageDefinition {
+            key: "prepare_toolchain_artifact",
+            label: "生成/加载工具链工件",
+            weight: 15,
+        },
+        ProgressStageDefinition {
+            key: "check_environment",
+            label: "检查环境",
+            weight: 10,
+        },
+        ProgressStageDefinition {
+            key: "execute_build_phases",
+            label: "执行 build phases",
+            weight: 55,
+        },
+        ProgressStageDefinition {
+            key: "finalize_build",
+            label: "校验输出并落盘结果",
+            weight: 10,
+        },
+    ])
 }
 
 fn ensure_toolchain_environment(toolchain: &vos_core::ToolchainSpecBundle) -> Result<()> {

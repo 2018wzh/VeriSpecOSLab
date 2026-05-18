@@ -9,6 +9,11 @@ pub struct ProgressEvent {
     pub entity_id: Option<String>,
     pub position: Option<usize>,
     pub total: Option<usize>,
+    pub stage_label: Option<String>,
+    pub stage_index: Option<usize>,
+    pub stage_total: Option<usize>,
+    pub stage_percent: Option<u8>,
+    pub overall_percent: Option<u8>,
 }
 
 pub fn new_run_id() -> String {

@@ -3,7 +3,7 @@ use std::path::Path;
 
 use tokio::task::JoinSet;
 use vos_core::{ConcurrencySpec, NormalizedSpecBundle, Result, VosError};
-use vos_runtime::ProgressSink;
+use vos_runtime::{ProgressPlan, ProgressSink};
 
 use crate::{RegionEdit, RigStage, RigWorkflow};
 
@@ -14,12 +14,21 @@ pub(crate) async fn generate_module_waves(
     queue: &vos_core::GenerationQueue,
     concurrency_specs: &BTreeMap<String, Option<ConcurrencySpec>>,
     progress: Option<&ProgressSink>,
+    progress_plan: &ProgressPlan,
     run_dir: &Path,
 ) -> Result<Vec<RegionEdit>> {
     let mut edits = Vec::new();
     let total_modules = queue.jobs.len();
     let mut launched_modules = 0usize;
     let mut completed_modules = 0usize;
+    progress_plan.emit_stage(
+        progress,
+        "generate_modules",
+        "starting module batch generation",
+    );
+    if total_modules == 0 {
+        progress_plan.finish_stage(progress, "generate_modules", "no module batches selected");
+    }
     for (wave_index, wave) in queue.waves.iter().enumerate() {
         let mut set = JoinSet::new();
         for module_name in wave {
@@ -60,14 +69,14 @@ pub(crate) async fn generate_module_waves(
             let module_run_dir = run_dir.join(format!("module_{}", module_name));
             let config = config.clone();
             launched_modules += 1;
-            vos_runtime::emit_entity(
+            progress_plan.emit_stage_count(
                 progress,
-                "generating_module",
+                "generate_modules",
                 "sending module batch prompt",
-                "module",
+                Some("module"),
                 Some(module_name),
-                Some(launched_modules),
-                Some(total_modules),
+                launched_modules,
+                total_modules,
             );
             let module_name = module_name.clone();
             set.spawn(async move {
@@ -86,21 +95,21 @@ pub(crate) async fn generate_module_waves(
             let (module_name, batch) =
                 joined.map_err(|err| VosError::Message(err.to_string()))??;
             completed_modules += 1;
-            vos_runtime::emit_entity(
+            progress_plan.emit_stage_count(
                 progress,
-                "generated_module",
+                "generate_modules",
                 &format!("module batch completed in wave {}", wave_index + 1),
-                "module",
+                Some("module"),
                 Some(&module_name),
-                Some(completed_modules),
-                Some(total_modules),
+                completed_modules,
+                total_modules,
             );
             edits.extend(batch.region_edits);
         }
     }
-    vos_runtime::emit(
+    progress_plan.finish_stage(
         progress,
-        "generating_module",
+        "generate_modules",
         "module wave generation completed",
     );
     Ok(edits)
