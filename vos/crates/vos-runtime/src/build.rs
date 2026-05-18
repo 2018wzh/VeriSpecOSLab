@@ -10,9 +10,10 @@ use crate::evidence::write_json;
 use crate::generator::{
     GeneratedToolchain, generate_toolchain_artifact, load_prebuilt_toolchain_artifact,
 };
-use crate::process::{shell_command_with_timeout_context, summarize_program_command};
+use crate::process::program_with_timeout_env;
 use crate::progress::{ProgressSink, emit};
 use crate::scope::resolve_spec_root;
+use vos_platform::summarize_program_command;
 
 pub async fn build(project_root: &Path, profile: Option<String>) -> Result<BuildResult> {
     build_with_progress(
@@ -40,7 +41,6 @@ pub async fn build_with_progress(
     let config = load_config(project_root)?;
     let spec_root = resolve_spec_root(project_root, None, &config)?;
     let toolchain = vos_spec::load_toolchain_spec(project_root, &spec_root)?;
-    ensure_toolchain_environment(&toolchain)?;
 
     let run_dir = project_root
         .join(".vos")
@@ -87,6 +87,7 @@ pub async fn build_with_progress(
         });
     }
 
+    ensure_toolchain_environment(&toolchain)?;
     execute_generated_toolchain(project_root, &toolchain, &run_dir, generated).await
 }
 
@@ -122,15 +123,18 @@ async fn execute_generated_toolchain(
             &generated.command_args,
             Some(&phase.name),
         );
-        let (exit_code, stdout, stderr) = shell_command_with_timeout_context(
-            &command,
+        let mut phase_args = generated.command_args.clone();
+        phase_args.push(phase.name.clone());
+        let (exit_code, stdout) = program_with_timeout_env(
+            &generated.command_program,
+            &phase_args,
             project_root,
             timeout_secs,
             &phase.semantic.env_vars,
         )
         .await?;
         let log_path = run_dir.join(format!("phase-{}.log", phase.name));
-        let log_text = format!("$ {}\n{}{}", command, stdout, stderr);
+        let log_text = format!("$ {}\n{}", command, stdout);
         std::fs::write(&log_path, &log_text)?;
         aggregate_log.push_str(&format!("===== {} =====\n{}\n", phase.name, log_text));
 
@@ -150,7 +154,7 @@ async fn execute_generated_toolchain(
             exit_code,
             log_path,
             stdout_excerpt: excerpt(&stdout),
-            stderr_excerpt: excerpt(&stderr),
+            stderr_excerpt: String::new(),
             artifacts_produced: phase_declared_outputs(phase),
         });
 

@@ -1,10 +1,14 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 
+use regex::Regex;
 use vos_core::{
     BuildPhaseSemantics, Result, ToolchainGenerationMetadata, ToolchainGenerationRequest,
     ToolchainSpecBundle, VosError,
 };
+
+use vos_platform::{HostPath, HostPlatform};
 
 #[derive(Debug, Clone)]
 pub(crate) struct GeneratedToolchain {
@@ -115,14 +119,15 @@ fn generate_makefile(
         .join(spec_root)
         .join("toolchain")
         .join("toolchain.yaml");
-    let content = render_makefile(
+    let content = render_standalone_makefile(
+        project_root,
         toolchain,
         &source_spec,
         request.stage.as_deref(),
         &phase_order,
         &entry_target,
     )?;
-    std::fs::write(&artifact_path, content)?;
+    fs::write(&artifact_path, content)?;
     Ok(GeneratedToolchain {
         metadata: ToolchainGenerationMetadata {
             generator: "makefile".into(),
@@ -138,6 +143,410 @@ fn generate_makefile(
         command_args: vec!["-f".into(), artifact_path.display().to_string()],
         phase_order,
     })
+}
+
+#[derive(Debug, Clone)]
+struct CompileUnit {
+    source: PathBuf,
+    object: PathBuf,
+    phase: String,
+}
+
+fn render_standalone_makefile(
+    project_root: &Path,
+    toolchain: &ToolchainSpecBundle,
+    source_spec: &Path,
+    stage: Option<&str>,
+    phase_order: &[String],
+    entry_target: &str,
+) -> Result<String> {
+    let platform = HostPlatform::current();
+    let compile_units = collect_compile_units(project_root, toolchain)?;
+    let mut directories = collect_output_directories(&compile_units);
+    directories.extend(collect_phase_output_directories(toolchain));
+    directories.sort();
+    directories.dedup();
+
+    let mut out = String::new();
+    out.push_str("# ========================================\n");
+    out.push_str(&format!(
+        "# Auto-generated from {}\n",
+        source_spec.display()
+    ));
+    out.push_str(&format!(
+        "# Spec Stage: {}\n",
+        stage.unwrap_or("unspecified")
+    ));
+    out.push_str(&format!("# Phases: {}\n", phase_order.join(" ")));
+    out.push_str("# Generator: makefile-export v2\n");
+    out.push_str("# ========================================\n\n");
+    out.push_str(&format!("CC ?= {}\n", toolchain.toolchain.c_compiler));
+    out.push_str(&format!("AS ?= {}\n", toolchain.toolchain.asm_compiler));
+    out.push_str(&format!("LD ?= {}\n", toolchain.toolchain.linker));
+    out.push_str(&format!("AR ?= {}\n", toolchain.toolchain.archiver));
+    out.push_str("OBJCOPY ?= riscv64-unknown-elf-objcopy\n");
+    out.push_str("OBJDUMP ?= riscv64-unknown-elf-objdump\n");
+    out.push_str("BUILD_ROOT ?= build\n");
+    out.push_str(".PHONY: all ");
+    out.push_str(&phase_order.join(" "));
+    out.push_str(" ");
+    out.push_str(
+        &toolchain
+            .build
+            .phases
+            .iter()
+            .filter(|phase| phase.semantic.kind == "compile")
+            .map(|phase| phase.name.clone())
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
+    out.push_str("\n\n");
+    out.push_str(&format!("all: {}\n\n", entry_target));
+
+    for dir in directories {
+        out.push_str(&format!(
+            "{}:\n\t{}\n\n",
+            platform.makefile_path(&dir),
+            HostPath::mkdir_command(&dir)
+        ));
+    }
+
+    for unit in &compile_units {
+        let object_dir = unit.object.parent().unwrap_or_else(|| Path::new("."));
+        out.push_str(&format!(
+            "{}: {} | {}\n\t{} {} -c {} -o {}\n\n",
+            platform.makefile_path(&unit.object),
+            platform.makefile_path(&unit.source),
+            platform.makefile_path(object_dir),
+            compiler_for_phase(&unit.phase, toolchain)?,
+            compile_flags_for_phase(&unit.phase, toolchain)?,
+            platform.quote(platform.makefile_path(&unit.source)),
+            platform.quote(platform.makefile_path(&unit.object))
+        ));
+    }
+
+    for phase in &toolchain.build.phases {
+        match phase.semantic.kind.as_str() {
+            "compile" => {
+                let outputs = compile_units
+                    .iter()
+                    .filter(|unit| unit.phase == phase.name)
+                    .map(|unit| platform.makefile_path(&unit.object))
+                    .collect::<Vec<_>>();
+                out.push_str(&format!(
+                    ".PHONY: {}\n{}: {}\n\n",
+                    phase.name,
+                    phase.name,
+                    outputs.join(" ")
+                ));
+            }
+            "archive" => {
+                let output = phase.semantic.output_file.as_ref().ok_or_else(|| {
+                    VosError::Message(format!(
+                        "archive phase `{}` missing output_file",
+                        phase.name
+                    ))
+                })?;
+                let inputs = phase
+                    .semantic
+                    .input_artifacts
+                    .iter()
+                    .map(|item| platform.makefile_path(item))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let cmd_inputs = phase
+                    .semantic
+                    .input_artifacts
+                    .iter()
+                    .map(|item| platform.quote(platform.makefile_path(item)))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                out.push_str(&format!(
+                    "{}: {} | {}\n\t$(AR) rcs {} {}\n\n",
+                    phase.name,
+                    inputs,
+                    platform.makefile_path(output.parent().unwrap_or_else(|| Path::new("."))),
+                    platform.quote(platform.makefile_path(output)),
+                    cmd_inputs
+                ));
+            }
+            "link" => {
+                let output = phase.semantic.output_file.as_ref().ok_or_else(|| {
+                    VosError::Message(format!("link phase `{}` missing output_file", phase.name))
+                })?;
+                let script = phase
+                    .semantic
+                    .linker_script
+                    .clone()
+                    .unwrap_or_else(|| toolchain.link.linker_script.clone());
+                let inputs = phase
+                    .semantic
+                    .input_artifacts
+                    .iter()
+                    .map(|item| platform.makefile_path(item))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let cmd_inputs = phase
+                    .semantic
+                    .input_artifacts
+                    .iter()
+                    .map(|item| platform.quote(platform.makefile_path(item)))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let lib_dirs = phase
+                    .semantic
+                    .library_dirs
+                    .iter()
+                    .map(|dir| format!("-L{}", platform.quote(platform.makefile_path(dir))))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let libs = phase
+                    .semantic
+                    .libraries
+                    .iter()
+                    .map(|lib| {
+                        lib.hint
+                            .clone()
+                            .unwrap_or_else(|| format!("-l{}", lib.name))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let extra = phase.semantic.flags.extra.clone().unwrap_or_default();
+                out.push_str(&format!(
+                    "{}: {} | {}\n\t$(LD) -T {} {} -o {} {} {} {}\n\n",
+                    phase.name,
+                    inputs,
+                    platform.makefile_path(output.parent().unwrap_or_else(|| Path::new("."))),
+                    platform.quote(platform.makefile_path(&script)),
+                    extra,
+                    platform.quote(platform.makefile_path(output)),
+                    cmd_inputs,
+                    lib_dirs,
+                    libs
+                ));
+            }
+            "test" => {
+                let test_binary = phase.semantic.test_binary.as_ref().ok_or_else(|| {
+                    VosError::Message(format!("test phase `{}` missing test_binary", phase.name))
+                })?;
+                let args = phase
+                    .semantic
+                    .test_args
+                    .iter()
+                    .map(|arg| platform.quote(arg))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let mut recipe = format!(
+                    "{} {}",
+                    platform.quote(platform.makefile_path(test_binary)),
+                    args
+                );
+                if let Some(pattern) = &phase.semantic.expected_pattern {
+                    recipe.push_str(&format!(" && printf '%s\\n' {}", platform.quote(pattern)));
+                }
+                if let Some(file) = &phase.semantic.expected_output_file {
+                    recipe.push_str(&format!(
+                        " && test -f {}",
+                        platform.quote(platform.makefile_path(file))
+                    ));
+                }
+                out.push_str(&format!(
+                    ".PHONY: {}\n{}:\n\t{}\n\n",
+                    phase.name, phase.name, recipe
+                ));
+            }
+            "custom" => {
+                let command = phase
+                    .semantic
+                    .command
+                    .clone()
+                    .or_else(|| phase.semantic.template.clone())
+                    .ok_or_else(|| {
+                        VosError::Message(format!(
+                            "custom phase `{}` missing command/template",
+                            phase.name
+                        ))
+                    })?;
+                out.push_str(&format!(
+                    ".PHONY: {}\n{}:\n\t{}\n\n",
+                    phase.name, phase.name, command
+                ));
+            }
+            other => {
+                return Err(VosError::Message(format!(
+                    "unsupported build phase semantic.type `{other}`"
+                )));
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn collect_compile_units(
+    project_root: &Path,
+    toolchain: &ToolchainSpecBundle,
+) -> Result<Vec<CompileUnit>> {
+    let mut units = Vec::new();
+    let mut seen_sources = HashSet::new();
+    for phase in &toolchain.build.phases {
+        if phase.semantic.kind != "compile" {
+            continue;
+        }
+        let output_dir = phase
+            .semantic
+            .output_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("build"));
+        for pattern in &phase.semantic.sources {
+            let root = glob_root(&pattern.pattern);
+            let root_path = project_root.join(&root);
+            if !root_path.exists() {
+                continue;
+            }
+            let include_re = glob_to_regex(&pattern.pattern)?;
+            let exclude_res = pattern
+                .exclude
+                .iter()
+                .map(|item| glob_to_regex(item))
+                .collect::<Result<Vec<_>>>()?;
+            for source in walk_files(&root_path) {
+                let rel_root = source
+                    .strip_prefix(project_root)
+                    .unwrap_or(&source)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                if !include_re.is_match(&rel_root) {
+                    continue;
+                }
+                if exclude_res.iter().any(|re| re.is_match(&rel_root)) {
+                    continue;
+                }
+                if seen_sources.insert(source.clone()) {
+                    let rel_under_root = source
+                        .strip_prefix(&root_path)
+                        .unwrap_or(&source)
+                        .to_path_buf();
+                    let mut object = output_dir.join(rel_under_root);
+                    object.set_extension("o");
+                    units.push(CompileUnit {
+                        source,
+                        object,
+                        phase: phase.name.clone(),
+                    });
+                }
+            }
+        }
+    }
+    units.sort_by(|a, b| a.object.cmp(&b.object));
+    Ok(units)
+}
+
+fn collect_output_directories(units: &[CompileUnit]) -> Vec<PathBuf> {
+    let mut dirs = units
+        .iter()
+        .filter_map(|unit| unit.object.parent().map(|path| path.to_path_buf()))
+        .collect::<Vec<_>>();
+    dirs.sort();
+    dirs.dedup();
+    dirs
+}
+
+fn collect_phase_output_directories(toolchain: &ToolchainSpecBundle) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    for phase in &toolchain.build.phases {
+        if let Some(output) = &phase.semantic.output_file {
+            if let Some(parent) = output.parent() {
+                dirs.push(parent.to_path_buf());
+            }
+        }
+        if let Some(output) = &phase.semantic.expected_output_file {
+            if let Some(parent) = output.parent() {
+                dirs.push(parent.to_path_buf());
+            }
+        }
+        for expected in &phase.semantic.expected_outputs {
+            if let Some(parent) = expected.parent() {
+                dirs.push(parent.to_path_buf());
+            }
+        }
+    }
+    dirs
+}
+
+fn compile_flags_for_phase(phase_name: &str, toolchain: &ToolchainSpecBundle) -> Result<String> {
+    let phase = toolchain
+        .build
+        .phases
+        .iter()
+        .find(|item| item.name == phase_name)
+        .ok_or_else(|| VosError::Message(format!("unknown compile phase `{phase_name}`")))?;
+    Ok(compile_flags(phase, toolchain))
+}
+
+fn compiler_for_phase(phase_name: &str, toolchain: &ToolchainSpecBundle) -> Result<String> {
+    let phase = toolchain
+        .build
+        .phases
+        .iter()
+        .find(|item| item.name == phase_name)
+        .ok_or_else(|| VosError::Message(format!("unknown compile phase `{phase_name}`")))?;
+    Ok(phase
+        .semantic
+        .compiler
+        .clone()
+        .unwrap_or_else(|| toolchain.toolchain.c_compiler.clone()))
+}
+
+fn glob_to_regex(pattern: &str) -> Result<Regex> {
+    let mut regex = String::from("^");
+    let normalized = pattern.replace('\\', "/");
+    let mut chars = normalized.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '*' => {
+                if matches!(chars.peek(), Some('*')) {
+                    chars.next();
+                    if matches!(chars.peek(), Some('/')) {
+                        chars.next();
+                        regex.push_str("(?:.*/)?");
+                    } else {
+                        regex.push_str(".*");
+                    }
+                } else {
+                    regex.push_str("[^/]*");
+                }
+            }
+            '?' => regex.push_str("[^/]"),
+            '.' | '+' | '(' | ')' | '|' | '^' | '$' | '{' | '}' | '[' | ']' | '\\' => {
+                regex.push('\\');
+                regex.push(ch);
+            }
+            '/' => regex.push('/'),
+            other => regex.push(other),
+        }
+    }
+    regex.push('$');
+    Regex::new(&regex)
+        .map_err(|err| VosError::Message(format!("invalid glob pattern `{pattern}`: {err}")))
+}
+
+fn walk_files(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    out
 }
 
 fn entry_target(toolchain: &ToolchainSpecBundle) -> Result<String> {
@@ -192,293 +601,6 @@ fn visit_phase(
     Ok(())
 }
 
-fn render_makefile(
-    toolchain: &ToolchainSpecBundle,
-    source_spec: &Path,
-    stage: Option<&str>,
-    phase_order: &[String],
-    entry_target: &str,
-) -> Result<String> {
-    let mut out = String::new();
-    out.push_str("# ========================================\n");
-    out.push_str(&format!(
-        "# Auto-generated from {}\n",
-        source_spec.display()
-    ));
-    out.push_str(&format!(
-        "# Spec Stage: {}\n",
-        stage.unwrap_or("unspecified")
-    ));
-    out.push_str(&format!("# Phases: {}\n", phase_order.join(" ")));
-    out.push_str("# Generator: makefile-generator v1\n");
-    out.push_str("# ========================================\n\n");
-    out.push_str("CC ?= ");
-    out.push_str(&toolchain.toolchain.c_compiler);
-    out.push_str("\nAS ?= ");
-    out.push_str(&toolchain.toolchain.asm_compiler);
-    out.push_str("\nLD ?= ");
-    out.push_str(&toolchain.toolchain.linker);
-    out.push_str("\nAR ?= ");
-    out.push_str(&toolchain.toolchain.archiver);
-    out.push('\n');
-    out.push_str(".PHONY: all ");
-    out.push_str(&phase_order.join(" "));
-    out.push_str("\n\n");
-    out.push_str(&format!("all: {}\n\n", entry_target));
-
-    for phase in &toolchain.build.phases {
-        out.push_str(&render_phase(phase, toolchain)?);
-        out.push('\n');
-    }
-    Ok(out)
-}
-
-fn render_phase(phase: &BuildPhaseSemantics, toolchain: &ToolchainSpecBundle) -> Result<String> {
-    let mut out = String::new();
-    out.push_str(&format!("# Phase: {}\n", phase.name));
-    let deps = if phase.semantic.dependencies.is_empty() {
-        String::new()
-    } else {
-        phase.semantic.dependencies.join(" ")
-    };
-    let dep_suffix = if deps.is_empty() {
-        String::new()
-    } else {
-        format!(" {deps}")
-    };
-    out.push_str(&format!("{}:{}\n", phase.name, dep_suffix));
-    for line in render_phase_commands(phase, toolchain)? {
-        out.push_str("\t");
-        out.push_str(&line);
-        out.push('\n');
-    }
-    Ok(out)
-}
-
-fn render_phase_commands(
-    phase: &BuildPhaseSemantics,
-    toolchain: &ToolchainSpecBundle,
-) -> Result<Vec<String>> {
-    match phase.semantic.kind.as_str() {
-        "compile" => render_compile_commands(phase, toolchain),
-        "archive" => render_archive_commands(phase, toolchain),
-        "link" => render_link_commands(phase, toolchain),
-        "test" => render_test_commands(phase),
-        "custom" => render_custom_commands(phase, toolchain),
-        other => Err(VosError::Message(format!(
-            "unsupported build phase semantic.type `{other}`"
-        ))),
-    }
-}
-
-fn render_compile_commands(
-    phase: &BuildPhaseSemantics,
-    toolchain: &ToolchainSpecBundle,
-) -> Result<Vec<String>> {
-    let compiler = phase
-        .semantic
-        .compiler
-        .clone()
-        .unwrap_or_else(|| toolchain.toolchain.c_compiler.clone());
-    let output_dir = phase.semantic.output_dir.as_ref().ok_or_else(|| {
-        VosError::Message(format!("compile phase `{}` missing output_dir", phase.name))
-    })?;
-    let mut includes = toolchain
-        .build
-        .include_paths
-        .iter()
-        .cloned()
-        .collect::<Vec<_>>();
-    includes.extend(phase.semantic.include_dirs.iter().cloned());
-    includes.sort();
-    includes.dedup();
-    let include_flags = includes
-        .iter()
-        .map(|dir| format!("-I{}", shell_escape(dir.display().to_string())))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let base_flags = compile_flags(phase, toolchain);
-    let mut script = vec![format!(
-        "$$ErrorActionPreference = 'Stop'; New-Item -ItemType Directory -Force -Path '{}' | Out-Null; $$found = $$false",
-        powershell_literal(output_dir.display().to_string())
-    )];
-    for source in &phase.semantic.sources {
-        let root = glob_root(&source.pattern);
-        let name_filter = shell_find_name(&source.pattern).replace('*', "");
-        script.push(format!(
-            "Get-ChildItem -Path '{}' -Recurse -File | Where-Object {{ $$_.Extension -eq '{}' }} | ForEach-Object {{",
-            powershell_literal(root),
-            powershell_literal(name_filter)
-        ));
-        for exclude in &source.exclude {
-            script.push(format!(
-                "if (($$_.FullName -replace '\\\\','/') -like '{}') {{ return }}",
-                powershell_literal(shell_case_pattern(exclude))
-            ));
-        }
-        script.push("$$found = $$true".into());
-        script.push(format!(
-            "$$out = Join-Path '{}' ($$_.BaseName + '.o')",
-            powershell_literal(output_dir.display().to_string())
-        ));
-        script.push(format!(
-            "& {} {} {} -c $$_.FullName -o $$out; if ($$LASTEXITCODE -ne 0) {{ exit $$LASTEXITCODE }}",
-            shell_escape(compiler.clone()),
-            base_flags,
-            include_flags
-        ));
-        script.push("}".into());
-    }
-    script.push("if (-not $$found) { throw 'no compile sources matched' }".into());
-    Ok(vec![powershell_command(script.join("; "))])
-}
-
-fn render_archive_commands(
-    phase: &BuildPhaseSemantics,
-    toolchain: &ToolchainSpecBundle,
-) -> Result<Vec<String>> {
-    let archiver = phase
-        .semantic
-        .archiver
-        .clone()
-        .unwrap_or_else(|| toolchain.toolchain.archiver.clone());
-    let output = phase.semantic.output_file.as_ref().ok_or_else(|| {
-        VosError::Message(format!(
-            "archive phase `{}` missing output_file",
-            phase.name
-        ))
-    })?;
-    let inputs = phase
-        .semantic
-        .input_artifacts
-        .iter()
-        .map(|item| shell_escape(item.display().to_string()))
-        .collect::<Vec<_>>()
-        .join(" ");
-    Ok(vec![powershell_command(format!(
-        "& {} rcs {} {}; if ($$LASTEXITCODE -ne 0) {{ exit $$LASTEXITCODE }}",
-        shell_escape(archiver),
-        shell_escape(output.display().to_string()),
-        inputs
-    ))])
-}
-
-fn render_link_commands(
-    phase: &BuildPhaseSemantics,
-    toolchain: &ToolchainSpecBundle,
-) -> Result<Vec<String>> {
-    let linker = phase
-        .semantic
-        .linker
-        .clone()
-        .unwrap_or_else(|| toolchain.toolchain.linker.clone());
-    let output = phase.semantic.output_file.as_ref().ok_or_else(|| {
-        VosError::Message(format!("link phase `{}` missing output_file", phase.name))
-    })?;
-    let script = phase
-        .semantic
-        .linker_script
-        .clone()
-        .unwrap_or_else(|| toolchain.link.linker_script.clone());
-    let inputs = phase
-        .semantic
-        .input_artifacts
-        .iter()
-        .map(|item| shell_escape(item.display().to_string()))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let lib_dirs = phase
-        .semantic
-        .library_dirs
-        .iter()
-        .map(|dir| format!("-L{}", shell_escape(dir.display().to_string())))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let libs = phase
-        .semantic
-        .libraries
-        .iter()
-        .map(|lib| {
-            lib.hint
-                .clone()
-                .unwrap_or_else(|| format!("-l{}", lib.name))
-        })
-        .collect::<Vec<_>>()
-        .join(" ");
-    let extra = phase.semantic.flags.extra.clone().unwrap_or_default();
-    Ok(vec![powershell_command(format!(
-        "& {} -T {} {} -o {} {} {} {}; if ($$LASTEXITCODE -ne 0) {{ exit $$LASTEXITCODE }}",
-        shell_escape(linker),
-        shell_escape(script.display().to_string()),
-        extra,
-        shell_escape(output.display().to_string()),
-        inputs,
-        lib_dirs,
-        libs
-    ))])
-}
-
-fn render_test_commands(phase: &BuildPhaseSemantics) -> Result<Vec<String>> {
-    let test_binary = phase.semantic.test_binary.as_ref().ok_or_else(|| {
-        VosError::Message(format!("test phase `{}` missing test_binary", phase.name))
-    })?;
-    let args = phase
-        .semantic
-        .test_args
-        .iter()
-        .map(|arg| shell_escape(arg.clone()))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let mut commands = vec![format!(
-        "$$testOutput = & {} {}; if ($$LASTEXITCODE -ne 0) {{ exit $$LASTEXITCODE }}",
-        shell_escape(test_binary.display().to_string()),
-        args
-    )];
-    if let Some(pattern) = &phase.semantic.expected_pattern {
-        commands.push(format!(
-            "if ($$testOutput -notmatch '{}') {{ throw 'test phase {} missing expected pattern' }}",
-            powershell_literal(pattern.clone()),
-            phase.name
-        ));
-    }
-    if let Some(file) = &phase.semantic.expected_output_file {
-        commands.push(format!(
-            "if (-not (Test-Path '{}')) {{ throw 'test phase {} missing expected output file' }}",
-            powershell_literal(file.display().to_string()),
-            phase.name
-        ));
-    }
-    Ok(vec![powershell_command(commands.join("; "))])
-}
-
-fn render_custom_commands(
-    phase: &BuildPhaseSemantics,
-    toolchain: &ToolchainSpecBundle,
-) -> Result<Vec<String>> {
-    let command = if let Some(command) = &phase.semantic.command {
-        command.clone()
-    } else if let Some(template) = &phase.semantic.template {
-        template
-            .replace("{cc}", &toolchain.toolchain.c_compiler)
-            .replace("{ld}", &toolchain.toolchain.linker)
-            .replace("{ar}", &toolchain.toolchain.archiver)
-    } else {
-        return Err(VosError::Message(format!(
-            "custom phase `{}` missing command/template",
-            phase.name
-        )));
-    };
-    let mut commands = vec![command];
-    for expected in &phase.semantic.expected_outputs {
-        commands.push(format!(
-            "if (-not (Test-Path '{}')) {{ throw 'custom phase {} missing expected output' }}",
-            powershell_literal(expected.display().to_string()),
-            phase.name
-        ));
-    }
-    Ok(vec![powershell_command(commands.join("; "))])
-}
-
 fn compile_flags(phase: &BuildPhaseSemantics, toolchain: &ToolchainSpecBundle) -> String {
     let mut flags = Vec::new();
     flags.extend(toolchain.build.cflags.iter().cloned());
@@ -518,37 +640,6 @@ fn glob_root(pattern: &str) -> String {
         .unwrap_or(&normalized)
         .trim_end_matches('/')
         .to_string()
-}
-
-fn shell_find_name(pattern: &str) -> String {
-    let normalized = pattern.replace('\\', "/");
-    normalized.rsplit('/').next().unwrap_or("*").to_string()
-}
-
-fn shell_case_pattern(pattern: &str) -> String {
-    pattern
-        .replace('\\', "/")
-        .replace("**/", "*")
-        .replace("**", "*")
-}
-
-fn shell_escape(value: String) -> String {
-    if value.contains([' ', '\t', '"']) {
-        format!("\"{}\"", value.replace('"', "\\\""))
-    } else {
-        value
-    }
-}
-
-fn powershell_literal(value: String) -> String {
-    value.replace('\'', "''")
-}
-
-fn powershell_command(script: String) -> String {
-    format!(
-        "powershell -NoProfile -Command \"{}\"",
-        script.replace('"', "`\"")
-    )
 }
 
 #[cfg(test)]
@@ -648,8 +739,22 @@ mod tests {
     #[test]
     fn makefile_render_is_stable() {
         let toolchain = sample_toolchain();
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("kernel")).unwrap();
+        std::fs::create_dir_all(tmp.path().join("user")).unwrap();
+        std::fs::write(
+            tmp.path().join("kernel/kernel.c"),
+            "int kernel_main(void) { return 0; }",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join("user/shell.c"),
+            "int main(void) { return 0; }",
+        )
+        .unwrap();
         let source = PathBuf::from("spec/toolchain/toolchain.yaml");
-        let a = render_makefile(
+        let a = render_standalone_makefile(
+            tmp.path(),
             &toolchain,
             &source,
             Some("boot"),
@@ -657,7 +762,8 @@ mod tests {
             "link",
         )
         .unwrap();
-        let b = render_makefile(
+        let b = render_standalone_makefile(
+            tmp.path(),
             &toolchain,
             &source,
             Some("boot"),
@@ -669,5 +775,6 @@ mod tests {
         assert!(a.contains("Auto-generated from spec/toolchain/toolchain.yaml"));
         assert!(a.contains("compile"));
         assert!(a.contains("link"));
+        assert!(!a.contains("powershell"));
     }
 }

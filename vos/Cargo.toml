@@ -4,6 +4,7 @@ members = [
   "crates/vos-core",
   "crates/vos-spec",
   "crates/vos-prompt",
+  "crates/vos-platform",
   "crates/vos-runtime",
 ]
 resolver = "2"

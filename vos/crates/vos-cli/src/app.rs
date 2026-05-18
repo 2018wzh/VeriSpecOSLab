@@ -64,6 +64,13 @@ pub async fn run() {
             "vos spec check-consistency",
             spec_check_consistency_envelope(&project_root, &args.spec_path),
         ),
+        Commands::Toolchain {
+            command: ToolchainCommands::Lint,
+        } => emit_result(
+            cli.json,
+            "vos toolchain lint",
+            toolchain_lint_envelope(&project_root),
+        ),
         Commands::Spec {
             command:
                 SpecCommands::Patch {
@@ -384,6 +391,19 @@ mod tests {
                     Some(std::path::PathBuf::from("spec/toolchain/toolchain.yaml"))
                 );
             }
+            _ => panic!("unexpected parsed command"),
+        }
+    }
+
+    #[test]
+    fn clap_accepts_toolchain_lint() {
+        let cli = Cli::try_parse_from(["vos", "toolchain", "lint"])
+            .expect("toolchain lint command should parse");
+
+        match cli.command {
+            Commands::Toolchain {
+                command: ToolchainCommands::Lint,
+            } => {}
             _ => panic!("unexpected parsed command"),
         }
     }

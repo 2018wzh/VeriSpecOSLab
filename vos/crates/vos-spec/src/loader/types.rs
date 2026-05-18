@@ -183,6 +183,54 @@ pub(crate) struct ToolchainYaml {
     pub(crate) validation: ValidationYaml,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ToolchainIndexYaml {
+    #[serde(default)]
+    pub(crate) includes: Vec<PathBuf>,
+    #[serde(default)]
+    pub(crate) validation: ValidationYaml,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ProfileFileYaml {
+    pub(crate) toolchain: ToolchainProfileYaml,
+    #[serde(default)]
+    pub(crate) environment: EnvironmentYaml,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BuildFileYaml {
+    pub(crate) build: BuildYaml,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct LinkFileYaml {
+    pub(crate) link: LinkYaml,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ImageFileYaml {
+    pub(crate) image: ImageYaml,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RunFileYaml {
+    pub(crate) run: RunYaml,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DebugFileYaml {
+    #[serde(default)]
+    pub(crate) debug: DebugYaml,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ToolchainProfileYaml {

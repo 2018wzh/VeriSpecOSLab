@@ -8,6 +8,10 @@ use vos_core::{
     ValidationContract, VosError,
 };
 
+use crate::loader::types::{
+    BuildFileYaml, DebugFileYaml, ImageFileYaml, LinkFileYaml, ProfileFileYaml, RunFileYaml,
+    ToolchainIndexYaml,
+};
 use crate::loader::types::{BuildPhaseYaml, ToolRequirementYaml, ToolchainYaml};
 
 pub fn load_toolchain_spec(project_root: &Path, spec_root: &Path) -> Result<ToolchainSpecBundle> {
@@ -22,7 +26,113 @@ pub fn load_toolchain_spec_from_file(
     project_root: &Path,
     toolchain_path: &Path,
 ) -> Result<ToolchainSpecBundle> {
-    let parsed: ToolchainYaml = serde_yaml::from_str(&fs::read_to_string(toolchain_path)?)?;
+    let raw = fs::read_to_string(toolchain_path)?;
+    let parsed: serde_yaml::Value = serde_yaml::from_str(&raw)?;
+    if has_key(&parsed, "includes") && !has_key(&parsed, "toolchain") {
+        load_split_toolchain_spec(project_root, toolchain_path, &parsed)
+    } else {
+        let parsed: ToolchainYaml = serde_yaml::from_str(&raw)?;
+        build_toolchain_bundle(project_root, parsed)
+    }
+}
+
+fn has_key(value: &serde_yaml::Value, key: &str) -> bool {
+    match value {
+        serde_yaml::Value::Mapping(map) => {
+            let lookup = serde_yaml::Value::String(key.to_string());
+            map.get(&lookup).is_some()
+        }
+        _ => false,
+    }
+}
+
+fn load_split_toolchain_spec(
+    project_root: &Path,
+    toolchain_path: &Path,
+    parsed: &serde_yaml::Value,
+) -> Result<ToolchainSpecBundle> {
+    let index: ToolchainIndexYaml = serde_yaml::from_value(parsed.clone())?;
+    let toolchain_dir = toolchain_path.parent().ok_or_else(|| {
+        VosError::Message(format!(
+            "toolchain index has no parent directory: {}",
+            toolchain_path.display()
+        ))
+    })?;
+
+    let mut profile: Option<ProfileFileYaml> = None;
+    let mut build: Option<BuildFileYaml> = None;
+    let mut link: Option<LinkFileYaml> = None;
+    let mut image: Option<ImageFileYaml> = None;
+    let mut run: Option<RunFileYaml> = None;
+    let mut debug: Option<DebugFileYaml> = None;
+
+    for include in index.includes {
+        let include_path = if include.is_absolute() {
+            include
+        } else {
+            toolchain_dir.join(&include)
+        };
+        let file_name = include_path
+            .file_name()
+            .and_then(|item| item.to_str())
+            .ok_or_else(|| {
+                VosError::Message(format!(
+                    "invalid included toolchain file path: {}",
+                    include_path.display()
+                ))
+            })?;
+        let content = fs::read_to_string(&include_path)?;
+        match file_name {
+            "profile.yaml" => profile = Some(serde_yaml::from_str(&content)?),
+            "build.yaml" => build = Some(serde_yaml::from_str(&content)?),
+            "link.yaml" => link = Some(serde_yaml::from_str(&content)?),
+            "image.yaml" => image = Some(serde_yaml::from_str(&content)?),
+            "run.yaml" => run = Some(serde_yaml::from_str(&content)?),
+            "debug.yaml" => debug = Some(serde_yaml::from_str(&content)?),
+            "build-phases.yaml" => {
+                if build.is_none() {
+                    build = Some(serde_yaml::from_str(&content)?);
+                }
+            }
+            other => {
+                return Err(VosError::Message(format!(
+                    "unsupported toolchain include `{other}`"
+                )));
+            }
+        }
+    }
+
+    let profile = profile.ok_or_else(|| {
+        VosError::Message("toolchain index is missing profile.yaml include".into())
+    })?;
+    let build = build
+        .ok_or_else(|| VosError::Message("toolchain index is missing build.yaml include".into()))?;
+    let link = link
+        .ok_or_else(|| VosError::Message("toolchain index is missing link.yaml include".into()))?;
+    let image = image
+        .ok_or_else(|| VosError::Message("toolchain index is missing image.yaml include".into()))?;
+    let run =
+        run.ok_or_else(|| VosError::Message("toolchain index is missing run.yaml include".into()))?;
+    let debug = debug
+        .ok_or_else(|| VosError::Message("toolchain index is missing debug.yaml include".into()))?;
+
+    let merged = ToolchainYaml {
+        toolchain: profile.toolchain,
+        environment: profile.environment,
+        build: build.build,
+        link: link.link,
+        image: image.image,
+        run: run.run,
+        debug: debug.debug,
+        validation: index.validation,
+    };
+    build_toolchain_bundle(project_root, merged)
+}
+
+fn build_toolchain_bundle(
+    project_root: &Path,
+    parsed: ToolchainYaml,
+) -> Result<ToolchainSpecBundle> {
     validate_top_level_fields(&parsed)?;
     validate_phases(&parsed.build.phases, project_root)?;
     validate_validation_bindings(&parsed)?;
@@ -447,6 +557,7 @@ fn dfs_cycle(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn rejects_unknown_validation_phase() {
@@ -493,6 +604,35 @@ validation:
         assert!(
             err.to_string()
                 .contains("validation.must_pass references unknown build phase")
+        );
+    }
+
+    #[test]
+    fn loads_split_example_toolchain() {
+        let crate_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let repo_root = crate_root
+            .ancestors()
+            .nth(3)
+            .expect("repo root should exist")
+            .to_path_buf();
+        let spec_root = PathBuf::from("examples/xv6-spec/spec");
+        let bundle = load_toolchain_spec(&repo_root, &spec_root)
+            .expect("split toolchain example should load");
+
+        assert_eq!(bundle.toolchain.target_arch, "riscv64");
+        assert!(
+            bundle
+                .build
+                .phases
+                .iter()
+                .any(|phase| phase.name == "link_kernel")
+        );
+        assert_eq!(
+            bundle.image.required_artifacts,
+            vec![
+                PathBuf::from("build/kernel.elf"),
+                PathBuf::from("build/kernel.bin")
+            ]
         );
     }
 }

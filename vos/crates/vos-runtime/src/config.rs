@@ -36,7 +36,7 @@ pub async fn doctor(project_root: &Path) -> Result<DoctorReport> {
     let spec_root = crate::scope::resolve_spec_root(project_root, None, &config)?;
     let build_command = if spec_root.exists() {
         let _ = vos_spec::load_toolchain_spec(project_root, &spec_root)?;
-        Some("vos build --generator makefile".into())
+        Some("vos toolchain lint && vos build --generator makefile".into())
     } else {
         None
     };

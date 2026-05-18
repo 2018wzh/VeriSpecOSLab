@@ -29,6 +29,10 @@ pub enum Commands {
         #[command(subcommand)]
         command: SpecCommands,
     },
+    Toolchain {
+        #[command(subcommand)]
+        command: ToolchainCommands,
+    },
     Arch {
         #[command(subcommand)]
         command: ArchCommands,
@@ -85,6 +89,11 @@ pub enum SpecCommands {
 pub enum SpecPatchCommands {
     Lint(PatchPathArgs),
     Apply(PatchPathArgs),
+}
+
+#[derive(Subcommand)]
+pub enum ToolchainCommands {
+    Lint,
 }
 
 #[derive(Subcommand)]

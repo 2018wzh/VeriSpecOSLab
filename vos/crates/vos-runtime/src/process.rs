@@ -5,6 +5,7 @@ use std::process::Stdio;
 use tokio::process::Command;
 use tokio::time::{Duration, timeout};
 use vos_core::{Result, ToolchainSpecBundle, VosError};
+use vos_platform::summarize_program_command;
 
 pub(crate) fn resolve_kernel_artifact(
     project_root: &Path,
@@ -45,65 +46,32 @@ pub(crate) fn build_qemu_invocation(
     Ok((toolchain.run.emulator.clone(), args))
 }
 
-pub(crate) fn summarize_program_command(
-    program: &str,
-    args: &[String],
-    trailing_target: Option<&str>,
-) -> String {
-    let mut items = vec![shell_quote(program.to_string())];
-    items.extend(args.iter().cloned().map(shell_quote));
-    if let Some(target) = trailing_target {
-        items.push(shell_quote(target.to_string()));
-    }
-    items.join(" ")
-}
-
-pub(crate) async fn shell_command_with_timeout_context(
-    command: &str,
-    cwd: &Path,
-    timeout_secs: u64,
-    env_vars: &BTreeMap<String, String>,
-) -> Result<(Option<i32>, String, String)> {
-    let mut cmd = if cfg!(windows) {
-        let mut c = Command::new("powershell");
-        c.arg("-NoProfile").arg("-Command").arg(command);
-        c
-    } else {
-        let mut c = Command::new("sh");
-        c.arg("-lc").arg(command);
-        c
-    };
-    cmd.current_dir(cwd)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    for (k, v) in env_vars {
-        cmd.env(k, v);
-    }
-    let fut = cmd.output();
-    let output = timeout(Duration::from_secs(timeout_secs), fut)
-        .await
-        .map_err(|_| {
-            VosError::Message(format!(
-                "command timed out after {timeout_secs}s: {command}"
-            ))
-        })??;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    Ok((output.status.code(), stdout, stderr))
-}
-
 pub(crate) async fn program_with_timeout(
     program: &str,
     args: &[String],
     cwd: &Path,
     timeout_secs: u64,
 ) -> Result<(Option<i32>, String)> {
-    let fut = Command::new(program)
+    program_with_timeout_env(program, args, cwd, timeout_secs, &BTreeMap::new()).await
+}
+
+pub(crate) async fn program_with_timeout_env(
+    program: &str,
+    args: &[String],
+    cwd: &Path,
+    timeout_secs: u64,
+    env_vars: &BTreeMap<String, String>,
+) -> Result<(Option<i32>, String)> {
+    let mut command = Command::new(program);
+    command
         .args(args)
         .current_dir(cwd)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output();
+        .stderr(Stdio::piped());
+    for (k, v) in env_vars {
+        command.env(k, v);
+    }
+    let fut = command.output();
     let output = timeout(Duration::from_secs(timeout_secs), fut)
         .await
         .map_err(|_| {
@@ -116,12 +84,4 @@ pub(crate) async fn program_with_timeout(
         text.push_str(&String::from_utf8_lossy(&output.stderr));
     }
     Ok((output.status.code(), text))
-}
-
-fn shell_quote(value: String) -> String {
-    if value.contains([' ', '\t', '"']) {
-        format!("\"{}\"", value.replace('"', "\\\""))
-    } else {
-        value
-    }
 }

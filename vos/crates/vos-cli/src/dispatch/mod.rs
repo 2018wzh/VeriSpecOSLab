@@ -5,6 +5,7 @@ mod debug;
 mod run;
 mod spec;
 mod test;
+mod toolchain;
 mod verify;
 
 pub use agent::*;
@@ -14,6 +15,7 @@ pub use debug::*;
 pub use run::*;
 pub use spec::*;
 pub use test::*;
+pub use toolchain::*;
 pub use verify::*;
 
 pub const TOOLCHAIN_DOC: &str =
