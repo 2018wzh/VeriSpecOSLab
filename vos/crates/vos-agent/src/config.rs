@@ -11,7 +11,7 @@ pub struct AgentApplyOptions {
 
 #[derive(Debug, Clone)]
 pub struct AgentGenerateOptions {
-    pub target: String,
+    pub target: Option<String>,
     pub from_patch: Option<PathBuf>,
     pub apply: bool,
     pub build: bool,

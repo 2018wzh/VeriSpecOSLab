@@ -4,7 +4,7 @@
 
 - `agent` 子系统如何在不暴露自由 shell 的前提下工作
 - Agent 可以看到什么、提交什么、被如何校验
-- `agent context / plan / apply-patch / serve / log` 各自负责什么
+- `agent context / plan / generate / apply-patch / serve / log` 各自负责什么
 
 上游依赖文档：
 
@@ -113,6 +113,32 @@
 - `build`
 - 相关公开测试
 - 必需 invariant check
+
+## 5.5 `vos agent generate`
+
+职责：
+
+- 基于当前 spec 生成 skeleton 与模块实现
+- 生成目标可以是整个当前系统、某个 stage，或某个模块
+
+输入：
+
+- 可选 `target`
+- `--apply`
+- `--build`
+- `--run`
+
+契约：
+
+- `vos agent generate`：省略 target，默认解析为当前 `current_stage`，并生成该 stage 对应的全部 `enabled_modules`
+- `vos agent generate <module>`：生成该模块及其依赖闭包
+- `vos agent generate <stage>`：生成该 stage 对应的完整系统
+
+约束：
+
+- 默认“整个系统”不是单独 schema 字段，而是由当前 stage 的架构组合结果导出
+- `--build` 依赖 `--apply`
+- `--run` 依赖 `--build`
 
 ## 6. `vos agent log`
 

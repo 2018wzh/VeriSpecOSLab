@@ -12,7 +12,8 @@
 - `trap`
 - `syscall`
 
-也就是说，`vos agent generate syscall --apply` 是“从零生成整个当前 xv6 MVP”的入口。
+也就是说，`vos agent generate --apply` 是“从零生成整个当前 xv6 MVP”的入口。
+在这个示例里，省略 target 会默认回落到当前 stage，也就是 `syscall`。
 
 ## 工程现状
 
@@ -136,7 +137,7 @@ cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/x
 这是最关键的一步：
 
 ```powershell
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate syscall --apply
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate --apply
 ```
 
 这条命令会做几件事：
@@ -163,13 +164,14 @@ cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/x
 - `user/init.c`
 - `user/user.ld`
 
-如果你只想生成单个模块，也可以把 `syscall` 换成模块名，比如：
+如果你只想生成单个模块，也可以显式传模块名，比如：
 
 ```powershell
 cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate memory --apply
 ```
 
-但要“从零生成整个当前 xv6”，请使用 `syscall`，因为它会自动带上依赖闭包。
+如果你想显式指定当前 stage，也仍然可以写成 `agent generate syscall --apply`。
+但默认推荐写法是省略 target，让命令按当前 stage 生成整个系统。
 
 ## 第 3 步：生成后先做一次 dry-run 构建
 
@@ -246,7 +248,7 @@ cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/x
 如果你确认 provider、交叉工具链和 QEMU 都已经就绪，可以直接：
 
 ```powershell
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate syscall --apply --build --run
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate --apply --build --run
 ```
 
 这个命令等价于：
@@ -301,7 +303,7 @@ examples/xv6-spec/
 ```powershell
 cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec toolchain lint
 cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec spec check-consistency spec
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate syscall --apply
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate --apply
 cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec build
 cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec run qemu
 cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec verify public
@@ -310,5 +312,5 @@ cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/x
 如果你已经具备稳定的 provider 与交叉工具链环境，也可以直接：
 
 ```powershell
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate syscall --apply --build --run
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate --apply --build --run
 ```

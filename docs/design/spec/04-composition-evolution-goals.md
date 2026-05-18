@@ -4,6 +4,10 @@
 
 组合规格用于描述跨模块不变量，防止“把多个概念拼在一起”但没有定义组合语义。
 
+关于 generation 语义，“整个系统”不是单独的 spec 字段。
+它由 `current_stage` 与该 stage 在 composition / architecture compose 结果中展开出的 `enabled_modules` 共同定义。
+因此，默认 whole-system generation 的语义是：生成当前 stage 已纳入系统边界的全部模块，而不是未来阶段的模块。
+
 推荐目录：
 
 ```text

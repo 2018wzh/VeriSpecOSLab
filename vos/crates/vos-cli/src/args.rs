@@ -233,8 +233,15 @@ pub struct AgentApplyPatchArgs {
 }
 
 #[derive(Args)]
+#[command(
+    about = "Generate code from spec. Omit [target] to generate the whole current system at the current stage; pass <module> to generate one module plus its dependency closure; pass <stage> to generate the full system at that stage."
+)]
 pub struct AgentGenerateArgs {
-    pub target: String,
+    #[arg(
+        value_name = "target",
+        help = "Optional module or stage target. Omit to generate the whole current system at the current stage."
+    )]
+    pub target: Option<String>,
     #[arg(long)]
     pub from_patch: Option<PathBuf>,
     #[arg(long, default_value_t = false)]

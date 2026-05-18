@@ -254,14 +254,17 @@ fn resolve_target_selection(
     spec_root: &Path,
     options: &GenerationWorkflowOptions,
 ) -> Result<TargetSelection> {
-    let current = vos_runtime::current_stage(normalized)
-        .or_else(|| normalized.modules.last().map(|module| module.stage.clone()))
-        .unwrap_or_else(|| "unknown".into());
-    let raw_target = options
-        .target
+    let explicit_target = options.target.clone();
+    let raw_target = explicit_target
         .clone()
         .or_else(|| options.stage_override.clone())
-        .unwrap_or(current);
+        .or_else(|| vos_runtime::current_stage(normalized))
+        .or_else(|| normalized.modules.last().map(|module| module.stage.clone()))
+        .ok_or_else(|| {
+            VosError::Message(
+                "default whole-system generation requires spec to define a current stage".into(),
+            )
+        })?;
 
     let queue_stage =
         if let Some(module) = normalized.modules.iter().find(|m| m.module == raw_target) {
@@ -273,10 +276,11 @@ fn resolve_target_selection(
     let compose = vos_spec::compose_architecture(project_root, spec_root, &queue_stage)?;
     let queue = vos_spec::build_generation_queue(project_root, spec_root, &queue_stage)?;
 
-    if normalized
-        .modules
-        .iter()
-        .any(|module| module.module == raw_target)
+    if explicit_target.is_some()
+        && normalized
+            .modules
+            .iter()
+            .any(|module| module.module == raw_target)
     {
         let modules = module_dependency_closure(&raw_target, &queue.blocked_by)?;
         let filtered_compose = filter_compose(&compose, &modules);
@@ -830,6 +834,13 @@ fn preapply_check(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+    use vos_core::{
+        ArchitectureCompositionSpec, ArchitectureSeed, ArchitectureSpecBundle, BuildContract,
+        DebugContract, EnvironmentContract, ImageContract, LinkContract, NormalizedSpecBundle,
+        RunContract, ToolchainProfile, ToolchainSpecBundle, ValidationContract,
+    };
 
     #[test]
     fn module_dependency_closure_keeps_dependency_order() {
@@ -867,5 +878,257 @@ mod tests {
             stage_override: None,
         });
         assert!(run_without_build.is_err());
+    }
+
+    #[test]
+    fn omitted_target_defaults_to_current_stage_whole_system() {
+        let (project_root, spec_root, normalized) = example_xv6_context();
+        let selection = resolve_target_selection(
+            &project_root,
+            &normalized,
+            &spec_root,
+            &GenerationWorkflowOptions {
+                command_name: "vos agent generate".into(),
+                target: None,
+                patch_path: None,
+                apply: false,
+                execute_build: false,
+                execute_run: false,
+                stage_override: None,
+            },
+        )
+        .expect("selection should resolve");
+
+        assert_eq!(selection.kind, "stage");
+        assert_eq!(selection.value, "syscall");
+        assert_eq!(selection.stage, "syscall");
+        assert_eq!(
+            selection.modules,
+            vec!["headers", "boot", "memory", "trap", "process", "syscall"]
+        );
+    }
+
+    #[test]
+    fn explicit_module_target_keeps_dependency_closure() {
+        let (project_root, spec_root, normalized) = example_xv6_context();
+        let selection = resolve_target_selection(
+            &project_root,
+            &normalized,
+            &spec_root,
+            &GenerationWorkflowOptions {
+                command_name: "vos agent generate".into(),
+                target: Some("memory".into()),
+                patch_path: None,
+                apply: false,
+                execute_build: false,
+                execute_run: false,
+                stage_override: None,
+            },
+        )
+        .expect("selection should resolve");
+
+        assert_eq!(selection.kind, "module");
+        assert_eq!(selection.value, "memory");
+        assert_eq!(selection.stage, "memory");
+        assert_eq!(selection.modules, vec!["boot", "headers", "memory"]);
+    }
+
+    #[test]
+    fn explicit_stage_target_selects_all_modules_for_stage() {
+        let (_temp, project_root, spec_root, normalized) = distinct_stage_fixture();
+        let selection = resolve_target_selection(
+            &project_root,
+            &normalized,
+            &spec_root,
+            &GenerationWorkflowOptions {
+                command_name: "vos agent generate".into(),
+                target: Some("phase-two".into()),
+                patch_path: None,
+                apply: false,
+                execute_build: false,
+                execute_run: false,
+                stage_override: None,
+            },
+        )
+        .expect("selection should resolve");
+
+        assert_eq!(selection.kind, "stage");
+        assert_eq!(selection.value, "phase-two");
+        assert_eq!(selection.stage, "phase-two");
+        assert_eq!(
+            selection.modules,
+            vec!["alpha", "beta"]
+        );
+    }
+
+    #[test]
+    fn omitted_target_requires_resolvable_current_stage() {
+        let temp = tempdir().expect("tempdir");
+        let project_root = temp.path();
+        let spec_root = project_root.join("spec");
+        fs::create_dir_all(spec_root.join("architecture")).expect("create architecture dir");
+        fs::create_dir_all(spec_root.join("modules")).expect("create modules dir");
+        fs::create_dir_all(spec_root.join("toolchain")).expect("create toolchain dir");
+
+        let normalized = NormalizedSpecBundle {
+            modules: Vec::new(),
+            operations: Vec::new(),
+            architecture: ArchitectureSpecBundle {
+                seed: ArchitectureSeed {
+                    id: "seed".into(),
+                    project: "demo".into(),
+                    domain: "os".into(),
+                    target_platform: "riscv64".into(),
+                    architecture_name: "demo".into(),
+                    architecture_summary: "demo".into(),
+                    reference_systems: Vec::new(),
+                    goals: Vec::new(),
+                    non_goals: Vec::new(),
+                    constraints: Vec::new(),
+                    initial_validation_binding: Vec::new(),
+                }, 
+                slices: Vec::new(),
+                composition: ArchitectureCompositionSpec::default(),
+                toolchain: dummy_toolchain_bundle(),
+            },
+            toolchain_profiles: Vec::new(),
+            hashes: Default::default(),
+            visibility: "public".into(),
+        };
+
+        let err = resolve_target_selection(
+            project_root,
+            &normalized,
+            &spec_root,
+            &GenerationWorkflowOptions {
+                command_name: "vos agent generate".into(),
+                target: None,
+                patch_path: None,
+                apply: false,
+                execute_build: false,
+                execute_run: false,
+                stage_override: None,
+            },
+        )
+        .expect_err("selection should fail");
+
+        assert_eq!(
+            err.to_string(),
+            "default whole-system generation requires spec to define a current stage"
+        );
+    }
+
+    fn example_xv6_context() -> (std::path::PathBuf, std::path::PathBuf, NormalizedSpecBundle) {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace_root = manifest_dir
+            .ancestors()
+            .nth(2)
+            .expect("workspace root")
+            .to_path_buf();
+        let project_root = workspace_root.join("..").join("examples").join("xv6-spec");
+        let spec_root = project_root.join("spec");
+        let normalized =
+            vos_spec::load_normalized_spec_bundle(&project_root, &spec_root).expect("normalized");
+        (project_root, spec_root, normalized)
+    }
+
+    fn distinct_stage_fixture() -> (
+        tempfile::TempDir,
+        std::path::PathBuf,
+        std::path::PathBuf,
+        NormalizedSpecBundle,
+    ) {
+        let temp = tempdir().expect("tempdir");
+        let project_root = temp.path().to_path_buf();
+        let spec_root = project_root.join("spec");
+
+        fs::create_dir_all(spec_root.join("architecture").join("slices"))
+            .expect("create slices dir");
+        fs::create_dir_all(spec_root.join("modules").join("alpha").join("ops"))
+            .expect("create alpha ops dir");
+        fs::create_dir_all(spec_root.join("modules").join("beta").join("ops"))
+            .expect("create beta ops dir");
+        fs::create_dir_all(spec_root.join("toolchain")).expect("create toolchain dir");
+
+        fs::write(
+            spec_root.join("architecture").join("seed.yaml"),
+            "id: seed\nproject: demo\ndomain: os\ntarget_platform: riscv64\narchitecture_name: demo\narchitecture_summary: demo\n",
+        )
+        .expect("write seed");
+        fs::write(
+            spec_root.join("architecture").join("composition.yaml"),
+            "cross_component_rules: []\n",
+        )
+        .expect("write composition");
+        fs::write(
+            spec_root.join("architecture").join("slices").join("01-phase-one.yaml"),
+            "id: slice-1\nstage: phase-one\ntitle: Phase One\nsummary: first phase\naffected_modules:\n  - alpha\n",
+        )
+        .expect("write slice one");
+        fs::write(
+            spec_root.join("architecture").join("slices").join("02-phase-two.yaml"),
+            "id: slice-2\nstage: phase-two\ntitle: Phase Two\nsummary: second phase\ndepends_on_slices:\n  - phase-one\naffected_modules:\n  - beta\n",
+        )
+        .expect("write slice two");
+
+        fs::write(
+            spec_root.join("modules").join("alpha").join("module.yaml"),
+            "id: alpha\nmodule: alpha\nstage: phase-one\npurpose: alpha module\n",
+        )
+        .expect("write alpha module");
+        fs::write(
+            spec_root
+                .join("modules")
+                .join("alpha")
+                .join("ops")
+                .join("alpha_op.yaml"),
+            "id: alpha.op\nstage: phase-one\nmodule: alpha\noperation: alpha_op\npurpose: alpha op\nllm_codegen:\n  editable_region:\n    file: kernel/alpha.c\n    start_marker: \"// BEGIN alpha\"\n    end_marker: \"// END alpha\"\n",
+        )
+        .expect("write alpha op");
+
+        fs::write(
+            spec_root.join("modules").join("beta").join("module.yaml"),
+            "id: beta\nmodule: beta\nstage: phase-two\npurpose: beta module\n",
+        )
+        .expect("write beta module");
+        fs::write(
+            spec_root
+                .join("modules")
+                .join("beta")
+                .join("ops")
+                .join("beta_op.yaml"),
+            "id: beta.op\nstage: phase-two\nmodule: beta\noperation: beta_op\npurpose: beta op\ndepends_on:\n  requires_modules:\n    - alpha\nllm_codegen:\n  editable_region:\n    file: kernel/beta.c\n    start_marker: \"// BEGIN beta\"\n    end_marker: \"// END beta\"\n",
+        )
+        .expect("write beta op");
+
+        fs::write(
+            spec_root.join("toolchain").join("toolchain.yaml"),
+            "toolchain:\n  target_arch: riscv64\n  target_triple: riscv64-unknown-elf\n  c_compiler: gcc\n  asm_compiler: gcc\n  linker: ld\n  archiver: ar\nbuild:\n  generated_artifacts:\n    - build/kernel.elf\n  phases:\n    - name: link_kernel\n      semantic:\n        type: custom\n        command: echo build\n        expected_outputs:\n          - build/kernel.elf\nlink:\n  linker_script: kernel/link.ld\n  entry_symbol: start\n  relocation_model: static\nimage:\n  output_kind: kernel\n  required_artifacts:\n    - build/kernel.elf\nrun:\n  emulator: qemu-system-riscv64\n  machine: virt\n  cpu: rv64\n  memory: 128M\n  bios: none\n  kernel_arg: -kernel\n  success_signal: OK\n  timeout_secs: 1\n",
+        )
+        .expect("write toolchain");
+
+        let normalized =
+            vos_spec::load_normalized_spec_bundle(&project_root, &spec_root).expect("normalized");
+        (temp, project_root, spec_root, normalized)
+    }
+
+    fn dummy_toolchain_bundle() -> ToolchainSpecBundle {
+        ToolchainSpecBundle {
+            toolchain: ToolchainProfile {
+                target_arch: "riscv64".into(),
+                target_triple: "riscv64-unknown-elf".into(),
+                c_compiler: "gcc".into(),
+                asm_compiler: "gcc".into(),
+                linker: "ld".into(),
+                archiver: "ar".into(),
+            },
+            environment: EnvironmentContract::default(),
+            build: BuildContract::default(),
+            link: LinkContract::default(),
+            image: ImageContract::default(),
+            run: RunContract::default(),
+            debug: DebugContract::default(),
+            validation: ValidationContract::default(),
+        }
     }
 }

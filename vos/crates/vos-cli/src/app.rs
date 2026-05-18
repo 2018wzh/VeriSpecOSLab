@@ -342,7 +342,20 @@ mod tests {
         match cli.command {
             Commands::Agent {
                 command: AgentCommands::Generate(args),
-            } => assert_eq!(args.target, "memory"),
+            } => assert_eq!(args.target.as_deref(), Some("memory")),
+            _ => panic!("unexpected parsed command"),
+        }
+    }
+
+    #[test]
+    fn clap_accepts_generate_without_target() {
+        let cli = Cli::try_parse_from(["vos", "agent", "generate"])
+            .expect("agent generate without target should parse");
+
+        match cli.command {
+            Commands::Agent {
+                command: AgentCommands::Generate(args),
+            } => assert_eq!(args.target, None),
             _ => panic!("unexpected parsed command"),
         }
     }
@@ -366,10 +379,39 @@ mod tests {
             Commands::Agent {
                 command: AgentCommands::Generate(args),
             } => {
-                assert_eq!(args.target, "process");
+                assert_eq!(args.target.as_deref(), Some("process"));
                 assert!(args.apply);
                 assert!(args.build);
                 assert!(args.run);
+                assert_eq!(
+                    args.from_patch,
+                    Some(std::path::PathBuf::from("tmp/patch.json"))
+                );
+            }
+            _ => panic!("unexpected parsed command"),
+        }
+    }
+
+    #[test]
+    fn clap_accepts_generate_flags_without_target() {
+        let cli = Cli::try_parse_from([
+            "vos",
+            "agent",
+            "generate",
+            "--apply",
+            "--build",
+            "--from-patch",
+            "tmp/patch.json",
+        ])
+        .expect("agent generate flags without target should parse");
+
+        match cli.command {
+            Commands::Agent {
+                command: AgentCommands::Generate(args),
+            } => {
+                assert_eq!(args.target, None);
+                assert!(args.apply);
+                assert!(args.build);
                 assert_eq!(
                     args.from_patch,
                     Some(std::path::PathBuf::from("tmp/patch.json"))

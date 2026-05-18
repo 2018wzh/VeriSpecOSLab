@@ -2,7 +2,8 @@
 
 > 所有 spec 已统一为 `spec/modules/*/ops/*.yaml` 的 OperationContract 格式。
 > 每个模块都有 `module.yaml`，每个生成目标都是一个 `editable_region` 操作。
-> 总计 7 个模块、64 个 OperationContract，统一由 `vos agent generate <module>` 驱动。
+> 总计 7 个模块、64 个 OperationContract，统一由 `vos agent generate [target]` 驱动。
+> 省略 `target` 时，默认按当前 stage 生成整个当前系统；显式传模块名时只生成该模块及其依赖闭包。
 
 ## 生成器注意事项
 

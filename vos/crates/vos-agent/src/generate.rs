@@ -16,7 +16,7 @@ pub async fn agent_generate(
         project_root,
         GenerationWorkflowOptions {
             command_name: "vos agent generate".into(),
-            target: Some(options.target.clone()),
+            target: options.target.clone(),
             patch_path: options.from_patch,
             apply: options.apply,
             execute_build: options.build,

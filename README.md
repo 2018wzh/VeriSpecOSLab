@@ -113,10 +113,17 @@ vos test
 vos verify public
 vos trace syscall
 vos debug explain-log path/to/log
+vos agent generate
 vos agent generate memory
 vos report generate
 vos submit pack
 ```
+
+其中：
+
+- `vos agent generate` 默认生成当前 stage 表示的整个当前系统
+- `vos agent generate <module>` 生成单个模块及其依赖闭包
+- `vos agent generate <stage>` 生成该 stage 对应的整套系统
 
 如果你还没有把 `vos` 安装到 PATH，可以用 `cargo run` 直接调用：
 

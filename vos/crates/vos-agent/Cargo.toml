@@ -15,3 +15,6 @@ vos-platform = { path = "../vos-platform" }
 vos-prompt = { path = "../vos-prompt" }
 vos-runtime = { path = "../vos-runtime" }
 vos-spec = { path = "../vos-spec" }
+
+[dev-dependencies]
+tempfile.workspace = true
