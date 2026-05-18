@@ -1,86 +1,314 @@
-# xv6-spec: 规格驱动的 xv6 内核实现
+# xv6-spec: 从零生成、构建并运行 xv6
 
-本项目是 xv6 内核的一个“规格优先”（Spec-First）重实现示例。它展示了如何通过结构化的 YAML 规格定义操作系统行为，并利用 `vos` 工具链和 AI Agent 自动生成验证通过的代码实现。
+`examples/xv6-spec` 是一个“只有规格、没有内核源码”的示例工程。  
+它的目标不是在仓库里直接附带一份手写的 xv6，而是把 `spec/` 作为真相源，通过 `vos` 的 skeleton projection + module generation 流程，从零生成整个 xv6-riscv MVP，然后再构建、启动和验证。
 
-## 1. 核心流程：从规格到运行
+当前规格的最终阶段是 `syscall`。对这个阶段执行一次完整生成，会按依赖顺序覆盖：
 
-复现该项目的完整生命周期如下：
+- `headers`
+- `boot`
+- `memory`
+- `process`
+- `trap`
+- `syscall`
 
-### A. 规格定义 (Spec Authoring)
-项目核心位于 `spec/` 目录：
-- **架构** (`spec/architecture/`)：定义了 xv6 的模块组成和组合逻辑。
-- **模块与操作** (`spec/modules/`)：详细定义了如 `memory`、`process` 等模块的状态、接口及操作合约（Operation Contract）。
-  - 例如 `spec/modules/memory/ops/kalloc.yaml` 定义了物理内存分配的 `RELY` (前置条件) 和 `GUARANTEE` (后置语义)。
+也就是说，`vos agent generate syscall --apply` 是“从零生成整个当前 xv6 MVP”的入口。
 
-### B. 受控生成 (Controlled Generation)
-使用 `vos` 驱动 AI Agent 进行代码生成：
-```bash
-# 进入 xv6-spec 目录
-cd examples/xv6-spec
+## 工程现状
 
-# 启动生成循环（以 memory 模块为例）
-vos agent generate memory
+仓库里的 `examples/xv6-spec` 初始只包含：
+
+- `spec/`: 架构、模块、工具链、验证规格
+- `.vos/config.toml`: agent/provider 配置
+- `.vos/runs/`: 运行证据与生成记录
+
+初始状态下没有这些待生成文件：
+
+- `include/*.h`
+- `kernel/*.c`
+- `kernel/*.S`
+- `kernel/link.ld`
+- `user/init.c`
+- `user/user.ld`
+
+因此，不能把这个示例当成“已有源码，直接 `vos build`”的项目看待。正确顺序是：
+
+1. 校验 spec
+2. 生成 skeleton 与模块实现
+3. 构建
+4. 运行 QEMU
+5. 执行公开验证
+
+## 前置依赖
+
+### 1. Rust
+
+需要能在仓库根目录执行：
+
+```powershell
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --help
 ```
-`vos` 会根据 `spec/modules/memory/` 中的操作合约，引导 Agent 按照 **Logic (逻辑)** -> **Concurrency (并发)** 两阶段生成 C 代码补丁。
 
-### C. 构建与验证 (Build & Verify)
-生成代码后，必须通过规格定义的验证门禁：
-```bash
-# 执行 lint 检查规格一致性
-vos spec lint
+### 2. 构建工具链
 
-# 执行语义构建（根据 spec/toolchain/build.yaml）
-vos build
+按 `spec/toolchain/profile.yaml` 与运行时实现，至少需要：
 
-# 运行公开验证集
-vos verify public
+- `gcc`
+- `ld`
+- `ar`
+- `make`
+- `riscv64-unknown-elf-objcopy`
+- `riscv64-unknown-elf-objdump`
+- `qemu-system-riscv64`
+
+运行下面的命令可以先检查工具链规格是否被正确解析：
+
+```powershell
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec toolchain lint
 ```
 
-### D. 运行与调试 (Run & Debug)
-在 QEMU 模拟器中启动生成的内核：
-```bash
-# 启动 QEMU（根据 spec/toolchain/run.yaml）
-vos run qemu
+### 3. Agent / LLM 提供方
 
-# 跟踪系统调用
-vos trace syscall
+从零生成源码需要可用的 LLM provider。当前项目默认配置在 [`.vos/config.toml`](E:/文件/ECNU/比赛/OS/VeriSpecOSLab/examples/xv6-spec/.vos/config.toml)：
+
+```toml
+spec_root = "spec"
+
+[agent]
+provider = "deepseek"
+model = "deepseek-v4-pro"
+base_url = "https://api.deepseek.com"
+timeout_secs = 120
+use_completions_api = true
+
+[agent.auth]
+env = "DEEPSEEK_API_KEY"
 ```
 
-## 2. 目录结构
+因此至少要保证：
+
+```powershell
+$env:DEEPSEEK_API_KEY="..."
+```
+
+如果你改用别的 provider，需要同步修改 `.vos/config.toml`。
+
+## 推荐调用方式
+
+下面所有命令都假设你在仓库根目录 `VeriSpecOSLab` 下执行。
+
+统一格式如下：
+
+```powershell
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec <subcommand>
+```
+
+如果你已经把 `vos` 单独安装到了 PATH，也可以在 `examples/xv6-spec` 目录中直接运行：
+
+```powershell
+vos <subcommand>
+```
+
+## 第 1 步：先确认 spec 是自洽的
+
+建议至少先跑这几条：
+
+```powershell
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec spec check-consistency spec
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec arch compose spec/architecture/seed.yaml
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent plan --stage syscall
+```
+
+这几条分别会确认：
+
+- `spec/` 全量规格可被加载并通过一致性检查
+- 当前架构阶段是 `syscall`
+- 生成波次是 `headers -> boot -> memory -> process -> trap -> syscall`
+
+如果只想看 agent 视角下允许生成哪些文件，可以再执行：
+
+```powershell
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent context --stage syscall
+```
+
+## 第 2 步：从零生成整个 xv6 MVP
+
+这是最关键的一步：
+
+```powershell
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate syscall --apply
+```
+
+这条命令会做几件事：
+
+1. 规范化并检查 `spec/`
+2. 先做 skeleton projection，创建最小可编辑源码骨架
+3. 按依赖波次为各模块生成 `editable_region`
+4. 把生成结果真实写入工作区
+5. 在 `.vos/runs/<run-id>/` 下记录 manifest、计划、验证报告与重试记录
+
+生成完成后，工作区里应当出现至少这些文件族：
+
+- `include/*.h`
+- `kernel/boot.c`
+- `kernel/memory.c`
+- `kernel/process.c`
+- `kernel/trap.c`
+- `kernel/syscall.c`
+- `kernel/entry.S`
+- `kernel/kernelvec.S`
+- `kernel/trampoline.S`
+- `kernel/swtch.S`
+- `kernel/link.ld`
+- `user/init.c`
+- `user/user.ld`
+
+如果你只想生成单个模块，也可以把 `syscall` 换成模块名，比如：
+
+```powershell
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate memory --apply
+```
+
+但要“从零生成整个当前 xv6”，请使用 `syscall`，因为它会自动带上依赖闭包。
+
+## 第 3 步：生成后先做一次 dry-run 构建
+
+在真正编译前，可以先让运行时只导出 Makefile 并展示入口目标：
+
+```powershell
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec build --dry-run
+```
+
+这一步不会编译源码，但会：
+
+- 解析 `spec/toolchain/toolchain.yaml`
+- 生成独立 Makefile 到 `.vos/runs/<run-id>/Makefile`
+- 告诉你最终会按什么目标顺序执行
+
+## 第 4 步：真正构建内核
+
+```powershell
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec build
+```
+
+当前工具链规格要求最终产物至少包括：
+
+- `build/kernel.elf`
+- `build/kernel.bin`
+- `build/kernel.asm`
+
+构建日志和阶段日志会写到：
+
+- `.vos/runs/<run-id>/build.log`
+- `.vos/runs/<run-id>/phase-*.log`
+
+## 第 5 步：启动 QEMU
+
+```powershell
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec run qemu
+```
+
+`spec/toolchain/run.yaml` 当前绑定的是：
+
+- emulator: `qemu-system-riscv64`
+- machine: `virt`
+- success signal: `XV6_BOOT_OK`
+
+运行成功的判定方式不是“QEMU 进程还活着”，而是日志里检测到 `XV6_BOOT_OK`。
+
+QEMU 输出会保存到：
+
+- `.vos/runs/<run-id>/qemu.log`
+
+## 第 6 步：执行公开验证
+
+公开验证会串起构建和运行：
+
+```powershell
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec verify public
+```
+
+公开验证要求来自 [spec/verification/public-matrix.yaml](E:/文件/ECNU/比赛/OS/VeriSpecOSLab/examples/xv6-spec/spec/verification/public-matrix.yaml)，核心覆盖：
+
+- boot banner
+- page allocator
+- kernel page table
+- trap vector
+- timer interrupt
+- fork / exit / wait
+- syscall dispatch
+- `sys_write`
+- `sys_fork`
+- `sys_sbrk`
+
+## 一条命令直接“生成 + 构建 + 运行”
+
+如果你确认 provider、交叉工具链和 QEMU 都已经就绪，可以直接：
+
+```powershell
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate syscall --apply --build --run
+```
+
+这个命令等价于：
+
+1. 从零生成整个当前阶段 xv6
+2. 执行 `vos build`
+3. 执行 `vos run qemu`
+
+注意：
+
+- `--build` 依赖 `--apply`
+- `--run` 依赖 `--build`
+
+这是 CLI 当前实现中的硬约束。
+
+## 目录说明
 
 ```text
-.
-├── spec/                  # 规格定义真相源
-│   ├── architecture/      # 拓扑、组合与决策
-│   ├── modules/           # 模块化定义 (memory, proc, trap, syscall, boot)
-│   ├── toolchain/         # 构建、运行、链接等工具链绑定
-│   ├── evolution/         # 规格演化补丁
-│   └── verification/      # 验证契约与证据 Schema
-├── .vos/                  # VOS 运行时的执行上下文与证据记录
-└── README.md              # 本说明文件
+examples/xv6-spec/
+├── spec/                  # 唯一真相源
+│   ├── architecture/      # 架构 seed、slice、composition、ADR
+│   ├── modules/           # 模块、操作契约、并发约束、测试绑定
+│   ├── toolchain/         # build/link/run/profile/debug 规格
+│   ├── verification/      # public matrix、evidence schema、report contract
+│   ├── goals/             # 目标与验收
+│   └── evolution/         # spec patch
+├── .vos/
+│   ├── config.toml        # agent/provider 配置
+│   ├── cache/             # 规格归一化缓存
+│   └── runs/              # 每次生成/构建/运行/验证的证据
+├── include/               # 生成后出现
+├── kernel/                # 生成后出现
+├── user/                  # 生成后出现
+└── build/                 # 构建后出现
 ```
 
-## 3. 关键组件：Operation Contract
+## 当前实现边界
 
-在 `spec/modules/memory/ops/kalloc.yaml` 中，你可以看到典型的规格定义：
+这份 README 只描述当前代码里已经实现的链路。下面这些命令在实现中仍是未完成状态，不应纳入“从零生成并跑起来”的主流程：
 
-```yaml
-id: kalloc
-purpose: Allocate one 4096-byte page of physical memory.
-rely:
-  state_assumptions:
-    - "kmem.freelist points to the head of a linked list of free pages"
-guarantee:
-  returns:
-    - "a pointer to the allocated page on success"
-    - "0 (NULL) if no memory is available"
-  state_updates:
-    - "kmem.freelist updated to the next page in the list"
-concurrency:
-  atomicity: "protected by kmem.lock"
+- `vos trace syscall`
+- `vos report generate`
+- `vos submit pack`
+- `vos verify full`
+- `vos verify fuzz`
+- `vos verify invariant`
+
+## 最短复现路径
+
+如果你只想从空工程一路跑到可启动的 xv6，按下面顺序执行即可：
+
+```powershell
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec toolchain lint
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec spec check-consistency spec
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate syscall --apply
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec build
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec run qemu
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec verify public
 ```
 
-这种结构化的表达是 AI Agent 能够生成高质量、可验证代码的基础。
+如果你已经具备稳定的 provider 与交叉工具链环境，也可以直接：
 
----
-*注意：执行上述流程需要安装 `vos-cli` 并配置有效的 AI Agent 后端。*
+```powershell
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate syscall --apply --build --run
+```
