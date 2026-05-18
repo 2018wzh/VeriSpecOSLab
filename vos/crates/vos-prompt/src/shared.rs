@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
-use vos_core::{NormalizedSpecBundle, OperationContract, PlanDraft, ToolchainSpecBundle};
+use std::path::PathBuf;
+use vos_core::{OperationContract, PlanDraft};
 
 pub(crate) fn operation_block(operation: &OperationContract) -> String {
     format!(
@@ -20,81 +20,6 @@ pub(crate) fn operation_block(operation: &OperationContract) -> String {
         operation.llm_codegen.editable_region.start_marker,
         operation.llm_codegen.editable_region.end_marker,
     )
-}
-
-pub(crate) fn toolchain_summary(toolchain: Option<&ToolchainSpecBundle>) -> String {
-    toolchain
-        .map(|item| {
-            format!(
-                "target_arch: {}\ntarget_triple: {}\nlinker: {}\nentry_symbol: {}\noutput_artifacts:\n{}",
-                item.toolchain.target_arch,
-                item.toolchain.target_triple,
-                item.toolchain.linker,
-                item.link.entry_symbol,
-                yaml_paths(&item.build.generated_artifacts),
-            )
-        })
-        .unwrap_or_else(|| "none".into())
-}
-
-pub(crate) fn allowed_paths_from_spec(
-    normalized: &NormalizedSpecBundle,
-    project_root: &Path,
-) -> Vec<PathBuf> {
-    let mut paths = normalized
-        .operations
-        .iter()
-        .map(|op| project_root.join(&op.llm_codegen.editable_region.file))
-        .collect::<Vec<_>>();
-    paths.extend(
-        normalized
-            .architecture
-            .toolchain
-            .build
-            .sources
-            .iter()
-            .map(|path| project_root.join(path)),
-    );
-    for phase in &normalized.architecture.toolchain.build.phases {
-        paths.extend(
-            phase
-                .semantic
-                .include_dirs
-                .iter()
-                .map(|path| project_root.join(path)),
-        );
-        paths.extend(phase.semantic.sources.iter().map(|pattern| {
-            project_root.join(
-                pattern
-                    .pattern
-                    .split("/**")
-                    .next()
-                    .unwrap_or(&pattern.pattern),
-            )
-        }));
-        if let Some(path) = &phase.semantic.output_file {
-            paths.push(project_root.join(path));
-        }
-        if let Some(path) = &phase.semantic.linker_script {
-            paths.push(project_root.join(path));
-        }
-    }
-    paths.extend(
-        normalized
-            .architecture
-            .toolchain
-            .build
-            .include_paths
-            .iter()
-            .map(|path| project_root.join(path)),
-    );
-    paths.push(project_root.join(&normalized.architecture.toolchain.link.linker_script));
-    if let Some(gdb_script) = &normalized.architecture.toolchain.debug.gdb_script {
-        paths.push(project_root.join(gdb_script));
-    }
-    paths.sort();
-    paths.dedup();
-    paths
 }
 
 pub(crate) fn yaml_lines(items: &[String]) -> String {

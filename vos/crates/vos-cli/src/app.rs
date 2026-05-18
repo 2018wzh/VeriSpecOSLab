@@ -238,6 +238,13 @@ pub async fn run() {
             agent_plan_envelope(&project_root, args.stage.as_deref(), args.task.as_deref()),
         ),
         Commands::Agent {
+            command: AgentCommands::Generate(args),
+        } => emit_async_result(
+            cli.json,
+            "vos agent generate",
+            agent_generate_envelope(&project_root, args, progress_cb.as_deref()).await,
+        ),
+        Commands::Agent {
             command: AgentCommands::ApplyPatch(args),
         } => emit_async_result(
             cli.json,
@@ -329,13 +336,45 @@ mod tests {
 
     #[test]
     fn clap_accepts_documented_agent_command_shape() {
-        let cli = Cli::try_parse_from(["vos", "agent", "serve"])
-            .expect("documented agent serve command should parse");
+        let cli = Cli::try_parse_from(["vos", "agent", "generate", "memory"])
+            .expect("documented agent generate command should parse");
 
         match cli.command {
             Commands::Agent {
-                command: AgentCommands::Serve(_),
-            } => {}
+                command: AgentCommands::Generate(args),
+            } => assert_eq!(args.target, "memory"),
+            _ => panic!("unexpected parsed command"),
+        }
+    }
+
+    #[test]
+    fn clap_accepts_generate_flags() {
+        let cli = Cli::try_parse_from([
+            "vos",
+            "agent",
+            "generate",
+            "process",
+            "--apply",
+            "--build",
+            "--run",
+            "--from-patch",
+            "tmp/patch.json",
+        ])
+        .expect("agent generate flags should parse");
+
+        match cli.command {
+            Commands::Agent {
+                command: AgentCommands::Generate(args),
+            } => {
+                assert_eq!(args.target, "process");
+                assert!(args.apply);
+                assert!(args.build);
+                assert!(args.run);
+                assert_eq!(
+                    args.from_patch,
+                    Some(std::path::PathBuf::from("tmp/patch.json"))
+                );
+            }
             _ => panic!("unexpected parsed command"),
         }
     }

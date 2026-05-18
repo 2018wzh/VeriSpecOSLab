@@ -154,6 +154,7 @@ pub enum AgentCommands {
     Serve(AgentServeArgs),
     Context(AgentContextArgs),
     Plan(AgentPlanArgs),
+    Generate(AgentGenerateArgs),
     ApplyPatch(AgentApplyPatchArgs),
     Log,
 }
@@ -229,4 +230,17 @@ pub struct AgentApplyPatchArgs {
     pub require_spec: bool,
     #[arg(long, default_value_t = false)]
     pub run_validation: bool,
+}
+
+#[derive(Args)]
+pub struct AgentGenerateArgs {
+    pub target: String,
+    #[arg(long)]
+    pub from_patch: Option<PathBuf>,
+    #[arg(long, default_value_t = false)]
+    pub apply: bool,
+    #[arg(long, default_value_t = false)]
+    pub build: bool,
+    #[arg(long, default_value_t = false)]
+    pub run: bool,
 }

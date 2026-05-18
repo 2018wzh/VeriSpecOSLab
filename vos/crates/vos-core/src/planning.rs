@@ -143,16 +143,6 @@ pub struct ExecutionPlan {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodegenPlan {
-    pub module: String,
-    pub operation: String,
-    pub phase: String,
-    pub target_file: PathBuf,
-    pub prompt_preview: String,
-    pub build_command: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BuildRequest {
     pub command: String,
     pub cwd: PathBuf,
@@ -260,20 +250,6 @@ pub struct SpecLintResult {
     pub target_file: PathBuf,
     #[serde(default)]
     pub required_followup_checks: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
-pub struct CodegenRunResult {
-    pub run_id: String,
-    pub module: String,
-    pub operation: String,
-    pub model: String,
-    pub target_file: PathBuf,
-    pub applied: bool,
-    pub build_status: String,
-    pub changed_region: String,
-    pub raw_response_ref: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

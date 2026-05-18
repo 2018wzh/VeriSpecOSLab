@@ -20,6 +20,15 @@ pub struct AgentApplyOptions {
     pub stage: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct AgentGenerateOptions {
+    pub target: String,
+    pub from_patch: Option<PathBuf>,
+    pub apply: bool,
+    pub build: bool,
+    pub run: bool,
+}
+
 pub fn load_config(project_root: &Path) -> Result<AppConfig> {
     load_project_dotenv(project_root);
     let candidate = project_root.join(".vos").join("config.toml");

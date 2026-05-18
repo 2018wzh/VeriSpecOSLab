@@ -1,7 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::collections::BTreeMap;
+use std::path::Path;
 
 use tokio::task::JoinSet;
-use vos_core::{NormalizedSpecBundle, RegionEdit, Result, VosError};
+use vos_core::{ConcurrencySpec, NormalizedSpecBundle, RegionEdit, Result, VosError};
 
 use crate::config::ProgressSink;
 use crate::progress::{emit, emit_entity};
@@ -12,6 +13,7 @@ pub(crate) async fn generate_module_waves(
     config: &vos_core::AppConfig,
     normalized: &NormalizedSpecBundle,
     queue: &vos_core::GenerationQueue,
+    concurrency_specs: &BTreeMap<String, Option<ConcurrencySpec>>,
     progress: Option<&ProgressSink>,
     run_dir: &Path,
 ) -> Result<Vec<RegionEdit>> {
@@ -31,20 +33,7 @@ pub(crate) async fn generate_module_waves(
                 .filter(|op| op.module == *module_name)
                 .cloned()
                 .collect::<Vec<_>>();
-            let concurrency = normalized
-                .modules
-                .iter()
-                .find(|module| module.module == *module_name)
-                .and_then(|_| {
-                    vos_spec::load_concurrency_spec(
-                        project_root,
-                        &crate::scope::resolve_spec_root(project_root, None, config)
-                            .unwrap_or_else(|_| PathBuf::from("spec")),
-                        module_name,
-                    )
-                    .ok()
-                    .flatten()
-                });
+            let concurrency = concurrency_specs.get(module_name).cloned().flatten();
             let prompt = vos_prompt::build_module_codegen_batch_prompt(
                 &module_spec,
                 &operations,

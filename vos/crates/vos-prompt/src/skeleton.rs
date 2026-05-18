@@ -1,15 +1,15 @@
 use std::path::Path;
 use vos_core::{ArchitectureComposeResult, NormalizedSpecBundle, PromptEnvelope, SpecRef};
 
-use crate::shared::{allowed_paths_from_spec, yaml_lines, yaml_paths};
+use crate::shared::{yaml_lines, yaml_paths};
 
 pub fn build_skeleton_projection_prompt(
     normalized: &NormalizedSpecBundle,
     compose: &ArchitectureComposeResult,
     project_root: &Path,
+    allowed_paths: &[std::path::PathBuf],
 ) -> PromptEnvelope {
     let toolchain = &normalized.architecture.toolchain;
-    let allowed_paths = allowed_paths_from_spec(normalized, project_root);
     let prompt = format!(
         "You are projecting an operating system skeleton from strict architecture, module, and toolchain specs.\n\
 Task kind: skeleton_projection\n\
@@ -67,10 +67,11 @@ allowed_paths:\n{allowed}\n",
         allowed = yaml_paths(
             &allowed_paths
                 .iter()
-                .map(|path| path
-                    .strip_prefix(project_root)
-                    .unwrap_or(path)
-                    .to_path_buf())
+                .map(|path| {
+                    path.strip_prefix(project_root)
+                        .unwrap_or(path)
+                        .to_path_buf()
+                })
                 .collect::<Vec<_>>(),
         ),
     );
@@ -82,7 +83,7 @@ allowed_paths:\n{allowed}\n",
             module: "architecture".into(),
             operation: compose.current_stage.clone(),
         },
-        allowed_paths,
+        allowed_paths: allowed_paths.to_vec(),
         prompt,
     }
 }
@@ -91,9 +92,11 @@ pub fn build_skeleton_retry_prompt(
     normalized: &NormalizedSpecBundle,
     compose: &ArchitectureComposeResult,
     project_root: &Path,
+    allowed_paths: &[std::path::PathBuf],
     feedback: &[String],
 ) -> PromptEnvelope {
-    let mut base = build_skeleton_projection_prompt(normalized, compose, project_root);
+    let mut base =
+        build_skeleton_projection_prompt(normalized, compose, project_root, allowed_paths);
     let mut addon = String::from("\nRETRY_FEEDBACK\n");
     for item in feedback {
         addon.push_str("- ");

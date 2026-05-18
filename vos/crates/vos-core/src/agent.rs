@@ -87,6 +87,28 @@ pub struct PlanDraft {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerationRunResult {
+    pub run_id: String,
+    pub target_kind: String,
+    pub target_value: String,
+    pub selected_stage: String,
+    #[serde(default)]
+    pub selected_modules: Vec<String>,
+    #[serde(default)]
+    pub generated_waves: Vec<Vec<String>>,
+    #[serde(default)]
+    pub skeleton_files: Vec<PathBuf>,
+    #[serde(default)]
+    pub updated_regions: Vec<PathBuf>,
+    pub applied: bool,
+    pub build: Option<BuildResult>,
+    pub run: Option<QemuRunResult>,
+    pub manifest_path: PathBuf,
+    pub skeleton_validation_path: Option<PathBuf>,
+    pub retry_record_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApplyPatchResult {
     pub run_id: String,
     #[serde(default)]
