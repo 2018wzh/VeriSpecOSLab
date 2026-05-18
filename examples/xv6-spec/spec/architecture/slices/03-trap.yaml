@@ -21,11 +21,11 @@ affected_modules:
   - trap
   - process
 new_operations:
-  - trap_init
-  - usertrap
-  - kerneltrap
-  - usertrapret
-  - devintr
+  - trap.trap_init
+  - trap.usertrap
+  - trap.kerneltrap
+  - trap.usertrapret
+  - trap.devintr
 removed_or_replaced_mechanisms: []
 
 invariants:

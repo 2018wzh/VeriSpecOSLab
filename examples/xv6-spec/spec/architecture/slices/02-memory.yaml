@@ -18,12 +18,12 @@ mechanisms:
 affected_modules:
   - memory
 new_operations:
-  - kinit
-  - kalloc
-  - kfree
-  - kvmmake
-  - kvmmap
-  - walk
+  - memory.kinit
+  - memory.kalloc
+  - memory.kfree
+  - memory.kvmmake
+  - memory.kvmmap
+  - memory.walk
 removed_or_replaced_mechanisms: []
 
 invariants:

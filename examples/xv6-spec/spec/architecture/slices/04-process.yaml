@@ -12,25 +12,25 @@ depends_on_slices:
 depends_on_adrs: []
 
 mechanisms:
-  - struct proc with state, pagetable, trapframe, context
-  - per-process kernel stack
-  - round-robin scheduler (swtch)
-  - fork: copy process state and memory
-  - exit: release resources and set ZOMBIE state
-  - wait: reap child processes
+  - "struct proc with state, pagetable, trapframe, context"
+  - "per-process kernel stack"
+  - "round-robin scheduler (swtch)"
+  - "fork: copy process state and memory"
+  - "exit: release resources and set ZOMBIE state"
+  - "wait: reap child processes"
 affected_modules:
   - process
   - memory
   - trap
 new_operations:
-  - proc_init
-  - allocproc
-  - scheduler
-  - swtch
-  - fork
-  - exit
-  - wait
-  - growproc
+  - process.proc_init
+  - process.allocproc
+  - process.scheduler
+  - process.swtch
+  - process.fork
+  - process.exit
+  - process.wait
+  - process.growproc
 removed_or_replaced_mechanisms: []
 
 invariants:

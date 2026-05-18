@@ -1,11 +1,8 @@
 # xv6 RISC-V link specification
-# Extracted from build-phases.yaml link_kernel phase.
 
 link:
-  output_file: kernel
-  output_format: elf64
   linker_script: kernel/link.ld
-  entry_symbol: _entry
+  entry_symbol: _start
   section_rules:
     - text at 0x80000000
     - data follows text
@@ -13,24 +10,3 @@ link:
   relocation_model: static
   abi_constraints:
     - riscv64 lp64
-  input_artifacts:
-    - build/bootloader.o
-    - build/kernel.o
-    - build/memory.o
-    - build/process.o
-    - build/trap.o
-    - build/syscall.o
-    - build/user.a
-  libraries:
-    - name: c
-      hint: "-lc"
-  library_dirs:
-    - /opt/riscv/lib
-  flags:
-    extra: "-nostdlib -N -Wl,--print-memory-usage"
-  dependencies: [kernel_compile, user_archive, bootloader_compile]
-  timeout_secs: 60
-
-validation:
-  must_pass:
-    - link_kernel

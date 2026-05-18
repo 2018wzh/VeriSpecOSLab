@@ -25,24 +25,23 @@ rely:
 
 guarantee:
   returns:
-    - 0 and sets *ip on success
-    - -1 if n out of range
+    - "0 and sets *ip on success"
+    - "-1 if n out of range"
   state_updates: []
   side_effects:
-    - *ip written with user virtual address
+    - "*ip written with user virtual address"
   emitted_events:
     - none
 
 preconditions:
   - 0 <= n <= 5
 postconditions:
-  - *ip contains the pointer
+  - "*ip contains the pointer"
 invariants_preserved:
   - no kernel state mutation
 failure_semantics:
-  - returns -1 for invalid n
-  - note: does not validate the pointer itself;
-    that is done by copyin/copyout/fetchaddr
+  - "returns -1 for invalid n"
+  - "note: does not validate the pointer itself; that is done by copyin/copyout/fetchaddr"
 
 concurrency:
   atomicity: single register read

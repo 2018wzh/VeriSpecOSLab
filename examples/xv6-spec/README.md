@@ -13,8 +13,9 @@ It contains:
 
 Typical flow:
 
-```powershell
+```sh
 cargo run -p vos-cli -- --project-root ..\examples\xv6-spec --json toolchain lint
-cargo run -p vos-cli -- --project-root ..\examples\xv6-spec --json spec lint --module boot --operation boot_banner
-cargo run -p vos-cli -- --project-root ..\examples\xv6-spec pipeline smoke --module boot --operation boot_banner --apply
+cargo run -p vos-cli -- --project-root ..\examples\xv6-spec --json spec lint spec\modules\boot\ops\boot_banner.yaml
+cargo run -p vos-cli -- --project-root ..\examples\xv6-spec --json build
+cargo run -p vos-cli -- --project-root ..\examples\xv6-spec --json run qemu
 ```

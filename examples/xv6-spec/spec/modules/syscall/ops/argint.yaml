@@ -25,18 +25,18 @@ rely:
 
 guarantee:
   returns:
-    - 0 and sets *ip on success
-    - -1 if n out of range
+    - "0 and sets *ip on success"
+    - "-1 if n out of range"
   state_updates: []
   side_effects:
-    - *ip written with register value
+    - "*ip written with register value"
   emitted_events:
     - none
 
 preconditions:
   - 0 <= n <= 5
 postconditions:
-  - *ip contains the argument value
+  - "*ip contains the argument value"
 invariants_preserved:
   - no kernel state mutation
 failure_semantics:

@@ -37,8 +37,8 @@ guarantee:
     - user registers saved to trapframe
     - sepc, scause, stval saved
     - sstatus.SPP restored
-    - on timer: yield()
-    - on syscall: sepc += 4, syscall()
+    - "on timer: yield()"
+    - "on syscall: sepc += 4, syscall()"
   emitted_events:
     - none
 

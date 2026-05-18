@@ -37,7 +37,7 @@ guarantee:
 
 preconditions:
   - called from sched() with interrupts disabled
-  - *old and *new are valid struct context
+  - "*old and *new are valid struct context"
 postconditions:
   - execution continues in new context
 invariants_preserved:

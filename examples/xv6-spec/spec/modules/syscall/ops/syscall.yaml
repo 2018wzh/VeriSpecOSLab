@@ -30,7 +30,7 @@ rely:
 
 guarantee:
   returns:
-    - int: handler return value stored in trapframe->a0
+    - "int: handler return value stored in trapframe->a0"
   state_updates: []
   side_effects:
     - handler invoked
@@ -45,7 +45,7 @@ postconditions:
 invariants_preserved:
   - dispatch table unchanged
 failure_semantics:
-  - unknown syscall: return -1
+  - "unknown syscall: return -1"
 
 concurrency:
   atomicity: syscall is non-preemptible

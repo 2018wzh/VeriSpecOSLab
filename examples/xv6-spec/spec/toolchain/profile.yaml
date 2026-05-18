@@ -1,5 +1,4 @@
 # xv6 RISC-V toolchain profile
-# Toolchain and environment configuration extracted from build-phases.yaml.
 
 toolchain:
   target_arch: riscv64
@@ -14,9 +13,10 @@ environment:
     - gcc: ">=9.0"
     - ld: ">=2.32"
     - ar: ">=2.30"
-    - riscv64-unknown-elf-objcopy: "latest"
+    - riscv64-unknown-elf-objcopy: ">=2.40"
   allowed_versions:
-    - gcc: ">=9.0"
-    - ld: ">=2.32"
-    - ar: ">=2.30"
+    - gcc >= 9.0
+    - ld >= 2.32
+    - ar >= 2.30
+    - riscv64-unknown-elf-objcopy >= 2.40
   disallowed_tools: []

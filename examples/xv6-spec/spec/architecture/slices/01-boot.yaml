@@ -17,10 +17,10 @@ mechanisms:
 affected_modules:
   - boot
 new_operations:
-  - boot_banner
-  - console_putchar
-  - console_write
-  - shutdown
+  - boot.boot_banner
+  - boot.console_putchar
+  - boot.console_write
+  - boot.shutdown
 removed_or_replaced_mechanisms: []
 
 invariants:

@@ -1,8 +1,27 @@
 # xv6 RISC-V semantic build specification
-# Extracted from build-phases.yaml. Tool-agnostic; consumed by
-# Makefile / xtask / CMake generators via vos-runtime.
+# Tool-agnostic; consumed by vos-runtime via generator selection.
 
 build:
+  sources:
+    - kernel/**/*.c
+    - user/**/*.c
+  include_paths:
+    - include
+    - kernel/include
+    - user/include
+  cflags:
+    - -fno-common
+  asmflags: []
+  ldflags:
+    - -nostdlib
+    - -N
+  features: []
+  forbidden_flags: []
+  generated_artifacts:
+    - build/user.a
+    - build/kernel.elf
+    - build/kernel.bin
+    - build/kernel.asm
   phases:
     # Phase 1: compile kernel core code
     - name: kernel_compile
@@ -62,6 +81,7 @@ build:
           warnings: []
           debug: false
         output_dir: build/
+        output_pattern: "*.o"
         timeout_secs: 30
 
     # Phase 4: archive user programs into a static library
@@ -79,7 +99,49 @@ build:
         dependencies: [user_compile]
         timeout_secs: 30
 
-validation:
-  must_pass:
-    - kernel_compile
-    - user_archive
+    # Phase 5: link the kernel image
+    - name: link_kernel
+      semantic:
+        type: link
+        linker: ld
+        input_artifacts:
+          - build/bootloader.o
+          - build/kernel.o
+          - build/memory.o
+          - build/process.o
+          - build/trap.o
+          - build/syscall.o
+          - build/user.a
+        output_file: build/kernel.elf
+        output_format: elf64
+        linker_script: kernel/link.ld
+        libraries:
+          - name: c
+            hint: "-lc"
+        library_dirs:
+          - /opt/riscv/lib
+        flags:
+          extra: "-nostdlib -N -Wl,--print-memory-usage"
+        dependencies: [kernel_compile, user_archive, bootloader_compile]
+        timeout_secs: 60
+
+    # Phase 6: generate a binary image
+    - name: generate_image
+      semantic:
+        type: custom
+        description: "使用 objcopy 从 ELF 生成二进制镜像"
+        command: "riscv64-unknown-elf-objcopy -O binary build/kernel.elf build/kernel.bin"
+        expected_outputs: [build/kernel.bin]
+        dependencies: [link_kernel]
+        timeout_secs: 30
+
+    # Phase 7: generate a disassembly artifact
+    - name: generate_asm
+      semantic:
+        type: custom
+        description: "生成内核反汇编供调试"
+        command: "riscv64-unknown-elf-objdump -D build/kernel.elf > build/kernel.asm"
+        expected_outputs: [build/kernel.asm]
+        dependencies: [link_kernel]
+        timeout_secs: 30
+        parallel: true

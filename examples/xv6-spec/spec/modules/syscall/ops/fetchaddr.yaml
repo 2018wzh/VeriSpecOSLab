@@ -28,11 +28,11 @@ rely:
 
 guarantee:
   returns:
-    - 0 on success, *ip set to fetched value
-    - -1 on invalid user address
+    - "0 on success, *ip set to fetched value"
+    - "-1 on invalid user address"
   state_updates: []
   side_effects:
-    - *ip written with value from user memory
+    - "*ip written with value from user memory"
   emitted_events:
     - none
 
@@ -40,7 +40,7 @@ preconditions:
   - addr is a user virtual address in current process
   - ip points to a valid kernel location
 postconditions:
-  - *ip contains the value from addr (on success)
+  - "*ip contains the value from addr (on success)"
 invariants_preserved:
   - kernel never dereferences raw user pointers
 failure_semantics:

@@ -39,7 +39,7 @@ postconditions:
 invariants_preserved:
   - no kernel memory is touched
 failure_semantics:
-  - SBI spec: putchar may drop bytes if buffer is full
+  - "SBI spec: putchar may drop bytes if buffer is full"
   - no error is returned
 
 concurrency:

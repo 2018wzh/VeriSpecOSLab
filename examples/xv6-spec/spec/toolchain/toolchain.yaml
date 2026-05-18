@@ -13,15 +13,6 @@ includes:
 
 validation:
   must_pass:
-    - kernel_compile
-    - user_archive
     - link_kernel
     - generate_image
-    - qemu_boot_smoke
-    - verify_boot_banner
-    - verify_page_allocator
-    - verify_kernel_page_table
-    - verify_trap_vector
-    - verify_timer_interrupt
-    - verify_fork_exit_wait
-    - verify_syscall_dispatch
+    - generate_asm

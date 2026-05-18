@@ -1,10 +1,9 @@
 # xv6 RISC-V debug specification
 
 debug:
-  symbols_required: true
+  symbols_required:
+    - _start
+    - kernel_main
   gdb_script: null
-  trace_points: []
-  qemu_debug_args:
-    - -s
-    - -S
-  objdump_artifact: kernel.asm
+  trace_points:
+    - boot_banner

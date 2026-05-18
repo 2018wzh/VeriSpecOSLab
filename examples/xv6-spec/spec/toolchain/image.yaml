@@ -1,21 +1,11 @@
 # xv6 RISC-V image generation specification
-# Extracted from build-phases.yaml generate_image and generate_asm phases.
 
 image:
   output_kind: kernel-elf
   objcopy_rules:
-    - command: "riscv64-unknown-elf-objcopy -O binary kernel kernel.bin"
-      expected_outputs: [kernel.bin]
+    - riscv64-unknown-elf-objcopy -O binary build/kernel.elf build/kernel.bin
+  boot_chain:
+    - OpenSBI -> kernel.elf
   required_artifacts:
     - build/kernel.elf
     - build/kernel.bin
-  boot_chain:
-    - OpenSBI -> kernel.elf
-
-debug_artifacts:
-  - command: "riscv64-unknown-elf-objdump -D kernel > kernel.asm"
-    expected_outputs: [kernel.asm]
-
-validation:
-  must_pass:
-    - generate_image

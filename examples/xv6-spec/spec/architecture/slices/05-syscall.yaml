@@ -21,16 +21,16 @@ affected_modules:
   - process
   - memory
 new_operations:
-  - syscall
-  - sys_write
-  - sys_exit
-  - sys_fork
-  - sys_wait
-  - sys_sbrk
-  - argint
-  - argaddr
-  - fetchaddr
-  - fetchstr
+  - syscall.syscall
+  - syscall.sys_write
+  - syscall.sys_exit
+  - syscall.sys_fork
+  - syscall.sys_wait
+  - syscall.sys_sbrk
+  - syscall.argint
+  - syscall.argaddr
+  - syscall.fetchaddr
+  - syscall.fetchstr
 removed_or_replaced_mechanisms: []
 
 invariants:
