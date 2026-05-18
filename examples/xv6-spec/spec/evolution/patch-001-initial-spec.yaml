@@ -1,0 +1,45 @@
+id: patch-001-initial-spec
+stage: all
+title: Initial Spec Snapshot
+reason: >
+  Captures the baseline specification state for the xv6-riscv
+  kernel at project inception. All subsequent evolutions must
+  be recorded as follow-on SpecPatches.
+kind: architecture_change
+
+affected_specs:
+  - spec/architecture/seed.yaml
+  - spec/architecture/timeline.yaml
+  - spec/architecture/composition.yaml
+  - spec/architecture/decisions/ADR-001-paging-model.yaml
+  - spec/architecture/slices/01-boot.yaml
+  - spec/architecture/slices/02-memory.yaml
+  - spec/architecture/slices/03-trap.yaml
+  - spec/architecture/slices/04-process.yaml
+  - spec/architecture/slices/05-syscall.yaml
+affected_modules:
+  - boot
+  - memory
+  - trap
+  - process
+  - syscall
+affected_operations: []
+
+before:
+  description: No specification existed.
+after:
+  description: >
+    Full five-stage architecture specification with ArchitectureSeed,
+    ArchitectureSlices, ADR-001, CompositionSpec, module specs, and
+    operation contracts for all core operations.
+
+risks:
+  - Spec may be incomplete for edge-case error semantics; these will
+    be refined via follow-on patches.
+required_regressions:
+  - All public_requirements in spec/verification/public-matrix.yaml
+    must remain valid after this patch is applied.
+approval_notes: >
+  This patch serves as the immutable baseline. Any structural change
+  to the architecture, module interfaces, or operation contracts must
+  be accompanied by a new SpecPatch.

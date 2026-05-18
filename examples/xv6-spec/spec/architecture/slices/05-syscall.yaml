@@ -1,0 +1,54 @@
+id: slice-05-syscall
+stage: syscall
+title: System Call Interface
+summary: >
+  Route user-mode ecall instructions through the syscall dispatch
+  table, validate arguments, and implement the minimal set of
+  POSIX-like system calls.
+
+depends_on_slices:
+  - slice-03-trap
+  - slice-04-process
+depends_on_adrs: []
+
+mechanisms:
+  - syscall dispatch table indexed by a7
+  - argument marshalling from a0-a5
+  - return value stored in a0
+  - user-pointer validation (argaddr, fetchaddr, fetchstr)
+affected_modules:
+  - syscall
+  - process
+  - memory
+new_operations:
+  - syscall
+  - sys_write
+  - sys_exit
+  - sys_fork
+  - sys_wait
+  - sys_sbrk
+  - argint
+  - argaddr
+  - fetchaddr
+  - fetchstr
+removed_or_replaced_mechanisms: []
+
+invariants:
+  - syscall number is validated before dispatch
+  - all user pointers are validated before dereference
+  - syscall handlers return -1 on error (errno in userspace)
+  - successful calls return non-negative values
+security_boundaries:
+  - kernel never dereferences raw user pointers
+  - syscall dispatch table bounds are checked
+  - copyout/copyin validate destination addresses
+concurrency_highlights:
+  - syscalls execute atomically with respect to timer interrupts
+  - no nested syscalls on a single hart
+validation_binding:
+  must_pass:
+    - build_kernel
+    - verify_syscall_dispatch
+    - verify_sys_write
+    - verify_fork_syscall
+open_questions: []

@@ -1,0 +1,85 @@
+# xv6 RISC-V semantic build specification
+# Extracted from build-phases.yaml. Tool-agnostic; consumed by
+# Makefile / xtask / CMake generators via vos-runtime.
+
+build:
+  phases:
+    # Phase 1: compile kernel core code
+    - name: kernel_compile
+      semantic:
+        type: compile
+        compiler: gcc
+        sources:
+          - pattern: "kernel/**/*.c"
+            exclude: ["kernel/test/**", "kernel/bench/**"]
+        include_dirs:
+          - include
+          - kernel/include
+        flags:
+          warnings: [all, error]
+          optimization: O2
+          debug: true
+          defines:
+            - KERNEL
+            - ARCH_RISCV64
+            - CONFIG_BIGMEM=1
+        standard: c11
+        output_dir: build/
+        output_pattern: "*.o"
+        timeout_secs: 120
+
+    # Phase 2: compile user programs
+    - name: user_compile
+      semantic:
+        type: compile
+        sources:
+          - pattern: "user/**/*.c"
+          - pattern: "user/**/*.s"
+        include_dirs:
+          - include
+          - user/include
+        flags:
+          warnings: [all]
+          optimization: O2
+          debug: false
+          defines:
+            - USER
+        standard: c11
+        output_dir: build/user/
+        output_pattern: "*.o"
+        timeout_secs: 60
+
+    # Phase 3: compile bootloader assembly
+    - name: bootloader_compile
+      semantic:
+        type: compile
+        compiler: gcc
+        sources:
+          - pattern: "bootloader/**/*.s"
+        include_dirs:
+          - include
+        flags:
+          warnings: []
+          debug: false
+        output_dir: build/
+        timeout_secs: 30
+
+    # Phase 4: archive user programs into a static library
+    - name: user_archive
+      semantic:
+        type: archive
+        input_artifacts:
+          - build/user/shell.o
+          - build/user/cat.o
+          - build/user/echo.o
+          - build/user/ls.o
+          - build/user/mkdir.o
+        output_file: build/user.a
+        library_type: static
+        dependencies: [user_compile]
+        timeout_secs: 30
+
+validation:
+  must_pass:
+    - kernel_compile
+    - user_archive

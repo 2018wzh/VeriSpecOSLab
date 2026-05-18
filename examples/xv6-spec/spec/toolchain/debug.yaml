@@ -1,0 +1,10 @@
+# xv6 RISC-V debug specification
+
+debug:
+  symbols_required: true
+  gdb_script: null
+  trace_points: []
+  qemu_debug_args:
+    - -s
+    - -S
+  objdump_artifact: kernel.asm

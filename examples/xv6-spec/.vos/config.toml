@@ -1,0 +1,10 @@
+spec_root = "spec"
+
+default_provider = "deepseek"
+
+[providers.deepseek]
+kind = "openai-compatible"
+model = "deepseek-v4-pro"
+base_url = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"
+timeout_secs = 120

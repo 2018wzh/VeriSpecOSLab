@@ -1,0 +1,38 @@
+goal_id: xv6-core-mvp
+category: core-functionality
+summary: >
+  Achieve a bootable xv6-riscv kernel that passes all public
+  validation gates: boot banner, page allocator, kernel page
+  table, trap vector, timer interrupt, fork/exit/wait lifecycle,
+  and syscall dispatch with sys_write.
+
+baseline: No kernel exists; the project starts from scratch.
+target: >
+  All public_requirements listed in spec/verification/public-matrix.yaml
+  pass, and the kernel boots to a user-mode shell prompt via QEMU.
+
+correctness_guard:
+  - No kernel segfault from raw user-pointer dereference (tested via
+    sys_write_invalid_buffer and copyin_invalid_address).
+  - Page allocator freelist integrity is maintained under alloc-free
+    cycles (tested via kalloc_kfree_cycle).
+  - Process isolation: after fork, child and parent share no writable
+    pages (tested via fork_memory_isolation).
+
+benchmark_or_oracle:
+  - QEMU boot smoke: XV6_BOOT_OK appears in UART output within 30 s.
+  - Syscall round-trip: ecall→usertrap→syscall→usertrapret completes
+    without panic.
+
+negative_tradeoff_checks:
+  - No debug or verbose logging is permanently enabled in release
+    builds.
+  - Memory allocator must not leak pages under repeated alloc/free
+    stress.
+
+evidence_required:
+  - QEMU boot log
+  - Kernel ELF build artifact
+  - Page allocator test log
+  - Fork/exit/wait test log
+  - Syscall dispatch test log
