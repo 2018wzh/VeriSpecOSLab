@@ -1,0 +1,83 @@
+id: headers.param
+module: headers
+operation: generate_param_h
+stage: boot
+purpose: >
+  Generate include/param.h with system-wide configuration
+  parameters: NPROC=64, STACK_SIZE=4096, NOFILE=16,
+  MAXARG=32.
+
+related_slice: slice-04-process
+related_adr: []
+depends_on:
+  requires_modules:
+    - headers
+  requires_ops:
+    - generate_types_h
+
+rely:
+  state_assumptions: []
+  callable_interfaces: []
+  resource_assumptions: []
+  lock_assumptions: []
+
+guarantee:
+  declarations:
+    typedefs: []
+    constants:
+      - name: NPROC
+        value: "64"
+      - name: STACK_SIZE
+        value: "4096"
+      - name: NOFILE
+        value: "16"
+      - name: MAXARG
+        value: "32"
+    structs: []
+    macros: []
+    function_declarations: []
+  returns: []
+  state_updates: []
+  side_effects:
+    - include/param.h created
+  emitted_events: []
+
+preconditions:
+  - include/types.h exists
+postconditions:
+  - include/param.h exists
+invariants_preserved: []
+failure_semantics: []
+
+concurrency:
+  atomicity: build-time only
+  lock_order: []
+  interrupt_state: n/a
+  wait_wakeup_rules: []
+
+security:
+  authority_check: n/a
+  isolation_boundary: n/a
+  user_pointer_policy: n/a
+
+observability:
+  traces: []
+  counters: []
+  expected_logs: []
+
+test_obligations:
+  public:
+    - param_h_self_consistent
+  generated: []
+  hidden_tags: []
+
+llm_codegen:
+  editable_region:
+    file: include/param.h
+    start_marker: "/* VOS-EDIT-START:headers.param */"
+    end_marker: "/* VOS-EDIT-END:headers.param */"
+    create_if_missing: true
+  forbidden_changes:
+    - do not modify files outside include/
+  required_followup_checks:
+    - make build

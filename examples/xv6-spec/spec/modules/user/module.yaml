@@ -1,0 +1,32 @@
+id: user
+module: user
+stage: process
+purpose: >
+  User-space programs and their build infrastructure for
+  the xv6 kernel. Generates the init user program (pid 1)
+  and its linker script user/user.ld. User programs are
+  compiled separately as freestanding binaries and linked
+  into the kernel image.
+related_slices:
+  - slice-04-process
+related_adrs: []
+owned_state:
+  - init program binary (embedded in kernel image)
+exported_interfaces:
+  - generate_init_c
+  - generate_user_ld
+imported_interfaces:
+  - sys_write (from syscall)
+  - sys_exit (from syscall)
+module_invariants:
+  - init is the first user process (pid 1)
+  - user programs run in U-mode with independent page tables
+error_model:
+  - init must not exit (system panics if init exits)
+resource_lifetime_rules:
+  - init binary is statically linked, loaded once at boot
+security_boundary:
+  - user programs run in U-mode isolated from kernel
+test_surfaces:
+  - init boots and prints banner to console
+  - init does not crash or exit

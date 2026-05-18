@@ -1,32 +1,32 @@
 # TODO: 剩余缺口
 
-> 更新于 Phase F 完成时。以下为已验证 spec 覆盖之外的项。
+> 所有 spec 已统一为 `spec/modules/*/ops/*.yaml` 的 OperationContract 格式。
+> 每个模块都有 `module.yaml`，每个生成目标都是一个 `editable_region` 操作。
+> 总计 7 个模块、64 个 OperationContract，统一由 `vos agent generate <module>` 驱动。
 
-## 已通过 spec 覆盖（从 TODO 中移除）
+## 生成器注意事项
 
-以下所有项已有对应 spec，可通过生成器生成代码：
+| 操作类型 | 示例 | editable_region 指向 | 说明 |
+|---------|------|---------------------|------|
+| C 函数 | memory.kalloc | kernel/memory.c | 标准代码生成 |
+| 汇编函数 | process.swtch | kernel/swtch.S | 需生成 RISC-V 汇编 |
+| 头文件 | headers.types | include/types.h | 需生成 C 头文件 |
+| 链接脚本 | headers.link_ld | kernel/link.ld | 需生成 GNU ld 脚本 |
+| 用户程序 | user.init | user/init.c | 需生成 freestanding 用户 C 代码 |
+| 用户链接脚本 | user.user_ld | user/user.ld | 需生成用户态 ld 脚本 |
 
-- ✅ **汇编文件**：kernelvec.S (`trap.kernelvec`), trampoline.S (`trap.trampoline`), swtch.S (`process.swtch` 修正)
-- ✅ **头文件**：types.h, riscv.h, defs.h, memlayout.h, param.h, spinlock.h, proc.h, elf.h (`spec/headers/`)
-- ✅ **链接脚本**：kernel/link.ld (`spec/toolchain/linker-script.yaml`)
-- ✅ **用户程序**：init.c (`spec/user/init.yaml`), user.ld (`spec/user/user-ld.yaml`)
-- ✅ **OperationContract**：53 个（boot:6, memory:17, process:13, trap:7, syscall:10）
+生成器需要根据 `editable_region.file` 的扩展名选择目标语言/格式。
+`guarantee.declarations` 或 `guarantee.linker_sections` 字段提供结构化生成指导。
 
-## 仍待处理（需额外生成器支持）
+## 轻量未覆盖项
 
-以下 spec 类型在当前 OperationContract 框架之外，需要对应的
-生成器/代码合成器才能生成代码：
+- `include/defs.h` 的函数声明应与各模块 ops 同步（当前手动维护在 `headers.defs` 中）
+- 更多用户程序（shell, cat, echo 等）—— 需新增 user ops
 
-| 项目 | Spec 文件 | 需要的生成器类型 |
-|------|----------|----------------|
-| 头文件 | `spec/headers/*.yaml` | `header_generator`（从 typedef/struct/macro 定义合成 .h 文件） |
-| 链接脚本 | `spec/toolchain/linker-script.yaml`, `spec/user/user-ld.yaml` | `linker_script_generator`（从 section 定义合成 .ld 文件） |
-| 用户程序 | `spec/user/init.yaml` | `user_program_generator`（从行为描述生成 freestanding C + 汇编入口） |
+## 已全部由 spec 覆盖
 
-## 需手动维护或后续 SpecPatch
-
-- `include/defs.h` 中的函数声明应与各模块 ops 保持同步（理想情况
-  下可从模块 spec 自动推导，当前需要手动更新 defs.yaml）
-- 用户程序的 `_start` 汇编入口（cr t0）当前隐含在 init spec 中，
-  将来可能需要独立的用户入口 spec
-- 更多用户程序的 spec（shell, cat, echo 等）
+以下所有项均通过对应的 OperationContract 覆盖，无需手写代码：
+- ✅ 53 个内核操作（boot/memory/trap/process/syscall）
+- ✅ 8 个头文件 + 1 个链接脚本（headers 模块）
+- ✅ 1 个用户程序 + 1 个用户链接脚本（user 模块）
+- ✅ 3 个汇编文件（entry.S, kernelvec.S, trampoline.S, swtch.S）
