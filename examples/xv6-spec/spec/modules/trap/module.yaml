@@ -13,6 +13,8 @@ owned_state:
   - kernel stack for trap handling
 exported_interfaces:
   - trap_init
+  - kernelvec
+  - trampoline
   - usertrap
   - kerneltrap
   - usertrapret

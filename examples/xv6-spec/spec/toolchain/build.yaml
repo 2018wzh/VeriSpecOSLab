@@ -4,11 +4,9 @@
 build:
   sources:
     - kernel/**/*.c
-    - user/**/*.c
   include_paths:
     - include
     - kernel/include
-    - user/include
   cflags:
     - -fno-common
   asmflags: []
@@ -18,7 +16,15 @@ build:
   features: []
   forbidden_flags: []
   generated_artifacts:
-    - build/user.a
+    - build/kernel/boot.o
+    - build/kernel/memory.o
+    - build/kernel/process.o
+    - build/kernel/trap.o
+    - build/kernel/syscall.o
+    - build/kernel/entry.o
+    - build/kernel/kernelvec.o
+    - build/kernel/trampoline.o
+    - build/kernel/swtch.o
     - build/kernel.elf
     - build/kernel.bin
     - build/kernel.asm
@@ -47,34 +53,16 @@ build:
         output_pattern: "*.o"
         timeout_secs: 120
 
-    # Phase 2: compile user programs
-    - name: user_compile
-      semantic:
-        type: compile
-        sources:
-          - pattern: "user/**/*.c"
-          - pattern: "user/**/*.s"
-        include_dirs:
-          - include
-          - user/include
-        flags:
-          warnings: [all]
-          optimization: O2
-          debug: false
-          defines:
-            - USER
-        standard: c11
-        output_dir: build/user/
-        output_pattern: "*.o"
-        timeout_secs: 60
-
-    # Phase 3: compile bootloader assembly
-    - name: bootloader_compile
+    # Phase 2: compile boot + kernel assembly
+    - name: asm_compile
       semantic:
         type: compile
         compiler: gcc
         sources:
-          - pattern: "bootloader/**/*.s"
+          - pattern: "kernel/entry.S"
+          - pattern: "kernel/kernelvec.S"
+          - pattern: "kernel/trampoline.S"
+          - pattern: "kernel/swtch.S"
         include_dirs:
           - include
         flags:
@@ -82,36 +70,23 @@ build:
           debug: false
         output_dir: build/
         output_pattern: "*.o"
-        timeout_secs: 30
+        timeout_secs: 60
 
-    # Phase 4: archive user programs into a static library
-    - name: user_archive
-      semantic:
-        type: archive
-        input_artifacts:
-          - build/user/shell.o
-          - build/user/cat.o
-          - build/user/echo.o
-          - build/user/ls.o
-          - build/user/mkdir.o
-        output_file: build/user.a
-        library_type: static
-        dependencies: [user_compile]
-        timeout_secs: 30
-
-    # Phase 5: link the kernel image
+    # Phase 3: link the kernel image
     - name: link_kernel
       semantic:
         type: link
         linker: ld
         input_artifacts:
-          - build/bootloader.o
-          - build/kernel.o
-          - build/memory.o
-          - build/process.o
-          - build/trap.o
-          - build/syscall.o
-          - build/user.a
+          - build/kernel/entry.o
+          - build/kernel/boot.o
+          - build/kernel/memory.o
+          - build/kernel/process.o
+          - build/kernel/trap.o
+          - build/kernel/syscall.o
+          - build/kernel/kernelvec.o
+          - build/kernel/trampoline.o
+          - build/kernel/swtch.o
         output_file: build/kernel.elf
         output_format: elf64
         linker_script: kernel/link.ld
@@ -122,10 +97,10 @@ build:
           - /opt/riscv/lib
         flags:
           extra: "-nostdlib -N -Wl,--print-memory-usage"
-        dependencies: [kernel_compile, user_archive, bootloader_compile]
+        dependencies: [kernel_compile, asm_compile]
         timeout_secs: 60
 
-    # Phase 6: generate a binary image
+    # Phase 4: generate a binary image
     - name: generate_image
       semantic:
         type: custom
@@ -135,7 +110,7 @@ build:
         dependencies: [link_kernel]
         timeout_secs: 30
 
-    # Phase 7: generate a disassembly artifact
+    # Phase 5: generate a disassembly artifact
     - name: generate_asm
       semantic:
         type: custom

@@ -1,0 +1,67 @@
+id: toolchain.linker-script
+kind: linker_script
+target: kernel/link.ld
+stage: boot
+purpose: >
+  GNU ld linker script for the xv6 RISC-V kernel. Defines
+  the memory layout: text section at 0x80000000 (the start
+  of physical RAM on QEMU virt), followed by rodata, data,
+  and bss. Exports the `end` symbol at the end of BSS for
+  the physical page allocator.
+
+entry_symbol: _start
+base_address: 0x80000000
+
+sections:
+  - name: .text
+    vma: 0x80000000
+    lma: 0x80000000
+    flags: "RX"
+    alignment: 4096
+    inputs:
+      - "*(.text .text.*)"
+      - "kernel/entry.o(.text)"
+    comment: Kernel code
+
+  - name: .rodata
+    vma: "ALIGN(16)"
+    lma: "same"
+    flags: "R"
+    inputs:
+      - "*(.srodata .srodata.*)"
+      - "*(.rodata .rodata.*)"
+    comment: Read-only data (strings, constants)
+
+  - name: .data
+    vma: "ALIGN(16)"
+    lma: "same"
+    flags: "RW"
+    inputs:
+      - "*(.sdata .sdata.*)"
+      - "*(.data .data.*)"
+    comment: Initialized data
+
+  - name: .bss
+    vma: "ALIGN(16)"
+    lma: "same"
+    flags: "RW"
+    inputs:
+      - "*(.sbss .sbss.*)"
+      - "*(.bss .bss.*)"
+      - "*(COMMON)"
+    comment: Zero-initialized data (includes kernel stack)
+
+exports:
+  - name: end
+    value: "."
+    comment: >
+      End of kernel image (start of free physical memory).
+      Used by kinit to build the page freelist.
+
+  - name: stack0
+    value: ". = . + 4096 * NCPU"
+    comment: Per-hart kernel stacks (NCPU=1 in single-hart config)
+
+discarded:
+  - "*(.eh_frame)"
+  - "*(.note .note.*)"

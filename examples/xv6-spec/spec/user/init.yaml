@@ -1,0 +1,39 @@
+id: user.init
+kind: user_program
+target: user/init.c
+stage: process
+purpose: >
+  The init user program (pid 1). This is the first
+  user-mode process created by userinit. Prints a
+  startup message via the write syscall (ecall with
+  a7=16), then enters an infinite loop, yielding
+  control back to the kernel between iterations.
+
+  Built as a freestanding user binary and linked into
+  the kernel image via a generated symbol.
+
+entry: _start
+compile_flags:
+  - -ffreestanding
+  - -nostdlib
+  - -fno-builtin
+  - -O2
+  - -march=rv64g
+  - -mabi=lp64
+  - -DUSER
+link_flags:
+  - -nostdlib
+  - -T user/user.ld
+
+syscalls_used:
+  - sys_write (a7 = 16)
+
+behavior: >
+  The init process:
+  1. Writes "init: starting\n" to fd 1 via the write syscall.
+  2. Enters a loop where it periodically yields.
+
+  Since the MVP does not include a full file descriptor layer,
+  init writes directly via the write syscall which is handled
+  by sys_write in the syscall module (which in turn calls
+  console_write).

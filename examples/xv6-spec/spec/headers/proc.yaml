@@ -1,0 +1,198 @@
+id: header.proc
+kind: header
+target: include/proc.h
+stage: process
+purpose: >
+  Process structure and lifecycle state definitions for
+  the xv6 kernel. Defines struct context (callee-saved
+  registers for swtch), enum procstate (process states),
+  struct trapframe (user registers snapshot), and
+  struct proc (per-process metadata).
+
+includes:
+  - types.h
+  - param.h
+  - riscv.h
+  - spinlock.h
+typedefs: []
+structs:
+  - name: context
+    comment: Saved callee-saved registers for swtch
+    fields:
+      - name: ra
+        type: uint64
+        comment: Return address
+      - name: sp
+        type: uint64
+        comment: Stack pointer
+      - name: s0
+        type: uint64
+      - name: s1
+        type: uint64
+      - name: s2
+        type: uint64
+      - name: s3
+        type: uint64
+      - name: s4
+        type: uint64
+      - name: s5
+        type: uint64
+      - name: s6
+        type: uint64
+      - name: s7
+        type: uint64
+      - name: s8
+        type: uint64
+      - name: s9
+        type: uint64
+      - name: s10
+        type: uint64
+      - name: s11
+        type: uint64
+
+  - name: trapframe
+    comment: Saved user registers during a trap
+    fields:
+      - name: kernel_satp
+        type: uint64
+        comment: Kernel page table address
+      - name: kernel_sp
+        type: uint64
+        comment: Top of kernel stack for this process
+      - name: kernel_trap
+        type: uint64
+        comment: Address of usertrap handler
+      - name: epc
+        type: uint64
+        comment: Saved user program counter (sepc)
+      - name: kernel_hartid
+        type: uint64
+        comment: Hart id for this process
+      - name: ra
+        type: uint64
+      - name: sp
+        type: uint64
+      - name: gp
+        type: uint64
+      - name: tp
+        type: uint64
+      - name: t0
+        type: uint64
+      - name: t1
+        type: uint64
+      - name: t2
+        type: uint64
+      - name: s0
+        type: uint64
+      - name: s1
+        type: uint64
+      - name: a0
+        type: uint64
+      - name: a1
+        type: uint64
+      - name: a2
+        type: uint64
+      - name: a3
+        type: uint64
+      - name: a4
+        type: uint64
+      - name: a5
+        type: uint64
+      - name: a6
+        type: uint64
+      - name: a7
+        type: uint64
+      - name: s2
+        type: uint64
+      - name: s3
+        type: uint64
+      - name: s4
+        type: uint64
+      - name: s5
+        type: uint64
+      - name: s6
+        type: uint64
+      - name: s7
+        type: uint64
+      - name: s8
+        type: uint64
+      - name: s9
+        type: uint64
+      - name: s10
+        type: uint64
+      - name: s11
+        type: uint64
+      - name: t3
+        type: uint64
+      - name: t4
+        type: uint64
+      - name: t5
+        type: uint64
+      - name: t6
+        type: uint64
+
+  - name: proc
+    comment: Per-process state
+    fields:
+      - name: lock
+        type: "struct spinlock"
+        comment: Protects the fields below
+      - name: state
+        type: "enum procstate"
+        comment: UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE
+      - name: parent
+        type: "struct proc *"
+        comment: Parent process
+      - name: chan
+        type: "void *"
+        comment: Sleep channel (if non-zero)
+      - name: killed
+        type: int
+        comment: If non-zero, have been killed
+      - name: xstate
+        type: int
+        comment: Exit status to be returned to parent
+      - name: pid
+        type: int
+        comment: Process ID
+      - name: kstack
+        type: uint64
+        comment: Virtual address of kernel stack
+      - name: sz
+        type: uint64
+        comment: Size of process memory (bytes)
+      - name: pagetable
+        type: pagetable_t
+        comment: User page table
+      - name: trapframe
+        type: "struct trapframe *"
+        comment: Data page for trampoline.S
+      - name: context
+        type: "struct context"
+        comment: swtch() here to run process
+constants: []
+macros: []
+enums:
+  - name: procstate
+    values:
+      - name: UNUSED
+        comment: Slot is free
+      - name: USED
+        comment: Slot is allocated but not yet runnable
+      - name: SLEEPING
+        comment: Waiting for I/O or a wakeup
+      - name: RUNNABLE
+        comment: Ready to run
+      - name: RUNNING
+        comment: Currently executing
+      - name: ZOMBIE
+        comment: Exited, waiting for parent to reap
+function_declarations:
+  - name: proc
+    signature: "extern struct proc proc[NPROC]"
+    module: process
+    description: Global process table
+  - name: initproc
+    signature: "extern struct proc *initproc"
+    module: process
+    description: Pointer to the init process (pid 1)

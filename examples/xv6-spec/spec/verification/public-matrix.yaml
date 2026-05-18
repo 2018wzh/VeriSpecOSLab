@@ -94,9 +94,9 @@ public_requirements:
       - module: syscall
         operation: sys_write
     required_tests:
-      - invalid_fd_write
       - invalid_user_pointer_write
-      - offset_advance_on_success
+      - sys_write_basic
+      - sys_write_large_buffer
     required_artifacts:
       - kernel.elf
 

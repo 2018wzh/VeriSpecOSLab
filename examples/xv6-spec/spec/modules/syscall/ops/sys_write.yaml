@@ -4,31 +4,29 @@ operation: sys_write
 stage: syscall
 purpose: >
   Write bytes from a validated user buffer to a writable
-  object identified by a file descriptor. Validates the
-  user buffer via copyin before passing data to the object
-  layer.
+  console via console_write. Validates the user buffer
+  via copyin before passing data to the UART.
 
 related_slice: slice-05-syscall
 related_adr: null
 depends_on:
   requires_modules:
     - syscall
-    - fd
-    - object
+    - boot
     - memory
   requires_ops:
     - argint
     - argaddr
     - fetchaddr
     - copyin
+    - console_write
 
 rely:
   state_assumptions:
     - current task is in user context
   callable_interfaces:
-    - fd_lookup
     - copyin
-    - object_write
+    - console_write
   resource_assumptions:
     - kernel buffer available for copyin
   lock_assumptions:
@@ -36,27 +34,23 @@ rely:
 
 guarantee:
   returns:
-    - bytes_written on success
-    - -1 on invalid fd
+    - number of bytes written on success
     - -1 on invalid user buffer
   state_updates: []
   side_effects:
-    - advances file offset only when write succeeds
+    - bytes written to console UART via console_write
   emitted_events:
     - none
 
 preconditions:
   - the caller passes a user buffer (a1) and a count (a2)
-  - fd (a0) is a valid file descriptor or -1
 postconditions:
   - no unchecked user pointer is dereferenced
-  - write failures do not advance file offset
 invariants_preserved:
-  - fd_to_object_mapping
-  - object_refcount_nonnegative
+  - kernel never overruns user buffer
 failure_semantics:
-  - return -1 when fd lookup fails
   - return -1 when user buffer validation fails
+  - return -1 when count is zero
 
 concurrency:
   atomicity: syscall is non-preemptible on a single hart
@@ -66,7 +60,7 @@ concurrency:
 
 security:
   authority_check:
-    - fd must have write right
+    - none (console write is unrestricted in MVP)
   isolation_boundary:
     - kernel buffer used for copyin is not user-accessible
   user_pointer_policy:
@@ -80,23 +74,23 @@ observability:
 
 test_obligations:
   public:
-    - invalid_fd_write
     - invalid_user_pointer_write
-    - offset_advance_on_success
-  generated:
+    - sys_write_basic
     - sys_write_large_buffer
+  generated:
+    - sys_write_empty_buffer
   hidden_tags:
-    - concurrent_close_write_race
+    - sys_write_overflow
 
 llm_codegen:
   editable_region:
-    file: demo/src/lib.rs
+    file: kernel/syscall.c
     start_marker: "// VOS-EDIT-START:syscall.sys_write"
     end_marker: "// VOS-EDIT-END:syscall.sys_write"
-    create_if_missing: false
+    create_if_missing: true
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files
     - do not modify build scripts
   required_followup_checks:
-    - cargo build --manifest-path demo/Cargo.toml
+    - make build

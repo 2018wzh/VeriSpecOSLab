@@ -74,13 +74,13 @@ test_obligations:
 
 llm_codegen:
   editable_region:
-    file: demo/src/lib.rs
+    file: kernel/memory.c
     start_marker: "// VOS-EDIT-START:memory.walk"
     end_marker: "// VOS-EDIT-END:memory.walk"
-    create_if_missing: false
+    create_if_missing: true
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files
     - do not modify build scripts
   required_followup_checks:
-    - cargo build --manifest-path demo/Cargo.toml
+    - make build

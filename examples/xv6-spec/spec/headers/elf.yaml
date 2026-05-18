@@ -1,0 +1,84 @@
+id: header.elf
+kind: header
+target: include/elf.h
+stage: process
+purpose: >
+  ELF (Executable and Linkable Format) constants and
+  data structures. Used by the kernel to load user
+  programs from an ELF binary embedded in the kernel
+  image.
+
+includes:
+  - types.h
+typedefs: []
+structs:
+  - name: elf64_hdr
+    comment: ELF64 executable header
+    fields:
+      - name: magic
+        type: "uint32[4]"
+        comment: ELF magic number (0x7F, E, L, F)
+      - name: entry
+        type: uint64
+        comment: Entry point virtual address
+      - name: phoff
+        type: uint64
+        comment: Program header table file offset
+      - name: phnum
+        type: uint16
+        comment: Number of program headers
+      - name: type
+        type: uint16
+        comment: Object file type
+      - name: machine
+        type: uint16
+        comment: Target architecture
+      - name: version
+        type: uint32
+        comment: Object file version
+
+  - name: elf64_phdr
+    comment: ELF64 program header
+    fields:
+      - name: type
+        type: uint32
+        comment: Segment type
+      - name: flags
+        type: uint32
+        comment: Segment flags
+      - name: offset
+        type: uint64
+        comment: Segment file offset
+      - name: vaddr
+        type: uint64
+        comment: Segment virtual address
+      - name: paddr
+        type: uint64
+        comment: Segment physical address
+      - name: filesz
+        type: uint64
+        comment: Segment size in file
+      - name: memsz
+        type: uint64
+        comment: Segment size in memory
+      - name: align
+        type: uint64
+        comment: Segment alignment
+constants:
+  - name: ELF_MAGIC
+    value: "0x464C457FU"
+    comment: "\x7FELF in little-endian"
+  - name: ELF_PROG_LOAD
+    value: "1"
+    comment: Loadable program segment type
+  - name: ELF_PROG_FLAG_EXEC
+    value: "1"
+    comment: Executable segment
+  - name: ELF_PROG_FLAG_WRITE
+    value: "2"
+    comment: Writable segment
+  - name: ELF_PROG_FLAG_READ
+    value: "4"
+    comment: Readable segment
+macros: []
+function_declarations: []

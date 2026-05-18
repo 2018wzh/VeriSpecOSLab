@@ -11,6 +11,8 @@ owned_state:
   - boot banner text (static)
   - console output contract (SBI ecall)
 exported_interfaces:
+  - entry
+  - kernel_main
   - boot_banner
   - console_putchar
   - console_write
