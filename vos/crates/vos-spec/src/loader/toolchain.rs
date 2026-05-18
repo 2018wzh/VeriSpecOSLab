@@ -1,28 +1,33 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use vos_core::{
-    BuildContract, DebugContract, EnvironmentContract, ImageContract, LinkContract, Result,
-    ToolchainProfile, ToolchainSpecBundle, ValidationContract, VosError,
+    BuildContract, BuildPhaseSemantic, BuildPhaseSemantics, DebugContract, EnvironmentContract,
+    ImageContract, LinkContract, Result, ToolRequirement, ToolchainProfile, ToolchainSpecBundle,
+    ValidationContract, VosError,
 };
 
-use crate::loader::types::ToolchainYaml;
+use crate::loader::types::{BuildPhaseYaml, ToolRequirementYaml, ToolchainYaml};
 
 pub fn load_toolchain_spec(project_root: &Path, spec_root: &Path) -> Result<ToolchainSpecBundle> {
     let toolchain_path = project_root
         .join(spec_root)
         .join("toolchain")
         .join("toolchain.yaml");
+    load_toolchain_spec_from_file(project_root, &toolchain_path)
+}
+
+pub fn load_toolchain_spec_from_file(
+    project_root: &Path,
+    toolchain_path: &Path,
+) -> Result<ToolchainSpecBundle> {
     let parsed: ToolchainYaml = serde_yaml::from_str(&fs::read_to_string(toolchain_path)?)?;
-    if parsed.run.success_signal.trim().is_empty() {
-        return Err(VosError::Message("run.success_signal must not be empty".into()));
-    }
-    if parsed.run.kernel_arg.trim().is_empty() {
-        return Err(VosError::Message("run.kernel_arg must not be empty".into()));
-    }
-    if parsed.link.entry_symbol.trim().is_empty() {
-        return Err(VosError::Message("link.entry_symbol must not be empty".into()));
-    }
+    validate_top_level_fields(&parsed)?;
+    validate_phases(&parsed.build.phases, project_root)?;
+    validate_validation_bindings(&parsed)?;
+    validate_artifact_contracts(&parsed)?;
+
     Ok(ToolchainSpecBundle {
         toolchain: ToolchainProfile {
             target_arch: parsed.toolchain.target_arch,
@@ -33,11 +38,58 @@ pub fn load_toolchain_spec(project_root: &Path, spec_root: &Path) -> Result<Tool
             archiver: parsed.toolchain.archiver,
         },
         environment: EnvironmentContract {
-            required_tools: parsed.environment.required_tools,
+            required_tools: parsed
+                .environment
+                .required_tools
+                .into_iter()
+                .filter_map(tool_requirement_from_yaml)
+                .collect(),
             allowed_versions: parsed.environment.allowed_versions,
             disallowed_tools: parsed.environment.disallowed_tools,
         },
         build: BuildContract {
+            phases: parsed
+                .build
+                .phases
+                .into_iter()
+                .map(|phase| BuildPhaseSemantics {
+                    name: phase.name,
+                    semantic: BuildPhaseSemantic {
+                        kind: phase.semantic.kind,
+                        command: phase.semantic.command,
+                        template: phase.semantic.template,
+                        description: phase.semantic.description,
+                        working_dir: phase.semantic.working_dir,
+                        env_vars: phase.semantic.env_vars,
+                        dependencies: phase.semantic.dependencies,
+                        timeout_secs: phase.semantic.timeout_secs,
+                        retry_on_failure: phase.semantic.retry_on_failure,
+                        parallel: phase.semantic.parallel,
+                        compiler: phase.semantic.compiler,
+                        linker: phase.semantic.linker,
+                        archiver: phase.semantic.archiver,
+                        sources: phase.semantic.sources,
+                        include_dirs: phase.semantic.include_dirs,
+                        flags: phase.semantic.flags,
+                        standard: phase.semantic.standard,
+                        output_dir: phase.semantic.output_dir,
+                        output_pattern: phase.semantic.output_pattern,
+                        expected_outputs: phase.semantic.expected_outputs,
+                        input_artifacts: phase.semantic.input_artifacts,
+                        output_file: phase.semantic.output_file,
+                        output_format: phase.semantic.output_format,
+                        linker_script: phase.semantic.linker_script,
+                        libraries: phase.semantic.libraries,
+                        library_dirs: phase.semantic.library_dirs,
+                        library_type: phase.semantic.library_type,
+                        framework: phase.semantic.framework,
+                        test_binary: phase.semantic.test_binary,
+                        test_args: phase.semantic.test_args,
+                        expected_pattern: phase.semantic.expected_pattern,
+                        expected_output_file: phase.semantic.expected_output_file,
+                    },
+                })
+                .collect(),
             sources: parsed.build.sources,
             include_paths: parsed.build.include_paths,
             cflags: parsed.build.cflags,
@@ -80,4 +132,367 @@ pub fn load_toolchain_spec(project_root: &Path, spec_root: &Path) -> Result<Tool
             must_pass: parsed.validation.must_pass,
         },
     })
+}
+
+fn tool_requirement_from_yaml(req: ToolRequirementYaml) -> Option<ToolRequirement> {
+    match req {
+        ToolRequirementYaml::Name(name) => Some(ToolRequirement {
+            name,
+            version_req: None,
+        }),
+        ToolRequirementYaml::NameWithVersion(map) => {
+            map.into_iter()
+                .next()
+                .map(|(name, version_req)| ToolRequirement {
+                    name,
+                    version_req: Some(version_req),
+                })
+        }
+    }
+}
+
+fn validate_top_level_fields(parsed: &ToolchainYaml) -> Result<()> {
+    if parsed.toolchain.target_arch.trim().is_empty() {
+        return Err(VosError::Message(
+            "toolchain.target_arch must not be empty".into(),
+        ));
+    }
+    if parsed.toolchain.target_triple.trim().is_empty() {
+        return Err(VosError::Message(
+            "toolchain.target_triple must not be empty".into(),
+        ));
+    }
+    if parsed.link.entry_symbol.trim().is_empty() {
+        return Err(VosError::Message(
+            "link.entry_symbol must not be empty".into(),
+        ));
+    }
+    if parsed.run.success_signal.trim().is_empty() {
+        return Err(VosError::Message(
+            "run.success_signal must not be empty".into(),
+        ));
+    }
+    if parsed.run.kernel_arg.trim().is_empty() {
+        return Err(VosError::Message("run.kernel_arg must not be empty".into()));
+    }
+    if parsed.run.timeout_secs == 0 {
+        return Err(VosError::Message("run.timeout_secs must be > 0".into()));
+    }
+    if parsed.build.phases.is_empty() {
+        return Err(VosError::Message("build.phases must not be empty".into()));
+    }
+    Ok(())
+}
+
+fn validate_validation_bindings(parsed: &ToolchainYaml) -> Result<()> {
+    let phase_names = parsed
+        .build
+        .phases
+        .iter()
+        .map(|phase| phase.name.as_str())
+        .collect::<BTreeSet<_>>();
+    for required in &parsed.validation.must_pass {
+        if !phase_names.contains(required.as_str()) {
+            return Err(VosError::Message(format!(
+                "validation.must_pass references unknown build phase `{required}`"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_artifact_contracts(parsed: &ToolchainYaml) -> Result<()> {
+    if parsed.build.generated_artifacts.is_empty() {
+        return Err(VosError::Message(
+            "build.generated_artifacts must not be empty".into(),
+        ));
+    }
+    if parsed.image.required_artifacts.is_empty() {
+        return Err(VosError::Message(
+            "image.required_artifacts must not be empty".into(),
+        ));
+    }
+    let declared = collect_declared_outputs(parsed);
+    for artifact in &parsed.build.generated_artifacts {
+        if !declared.contains(artifact) {
+            return Err(VosError::Message(format!(
+                "build.generated_artifacts declares `{}` but no build phase produces it",
+                artifact.display()
+            )));
+        }
+    }
+    for artifact in &parsed.image.required_artifacts {
+        if !parsed.build.generated_artifacts.contains(artifact) {
+            return Err(VosError::Message(format!(
+                "image.required_artifacts entry `{}` is not listed in build.generated_artifacts",
+                artifact.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn collect_declared_outputs(parsed: &ToolchainYaml) -> BTreeSet<PathBuf> {
+    let mut outputs = BTreeSet::new();
+    for phase in &parsed.build.phases {
+        if let Some(file) = &phase.semantic.output_file {
+            outputs.insert(file.clone());
+        }
+        for path in &phase.semantic.expected_outputs {
+            outputs.insert(path.clone());
+        }
+        if let Some(path) = &phase.semantic.expected_output_file {
+            outputs.insert(path.clone());
+        }
+    }
+    outputs
+}
+
+fn validate_phases(phases: &[BuildPhaseYaml], project_root: &Path) -> Result<()> {
+    let mut names = BTreeSet::new();
+    for phase in phases {
+        validate_phase_shape(phase, project_root)?;
+        if !names.insert(phase.name.clone()) {
+            return Err(VosError::Message(format!(
+                "duplicate build phase name: {}",
+                phase.name
+            )));
+        }
+    }
+
+    let deps = phases
+        .iter()
+        .map(|phase| (phase.name.clone(), phase.semantic.dependencies.clone()))
+        .collect::<BTreeMap<_, _>>();
+    for phase in phases {
+        for dep in &phase.semantic.dependencies {
+            if !names.contains(dep) {
+                return Err(VosError::Message(format!(
+                    "build phase `{}` depends on unknown phase `{dep}`",
+                    phase.name
+                )));
+            }
+        }
+    }
+    let mut visiting = BTreeSet::new();
+    let mut visited = BTreeSet::new();
+    for name in names {
+        dfs_cycle(&name, &deps, &mut visiting, &mut visited)?;
+    }
+    Ok(())
+}
+
+fn validate_phase_shape(phase: &BuildPhaseYaml, project_root: &Path) -> Result<()> {
+    if phase.name.trim().is_empty() {
+        return Err(VosError::Message(
+            "build.phases[*].name must not be empty".into(),
+        ));
+    }
+    if phase.semantic.kind.trim().is_empty() {
+        return Err(VosError::Message(format!(
+            "build phase `{}` semantic.type must not be empty",
+            phase.name
+        )));
+    }
+    if let Some(timeout) = phase.semantic.timeout_secs {
+        if timeout == 0 {
+            return Err(VosError::Message(format!(
+                "build phase `{}` timeout_secs must be > 0",
+                phase.name
+            )));
+        }
+    }
+    if let Some(workdir) = &phase.semantic.working_dir {
+        let path = project_root.join(workdir);
+        if !path.exists() {
+            return Err(VosError::Message(format!(
+                "build phase `{}` working_dir does not exist: {}",
+                phase.name,
+                workdir.display()
+            )));
+        }
+    }
+
+    match phase.semantic.kind.as_str() {
+        "compile" => validate_compile_phase(phase),
+        "link" => validate_link_phase(phase),
+        "archive" => validate_archive_phase(phase),
+        "test" => validate_test_phase(phase),
+        "custom" => validate_custom_phase(phase),
+        other => Err(VosError::Message(format!(
+            "build phase `{}` has unsupported semantic.type `{other}`",
+            phase.name
+        ))),
+    }
+}
+
+fn validate_compile_phase(phase: &BuildPhaseYaml) -> Result<()> {
+    if phase.semantic.sources.is_empty() {
+        return Err(VosError::Message(format!(
+            "build phase `{}` compile requires semantic.sources",
+            phase.name
+        )));
+    }
+    if phase.semantic.output_dir.is_none() {
+        return Err(VosError::Message(format!(
+            "build phase `{}` compile requires semantic.output_dir",
+            phase.name
+        )));
+    }
+    if phase.semantic.output_pattern.is_none() {
+        return Err(VosError::Message(format!(
+            "build phase `{}` compile requires semantic.output_pattern",
+            phase.name
+        )));
+    }
+    for source in &phase.semantic.sources {
+        if source.pattern.trim().is_empty() {
+            return Err(VosError::Message(format!(
+                "build phase `{}` compile source pattern must not be empty",
+                phase.name
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_link_phase(phase: &BuildPhaseYaml) -> Result<()> {
+    if phase.semantic.input_artifacts.is_empty() {
+        return Err(VosError::Message(format!(
+            "build phase `{}` link requires semantic.input_artifacts",
+            phase.name
+        )));
+    }
+    if phase.semantic.output_file.is_none() {
+        return Err(VosError::Message(format!(
+            "build phase `{}` link requires semantic.output_file",
+            phase.name
+        )));
+    }
+    if phase.semantic.linker_script.is_none() {
+        return Err(VosError::Message(format!(
+            "build phase `{}` link requires semantic.linker_script",
+            phase.name
+        )));
+    }
+    Ok(())
+}
+
+fn validate_archive_phase(phase: &BuildPhaseYaml) -> Result<()> {
+    if phase.semantic.input_artifacts.is_empty() {
+        return Err(VosError::Message(format!(
+            "build phase `{}` archive requires semantic.input_artifacts",
+            phase.name
+        )));
+    }
+    if phase.semantic.output_file.is_none() {
+        return Err(VosError::Message(format!(
+            "build phase `{}` archive requires semantic.output_file",
+            phase.name
+        )));
+    }
+    Ok(())
+}
+
+fn validate_test_phase(phase: &BuildPhaseYaml) -> Result<()> {
+    if phase.semantic.test_binary.is_none() {
+        return Err(VosError::Message(format!(
+            "build phase `{}` test requires semantic.test_binary",
+            phase.name
+        )));
+    }
+    if phase.semantic.expected_pattern.is_none() && phase.semantic.expected_output_file.is_none() {
+        return Err(VosError::Message(format!(
+            "build phase `{}` test requires semantic.expected_pattern or semantic.expected_output_file",
+            phase.name
+        )));
+    }
+    Ok(())
+}
+
+fn validate_custom_phase(phase: &BuildPhaseYaml) -> Result<()> {
+    if phase.semantic.command.is_none() && phase.semantic.template.is_none() {
+        return Err(VosError::Message(format!(
+            "build phase `{}` custom requires command or template",
+            phase.name
+        )));
+    }
+    Ok(())
+}
+
+fn dfs_cycle(
+    node: &str,
+    deps: &BTreeMap<String, Vec<String>>,
+    visiting: &mut BTreeSet<String>,
+    visited: &mut BTreeSet<String>,
+) -> Result<()> {
+    if visited.contains(node) {
+        return Ok(());
+    }
+    if !visiting.insert(node.to_string()) {
+        return Err(VosError::Message(format!(
+            "build phase dependency cycle detected at `{node}`"
+        )));
+    }
+    if let Some(nexts) = deps.get(node) {
+        for next in nexts {
+            dfs_cycle(next, deps, visiting, visited)?;
+        }
+    }
+    visiting.remove(node);
+    visited.insert(node.to_string());
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_unknown_validation_phase() {
+        let yaml = r#"
+toolchain:
+  target_arch: riscv64
+  target_triple: riscv64-unknown-elf
+  c_compiler: riscv64-unknown-elf-gcc
+  asm_compiler: riscv64-unknown-elf-gcc
+  linker: riscv64-unknown-elf-ld
+  archiver: riscv64-unknown-elf-ar
+build:
+  generated_artifacts: [build/kernel.elf]
+  phases:
+    - name: compile
+      semantic:
+        type: compile
+        sources:
+          - pattern: "kernel/**/*.c"
+        output_dir: build
+        output_pattern: "*.o"
+link:
+  linker_script: kernel/link.ld
+  entry_symbol: _start
+image:
+  output_kind: kernel-elf
+  required_artifacts: [build/kernel.elf]
+run:
+  emulator: qemu-system-riscv64
+  machine: virt
+  cpu: rv64
+  memory: 128M
+  bios: default
+  kernel_arg: -kernel
+  success_signal: OK
+  timeout_secs: 30
+validation:
+  must_pass: [missing]
+"#;
+        let path = tempfile::tempdir().unwrap();
+        let file = path.path().join("toolchain.yaml");
+        fs::write(&file, yaml).unwrap();
+        let err = load_toolchain_spec_from_file(path.path(), &file).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("validation.must_pass references unknown build phase")
+        );
+    }
 }

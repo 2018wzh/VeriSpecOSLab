@@ -1,5 +1,5 @@
 use clap::Parser;
-use vos_core::{envelope, CommandStatus, FailurePayload};
+use vos_core::{CommandStatus, FailurePayload, envelope};
 
 use crate::args::*;
 use crate::dispatch::*;
@@ -15,7 +15,11 @@ pub async fn run() {
             .unwrap_or_else(|_| cli.project_root.clone())
     };
 
-    let progress = if cli.json { None } else { Some(make_progress()) };
+    let progress = if cli.json {
+        None
+    } else {
+        Some(make_progress())
+    };
     let progress_cb = progress.as_ref().map(make_progress_callback);
 
     let result = match cli.command {
@@ -61,9 +65,10 @@ pub async fn run() {
             spec_check_consistency_envelope(&project_root, &args.spec_path),
         ),
         Commands::Spec {
-            command: SpecCommands::Patch {
-                command: SpecPatchCommands::Lint(args),
-            },
+            command:
+                SpecCommands::Patch {
+                    command: SpecPatchCommands::Lint(args),
+                },
         } => emit_envelope(
             cli.json,
             not_implemented(
@@ -77,9 +82,10 @@ pub async fn run() {
             ),
         ),
         Commands::Spec {
-            command: SpecCommands::Patch {
-                command: SpecPatchCommands::Apply(args),
-            },
+            command:
+                SpecCommands::Patch {
+                    command: SpecPatchCommands::Apply(args),
+                },
         } => emit_envelope(
             cli.json,
             not_implemented(
@@ -116,7 +122,7 @@ pub async fn run() {
         Commands::Build(args) => emit_async_result(
             cli.json,
             "vos build",
-            build_envelope(&project_root, args.profile, progress_cb.as_deref()).await,
+            build_envelope(&project_root, args, progress_cb.as_deref()).await,
         ),
         Commands::Run {
             command: RunCommands::Qemu(args),
@@ -125,14 +131,10 @@ pub async fn run() {
             "vos run qemu",
             run_qemu_envelope(&project_root, args.profile, progress_cb.as_deref()).await,
         ),
-        Commands::Test(_args) => emit_envelope(
+        Commands::Test(args) => emit_async_result(
             cli.json,
-            not_implemented(
-                "vos test",
-                "test adapter orchestration is documented but not implemented in the current runtime",
-                vec![TOOLCHAIN_DOC.into()],
-                vec!["vos verify public".into()],
-            ),
+            "vos test",
+            test_envelope(&project_root, args.suite, progress_cb.as_deref()).await,
         ),
         Commands::Verify {
             command: VerifyCommands::Public,
@@ -143,17 +145,10 @@ pub async fn run() {
         ),
         Commands::Verify {
             command: VerifyCommands::Patch(args),
-        } => emit_envelope(
+        } => emit_async_result(
             cli.json,
-            not_implemented(
-                "vos verify patch",
-                format!(
-                    "patch verification DAG is not implemented yet for {}",
-                    args.patch_path.display()
-                ),
-                vec![TOOLCHAIN_DOC.into()],
-                vec!["vos spec patch lint <patch-path>".into()],
-            ),
+            "vos verify patch",
+            verify_patch_envelope(&project_root, &args.patch_path, progress_cb.as_deref()).await,
         ),
         Commands::Verify {
             command: VerifyCommands::Full,
@@ -201,17 +196,10 @@ pub async fn run() {
         ),
         Commands::Debug {
             command: DebugCommands::ExplainLog(args),
-        } => emit_envelope(
+        } => emit_result(
             cli.json,
-            not_implemented(
-                "vos debug explain-log",
-                format!(
-                    "log explanation is not implemented yet for {}",
-                    args.log_path.display()
-                ),
-                vec![TOOLCHAIN_DOC.into()],
-                vec!["vos build --json".into(), "vos run qemu --json".into()],
-            ),
+            "vos debug explain-log",
+            debug_explain_log_envelope(&project_root, &args.log_path),
         ),
         Commands::Agent {
             command: AgentCommands::Serve(_args),
@@ -369,5 +357,34 @@ mod tests {
         assert_eq!(json["command"], "vos test");
         assert_eq!(json["status"], "not_implemented");
         assert_eq!(json["payload"]["reason"], "not implemented yet");
+    }
+
+    #[test]
+    fn clap_accepts_new_build_contract_flags() {
+        let cli = Cli::try_parse_from([
+            "vos",
+            "build",
+            "--stage",
+            "2",
+            "--generator",
+            "makefile",
+            "--dry-run",
+            "--toolchain",
+            "spec/toolchain/toolchain.yaml",
+        ])
+        .expect("new build flags should parse");
+
+        match cli.command {
+            Commands::Build(args) => {
+                assert_eq!(args.stage.as_deref(), Some("2"));
+                assert_eq!(args.generator.as_deref(), Some("makefile"));
+                assert!(args.dry_run);
+                assert_eq!(
+                    args.toolchain,
+                    Some(std::path::PathBuf::from("spec/toolchain/toolchain.yaml"))
+                );
+            }
+            _ => panic!("unexpected parsed command"),
+        }
     }
 }

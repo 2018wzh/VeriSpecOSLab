@@ -1,5 +1,5 @@
 use std::path::Path;
-use vos_core::{artifact, envelope, CommandEnvelope, CommandStatus};
+use vos_core::{CommandEnvelope, CommandStatus, artifact, envelope};
 
 pub async fn run_qemu_envelope(
     project_root: &Path,

@@ -1,15 +1,19 @@
 mod agent;
 mod arch;
 mod build;
+mod debug;
 mod run;
 mod spec;
+mod test;
 mod verify;
 
 pub use agent::*;
 pub use arch::*;
 pub use build::*;
+pub use debug::*;
 pub use run::*;
 pub use spec::*;
+pub use test::*;
 pub use verify::*;
 
 pub const TOOLCHAIN_DOC: &str =

@@ -17,7 +17,8 @@ pub(crate) struct PatchFileInput {
 pub(crate) fn read_patch_file(path: &Path) -> Result<PatchFileInput> {
     let mut content = String::new();
     fs::File::open(path)?.read_to_string(&mut content)?;
-    serde_json::from_str(&content).map_err(|err| VosError::Message(format!("invalid patch file: {err}")))
+    serde_json::from_str(&content)
+        .map_err(|err| VosError::Message(format!("invalid patch file: {err}")))
 }
 
 pub(crate) fn validate_skeleton_files(
@@ -57,12 +58,12 @@ pub(crate) fn validate_region_edits(
 pub(crate) fn apply_region_edit(project_root: &Path, edit: &RegionEdit) -> Result<()> {
     let target_file = project_root.join(&edit.file);
     let content = fs::read_to_string(&target_file)?;
-    let start = content
-        .find(&edit.start_marker)
-        .ok_or_else(|| VosError::Message(format!("start marker not found in {}", edit.file.display())))?;
-    let end = content
-        .find(&edit.end_marker)
-        .ok_or_else(|| VosError::Message(format!("end marker not found in {}", edit.file.display())))?;
+    let start = content.find(&edit.start_marker).ok_or_else(|| {
+        VosError::Message(format!("start marker not found in {}", edit.file.display()))
+    })?;
+    let end = content.find(&edit.end_marker).ok_or_else(|| {
+        VosError::Message(format!("end marker not found in {}", edit.file.display()))
+    })?;
     if end <= start {
         return Err(VosError::Message(format!(
             "editable region markers reversed in {}",

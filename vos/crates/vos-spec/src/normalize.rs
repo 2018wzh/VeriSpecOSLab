@@ -8,7 +8,10 @@ use crate::hash::stable_hash;
 use crate::loader::{load_architecture_bundle, load_module_specs, load_operation_specs};
 use crate::paths::collect_spec_files;
 
-pub fn load_normalized_spec_bundle(project_root: &Path, spec_root: &Path) -> Result<NormalizedSpecBundle> {
+pub fn load_normalized_spec_bundle(
+    project_root: &Path,
+    spec_root: &Path,
+) -> Result<NormalizedSpecBundle> {
     let architecture = load_architecture_bundle(project_root, spec_root)?;
     let modules = load_module_specs(project_root, spec_root)?;
     let operations = load_operation_specs(project_root, spec_root)?;

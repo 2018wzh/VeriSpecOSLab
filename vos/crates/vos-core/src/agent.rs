@@ -96,6 +96,26 @@ pub struct ApplyPatchResult {
     pub build: Option<BuildResult>,
     pub run: Option<QemuRunResult>,
     pub manifest_path: PathBuf,
+    pub skeleton_validation_path: Option<PathBuf>,
+    pub retry_record_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkeletonValidationReport {
+    pub ok: bool,
+    #[serde(default)]
+    pub errors: Vec<String>,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkeletonRetryRecord {
+    pub attempts: u32,
+    pub max_attempts: u32,
+    pub exit_reason: String,
+    #[serde(default)]
+    pub feedback: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

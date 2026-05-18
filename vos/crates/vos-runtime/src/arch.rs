@@ -24,7 +24,10 @@ pub fn compose_architecture(
     let spec_root = resolve_spec_root(project_root, architecture_path, &config)?;
     let stage = resolve_stage(project_root, &spec_root, architecture_path)?;
     let result = vos_spec::compose_architecture(project_root, &spec_root, &stage)?;
-    let run_dir = project_root.join(".vos").join("runs").join(vos_core::new_run_id());
+    let run_dir = project_root
+        .join(".vos")
+        .join("runs")
+        .join(vos_core::new_run_id());
     fs::create_dir_all(&run_dir)?;
     write_json(&run_dir.join("compose-result.json"), &result)?;
     Ok(result)
@@ -38,7 +41,10 @@ pub fn derive_tests(
     let spec_root = resolve_spec_root(project_root, architecture_path, &config)?;
     let stage = resolve_stage(project_root, &spec_root, architecture_path)?;
     let result = vos_spec::derive_tests(project_root, &spec_root, &stage)?;
-    let run_dir = project_root.join(".vos").join("runs").join(vos_core::new_run_id());
+    let run_dir = project_root
+        .join(".vos")
+        .join("runs")
+        .join(vos_core::new_run_id());
     fs::create_dir_all(&run_dir)?;
     write_json(&run_dir.join("derived-tests.json"), &result)?;
     Ok(result)

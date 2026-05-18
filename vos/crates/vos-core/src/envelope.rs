@@ -66,7 +66,10 @@ pub fn envelope<T>(
     artifacts: Vec<ArtifactRef>,
     payload: T,
 ) -> CommandEnvelope<T> {
-    let ok = matches!(status, CommandStatus::Ok | CommandStatus::Partial | CommandStatus::Planned);
+    let ok = matches!(
+        status,
+        CommandStatus::Ok | CommandStatus::Partial | CommandStatus::Planned
+    );
     CommandEnvelope {
         ok,
         run_id: Uuid::new_v4().to_string(),

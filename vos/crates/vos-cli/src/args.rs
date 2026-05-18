@@ -98,6 +98,16 @@ pub enum ArchCommands {
 pub struct BuildArgs {
     #[arg(long)]
     pub profile: Option<String>,
+    #[arg(long)]
+    pub stage: Option<String>,
+    #[arg(long)]
+    pub generator: Option<String>,
+    #[arg(long, value_delimiter = ',')]
+    pub generators: Vec<String>,
+    #[arg(long, default_value_t = false)]
+    pub dry_run: bool,
+    #[arg(long)]
+    pub toolchain: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]

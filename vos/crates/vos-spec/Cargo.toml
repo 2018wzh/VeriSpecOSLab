@@ -9,3 +9,5 @@ serde.workspace = true
 serde_yaml.workspace = true
 vos-core = { path = "../vos-core" }
 
+[dev-dependencies]
+tempfile.workspace = true

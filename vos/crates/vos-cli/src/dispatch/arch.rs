@@ -1,5 +1,5 @@
 use std::path::Path;
-use vos_core::{artifact, envelope, CommandEnvelope, CommandStatus, DiagnosticPayload};
+use vos_core::{CommandEnvelope, CommandStatus, DiagnosticPayload, artifact, envelope};
 
 pub fn arch_lint_envelope(
     project_root: &Path,
@@ -26,7 +26,8 @@ pub fn arch_lint_envelope(
                 kind: "schema_mismatch".into(),
                 message: err.to_string(),
                 diagnostics: vec![
-                    "current architecture parser is not yet aligned with the documented schema".into(),
+                    "current architecture parser is not yet aligned with the documented schema"
+                        .into(),
                     format!("input: {}", architecture_path.display()),
                 ],
             })

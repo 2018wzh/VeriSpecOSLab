@@ -2,7 +2,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use vos_core::{ArchitectureSlice, ModuleGenerationJob, Result, VosError};
 
-pub(crate) fn module_dependencies(operations: &[vos_core::OperationContract], module: &str) -> Vec<String> {
+pub(crate) fn module_dependencies(
+    operations: &[vos_core::OperationContract],
+    module: &str,
+) -> Vec<String> {
     let mut deps = BTreeSet::new();
     for operation in operations.iter().filter(|op| op.module == module) {
         for dep in &operation.depends_on.requires_modules {

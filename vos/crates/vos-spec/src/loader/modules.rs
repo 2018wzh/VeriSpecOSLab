@@ -1,9 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use vos_core::{
-    ConcurrencySpec, ModuleSpec, OperationContract, Result, SpecBundle, VosError,
-};
+use vos_core::{ConcurrencySpec, ModuleSpec, OperationContract, Result, SpecBundle, VosError};
 
 use crate::loader::types::{ConcurrencyYaml, ModuleYaml, OperationYaml};
 use crate::paths::{read_dir_paths, read_yaml_files};
@@ -23,11 +21,16 @@ pub fn load_spec_bundle(
     let operation_contract = operations
         .into_iter()
         .find(|item| item.module == module && item.operation == operation)
-        .ok_or_else(|| VosError::Message(format!("operation spec not found: {module}.{operation}")))?;
+        .ok_or_else(|| {
+            VosError::Message(format!("operation spec not found: {module}.{operation}"))
+        })?;
     let concurrency_spec = load_concurrency_spec(project_root, spec_root, module)?;
     Ok(SpecBundle {
         target_paths: vec![operation_contract.llm_codegen.editable_region.file.clone()],
-        build_hints: operation_contract.llm_codegen.required_followup_checks.clone(),
+        build_hints: operation_contract
+            .llm_codegen
+            .required_followup_checks
+            .clone(),
         module_spec,
         operation_contract,
         concurrency_spec,
@@ -73,7 +76,10 @@ pub fn load_module_specs(project_root: &Path, spec_root: &Path) -> Result<Vec<Mo
     Ok(specs)
 }
 
-pub fn load_operation_specs(project_root: &Path, spec_root: &Path) -> Result<Vec<OperationContract>> {
+pub fn load_operation_specs(
+    project_root: &Path,
+    spec_root: &Path,
+) -> Result<Vec<OperationContract>> {
     let modules_root = project_root.join(spec_root).join("modules");
     let mut specs = Vec::new();
     for module_dir in read_dir_paths(&modules_root)? {
@@ -83,8 +89,18 @@ pub fn load_operation_specs(project_root: &Path, spec_root: &Path) -> Result<Vec
         let ops_dir = module_dir.join("ops");
         for path in read_yaml_files(&ops_dir)? {
             let parsed: OperationYaml = serde_yaml::from_str(&fs::read_to_string(path)?)?;
-            if parsed.llm_codegen.editable_region.start_marker.trim().is_empty()
-                || parsed.llm_codegen.editable_region.end_marker.trim().is_empty()
+            if parsed
+                .llm_codegen
+                .editable_region
+                .start_marker
+                .trim()
+                .is_empty()
+                || parsed
+                    .llm_codegen
+                    .editable_region
+                    .end_marker
+                    .trim()
+                    .is_empty()
             {
                 return Err(VosError::Message(format!(
                     "editable region markers must not be empty for {}.{}",

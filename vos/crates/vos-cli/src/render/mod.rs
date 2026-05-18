@@ -1,8 +1,8 @@
 use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::Arc;
 use vos_core::{
-    envelope, not_implemented_payload, CommandEnvelope, CommandStatus, FailurePayload,
-    NotImplementedPayload, ProgressEvent,
+    CommandEnvelope, CommandStatus, FailurePayload, NotImplementedPayload, ProgressEvent, envelope,
+    not_implemented_payload,
 };
 
 pub fn make_progress() -> Arc<ProgressBar> {

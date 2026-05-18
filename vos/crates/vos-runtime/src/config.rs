@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use vos_core::{AppConfig, DoctorReport, ProgressEvent, Result, ToolchainLintResult};
 
 use crate::fs_guard::is_writable;
-use crate::process::derive_build_command;
 use crate::provider::{
     load_project_dotenv, resolve_active_provider, resolve_api_key_env, resolve_base_url,
     resolve_model, resolve_provider_kind, validate_provider_config,
@@ -36,16 +35,15 @@ pub async fn doctor(project_root: &Path) -> Result<DoctorReport> {
     let active_provider = resolve_active_provider(&config)?;
     let spec_root = crate::scope::resolve_spec_root(project_root, None, &config)?;
     let build_command = if spec_root.exists() {
-        Some(derive_build_command(
-            project_root,
-            &vos_spec::load_toolchain_spec(project_root, &spec_root)?,
-        ))
+        let _ = vos_spec::load_toolchain_spec(project_root, &spec_root)?;
+        Some("vos build --generator makefile".into())
     } else {
         None
     };
     Ok(DoctorReport {
         active_provider: active_provider.name.clone(),
-        provider_api_key_present: std::env::var(resolve_api_key_env(&active_provider.profile)).is_ok(),
+        provider_api_key_present: std::env::var(resolve_api_key_env(&active_provider.profile))
+            .is_ok(),
         provider_kind: resolve_provider_kind(&active_provider.profile),
         api_key_env: resolve_api_key_env(&active_provider.profile).to_string(),
         model: resolve_model(&active_provider.profile),
@@ -64,7 +62,15 @@ pub fn lint_toolchain(project_root: &Path) -> Result<ToolchainLintResult> {
         ok: true,
         target_arch: bundle.toolchain.target_arch.clone(),
         target_triple: bundle.toolchain.target_triple.clone(),
-        required_tools: bundle.environment.required_tools.clone(),
+        required_tools: bundle
+            .environment
+            .required_tools
+            .iter()
+            .map(|t| match &t.version_req {
+                Some(v) => format!("{}: {}", t.name, v),
+                None => t.name.clone(),
+            })
+            .collect(),
         emulator: bundle.run.emulator.clone(),
         success_signal: bundle.run.success_signal.clone(),
     })

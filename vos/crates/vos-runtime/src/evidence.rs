@@ -54,7 +54,12 @@ pub(crate) fn recent_evidence_refs(project_root: &Path) -> Vec<String> {
 }
 
 pub(crate) fn stable_bundle_hash(normalized: &NormalizedSpecBundle) -> String {
-    normalized.hashes.values().cloned().collect::<Vec<_>>().join(":")
+    normalized
+        .hashes
+        .values()
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(":")
 }
 
 pub(crate) fn timestamp_now() -> String {
@@ -63,4 +68,3 @@ pub(crate) fn timestamp_now() -> String {
         .map(|duration| duration.as_secs().to_string())
         .unwrap_or_else(|_| "0".into())
 }
-

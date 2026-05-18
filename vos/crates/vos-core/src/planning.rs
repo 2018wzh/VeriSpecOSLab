@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use crate::spec::{ArchitectureSpecBundle, ModuleSpec, OperationContract, SpecRef, ToolchainSpecBundle};
+use crate::spec::{
+    ArchitectureSpecBundle, ModuleSpec, OperationContract, SpecRef, ToolchainSpecBundle,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NormalizedSpecBundle {
@@ -167,6 +169,77 @@ pub struct BuildResult {
     pub log_path: PathBuf,
     #[serde(default)]
     pub generated_artifacts: Vec<PathBuf>,
+    #[serde(default)]
+    pub generated_toolchain_artifacts: Vec<PathBuf>,
+    #[serde(default)]
+    pub phase_results: Vec<PhaseExecutionRecord>,
+    #[serde(default)]
+    pub artifact_checks: Vec<ArtifactCheckResult>,
+    pub generation_metadata: Option<ToolchainGenerationMetadata>,
+    pub degraded: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhaseExecutionRecord {
+    pub phase: String,
+    pub spec_source: String,
+    pub status: String,
+    pub attempts: u32,
+    pub command: String,
+    pub exit_code: Option<i32>,
+    pub log_path: PathBuf,
+    #[serde(default)]
+    pub stdout_excerpt: String,
+    #[serde(default)]
+    pub stderr_excerpt: String,
+    #[serde(default)]
+    pub artifacts_produced: Vec<PathBuf>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactCheckResult {
+    pub phase: String,
+    pub ok: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolchainGenerationRequest {
+    pub stage: Option<String>,
+    pub generator: Option<String>,
+    #[serde(default)]
+    pub generators: Vec<String>,
+    pub dry_run: bool,
+    pub toolchain_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolchainGenerationMetadata {
+    pub generator: String,
+    pub stage: Option<String>,
+    pub format: String,
+    pub source_spec: PathBuf,
+    pub entry_target: String,
+    #[serde(default)]
+    pub phases: Vec<String>,
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestRunResult {
+    pub suite: Option<String>,
+    #[serde(default)]
+    pub selected_phases: Vec<String>,
+    pub build: BuildResult,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PatchVerifyResult {
+    pub patch_path: PathBuf,
+    #[serde(default)]
+    pub selected_phases: Vec<String>,
+    pub build: BuildResult,
+    pub run: Option<QemuRunResult>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

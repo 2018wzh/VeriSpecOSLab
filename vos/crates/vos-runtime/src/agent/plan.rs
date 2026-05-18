@@ -41,7 +41,10 @@ pub fn agent_plan(
         ],
         generation_waves: queue.waves,
     };
-    let run_dir = project_root.join(".vos").join("runs").join(vos_core::new_run_id());
+    let run_dir = project_root
+        .join(".vos")
+        .join("runs")
+        .join(vos_core::new_run_id());
     fs::create_dir_all(&run_dir)?;
     write_json(&run_dir.join("agent-plan.json"), &plan)?;
     Ok(plan)

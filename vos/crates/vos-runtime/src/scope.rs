@@ -3,7 +3,11 @@ use std::path::{Path, PathBuf};
 
 use vos_core::{AppConfig, NormalizedSpecBundle, Result, VosError};
 
-pub(crate) fn resolve_spec_root(project_root: &Path, input: Option<&Path>, config: &AppConfig) -> Result<PathBuf> {
+pub(crate) fn resolve_spec_root(
+    project_root: &Path,
+    input: Option<&Path>,
+    config: &AppConfig,
+) -> Result<PathBuf> {
     if let Some(path) = input {
         let absolute = if path.is_absolute() {
             path.to_path_buf()
@@ -18,7 +22,9 @@ pub(crate) fn resolve_spec_root(project_root: &Path, input: Option<&Path>, confi
                 return candidate
                     .strip_prefix(project_root)
                     .map(Path::to_path_buf)
-                    .map_err(|_| VosError::Message("spec root must be inside project root".into()));
+                    .map_err(|_| {
+                        VosError::Message("spec root must be inside project root".into())
+                    });
             }
         }
         return Err(VosError::Message(format!(
@@ -32,7 +38,11 @@ pub(crate) fn resolve_spec_root(project_root: &Path, input: Option<&Path>, confi
         .unwrap_or_else(|| PathBuf::from("spec")))
 }
 
-pub(crate) fn resolve_stage(project_root: &Path, spec_root: &Path, input: Option<&Path>) -> Result<String> {
+pub(crate) fn resolve_stage(
+    project_root: &Path,
+    spec_root: &Path,
+    input: Option<&Path>,
+) -> Result<String> {
     if let Some(path) = input {
         let absolute = if path.is_absolute() {
             path.to_path_buf()
@@ -52,7 +62,8 @@ pub(crate) fn resolve_stage(project_root: &Path, spec_root: &Path, input: Option
         }
     }
     let normalized = vos_spec::load_normalized_spec_bundle(project_root, spec_root)?;
-    current_stage(&normalized).ok_or_else(|| VosError::Message("no architecture stage found".into()))
+    current_stage(&normalized)
+        .ok_or_else(|| VosError::Message("no architecture stage found".into()))
 }
 
 pub(crate) fn current_stage(normalized: &NormalizedSpecBundle) -> Option<String> {
@@ -62,4 +73,3 @@ pub(crate) fn current_stage(normalized: &NormalizedSpecBundle) -> Option<String>
         .last()
         .map(|slice| slice.stage.clone())
 }
-

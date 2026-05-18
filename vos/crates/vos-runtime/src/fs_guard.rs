@@ -2,7 +2,10 @@ use std::path::{Path, PathBuf};
 
 use vos_core::NormalizedSpecBundle;
 
-pub(crate) fn allowed_paths(normalized: &NormalizedSpecBundle, project_root: &Path) -> Vec<PathBuf> {
+pub(crate) fn allowed_paths(
+    normalized: &NormalizedSpecBundle,
+    project_root: &Path,
+) -> Vec<PathBuf> {
     let mut allowed = normalized
         .operations
         .iter()
@@ -26,6 +29,27 @@ pub(crate) fn allowed_paths(normalized: &NormalizedSpecBundle, project_root: &Pa
             .iter()
             .map(|path| project_root.join(path)),
     );
+    for phase in &normalized.architecture.toolchain.build.phases {
+        allowed.extend(
+            phase
+                .semantic
+                .include_dirs
+                .iter()
+                .map(|path| project_root.join(path)),
+        );
+        allowed.extend(phase.semantic.sources.iter().map(|pattern| {
+            project_root.join(
+                pattern
+                    .pattern
+                    .split("/**")
+                    .next()
+                    .unwrap_or(&pattern.pattern),
+            )
+        }));
+        if let Some(path) = &phase.semantic.linker_script {
+            allowed.push(project_root.join(path));
+        }
+    }
     allowed.push(project_root.join(&normalized.architecture.toolchain.link.linker_script));
     if let Some(script) = &normalized.architecture.toolchain.debug.gdb_script {
         allowed.push(project_root.join(script));

@@ -8,7 +8,7 @@ use crate::evidence::write_json;
 use crate::process::{
     build_qemu_command, build_qemu_invocation, program_with_timeout, resolve_kernel_artifact,
 };
-use crate::progress::{emit, ProgressSink};
+use crate::progress::{ProgressSink, emit};
 use crate::scope::resolve_spec_root;
 
 pub async fn run_qemu(project_root: &Path, profile: Option<String>) -> Result<QemuRunResult> {
@@ -31,7 +31,10 @@ pub async fn run_qemu_with_progress(
             kernel_artifact.display()
         )));
     }
-    let run_dir = project_root.join(".vos").join("runs").join(vos_core::new_run_id());
+    let run_dir = project_root
+        .join(".vos")
+        .join("runs")
+        .join(vos_core::new_run_id());
     std::fs::create_dir_all(&run_dir)?;
     write_json(&run_dir.join("toolchain-resolved.json"), &toolchain)?;
     emit(progress, "building_system", "resolved build artifacts");

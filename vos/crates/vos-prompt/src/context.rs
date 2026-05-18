@@ -2,7 +2,10 @@ use vos_core::{ContextBundle, PlanDraft, PromptEnvelope, SpecRef};
 
 use crate::shared::{plan_summary, yaml_lines, yaml_paths};
 
-pub fn build_agent_context_prompt(context: &ContextBundle, plan: Option<&PlanDraft>) -> PromptEnvelope {
+pub fn build_agent_context_prompt(
+    context: &ContextBundle,
+    plan: Option<&PlanDraft>,
+) -> PromptEnvelope {
     let prompt = format!(
         "Context scope: {}\nVisibility: {}\nResolved specs:\n{}\nRecent evidence:\n{}\nAllowed paths:\n{}\nRecommended commands:\n{}\nPlan summary:\n{}",
         context.requested_scope,

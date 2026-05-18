@@ -4,9 +4,12 @@ use std::path::Path;
 
 use reqwest::Client;
 use reqwest::StatusCode;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::time::Duration;
-use vos_core::{is_valid_env_var_name, AppConfig, CodegenRequest, CodegenResponse, ProviderProfile, Result, VosError};
+use vos_core::{
+    AppConfig, CodegenRequest, CodegenResponse, ProviderProfile, Result, VosError,
+    is_valid_env_var_name,
+};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ActiveProvider {
@@ -120,7 +123,10 @@ async fn provider_generate_code(
         Ok(value) => extract_text(&value)
             .ok_or_else(|| VosError::Message("responses api did not return text output".into()))?,
         Err(VosError::Http(err))
-            if matches!(err.status(), Some(StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED)) =>
+            if matches!(
+                err.status(),
+                Some(StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED)
+            ) =>
         {
             send_chat_completions_request(&client, api_key, &base_url, request).await?
         }
@@ -189,7 +195,8 @@ fn extract_text(value: &Value) -> Option<String> {
     if let Some(text) = value.get("output_text").and_then(Value::as_str) {
         return Some(text.to_string());
     }
-    value.get("output")
+    value
+        .get("output")
         .and_then(Value::as_array)
         .and_then(|items| {
             let mut acc = String::new();

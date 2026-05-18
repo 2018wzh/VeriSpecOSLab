@@ -1,5 +1,5 @@
 use std::path::Path;
-use vos_core::{artifact, envelope, CommandEnvelope, CommandStatus};
+use vos_core::{CommandEnvelope, CommandStatus, artifact, envelope};
 
 use crate::args::AgentApplyPatchArgs;
 
@@ -53,7 +53,10 @@ pub async fn agent_apply_patch_envelope(
     Ok(envelope(
         "vos agent apply-patch",
         CommandStatus::Ok,
-        vec![artifact("manifest", payload.manifest_path.display().to_string())],
+        vec![artifact(
+            "manifest",
+            payload.manifest_path.display().to_string(),
+        )],
         serde_json::to_value(payload).map_err(|e| e.to_string())?,
     ))
 }

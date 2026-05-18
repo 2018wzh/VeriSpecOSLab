@@ -14,7 +14,11 @@ pub fn check_consistency(
     let mut errors = Vec::new();
     let warnings = Vec::new();
 
-    let module_names: HashSet<String> = normalized.modules.iter().map(|m| m.module.clone()).collect();
+    let module_names: HashSet<String> = normalized
+        .modules
+        .iter()
+        .map(|m| m.module.clone())
+        .collect();
     let op_names: HashSet<String> = normalized
         .operations
         .iter()
@@ -78,7 +82,7 @@ pub fn check_consistency(
     }
 
     for operation in &normalized.operations {
-        let file = project_root.join(spec_root).join(&operation.llm_codegen.editable_region.file);
+        let file = project_root.join(&operation.llm_codegen.editable_region.file);
         if !file.starts_with(project_root) {
             errors.push(format!(
                 "operation `{}` editable region escapes project root: {}",
@@ -102,11 +106,24 @@ pub fn check_consistency(
         .all(|artifact| toolchain.build.generated_artifacts.contains(artifact))
     {
         errors.push(
-            "toolchain image.required_artifacts must be produced by build.generated_artifacts".into(),
+            "toolchain image.required_artifacts must be produced by build.generated_artifacts"
+                .into(),
         );
     }
     if toolchain.run.kernel_arg.trim().is_empty() {
         errors.push("toolchain run.kernel_arg must not be empty".into());
+    }
+    for required in &toolchain.validation.must_pass {
+        if !toolchain
+            .build
+            .phases
+            .iter()
+            .any(|phase| phase.name == *required)
+        {
+            errors.push(format!(
+                "toolchain validation.must_pass references unknown build phase `{required}`"
+            ));
+        }
     }
 
     Ok(ConsistencyReport {

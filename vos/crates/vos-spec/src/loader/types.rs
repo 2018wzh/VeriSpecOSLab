@@ -1,7 +1,9 @@
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use vos_core::{
-    ArchitectureReferenceSystem, OperationDependsOn, OperationTestObligations, ValidationBinding,
+    ArchitectureReferenceSystem, BuildFlags, LibraryDependency, OperationDependsOn,
+    OperationTestObligations, SourcePattern, ValidationBinding,
 };
 
 #[derive(Debug, Deserialize)]
@@ -166,18 +168,23 @@ pub(crate) struct OperationYaml {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ToolchainYaml {
     pub(crate) toolchain: ToolchainProfileYaml,
+    #[serde(default)]
     pub(crate) environment: EnvironmentYaml,
     pub(crate) build: BuildYaml,
     pub(crate) link: LinkYaml,
     pub(crate) image: ImageYaml,
     pub(crate) run: RunYaml,
+    #[serde(default)]
     pub(crate) debug: DebugYaml,
+    #[serde(default)]
     pub(crate) validation: ValidationYaml,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ToolchainProfileYaml {
     pub(crate) target_arch: String,
     pub(crate) target_triple: String,
@@ -188,17 +195,28 @@ pub(crate) struct ToolchainProfileYaml {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct EnvironmentYaml {
     #[serde(default)]
-    pub(crate) required_tools: Vec<String>,
+    pub(crate) required_tools: Vec<ToolRequirementYaml>,
     #[serde(default)]
     pub(crate) allowed_versions: Vec<String>,
     #[serde(default)]
     pub(crate) disallowed_tools: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum ToolRequirementYaml {
+    Name(String),
+    NameWithVersion(BTreeMap<String, String>),
+}
+
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct BuildYaml {
+    #[serde(default)]
+    pub(crate) phases: Vec<BuildPhaseYaml>,
     #[serde(default)]
     pub(crate) sources: Vec<PathBuf>,
     #[serde(default)]
@@ -217,7 +235,85 @@ pub(crate) struct BuildYaml {
     pub(crate) generated_artifacts: Vec<PathBuf>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BuildPhaseYaml {
+    pub(crate) name: String,
+    #[serde(default)]
+    pub(crate) semantic: BuildPhaseSemanticYaml,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BuildPhaseSemanticYaml {
+    #[serde(rename = "type", default)]
+    pub(crate) kind: String,
+    #[serde(default)]
+    pub(crate) command: Option<String>,
+    #[serde(default)]
+    pub(crate) template: Option<String>,
+    #[serde(default)]
+    pub(crate) description: Option<String>,
+    #[serde(default)]
+    pub(crate) working_dir: Option<PathBuf>,
+    #[serde(default)]
+    pub(crate) env_vars: BTreeMap<String, String>,
+    #[serde(default)]
+    pub(crate) dependencies: Vec<String>,
+    #[serde(default)]
+    pub(crate) timeout_secs: Option<u64>,
+    #[serde(default)]
+    pub(crate) retry_on_failure: Option<u32>,
+    #[serde(default)]
+    pub(crate) parallel: bool,
+    #[serde(default)]
+    pub(crate) compiler: Option<String>,
+    #[serde(default)]
+    pub(crate) linker: Option<String>,
+    #[serde(default)]
+    pub(crate) archiver: Option<String>,
+    #[serde(default)]
+    pub(crate) sources: Vec<SourcePattern>,
+    #[serde(default)]
+    pub(crate) include_dirs: Vec<PathBuf>,
+    #[serde(default)]
+    pub(crate) flags: BuildFlags,
+    #[serde(default)]
+    pub(crate) standard: Option<String>,
+    #[serde(default)]
+    pub(crate) output_dir: Option<PathBuf>,
+    #[serde(default)]
+    pub(crate) output_pattern: Option<String>,
+    #[serde(default)]
+    pub(crate) expected_outputs: Vec<PathBuf>,
+    #[serde(default)]
+    pub(crate) input_artifacts: Vec<PathBuf>,
+    #[serde(default)]
+    pub(crate) output_file: Option<PathBuf>,
+    #[serde(default)]
+    pub(crate) output_format: Option<String>,
+    #[serde(default)]
+    pub(crate) linker_script: Option<PathBuf>,
+    #[serde(default)]
+    pub(crate) libraries: Vec<LibraryDependency>,
+    #[serde(default)]
+    pub(crate) library_dirs: Vec<PathBuf>,
+    #[serde(default)]
+    pub(crate) library_type: Option<String>,
+    #[serde(default)]
+    pub(crate) framework: Option<String>,
+    #[serde(default)]
+    pub(crate) test_binary: Option<PathBuf>,
+    #[serde(default)]
+    pub(crate) test_args: Vec<String>,
+    #[serde(default)]
+    pub(crate) expected_pattern: Option<String>,
+    #[serde(default)]
+    pub(crate) expected_output_file: Option<PathBuf>,
+}
+
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct LinkYaml {
     pub(crate) linker_script: PathBuf,
     pub(crate) entry_symbol: String,
@@ -229,6 +325,7 @@ pub(crate) struct LinkYaml {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ImageYaml {
     pub(crate) output_kind: String,
     #[serde(default)]
@@ -240,6 +337,7 @@ pub(crate) struct ImageYaml {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct RunYaml {
     pub(crate) emulator: String,
     pub(crate) machine: String,
@@ -254,6 +352,7 @@ pub(crate) struct RunYaml {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DebugYaml {
     #[serde(default)]
     pub(crate) symbols_required: Vec<String>,
@@ -263,6 +362,7 @@ pub(crate) struct DebugYaml {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ValidationYaml {
     #[serde(default)]
     pub(crate) must_pass: Vec<String>,

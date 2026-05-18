@@ -1,14 +1,14 @@
 use std::path::Path;
-use vos_core::{artifact, envelope, CommandEnvelope, CommandStatus};
+use vos_core::{CommandEnvelope, CommandStatus, artifact, envelope};
 
 pub fn spec_lint_envelope(
     project_root: &Path,
     spec_path: &Path,
 ) -> Result<CommandEnvelope<serde_json::Value>, String> {
-    let (module, operation) =
-        infer_module_operation_from_spec_path(project_root, spec_path).map_err(|e| e.to_string())?;
-    let payload = vos_runtime::lint_spec(project_root, &module, &operation)
+    let (module, operation) = infer_module_operation_from_spec_path(project_root, spec_path)
         .map_err(|e| e.to_string())?;
+    let payload =
+        vos_runtime::lint_spec(project_root, &module, &operation).map_err(|e| e.to_string())?;
     let artifacts = vec![artifact("spec_path", spec_path.display().to_string())];
     Ok(envelope(
         "vos spec lint",
@@ -66,7 +66,12 @@ fn infer_module_operation_from_spec_path(
     let ops_index = components
         .iter()
         .position(|component| component == "ops")
-        .ok_or_else(|| format!("spec path does not point to an operation spec: {}", absolute.display()))?;
+        .ok_or_else(|| {
+            format!(
+                "spec path does not point to an operation spec: {}",
+                absolute.display()
+            )
+        })?;
     if ops_index == 0 || ops_index + 1 >= components.len() {
         return Err(format!(
             "spec path does not contain module/operation binding: {}",

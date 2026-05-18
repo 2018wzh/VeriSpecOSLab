@@ -1,52 +1,25 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use tokio::process::Command;
-use tokio::time::{timeout, Duration};
 
-use vos_core::{BuildRequest, BuildResult, Result, ToolchainSpecBundle, VosError};
+use tokio::process::Command;
+use tokio::time::{Duration, timeout};
+use vos_core::{Result, ToolchainSpecBundle, VosError};
 
 pub(crate) fn resolve_kernel_artifact(
     project_root: &Path,
     toolchain: &ToolchainSpecBundle,
 ) -> Result<PathBuf> {
-    let artifact = toolchain
-        .image
-        .required_artifacts
-        .first()
-        .or_else(|| toolchain.build.generated_artifacts.first())
-        .ok_or_else(|| VosError::Message("toolchain image.required_artifacts must not be empty".into()))?;
+    let artifact = toolchain.image.required_artifacts.first().ok_or_else(|| {
+        VosError::Message("toolchain image.required_artifacts must not be empty".into())
+    })?;
     Ok(project_root.join(artifact))
-}
-
-pub(crate) fn derive_build_command(project_root: &Path, toolchain: &ToolchainSpecBundle) -> String {
-    if !toolchain.build.generated_artifacts.is_empty() {
-        return format!(
-            "{} {}",
-            toolchain.toolchain.c_compiler,
-            toolchain
-                .build
-                .generated_artifacts
-                .iter()
-                .map(|path| path.display().to_string())
-                .collect::<Vec<_>>()
-                .join(" ")
-        );
-    }
-    if project_root.join("Makefile").exists() || project_root.join("makefile").exists() {
-        "make".into()
-    } else {
-        toolchain.toolchain.c_compiler.clone()
-    }
 }
 
 pub(crate) fn build_qemu_command(project_root: &Path, toolchain: &ToolchainSpecBundle) -> String {
     let (program, args) = build_qemu_invocation(project_root, toolchain)
         .unwrap_or_else(|_| (toolchain.run.emulator.clone(), Vec::new()));
-    std::iter::once(program)
-        .chain(args)
-        .map(shell_quote)
-        .collect::<Vec<_>>()
-        .join(" ")
+    summarize_program_command(&program, &args, None)
 }
 
 pub(crate) fn build_qemu_invocation(
@@ -72,25 +45,25 @@ pub(crate) fn build_qemu_invocation(
     Ok((toolchain.run.emulator.clone(), args))
 }
 
-pub(crate) async fn run_build(run_dir: &Path, build_request: BuildRequest) -> Result<BuildResult> {
-    let (exit_code, text) =
-        shell_command_with_timeout(&build_request.command, &build_request.cwd, 600).await?;
-    let log_path = run_dir.join("build.log");
-    std::fs::write(&log_path, format!("$ {}\n{}", build_request.command, text))?;
-    Ok(BuildResult {
-        command: build_request.command,
-        success: exit_code == Some(0),
-        exit_code,
-        log_path,
-        generated_artifacts: build_request.generated_artifacts,
-    })
+pub(crate) fn summarize_program_command(
+    program: &str,
+    args: &[String],
+    trailing_target: Option<&str>,
+) -> String {
+    let mut items = vec![shell_quote(program.to_string())];
+    items.extend(args.iter().cloned().map(shell_quote));
+    if let Some(target) = trailing_target {
+        items.push(shell_quote(target.to_string()));
+    }
+    items.join(" ")
 }
 
-pub(crate) async fn shell_command_with_timeout(
+pub(crate) async fn shell_command_with_timeout_context(
     command: &str,
     cwd: &Path,
     timeout_secs: u64,
-) -> Result<(Option<i32>, String)> {
+    env_vars: &BTreeMap<String, String>,
+) -> Result<(Option<i32>, String, String)> {
     let mut cmd = if cfg!(windows) {
         let mut c = Command::new("powershell");
         c.arg("-NoProfile").arg("-Command").arg(command);
@@ -100,19 +73,23 @@ pub(crate) async fn shell_command_with_timeout(
         c.arg("-lc").arg(command);
         c
     };
-    let fut = cmd
-        .current_dir(cwd)
+    cmd.current_dir(cwd)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output();
+        .stderr(Stdio::piped());
+    for (k, v) in env_vars {
+        cmd.env(k, v);
+    }
+    let fut = cmd.output();
     let output = timeout(Duration::from_secs(timeout_secs), fut)
         .await
-        .map_err(|_| VosError::Message(format!("command timed out after {timeout_secs}s: {command}")))??;
-    let mut text = String::from_utf8_lossy(&output.stdout).to_string();
-    if !output.stderr.is_empty() {
-        text.push_str(&String::from_utf8_lossy(&output.stderr));
-    }
-    Ok((output.status.code(), text))
+        .map_err(|_| {
+            VosError::Message(format!(
+                "command timed out after {timeout_secs}s: {command}"
+            ))
+        })??;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    Ok((output.status.code(), stdout, stderr))
 }
 
 pub(crate) async fn program_with_timeout(
@@ -129,7 +106,11 @@ pub(crate) async fn program_with_timeout(
         .output();
     let output = timeout(Duration::from_secs(timeout_secs), fut)
         .await
-        .map_err(|_| VosError::Message(format!("command timed out after {timeout_secs}s: {program}")))??;
+        .map_err(|_| {
+            VosError::Message(format!(
+                "command timed out after {timeout_secs}s: {program}"
+            ))
+        })??;
     let mut text = String::from_utf8_lossy(&output.stdout).to_string();
     if !output.stderr.is_empty() {
         text.push_str(&String::from_utf8_lossy(&output.stderr));

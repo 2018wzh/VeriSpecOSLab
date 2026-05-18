@@ -7,12 +7,10 @@ use vos_core::{
 };
 
 use crate::hash::unique_strings;
-use crate::loader::{
-    load_toolchain_spec,
-};
+use crate::loader::load_toolchain_spec;
 use crate::loader::types::{
-    into_string_vec, into_tests_vec, into_validation_binding, ArchitectureSeedYaml,
-    ArchitectureSliceYaml, CompositionRuleYaml, CompositionYaml,
+    ArchitectureSeedYaml, ArchitectureSliceYaml, CompositionRuleYaml, CompositionYaml,
+    into_string_vec, into_tests_vec, into_validation_binding,
 };
 use crate::paths::read_yaml_files;
 
@@ -22,7 +20,11 @@ pub fn lint_architecture(project_root: &Path, spec_root: &Path) -> Result<Archit
         ok: true,
         target_platform: bundle.seed.target_platform,
         current_stage: bundle.slices.last().map(|slice| slice.stage.clone()),
-        declared_stages: bundle.slices.iter().map(|slice| slice.stage.clone()).collect(),
+        declared_stages: bundle
+            .slices
+            .iter()
+            .map(|slice| slice.stage.clone())
+            .collect(),
         enabled_modules: unique_strings(
             &bundle
                 .slices
@@ -33,7 +35,10 @@ pub fn lint_architecture(project_root: &Path, spec_root: &Path) -> Result<Archit
     })
 }
 
-pub fn load_architecture_bundle(project_root: &Path, spec_root: &Path) -> Result<ArchitectureSpecBundle> {
+pub fn load_architecture_bundle(
+    project_root: &Path,
+    spec_root: &Path,
+) -> Result<ArchitectureSpecBundle> {
     let architecture_root = project_root.join(spec_root).join("architecture");
     let seed: ArchitectureSeedYaml =
         serde_yaml::from_str(&fs::read_to_string(architecture_root.join("seed.yaml"))?)?;

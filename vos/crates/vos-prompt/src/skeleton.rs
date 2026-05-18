@@ -67,7 +67,10 @@ allowed_paths:\n{allowed}\n",
         allowed = yaml_paths(
             &allowed_paths
                 .iter()
-                .map(|path| path.strip_prefix(project_root).unwrap_or(path).to_path_buf())
+                .map(|path| path
+                    .strip_prefix(project_root)
+                    .unwrap_or(path)
+                    .to_path_buf())
                 .collect::<Vec<_>>(),
         ),
     );
@@ -82,4 +85,24 @@ allowed_paths:\n{allowed}\n",
         allowed_paths,
         prompt,
     }
+}
+
+pub fn build_skeleton_retry_prompt(
+    normalized: &NormalizedSpecBundle,
+    compose: &ArchitectureComposeResult,
+    project_root: &Path,
+    feedback: &[String],
+) -> PromptEnvelope {
+    let mut base = build_skeleton_projection_prompt(normalized, compose, project_root);
+    let mut addon = String::from("\nRETRY_FEEDBACK\n");
+    for item in feedback {
+        addon.push_str("- ");
+        addon.push_str(item);
+        addon.push('\n');
+    }
+    addon.push_str(
+        "Fix all items above. Return one JSON code block only. Do not include explanations.\n",
+    );
+    base.prompt.push_str(&addon);
+    base
 }

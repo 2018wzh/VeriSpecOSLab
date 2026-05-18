@@ -1,11 +1,12 @@
 mod agent;
 mod arch;
 mod build;
-mod codegen;
 mod cache;
+mod codegen;
 mod config;
 mod evidence;
 mod fs_guard;
+mod generator;
 mod patch;
 mod process;
 mod progress;

@@ -55,6 +55,30 @@ pub(crate) fn allowed_paths_from_spec(
             .iter()
             .map(|path| project_root.join(path)),
     );
+    for phase in &normalized.architecture.toolchain.build.phases {
+        paths.extend(
+            phase
+                .semantic
+                .include_dirs
+                .iter()
+                .map(|path| project_root.join(path)),
+        );
+        paths.extend(phase.semantic.sources.iter().map(|pattern| {
+            project_root.join(
+                pattern
+                    .pattern
+                    .split("/**")
+                    .next()
+                    .unwrap_or(&pattern.pattern),
+            )
+        }));
+        if let Some(path) = &phase.semantic.output_file {
+            paths.push(project_root.join(path));
+        }
+        if let Some(path) = &phase.semantic.linker_script {
+            paths.push(project_root.join(path));
+        }
+    }
     paths.extend(
         normalized
             .architecture

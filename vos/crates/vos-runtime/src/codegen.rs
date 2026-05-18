@@ -4,7 +4,7 @@ use tokio::task::JoinSet;
 use vos_core::{NormalizedSpecBundle, RegionEdit, Result, VosError};
 
 use crate::config::ProgressSink;
-use crate::progress::{emit_entity, emit};
+use crate::progress::{emit, emit_entity};
 use crate::rig::{RigStage, RigWorkflow};
 
 pub(crate) async fn generate_module_waves(
@@ -76,6 +76,10 @@ pub(crate) async fn generate_module_waves(
             edits.extend(batch.region_edits);
         }
     }
-    emit(progress, "generating_module", "module wave generation completed");
+    emit(
+        progress,
+        "generating_module",
+        "module wave generation completed",
+    );
     Ok(edits)
 }
