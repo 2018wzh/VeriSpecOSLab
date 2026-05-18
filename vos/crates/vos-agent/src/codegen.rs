@@ -2,11 +2,10 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use tokio::task::JoinSet;
-use vos_core::{ConcurrencySpec, NormalizedSpecBundle, RegionEdit, Result, VosError};
+use vos_core::{ConcurrencySpec, NormalizedSpecBundle, Result, VosError};
+use vos_runtime::ProgressSink;
 
-use crate::config::ProgressSink;
-use crate::progress::{emit, emit_entity};
-use crate::rig::{RigStage, RigWorkflow};
+use crate::{RegionEdit, RigStage, RigWorkflow};
 
 pub(crate) async fn generate_module_waves(
     project_root: &Path,
@@ -34,16 +33,30 @@ pub(crate) async fn generate_module_waves(
                 .cloned()
                 .collect::<Vec<_>>();
             let concurrency = concurrency_specs.get(module_name).cloned().flatten();
-            let prompt = vos_prompt::build_module_codegen_batch_prompt(
+            let prompt_text = vos_prompt::build_module_codegen_batch_prompt(
                 &module_spec,
                 &operations,
                 concurrency.as_ref(),
                 normalized,
                 project_root,
             );
+            let allowed_paths = operations
+                .iter()
+                .map(|op| project_root.join(&op.llm_codegen.editable_region.file))
+                .collect::<Vec<_>>();
+            let prompt = crate::PromptEnvelope {
+                task_kind: "module_codegen_batch".into(),
+                phase: "module_codegen_batch".into(),
+                spec_ref: vos_core::SpecRef {
+                    module: module_spec.module.clone(),
+                    operation: "batch".into(),
+                },
+                allowed_paths,
+                prompt: prompt_text,
+            };
             let module_run_dir = run_dir.join(format!("module_{}", module_name));
             let config = config.clone();
-            emit_entity(
+            vos_runtime::emit_entity(
                 progress,
                 "generating_module",
                 "sending module batch prompt",
@@ -57,7 +70,8 @@ pub(crate) async fn generate_module_waves(
                 let raw = workflow
                     .run_prompt_stage(&module_run_dir, RigStage::ProviderCall, &prompt)
                     .await?;
-                vos_prompt::parse_module_batch_response(&raw).map_err(VosError::Message)
+                vos_prompt::parse_module_batch_response::<crate::ModuleBatchCodegenResponse>(&raw)
+                    .map_err(VosError::Message)
             });
         }
         while let Some(joined) = set.join_next().await {
@@ -65,7 +79,7 @@ pub(crate) async fn generate_module_waves(
             edits.extend(batch.region_edits);
         }
     }
-    emit(
+    vos_runtime::emit(
         progress,
         "generating_module",
         "module wave generation completed",

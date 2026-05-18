@@ -5,23 +5,21 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use vos_core::{
     ArchitectureComposeResult, BuildResult, GenerationQueue, NormalizedSpecBundle, QemuRunResult,
-    Result, SkeletonProjectionResponse, SkeletonRetryRecord, SkeletonValidationReport, VosError,
+    Result, VosError,
 };
+use vos_runtime::ProgressSink;
 
-use crate::build::build_with_progress;
 use crate::codegen::generate_module_waves;
-use crate::config::{ProgressSink, load_config};
-use crate::evidence::{build_run_manifest, write_json};
-use crate::fs_guard::allowed_paths;
 use crate::patch::{
     PatchFileInput, apply_region_edit, read_patch_file, validate_region_edits,
     validate_skeleton_files,
 };
-use crate::progress::emit;
 use crate::provider::validate_provider_config;
 use crate::rig::{RigStage, RigWorkflow};
-use crate::run_qemu::run_qemu_with_progress;
-use crate::scope::{current_stage, resolve_spec_root};
+use crate::{
+    RegionEdit, SkeletonFileEdit, SkeletonProjectionResponse, SkeletonRetryRecord,
+    SkeletonValidationReport,
+};
 
 #[derive(Debug, Clone)]
 pub(crate) struct GenerationWorkflowOptions {
@@ -105,7 +103,7 @@ pub(crate) async fn execute_generation_workflow(
     let mut run_result = None;
 
     if options.apply {
-        emit(
+        vos_runtime::emit(
             progress,
             "applying_code",
             "writing generated skeleton and region edits",
@@ -121,7 +119,7 @@ pub(crate) async fn execute_generation_workflow(
     }
 
     if options.apply && options.execute_build {
-        let build = build_with_progress(
+        let build = vos_runtime::build_with_progress(
             project_root,
             None,
             vos_core::ToolchainGenerationRequest {
@@ -134,16 +132,16 @@ pub(crate) async fn execute_generation_workflow(
             progress,
         )
         .await?;
-        emit(progress, "building_system", "built generated system");
+        vos_runtime::emit(progress, "building_system", "built generated system");
         build_result = Some(build.clone());
         if options.execute_run {
-            let run = run_qemu_with_progress(project_root, None, progress).await?;
-            emit(progress, "running_boot_smoke", "ran qemu boot smoke");
+            let run = vos_runtime::run_qemu_with_progress(project_root, None, progress).await?;
+            vos_runtime::emit(progress, "running_boot_smoke", "ran qemu boot smoke");
             run_result = Some(run);
         }
     }
 
-    let manifest = build_run_manifest(
+    let manifest = vos_runtime::build_run_manifest(
         &prepared.run_id,
         &options.command_name,
         &prepared.normalized,
@@ -151,7 +149,7 @@ pub(crate) async fn execute_generation_workflow(
         &updated_regions,
     );
     let manifest_path = prepared.run_dir.join("manifest.json");
-    write_json(&manifest_path, &manifest)?;
+    vos_runtime::write_json(&manifest_path, &manifest)?;
 
     let result = GenerationWorkflowResult {
         run_id: prepared.run_id,
@@ -169,8 +167,8 @@ pub(crate) async fn execute_generation_workflow(
         skeleton_validation_path,
         retry_record_path,
     };
-    write_json(&prepared.run_dir.join("generation-result.json"), &result)?;
-    emit(progress, "finished", "generation workflow finished");
+    vos_runtime::write_json(&prepared.run_dir.join("generation-result.json"), &result)?;
+    vos_runtime::emit(progress, "finished", "generation workflow finished");
     Ok(result)
 }
 
@@ -193,19 +191,19 @@ fn prepare_generation_context(
     options: &GenerationWorkflowOptions,
     progress: Option<&ProgressSink>,
 ) -> Result<PreparedGenerationContext> {
-    let config = load_config(project_root)?;
+    let config = vos_runtime::load_config(project_root)?;
     if options.patch_path.is_none() {
         validate_provider_config(&config)?;
     }
-    let spec_root = resolve_spec_root(project_root, None, &config)?;
-    let normalized = crate::normalize_spec(project_root, Some(&spec_root))?;
-    emit(
+    let spec_root = vos_runtime::resolve_spec_root(project_root, None, &config)?;
+    let normalized = vos_runtime::normalize_spec(project_root, Some(&spec_root))?;
+    vos_runtime::emit(
         progress,
         "normalizing_spec",
         "normalized strict spec bundle",
     );
     let consistency = vos_spec::check_consistency(project_root, &spec_root, &normalized)?;
-    emit(
+    vos_runtime::emit(
         progress,
         "checking_consistency",
         "checked cross-spec consistency",
@@ -217,27 +215,27 @@ fn prepare_generation_context(
         )));
     }
     let selection = resolve_target_selection(project_root, &normalized, &spec_root, options)?;
-    emit(
+    vos_runtime::emit(
         progress,
         "composing_architecture",
         "composed architecture graph",
     );
     let _tests = vos_spec::derive_tests(project_root, &spec_root, &selection.stage)?;
-    emit(
+    vos_runtime::emit(
         progress,
         "deriving_tests",
         "derived public build/run checks",
     );
-    let allowed = allowed_paths(&normalized, project_root);
+    let allowed = vos_runtime::allowed_paths(&normalized, project_root);
     let run_id = vos_core::new_run_id();
     let run_dir = project_root.join(".vos").join("runs").join(&run_id);
     fs::create_dir_all(&run_dir)?;
-    write_json(&run_dir.join("normalized-bundle.json"), &normalized)?;
-    write_json(&run_dir.join("consistency-report.json"), &consistency)?;
-    write_json(&run_dir.join("compose-result.json"), &selection.compose)?;
-    write_json(&run_dir.join("generation-queue.json"), &selection.queue)?;
-    let plan = crate::agent::plan::agent_plan(project_root, Some(&selection.stage), None)?;
-    write_json(&run_dir.join("agent-plan.json"), &plan)?;
+    vos_runtime::write_json(&run_dir.join("normalized-bundle.json"), &normalized)?;
+    vos_runtime::write_json(&run_dir.join("consistency-report.json"), &consistency)?;
+    vos_runtime::write_json(&run_dir.join("compose-result.json"), &selection.compose)?;
+    vos_runtime::write_json(&run_dir.join("generation-queue.json"), &selection.queue)?;
+    let plan = crate::agent_plan(project_root, Some(&selection.stage), None)?;
+    vos_runtime::write_json(&run_dir.join("agent-plan.json"), &plan)?;
     Ok(PreparedGenerationContext {
         config,
         spec_root,
@@ -255,7 +253,7 @@ fn resolve_target_selection(
     spec_root: &Path,
     options: &GenerationWorkflowOptions,
 ) -> Result<TargetSelection> {
-    let current = current_stage(normalized)
+    let current = vos_runtime::current_stage(normalized)
         .or_else(|| normalized.modules.last().map(|module| module.stage.clone()))
         .unwrap_or_else(|| "unknown".into());
     let raw_target = options
@@ -410,9 +408,9 @@ fn module_dependency_closure(
 
 #[derive(Debug)]
 struct PatchArtifacts {
-    files_to_create: Vec<vos_core::SkeletonFileEdit>,
-    files_to_update: Vec<vos_core::RegionEdit>,
-    region_edits: Vec<vos_core::RegionEdit>,
+    files_to_create: Vec<SkeletonFileEdit>,
+    files_to_update: Vec<RegionEdit>,
+    region_edits: Vec<RegionEdit>,
     skeleton_validation_path: Option<PathBuf>,
     retry_record_path: Option<PathBuf>,
 }
@@ -448,7 +446,7 @@ async fn generate_patch_artifacts(
 
     loop {
         attempts += 1;
-        emit(
+        vos_runtime::emit(
             progress,
             "projecting_skeleton",
             "requesting skeleton projection",
@@ -469,16 +467,26 @@ async fn generate_patch_artifacts(
                 &feedback,
             )
         };
+        let prompt = crate::PromptEnvelope {
+            task_kind: "skeleton_projection".into(),
+            phase: "skeleton_projection".into(),
+            spec_ref: vos_core::SpecRef {
+                module: "architecture".into(),
+                operation: prepared.selection.compose.current_stage.clone(),
+            },
+            allowed_paths: allowed.to_vec(),
+            prompt: skeleton_prompt,
+        };
         let skeleton_response = workflow
             .run_prompt_stage(
                 &prepared
                     .run_dir
                     .join(format!("skeleton_projection_attempt_{attempts}")),
                 RigStage::ProviderCall,
-                &skeleton_prompt,
+                &prompt,
             )
             .await?;
-        let parsed = vos_prompt::parse_skeleton_projection_response(&skeleton_response)
+        let parsed = vos_prompt::parse_skeleton_projection_response::<SkeletonProjectionResponse>(&skeleton_response)
             .map_err(VosError::Message)?;
         let report = validate_skeleton_projection(
             project_root,
@@ -488,11 +496,11 @@ async fn generate_patch_artifacts(
             &parsed,
         );
         let report_path = prepared.run_dir.join("skeleton-validation.json");
-        write_json(&report_path, &report)?;
+        vos_runtime::write_json(&report_path, &report)?;
         if report.ok {
             skeleton = parsed;
             let retry_path = prepared.run_dir.join("retry-record.json");
-            write_json(
+            vos_runtime::write_json(
                 &retry_path,
                 &SkeletonRetryRecord {
                     attempts,
@@ -513,7 +521,7 @@ async fn generate_patch_artifacts(
         });
         let retry_path = prepared.run_dir.join("retry-record.json");
         if non_retryable {
-            write_json(
+            vos_runtime::write_json(
                 &retry_path,
                 &SkeletonRetryRecord {
                     attempts,
@@ -528,7 +536,7 @@ async fn generate_patch_artifacts(
             )));
         }
         if attempts >= max_attempts {
-            write_json(
+            vos_runtime::write_json(
                 &retry_path,
                 &SkeletonRetryRecord {
                     attempts,
@@ -587,9 +595,9 @@ fn load_selected_concurrency_specs(
 fn validate_generation_outputs(
     project_root: &Path,
     allowed_paths: &[PathBuf],
-    files_to_create: &[vos_core::SkeletonFileEdit],
-    files_to_update: &[vos_core::RegionEdit],
-    region_edits: &[vos_core::RegionEdit],
+    files_to_create: &[SkeletonFileEdit],
+    files_to_update: &[RegionEdit],
+    region_edits: &[RegionEdit],
 ) -> Result<()> {
     validate_skeleton_files(project_root, allowed_paths, files_to_create)?;
     validate_region_edits(project_root, allowed_paths, files_to_update)?;
@@ -600,9 +608,9 @@ fn validate_generation_outputs(
 
 fn apply_generation_outputs(
     project_root: &Path,
-    files_to_create: &[vos_core::SkeletonFileEdit],
-    files_to_update: &[vos_core::RegionEdit],
-    region_edits: &[vos_core::RegionEdit],
+    files_to_create: &[SkeletonFileEdit],
+    files_to_update: &[RegionEdit],
+    region_edits: &[RegionEdit],
     created_files: &mut Vec<PathBuf>,
     updated_regions: &mut Vec<PathBuf>,
 ) -> Result<()> {
@@ -634,7 +642,7 @@ fn validate_skeleton_projection(
     let warnings = Vec::new();
     for file in &skeleton.files_to_create {
         let absolute = project_root.join(&file.path);
-        if !crate::fs_guard::is_allowed_path(&absolute, allowed) {
+        if !vos_runtime::is_allowed_path(&absolute, allowed) {
             errors.push(format!(
                 "policy_violation:file outside allowed paths: {}",
                 file.path.display()
@@ -646,7 +654,7 @@ fn validate_skeleton_projection(
     }
     for edit in &skeleton.files_to_update {
         let absolute = project_root.join(&edit.file);
-        if !crate::fs_guard::is_allowed_path(&absolute, allowed) {
+        if !vos_runtime::is_allowed_path(&absolute, allowed) {
             errors.push(format!(
                 "policy_violation:region outside allowed paths: {}",
                 edit.file.display()
@@ -751,9 +759,9 @@ fn validate_skeleton_projection(
 
 fn preapply_check(
     project_root: &Path,
-    skeleton_create: &[vos_core::SkeletonFileEdit],
-    skeleton_update: &[vos_core::RegionEdit],
-    module_region_edits: &[vos_core::RegionEdit],
+    skeleton_create: &[SkeletonFileEdit],
+    skeleton_update: &[RegionEdit],
+    module_region_edits: &[RegionEdit],
 ) -> Result<()> {
     let mut known = BTreeMap::new();
     for file in skeleton_create {

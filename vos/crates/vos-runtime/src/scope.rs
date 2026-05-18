@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use vos_core::{AppConfig, NormalizedSpecBundle, Result, VosError};
 
-pub(crate) fn resolve_spec_root(
+pub fn resolve_spec_root(
     project_root: &Path,
     input: Option<&Path>,
     config: &AppConfig,
@@ -38,7 +38,7 @@ pub(crate) fn resolve_spec_root(
         .unwrap_or_else(|| PathBuf::from("spec")))
 }
 
-pub(crate) fn resolve_stage(
+pub fn resolve_stage(
     project_root: &Path,
     spec_root: &Path,
     input: Option<&Path>,
@@ -66,7 +66,7 @@ pub(crate) fn resolve_stage(
         .ok_or_else(|| VosError::Message("no architecture stage found".into()))
 }
 
-pub(crate) fn current_stage(normalized: &NormalizedSpecBundle) -> Option<String> {
+pub fn current_stage(normalized: &NormalizedSpecBundle) -> Option<String> {
     normalized
         .architecture
         .slices

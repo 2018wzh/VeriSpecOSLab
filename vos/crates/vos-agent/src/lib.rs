@@ -1,10 +1,20 @@
+mod agent;
 mod apply;
+mod codegen;
+mod config;
 mod context;
 mod generate;
+mod patch;
 mod plan;
+mod provider;
+mod rig;
 mod workflow;
 
+pub use agent::*;
 pub use apply::agent_apply_patch;
+pub use config::*;
 pub use context::agent_context;
 pub use generate::agent_generate;
 pub use plan::agent_plan;
+pub use rig::{RigStage, RigWorkflow};
+pub use vos_runtime::ProgressSink;

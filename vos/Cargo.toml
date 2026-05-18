@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/vos-agent",
   "crates/vos-cli",
   "crates/vos-core",
   "crates/vos-spec",

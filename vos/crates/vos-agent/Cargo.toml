@@ -1,14 +1,16 @@
 [package]
-name = "vos-prompt"
+name = "vos-agent"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-serde_yaml.workspace = true
+tokio.workspace = true
 vos-core = { path = "../vos-core" }
-
-[dev-dependencies]
+vos-platform = { path = "../vos-platform" }
+vos-prompt = { path = "../vos-prompt" }
+vos-runtime = { path = "../vos-runtime" }
 vos-spec = { path = "../vos-spec" }

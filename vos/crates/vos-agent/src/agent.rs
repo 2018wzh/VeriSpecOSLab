@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::{BuildResult, QemuRunResult, SpecRef};
+use vos_core::{BuildResult, QemuRunResult, SpecRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromptEnvelope {
@@ -138,14 +138,4 @@ pub struct SkeletonRetryRecord {
     pub exit_reason: String,
     #[serde(default)]
     pub feedback: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PublicVerifyResult {
-    pub normalize_ok: bool,
-    pub consistency_ok: bool,
-    pub build: BuildResult,
-    pub run: QemuRunResult,
-    #[serde(default)]
-    pub required_checks: Vec<String>,
 }

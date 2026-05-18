@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use vos_core::{NormalizedSpecBundle, Result, RunManifest};
 
-pub(crate) fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<()> {
+pub fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -12,7 +12,7 @@ pub(crate) fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<
     Ok(())
 }
 
-pub(crate) fn build_run_manifest(
+pub fn build_run_manifest(
     run_id: &str,
     command: &str,
     normalized: &NormalizedSpecBundle,
@@ -38,7 +38,7 @@ pub(crate) fn build_run_manifest(
     }
 }
 
-pub(crate) fn recent_evidence_refs(project_root: &Path) -> Vec<String> {
+pub fn recent_evidence_refs(project_root: &Path) -> Vec<String> {
     let runs_dir = project_root.join(".vos").join("runs");
     if !runs_dir.exists() {
         return Vec::new();

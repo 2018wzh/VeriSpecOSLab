@@ -1,4 +1,3 @@
-mod agent;
 mod config;
 mod envelope;
 mod error;
@@ -8,7 +7,6 @@ mod progress;
 mod spec;
 mod verify;
 
-pub use agent::*;
 pub use config::*;
 pub use envelope::*;
 pub use error::*;

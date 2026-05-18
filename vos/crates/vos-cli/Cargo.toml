@@ -14,5 +14,6 @@ indicatif.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+vos-agent = { path = "../vos-agent" }
 vos-core = { path = "../vos-core" }
 vos-runtime = { path = "../vos-runtime" }

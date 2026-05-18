@@ -1,5 +1,5 @@
 use std::path::Path;
-use vos_core::{ArchitectureComposeResult, NormalizedSpecBundle, PromptEnvelope, SpecRef};
+use vos_core::{ArchitectureComposeResult, NormalizedSpecBundle};
 
 use crate::shared::{yaml_lines, yaml_paths};
 
@@ -8,9 +8,9 @@ pub fn build_skeleton_projection_prompt(
     compose: &ArchitectureComposeResult,
     project_root: &Path,
     allowed_paths: &[std::path::PathBuf],
-) -> PromptEnvelope {
+) -> String {
     let toolchain = &normalized.architecture.toolchain;
-    let prompt = format!(
+    format!(
         "You are projecting an operating system skeleton from strict architecture, module, and toolchain specs.\n\
 Task kind: skeleton_projection\n\
 Return one JSON code block matching this shape exactly:\n\
@@ -74,18 +74,7 @@ allowed_paths:\n{allowed}\n",
                 })
                 .collect::<Vec<_>>(),
         ),
-    );
-
-    PromptEnvelope {
-        task_kind: "skeleton_projection".into(),
-        phase: "skeleton_projection".into(),
-        spec_ref: SpecRef {
-            module: "architecture".into(),
-            operation: compose.current_stage.clone(),
-        },
-        allowed_paths: allowed_paths.to_vec(),
-        prompt,
-    }
+    )
 }
 
 pub fn build_skeleton_retry_prompt(
@@ -94,9 +83,8 @@ pub fn build_skeleton_retry_prompt(
     project_root: &Path,
     allowed_paths: &[std::path::PathBuf],
     feedback: &[String],
-) -> PromptEnvelope {
-    let mut base =
-        build_skeleton_projection_prompt(normalized, compose, project_root, allowed_paths);
+) -> String {
+    let mut base = build_skeleton_projection_prompt(normalized, compose, project_root, allowed_paths);
     let mut addon = String::from("\nRETRY_FEEDBACK\n");
     for item in feedback {
         addon.push_str("- ");
@@ -106,6 +94,6 @@ pub fn build_skeleton_retry_prompt(
     addon.push_str(
         "Fix all items above. Return one JSON code block only. Do not include explanations.\n",
     );
-    base.prompt.push_str(&addon);
+    base.push_str(&addon);
     base
 }

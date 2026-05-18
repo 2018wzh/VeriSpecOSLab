@@ -9,7 +9,7 @@ pub fn agent_context_envelope(
     visibility: Option<&str>,
 ) -> Result<CommandEnvelope<serde_json::Value>, String> {
     let payload =
-        vos_runtime::agent_context(project_root, stage, visibility).map_err(|e| e.to_string())?;
+        vos_agent::agent_context(project_root, stage, visibility).map_err(|e| e.to_string())?;
     Ok(envelope(
         "vos agent context",
         CommandStatus::Ok,
@@ -23,7 +23,7 @@ pub fn agent_plan_envelope(
     stage: Option<&str>,
     task: Option<&str>,
 ) -> Result<CommandEnvelope<serde_json::Value>, String> {
-    let payload = vos_runtime::agent_plan(project_root, stage, task).map_err(|e| e.to_string())?;
+    let payload = vos_agent::agent_plan(project_root, stage, task).map_err(|e| e.to_string())?;
     Ok(envelope(
         "vos agent plan",
         CommandStatus::Ok,
@@ -35,11 +35,11 @@ pub fn agent_plan_envelope(
 pub async fn agent_apply_patch_envelope(
     project_root: &Path,
     args: AgentApplyPatchArgs,
-    progress: Option<&vos_runtime::ProgressSink>,
+    progress: Option<&vos_agent::ProgressSink>,
 ) -> Result<CommandEnvelope<serde_json::Value>, String> {
-    let payload = vos_runtime::agent_apply_patch(
+    let payload = vos_agent::agent_apply_patch(
         project_root,
-        vos_runtime::AgentApplyOptions {
+        vos_agent::AgentApplyOptions {
             patch_path: args.patch_path,
             apply: args.apply,
             require_spec: args.require_spec,
@@ -64,11 +64,11 @@ pub async fn agent_apply_patch_envelope(
 pub async fn agent_generate_envelope(
     project_root: &Path,
     args: AgentGenerateArgs,
-    progress: Option<&vos_runtime::ProgressSink>,
+    progress: Option<&vos_agent::ProgressSink>,
 ) -> Result<CommandEnvelope<serde_json::Value>, String> {
-    let payload = vos_runtime::agent_generate(
+    let payload = vos_agent::agent_generate(
         project_root,
-        vos_runtime::AgentGenerateOptions {
+        vos_agent::AgentGenerateOptions {
             target: args.target,
             from_patch: args.from_patch,
             apply: args.apply,

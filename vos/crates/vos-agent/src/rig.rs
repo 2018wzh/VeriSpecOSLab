@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use vos_core::{AppConfig, PromptEnvelope, Result};
+use vos_core::{AppConfig, Result};
+
+use crate::PromptEnvelope;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]

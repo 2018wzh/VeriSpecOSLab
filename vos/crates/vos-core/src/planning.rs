@@ -233,6 +233,16 @@ pub struct PatchVerifyResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublicVerifyResult {
+    pub normalize_ok: bool,
+    pub consistency_ok: bool,
+    pub build: BuildResult,
+    pub run: QemuRunResult,
+    #[serde(default)]
+    pub required_checks: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QemuRunResult {
     pub command: String,
     pub success: bool,

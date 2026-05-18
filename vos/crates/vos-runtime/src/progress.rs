@@ -2,7 +2,7 @@ use vos_core::ProgressEvent;
 
 pub type ProgressSink = dyn Fn(ProgressEvent) + Send + Sync;
 
-pub(crate) fn emit(progress: Option<&ProgressSink>, stage: &str, message: &str) {
+pub fn emit(progress: Option<&ProgressSink>, stage: &str, message: &str) {
     if let Some(cb) = progress {
         cb(ProgressEvent {
             stage: stage.into(),
@@ -15,7 +15,7 @@ pub(crate) fn emit(progress: Option<&ProgressSink>, stage: &str, message: &str) 
     }
 }
 
-pub(crate) fn emit_entity(
+pub fn emit_entity(
     progress: Option<&ProgressSink>,
     stage: &str,
     message: &str,

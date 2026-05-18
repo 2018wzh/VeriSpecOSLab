@@ -1,29 +1,27 @@
-use vos_core::{ContextBundle, PlanDraft, PromptEnvelope, SpecRef};
+use std::path::PathBuf;
 
 use crate::shared::{plan_summary, yaml_lines, yaml_paths};
 
 pub fn build_agent_context_prompt(
-    context: &ContextBundle,
-    plan: Option<&PlanDraft>,
-) -> PromptEnvelope {
-    let prompt = format!(
+    requested_scope: &str,
+    visibility_scope: &str,
+    resolved_specs: &[String],
+    recent_evidence: &[String],
+    allowed_paths: &[PathBuf],
+    recommended_commands: &[String],
+    plan: Option<(&str, &[String], &[String], &[Vec<String>])>,
+) -> String {
+    format!(
         "Context scope: {}\nVisibility: {}\nResolved specs:\n{}\nRecent evidence:\n{}\nAllowed paths:\n{}\nRecommended commands:\n{}\nPlan summary:\n{}",
-        context.requested_scope,
-        context.visibility_scope,
-        yaml_lines(&context.resolved_specs),
-        yaml_lines(&context.recent_evidence),
-        yaml_paths(&context.allowed_paths),
-        yaml_lines(&context.recommended_commands),
-        plan.map(plan_summary).unwrap_or_else(|| "- none".into())
-    );
-    PromptEnvelope {
-        task_kind: "agent_context".into(),
-        phase: "context".into(),
-        spec_ref: SpecRef {
-            module: "agent".into(),
-            operation: "context".into(),
-        },
-        allowed_paths: context.allowed_paths.clone(),
-        prompt,
-    }
+        requested_scope,
+        visibility_scope,
+        yaml_lines(resolved_specs),
+        yaml_lines(recent_evidence),
+        yaml_paths(allowed_paths),
+        yaml_lines(recommended_commands),
+        plan.map(|(task, related_specs, required_validations, generation_waves)| {
+            plan_summary(task, related_specs, required_validations, generation_waves)
+        })
+        .unwrap_or_else(|| "- none".into())
+    )
 }

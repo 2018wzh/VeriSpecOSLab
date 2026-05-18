@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use vos_core::NormalizedSpecBundle;
 
-pub(crate) fn allowed_paths(
+pub fn allowed_paths(
     normalized: &NormalizedSpecBundle,
     project_root: &Path,
 ) -> Vec<PathBuf> {
@@ -59,7 +59,7 @@ pub(crate) fn allowed_paths(
     allowed
 }
 
-pub(crate) fn is_allowed_path(candidate: &Path, allowed_paths: &[PathBuf]) -> bool {
+pub fn is_allowed_path(candidate: &Path, allowed_paths: &[PathBuf]) -> bool {
     allowed_paths.iter().any(|allowed| {
         candidate == allowed || allowed.extension().is_none() && candidate.starts_with(allowed)
     })

@@ -1,33 +1,13 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use vos_core::{AppConfig, DoctorReport, ProgressEvent, Result, ToolchainLintResult};
+use vos_core::{AppConfig, DoctorReport, Result, ToolchainLintResult};
 
 use crate::fs_guard::is_writable;
-use crate::provider::{
+use crate::provider_helpers::{
     load_project_dotenv, resolve_active_provider, resolve_api_key_env, resolve_base_url,
     resolve_model, resolve_provider_kind, validate_provider_config,
 };
-
-pub type ProgressSink = dyn Fn(ProgressEvent) + Send + Sync;
-
-#[derive(Debug, Clone)]
-pub struct AgentApplyOptions {
-    pub patch_path: Option<PathBuf>,
-    pub apply: bool,
-    pub require_spec: bool,
-    pub run_validation: bool,
-    pub stage: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct AgentGenerateOptions {
-    pub target: String,
-    pub from_patch: Option<PathBuf>,
-    pub apply: bool,
-    pub build: bool,
-    pub run: bool,
-}
 
 pub fn load_config(project_root: &Path) -> Result<AppConfig> {
     load_project_dotenv(project_root);

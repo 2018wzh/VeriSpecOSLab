@@ -1,7 +1,5 @@
 use std::path::Path;
-use vos_core::{
-    ConcurrencySpec, ModuleSpec, NormalizedSpecBundle, OperationContract, PromptEnvelope, SpecRef,
-};
+use vos_core::{ConcurrencySpec, ModuleSpec, NormalizedSpecBundle, OperationContract};
 
 use crate::shared::{operation_block, yaml_lines};
 
@@ -10,13 +8,9 @@ pub fn build_module_codegen_batch_prompt(
     operations: &[OperationContract],
     concurrency: Option<&ConcurrencySpec>,
     normalized: &NormalizedSpecBundle,
-    project_root: &Path,
-) -> PromptEnvelope {
-    let allowed_paths = operations
-        .iter()
-        .map(|op| project_root.join(&op.llm_codegen.editable_region.file))
-        .collect::<Vec<_>>();
-    let prompt = format!(
+    _project_root: &Path,
+) -> String {
+    format!(
         "You are generating one module worth of OS code from strict specs.\n\
 Task kind: module_codegen_batch\n\
 Return one JSON code block matching this shape exactly:\n\
@@ -86,16 +80,5 @@ ALLOWED REGION TARGETS\n\
             })
             .collect::<Vec<_>>()
             .join("\n"),
-    );
-
-    PromptEnvelope {
-        task_kind: "module_codegen_batch".into(),
-        phase: "module_codegen_batch".into(),
-        spec_ref: SpecRef {
-            module: module_spec.module.clone(),
-            operation: "batch".into(),
-        },
-        allowed_paths,
-        prompt,
-    }
+    )
 }

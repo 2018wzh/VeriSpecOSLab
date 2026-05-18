@@ -1,15 +1,14 @@
 use std::env;
 use std::fs;
 use std::path::Path;
+use std::time::Duration;
 
 use reqwest::Client;
 use reqwest::StatusCode;
 use serde_json::{Value, json};
-use std::time::Duration;
-use vos_core::{
-    AppConfig, CodegenRequest, CodegenResponse, ProviderProfile, Result, VosError,
-    is_valid_env_var_name,
-};
+use vos_core::{AppConfig, ProviderProfile, Result, VosError, is_valid_env_var_name};
+
+use crate::{CodegenRequest, CodegenResponse, PromptEnvelope};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ActiveProvider {
@@ -34,13 +33,6 @@ pub(crate) fn validate_provider_config(config: &AppConfig) -> Result<()> {
         )));
     }
     Ok(())
-}
-
-pub(crate) fn load_project_dotenv(project_root: &Path) {
-    let dotenv_path = project_root.join(".env");
-    if dotenv_path.exists() {
-        let _ = dotenvy::from_path(dotenv_path);
-    }
 }
 
 pub(crate) fn resolve_active_provider(config: &AppConfig) -> Result<ActiveProvider> {
@@ -86,7 +78,7 @@ pub(crate) fn resolve_timeout_secs(profile: &ProviderProfile) -> u64 {
 pub(crate) async fn call_json_prompt(
     config: &AppConfig,
     run_dir: &Path,
-    prompt: &vos_core::PromptEnvelope,
+    prompt: &PromptEnvelope,
 ) -> Result<String> {
     fs::create_dir_all(run_dir)?;
     let active = resolve_active_provider(config)?;
@@ -96,7 +88,7 @@ pub(crate) async fn call_json_prompt(
         model: resolve_model(&active.profile),
         prompt: prompt.prompt.clone(),
     };
-    crate::evidence::write_json(&run_dir.join("request.json"), &request)?;
+    vos_runtime::write_json(&run_dir.join("request.json"), &request)?;
     fs::write(run_dir.join("prompt.txt"), &prompt.prompt)?;
     let api_key = env::var(resolve_api_key_env(&active.profile)).map_err(|_| {
         VosError::Message(format!(

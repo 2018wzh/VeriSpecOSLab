@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use vos_core::{OperationContract, PlanDraft};
+use vos_core::OperationContract;
 
 pub(crate) fn operation_block(operation: &OperationContract) -> String {
     format!(
@@ -44,13 +44,18 @@ pub(crate) fn yaml_paths(items: &[PathBuf]) -> String {
         .join("\n")
 }
 
-pub(crate) fn plan_summary(plan: &PlanDraft) -> String {
+pub(crate) fn plan_summary(
+    task: &str,
+    related_specs: &[String],
+    required_validations: &[String],
+    generation_waves: &[Vec<String>],
+) -> String {
     format!(
         "task: {}\nrelated_specs:\n{}\nrequired_validations:\n{}\ngeneration_waves:\n{}",
-        plan.task,
-        yaml_lines(&plan.related_specs),
-        yaml_lines(&plan.required_validations),
-        plan.generation_waves
+        task,
+        yaml_lines(related_specs),
+        yaml_lines(required_validations),
+        generation_waves
             .iter()
             .map(|wave| format!("- {}", wave.join(", ")))
             .collect::<Vec<_>>()
