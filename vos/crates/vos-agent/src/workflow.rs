@@ -14,8 +14,7 @@ use crate::patch::{
     PatchFileInput, apply_region_edit, read_patch_file, validate_region_edits,
     validate_skeleton_files,
 };
-use crate::provider::validate_provider_config;
-use crate::rig::{RigStage, RigWorkflow};
+use crate::rig::{RigStage, RigWorkflow, validate_provider_config};
 use crate::{
     RegionEdit, SkeletonFileEdit, SkeletonProjectionResponse, SkeletonRetryRecord,
     SkeletonValidationReport,
@@ -486,8 +485,10 @@ async fn generate_patch_artifacts(
                 &prompt,
             )
             .await?;
-        let parsed = vos_prompt::parse_skeleton_projection_response::<SkeletonProjectionResponse>(&skeleton_response)
-            .map_err(VosError::Message)?;
+        let parsed = vos_prompt::parse_skeleton_projection_response::<SkeletonProjectionResponse>(
+            &skeleton_response,
+        )
+        .map_err(VosError::Message)?;
         let report = validate_skeleton_projection(
             project_root,
             allowed,

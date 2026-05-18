@@ -2,10 +2,7 @@ use std::path::{Path, PathBuf};
 
 use vos_core::NormalizedSpecBundle;
 
-pub fn allowed_paths(
-    normalized: &NormalizedSpecBundle,
-    project_root: &Path,
-) -> Vec<PathBuf> {
+pub fn allowed_paths(normalized: &NormalizedSpecBundle, project_root: &Path) -> Vec<PathBuf> {
     let mut allowed = normalized
         .operations
         .iter()

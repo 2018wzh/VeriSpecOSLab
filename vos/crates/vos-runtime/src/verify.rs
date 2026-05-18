@@ -1,13 +1,13 @@
 use std::path::Path;
 use vos_core::Result;
 
+use crate::ProgressSink;
 use crate::build::build_with_progress;
 use crate::config::load_config;
 use crate::patch::read_patch_file;
 use crate::progress::emit;
 use crate::run_qemu::run_qemu_with_progress;
 use crate::scope::resolve_spec_root;
-use crate::ProgressSink;
 
 pub async fn verify_public(
     project_root: &Path,

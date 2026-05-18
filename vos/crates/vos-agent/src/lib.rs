@@ -6,7 +6,6 @@ mod context;
 mod generate;
 mod patch;
 mod plan;
-mod provider;
 mod rig;
 mod workflow;
 

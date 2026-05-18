@@ -3,9 +3,9 @@ use std::path::Path;
 use vos_core::Result;
 use vos_runtime::ProgressSink;
 
+use crate::ApplyPatchResult;
 use crate::config::AgentApplyOptions;
 use crate::workflow::{GenerationWorkflowOptions, execute_generation_workflow};
-use crate::ApplyPatchResult;
 
 pub async fn agent_apply_patch(
     project_root: &Path,

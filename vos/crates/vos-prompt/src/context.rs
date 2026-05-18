@@ -19,9 +19,11 @@ pub fn build_agent_context_prompt(
         yaml_lines(recent_evidence),
         yaml_paths(allowed_paths),
         yaml_lines(recommended_commands),
-        plan.map(|(task, related_specs, required_validations, generation_waves)| {
-            plan_summary(task, related_specs, required_validations, generation_waves)
-        })
+        plan.map(
+            |(task, related_specs, required_validations, generation_waves)| {
+                plan_summary(task, related_specs, required_validations, generation_waves)
+            }
+        )
         .unwrap_or_else(|| "- none".into())
     )
 }

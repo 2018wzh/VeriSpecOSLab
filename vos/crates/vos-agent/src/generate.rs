@@ -3,9 +3,9 @@ use std::path::Path;
 use vos_core::Result;
 use vos_runtime::ProgressSink;
 
+use crate::GenerationRunResult;
 use crate::config::AgentGenerateOptions;
 use crate::workflow::{GenerationWorkflowOptions, execute_generation_workflow};
-use crate::GenerationRunResult;
 
 pub async fn agent_generate(
     project_root: &Path,

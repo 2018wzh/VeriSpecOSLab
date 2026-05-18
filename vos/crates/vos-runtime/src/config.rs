@@ -5,8 +5,8 @@ use vos_core::{AppConfig, DoctorReport, Result, ToolchainLintResult};
 
 use crate::fs_guard::is_writable;
 use crate::provider_helpers::{
-    load_project_dotenv, resolve_active_provider, resolve_api_key_env, resolve_base_url,
-    resolve_model, resolve_provider_kind, validate_provider_config,
+    ResolvedAgentConfig, load_project_dotenv, resolve_agent_runtime_config, resolve_provider_kind,
+    validate_agent_runtime_config,
 };
 
 pub fn load_config(project_root: &Path) -> Result<AppConfig> {
@@ -18,10 +18,17 @@ pub fn load_config(project_root: &Path) -> Result<AppConfig> {
     Ok(AppConfig::default())
 }
 
+pub fn validate_agent_config(config: &AppConfig) -> Result<()> {
+    validate_agent_runtime_config(config)
+}
+
+pub fn resolve_agent_config(config: &AppConfig, task_keys: &[&str]) -> Result<ResolvedAgentConfig> {
+    resolve_agent_runtime_config(config, task_keys)
+}
+
 pub async fn doctor(project_root: &Path) -> Result<DoctorReport> {
     let config = load_config(project_root)?;
-    validate_provider_config(&config)?;
-    let active_provider = resolve_active_provider(&config)?;
+    let active_provider = resolve_agent_runtime_config(&config, &[])?;
     let spec_root = crate::scope::resolve_spec_root(project_root, None, &config)?;
     let build_command = if spec_root.exists() {
         let _ = vos_spec::load_toolchain_spec(project_root, &spec_root)?;
@@ -30,13 +37,12 @@ pub async fn doctor(project_root: &Path) -> Result<DoctorReport> {
         None
     };
     Ok(DoctorReport {
-        active_provider: active_provider.name.clone(),
-        provider_api_key_present: std::env::var(resolve_api_key_env(&active_provider.profile))
-            .is_ok(),
-        provider_kind: resolve_provider_kind(&active_provider.profile),
-        api_key_env: resolve_api_key_env(&active_provider.profile).to_string(),
-        model: resolve_model(&active_provider.profile),
-        base_url: resolve_base_url(&active_provider.profile),
+        active_provider: active_provider.provider.as_str().to_string(),
+        provider_api_key_present: std::env::var(&active_provider.api_key_env).is_ok(),
+        provider_kind: resolve_provider_kind(&active_provider),
+        api_key_env: active_provider.api_key_env,
+        model: active_provider.model,
+        base_url: active_provider.base_url,
         build_command,
         project_root: project_root.to_path_buf(),
         writable: is_writable(project_root),

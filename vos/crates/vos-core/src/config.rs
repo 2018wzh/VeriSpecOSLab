@@ -4,13 +4,63 @@ use std::path::PathBuf;
 
 use crate::progress::ProgressEvent;
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum AgentProviderKind {
+    OpenAi,
+    #[default]
+    OpenAiCompatible,
+    Deepseek,
+    #[serde(alias = "claude")]
+    Anthropic,
+    #[serde(alias = "google")]
+    Gemini,
+}
+
+impl AgentProviderKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::OpenAi => "openai",
+            Self::OpenAiCompatible => "openai-compatible",
+            Self::Deepseek => "deepseek",
+            Self::Anthropic => "anthropic",
+            Self::Gemini => "gemini",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ProviderProfile {
-    pub kind: Option<String>,
+pub struct AgentAuthConfig {
+    pub env: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AgentRetryConfig {
+    pub max_attempts: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AgentTaskOverride {
+    pub model: Option<String>,
+    pub timeout_secs: Option<u64>,
+    pub use_completions_api: Option<bool>,
+    #[serde(default)]
+    pub retry: AgentRetryConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AgentRuntimeConfig {
+    pub provider: Option<AgentProviderKind>,
     pub model: Option<String>,
     pub base_url: Option<String>,
-    pub api_key_env: Option<String>,
+    #[serde(default)]
+    pub auth: AgentAuthConfig,
     pub timeout_secs: Option<u64>,
+    pub use_completions_api: Option<bool>,
+    #[serde(default)]
+    pub retry: AgentRetryConfig,
+    #[serde(default)]
+    pub overrides: BTreeMap<String, AgentTaskOverride>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -25,8 +75,7 @@ pub struct AppConfig {
     #[serde(default)]
     pub build: BuildConfig,
     #[serde(default)]
-    pub providers: BTreeMap<String, ProviderProfile>,
-    pub default_provider: Option<String>,
+    pub agent: AgentRuntimeConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,3 +98,71 @@ pub fn is_valid_env_var_name(name: &str) -> bool {
 }
 
 pub type ProgressSink = dyn Fn(ProgressEvent) + Send + Sync;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_rig_native_agent_config() {
+        let config: AppConfig = toml::from_str(
+            r#"
+spec_root = "spec"
+
+[agent]
+provider = "deepseek"
+model = "deepseek-chat"
+base_url = "https://api.deepseek.com"
+timeout_secs = 90
+use_completions_api = true
+
+[agent.auth]
+env = "DEEPSEEK_API_KEY"
+
+[agent.retry]
+max_attempts = 3
+
+[agent.overrides.skeleton_projection]
+model = "deepseek-reasoner"
+timeout_secs = 180
+"#,
+        )
+        .expect("config");
+
+        assert_eq!(config.agent.provider, Some(AgentProviderKind::Deepseek));
+        assert_eq!(config.agent.model.as_deref(), Some("deepseek-chat"));
+        assert_eq!(config.agent.auth.env.as_deref(), Some("DEEPSEEK_API_KEY"));
+        assert_eq!(config.agent.retry.max_attempts, Some(3));
+        assert_eq!(
+            config
+                .agent
+                .overrides
+                .get("skeleton_projection")
+                .and_then(|override_| override_.model.as_deref()),
+            Some("deepseek-reasoner")
+        );
+    }
+
+    #[test]
+    fn parses_provider_aliases() {
+        let claude: AppConfig = toml::from_str(
+            r#"
+[agent]
+provider = "claude"
+model = "claude-sonnet-4"
+"#,
+        )
+        .expect("claude config");
+        let google: AppConfig = toml::from_str(
+            r#"
+[agent]
+provider = "google"
+model = "gemini-2.5-pro"
+"#,
+        )
+        .expect("google config");
+
+        assert_eq!(claude.agent.provider, Some(AgentProviderKind::Anthropic));
+        assert_eq!(google.agent.provider, Some(AgentProviderKind::Gemini));
+    }
+}

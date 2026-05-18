@@ -1,10 +1,14 @@
 spec_root = "spec"
 
-default_provider = "deepseek"
-
-[providers.deepseek]
-kind = "openai-compatible"
+[agent]
+provider = "deepseek"
 model = "deepseek-v4-pro"
-base_url = "https://api.deepseek.com/v1"
-api_key_env = "DEEPSEEK_API_KEY"
+base_url = "https://api.deepseek.com"
 timeout_secs = 120
+use_completions_api = true
+
+[agent.auth]
+env = "DEEPSEEK_API_KEY"
+
+[agent.retry]
+max_attempts = 2

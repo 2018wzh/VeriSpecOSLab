@@ -84,7 +84,8 @@ pub fn build_skeleton_retry_prompt(
     allowed_paths: &[std::path::PathBuf],
     feedback: &[String],
 ) -> String {
-    let mut base = build_skeleton_projection_prompt(normalized, compose, project_root, allowed_paths);
+    let mut base =
+        build_skeleton_projection_prompt(normalized, compose, project_root, allowed_paths);
     let mut addon = String::from("\nRETRY_FEEDBACK\n");
     for item in feedback {
         addon.push_str("- ");
