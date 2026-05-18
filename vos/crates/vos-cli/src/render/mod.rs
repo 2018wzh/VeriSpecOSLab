@@ -21,7 +21,7 @@ pub fn make_progress_callback(
         let mut state = state.lock().expect("progress state lock poisoned");
         let rendered = format_progress_message(&event);
         let event_key = event_dedup_key(&event);
-        let sticky_line = format!("[progress] {rendered}");
+        let sticky_line = format!("{rendered}");
 
         match progress_mode(&event) {
             ProgressMode::OverallBar(position) => {

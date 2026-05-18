@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
+use reqwest::header::{ACCEPT_ENCODING, HeaderMap, HeaderValue};
 use rig_core::client::CompletionClient;
 use rig_core::completion::{AssistantContent, CompletionError, CompletionModel};
 use rig_core::http_client::ReqwestClient;
@@ -106,7 +107,11 @@ async fn execute_prompt_once(
     prompt: &PromptEnvelope,
     api_key: &str,
 ) -> Result<RigResponseArtifact> {
+    let mut default_headers = HeaderMap::new();
+    default_headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
+
     let http_client = ReqwestClient::builder()
+        .default_headers(default_headers)
         .timeout(Duration::from_secs(resolved.timeout_secs))
         .build()
         .map_err(|err| VosError::Message(format!("rig http client build failed: {err}")))?;
@@ -199,13 +204,9 @@ fn extract_text_output(choice: &rig_core::OneOrMany<AssistantContent>) -> Option
     for item in choice.iter() {
         match item {
             AssistantContent::Text(text) => chunks.push(text.text.clone()),
-            AssistantContent::Reasoning(reasoning) => {
-                let block = reasoning.display_text();
-                if !block.trim().is_empty() {
-                    chunks.push(block);
-                }
-            }
-            AssistantContent::ToolCall(_) | AssistantContent::Image(_) => {}
+            AssistantContent::Reasoning(_)
+            | AssistantContent::ToolCall(_)
+            | AssistantContent::Image(_) => {}
         }
     }
     if chunks.is_empty() {
@@ -259,7 +260,9 @@ fn map_completion_error(error: CompletionError) -> VosError {
                     "rig completion failed with status {status}: {message}"
                 ))
             }
-            other => VosError::Message(format!("rig http error: {other}")),
+            other => VosError::Message(format!(
+                "rig http error: {other}. request sent with `Accept-Encoding: identity`; if this persists, inspect provider/proxy response framing"
+            )),
         },
         CompletionError::JsonError(err) => VosError::Json(err),
         CompletionError::UrlError(err) => VosError::Message(format!("rig url error: {err}")),
@@ -279,7 +282,7 @@ mod tests {
     use rig_core::message::{Reasoning, Text};
 
     #[test]
-    fn extracts_text_and_reasoning_blocks() {
+    fn extracts_text_and_ignores_reasoning_blocks() {
         let choice = OneOrMany::many(vec![
             AssistantContent::Reasoning(Reasoning::summaries(vec!["plan".into()])),
             AssistantContent::Text(Text {
@@ -290,8 +293,7 @@ mod tests {
 
         let output = extract_text_output(&choice).expect("text");
 
-        assert!(output.contains("plan"));
-        assert!(output.contains("int x = 1;"));
+        assert_eq!(output, "```c\nint x = 1;\n```");
         assert_eq!(extract_code_block(&output), "int x = 1;");
     }
 
