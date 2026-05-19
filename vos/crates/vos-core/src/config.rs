@@ -7,10 +7,11 @@ use crate::progress::ProgressEvent;
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum AgentProviderKind {
+    #[serde(alias = "openai")]
     OpenAi,
+    #[serde(alias = "openai-compatible")]
     #[default]
     OpenAiCompatible,
-    Deepseek,
     #[serde(alias = "claude")]
     Anthropic,
     #[serde(alias = "google")]
@@ -22,7 +23,6 @@ impl AgentProviderKind {
         match self {
             Self::OpenAi => "openai",
             Self::OpenAiCompatible => "openai-compatible",
-            Self::Deepseek => "deepseek",
             Self::Anthropic => "anthropic",
             Self::Gemini => "gemini",
         }
@@ -104,17 +104,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_rig_native_agent_config() {
+    fn parses_openai_compatible_agent_config() {
         let config: AppConfig = toml::from_str(
             r#"
 spec_root = "spec"
 
 [agent]
-provider = "deepseek"
+provider = "openai-compatible"
 model = "deepseek-chat"
-base_url = "https://api.deepseek.com"
+base_url = "https://api.deepseek.com/v1"
 timeout_secs = 90
-use_completions_api = true
+use_completions_api = false
 
 [agent.auth]
 env = "DEEPSEEK_API_KEY"
@@ -129,7 +129,7 @@ timeout_secs = 180
         )
         .expect("config");
 
-        assert_eq!(config.agent.provider, Some(AgentProviderKind::Deepseek));
+        assert_eq!(config.agent.provider, Some(AgentProviderKind::OpenAiCompatible));
         assert_eq!(config.agent.model.as_deref(), Some("deepseek-chat"));
         assert_eq!(config.agent.auth.env.as_deref(), Some("DEEPSEEK_API_KEY"));
         assert_eq!(config.agent.retry.max_attempts, Some(3));

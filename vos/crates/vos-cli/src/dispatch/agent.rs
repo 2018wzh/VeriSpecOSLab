@@ -1,5 +1,5 @@
 use std::path::Path;
-use vos_core::{CommandEnvelope, CommandStatus, artifact, envelope};
+use vos_core::{CommandEnvelope, CommandStatus, artifact, envelope, envelope_with_run_id};
 
 use crate::args::{AgentApplyPatchArgs, AgentGenerateArgs};
 
@@ -50,7 +50,8 @@ pub async fn agent_apply_patch_envelope(
     )
     .await
     .map_err(|e| e.to_string())?;
-    Ok(envelope(
+    Ok(envelope_with_run_id(
+        payload.run_id.clone(),
         "vos agent apply-patch",
         CommandStatus::Ok,
         vec![artifact(
@@ -79,7 +80,8 @@ pub async fn agent_generate_envelope(
     )
     .await
     .map_err(|e| e.to_string())?;
-    Ok(envelope(
+    Ok(envelope_with_run_id(
+        payload.run_id.clone(),
         "vos agent generate",
         CommandStatus::Ok,
         vec![artifact(

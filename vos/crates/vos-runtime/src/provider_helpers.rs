@@ -101,7 +101,6 @@ fn resolve_api_key_env(config: &AgentRuntimeConfig) -> String {
             .provider
             .unwrap_or(AgentProviderKind::OpenAiCompatible)
         {
-            AgentProviderKind::Deepseek => "DEEPSEEK_API_KEY".into(),
             AgentProviderKind::Anthropic => "ANTHROPIC_API_KEY".into(),
             AgentProviderKind::Gemini => "GEMINI_API_KEY".into(),
             AgentProviderKind::OpenAi | AgentProviderKind::OpenAiCompatible => {
@@ -113,7 +112,6 @@ fn resolve_api_key_env(config: &AgentRuntimeConfig) -> String {
 
 fn resolve_base_url(provider: AgentProviderKind, config: &AgentRuntimeConfig) -> String {
     config.base_url.clone().unwrap_or_else(|| match provider {
-        AgentProviderKind::Deepseek => "https://api.deepseek.com".into(),
         AgentProviderKind::Anthropic => "https://api.anthropic.com".into(),
         AgentProviderKind::Gemini => "https://generativelanguage.googleapis.com".into(),
         AgentProviderKind::OpenAi | AgentProviderKind::OpenAiCompatible => {
@@ -125,7 +123,7 @@ fn resolve_base_url(provider: AgentProviderKind, config: &AgentRuntimeConfig) ->
 fn default_use_completions_api(provider: AgentProviderKind) -> bool {
     matches!(
         provider,
-        AgentProviderKind::Deepseek | AgentProviderKind::OpenAiCompatible
+        AgentProviderKind::OpenAiCompatible
     )
 }
 

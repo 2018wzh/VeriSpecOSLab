@@ -3,11 +3,10 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use reqwest::header::{ACCEPT_ENCODING, HeaderMap, HeaderValue};
 use rig_core::client::CompletionClient;
 use rig_core::completion::{AssistantContent, CompletionError, CompletionModel};
 use rig_core::http_client::ReqwestClient;
-use rig_core::providers::{anthropic, deepseek, gemini, openai};
+use rig_core::providers::{anthropic, gemini, openai};
 use serde::Serialize;
 use serde_json::Value;
 use vos_core::{AgentProviderKind, AppConfig, Result, VosError};
@@ -33,6 +32,17 @@ struct RigResponseArtifact {
     raw_text: String,
     extracted_code: String,
     raw_response: Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct RigFailureArtifact {
+    provider: String,
+    model: String,
+    base_url: String,
+    timeout_secs: u64,
+    use_completions_api: bool,
+    max_attempts: u32,
+    error: String,
 }
 
 pub struct RigWorkflow<'a> {
@@ -65,7 +75,23 @@ impl<'a> RigWorkflow<'a> {
         vos_runtime::write_json(&run_dir.join("request.json"), &request)?;
         fs::write(run_dir.join("prompt.txt"), &prompt.prompt)?;
 
-        let artifact = execute_prompt(&resolved, prompt).await?;
+        let artifact = match execute_prompt(&resolved, prompt).await {
+            Ok(artifact) => artifact,
+            Err(err) => {
+                let failure = RigFailureArtifact {
+                    provider: resolved.provider.as_str().to_string(),
+                    model: resolved.model.clone(),
+                    base_url: resolved.base_url.clone(),
+                    timeout_secs: resolved.timeout_secs,
+                    use_completions_api: resolved.use_completions_api,
+                    max_attempts: resolved.max_attempts,
+                    error: err.to_string(),
+                };
+                let _ = vos_runtime::write_json(&run_dir.join("failure.json"), &failure);
+                let _ = fs::write(run_dir.join("failure.txt"), err.to_string());
+                return Err(err);
+            }
+        };
         vos_runtime::write_json(&run_dir.join("response.json"), &artifact)?;
         fs::write(run_dir.join("response.txt"), &artifact.raw_text)?;
         Ok(artifact.extracted_code)
@@ -107,26 +133,12 @@ async fn execute_prompt_once(
     prompt: &PromptEnvelope,
     api_key: &str,
 ) -> Result<RigResponseArtifact> {
-    let mut default_headers = HeaderMap::new();
-    default_headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
-
     let http_client = ReqwestClient::builder()
-        .default_headers(default_headers)
         .timeout(Duration::from_secs(resolved.timeout_secs))
         .build()
         .map_err(|err| VosError::Message(format!("rig http client build failed: {err}")))?;
 
     match resolved.provider {
-        AgentProviderKind::Deepseek => {
-            let client = deepseek::Client::builder()
-                .api_key(api_key)
-                .base_url(&resolved.base_url)
-                .http_client(http_client)
-                .build()
-                .map_err(map_client_builder_error)?;
-            let model = client.completion_model(&resolved.model);
-            execute_completion_model(model, &resolved.model, prompt).await
-        }
         AgentProviderKind::OpenAi | AgentProviderKind::OpenAiCompatible
             if resolved.use_completions_api =>
         {
@@ -260,9 +272,7 @@ fn map_completion_error(error: CompletionError) -> VosError {
                     "rig completion failed with status {status}: {message}"
                 ))
             }
-            other => VosError::Message(format!(
-                "rig http error: {other}. request sent with `Accept-Encoding: identity`; if this persists, inspect provider/proxy response framing"
-            )),
+            other => VosError::Message(format!("rig http error: {other}")),
         },
         CompletionError::JsonError(err) => VosError::Json(err),
         CompletionError::UrlError(err) => VosError::Message(format!("rig url error: {err}")),

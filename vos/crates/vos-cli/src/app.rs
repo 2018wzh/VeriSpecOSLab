@@ -1,5 +1,5 @@
 use clap::Parser;
-use vos_core::{CommandStatus, FailurePayload, envelope};
+use vos_core::{CommandStatus, FailurePayload};
 
 use crate::args::*;
 use crate::dispatch::*;
@@ -290,13 +290,16 @@ pub async fn run() {
         if let Some(pb) = progress {
             pb.finish_and_clear();
         }
-        let failure = envelope(
+        let (run_id, message) = vos_core::extract_run_id_marker(&err)
+            .unwrap_or_else(|| (vos_core::new_run_id(), err));
+        let failure = vos_core::envelope_with_run_id(
+            run_id,
             "vos",
             CommandStatus::Failed,
             Vec::new(),
             FailurePayload {
                 kind: "runtime_error".into(),
-                message: err,
+                message,
                 diagnostics: Vec::new(),
             },
         );

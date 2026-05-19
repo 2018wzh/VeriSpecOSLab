@@ -66,17 +66,40 @@ pub fn envelope<T>(
     artifacts: Vec<ArtifactRef>,
     payload: T,
 ) -> CommandEnvelope<T> {
+    envelope_with_run_id(Uuid::new_v4().to_string(), command, status, artifacts, payload)
+}
+
+pub fn envelope_with_run_id<T>(
+    run_id: impl Into<String>,
+    command: impl Into<String>,
+    status: CommandStatus,
+    artifacts: Vec<ArtifactRef>,
+    payload: T,
+) -> CommandEnvelope<T> {
     let ok = matches!(
         status,
         CommandStatus::Ok | CommandStatus::Partial | CommandStatus::Planned
     );
     CommandEnvelope {
         ok,
-        run_id: Uuid::new_v4().to_string(),
+        run_id: run_id.into(),
         command: command.into(),
         status,
         artifacts,
         payload,
+    }
+}
+
+pub fn extract_run_id_marker(message: &str) -> Option<(String, String)> {
+    let prefix = "[run_id:";
+    let remainder = message.strip_prefix(prefix)?;
+    let end = remainder.find(']')?;
+    let run_id = remainder[..end].trim().to_string();
+    let cleaned = remainder[end + 1..].trim_start().to_string();
+    if run_id.is_empty() {
+        None
+    } else {
+        Some((run_id, cleaned))
     }
 }
 
@@ -89,5 +112,18 @@ pub fn not_implemented_payload(
         reason: reason.into(),
         related_docs,
         suggested_next_commands,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extracts_run_id_marker_and_strips_prefix() {
+        let parsed =
+            extract_run_id_marker("[run_id:abc-123] skeleton projection failed").expect("marker");
+        assert_eq!(parsed.0, "abc-123");
+        assert_eq!(parsed.1, "skeleton projection failed");
     }
 }

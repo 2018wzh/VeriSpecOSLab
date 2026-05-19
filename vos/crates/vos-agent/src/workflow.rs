@@ -78,6 +78,7 @@ pub(crate) async fn execute_generation_workflow(
     validate_generation_flags(&options)?;
     let progress_plan = generation_progress_plan(&options);
     let prepared = prepare_generation_context(project_root, &options, progress, &progress_plan)?;
+    let workflow_run_id = prepared.run_id.clone();
     let PatchArtifacts {
         files_to_create,
         files_to_update,
@@ -86,7 +87,9 @@ pub(crate) async fn execute_generation_workflow(
         retry_record_path,
     } = match &options.patch_path {
         Some(path) => load_patch_artifacts(path)?,
-        None => generate_patch_artifacts(project_root, &prepared, progress, &progress_plan).await?,
+        None => generate_patch_artifacts(project_root, &prepared, progress, &progress_plan)
+            .await
+            .map_err(|err| annotate_run_error(&workflow_run_id, err))?,
     };
 
     validate_generation_outputs(
@@ -95,7 +98,8 @@ pub(crate) async fn execute_generation_workflow(
         &files_to_create,
         &files_to_update,
         &region_edits,
-    )?;
+    )
+    .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
 
     let mut created_files = Vec::new();
     let mut updated_regions = Vec::new();
@@ -117,7 +121,8 @@ pub(crate) async fn execute_generation_workflow(
             &progress_plan,
             &mut created_files,
             &mut updated_regions,
-        )?;
+        )
+        .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
     }
 
     if options.apply && options.execute_build {
@@ -138,12 +143,15 @@ pub(crate) async fn execute_generation_workflow(
             },
             None,
         )
-        .await?;
+        .await
+        .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
         progress_plan.finish_stage(progress, "build_generated_system", "built generated system");
         build_result = Some(build.clone());
         if options.execute_run {
             progress_plan.emit_stage(progress, "run_generated_system", "running generated system");
-            let run = vos_runtime::run_qemu_with_progress(project_root, None, None).await?;
+            let run = vos_runtime::run_qemu_with_progress(project_root, None, None)
+                .await
+                .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
             progress_plan.finish_stage(progress, "run_generated_system", "ran qemu boot smoke");
             run_result = Some(run);
         }
@@ -157,7 +165,8 @@ pub(crate) async fn execute_generation_workflow(
         &updated_regions,
     );
     let manifest_path = prepared.run_dir.join("manifest.json");
-    vos_runtime::write_json(&manifest_path, &manifest)?;
+    vos_runtime::write_json(&manifest_path, &manifest)
+        .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
 
     let result = GenerationWorkflowResult {
         run_id: prepared.run_id,
@@ -175,7 +184,8 @@ pub(crate) async fn execute_generation_workflow(
         skeleton_validation_path,
         retry_record_path,
     };
-    vos_runtime::write_json(&prepared.run_dir.join("generation-result.json"), &result)?;
+    vos_runtime::write_json(&prepared.run_dir.join("generation-result.json"), &result)
+        .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
     progress_plan.finish_stage(
         progress,
         "write_manifest",
@@ -183,6 +193,10 @@ pub(crate) async fn execute_generation_workflow(
     );
     progress_plan.finish(progress, "generation workflow finished");
     Ok(result)
+}
+
+fn annotate_run_error(run_id: &str, err: VosError) -> VosError {
+    VosError::Message(format!("[run_id:{run_id}] {err}"))
 }
 
 fn validate_generation_flags(options: &GenerationWorkflowOptions) -> Result<()> {
@@ -578,11 +592,10 @@ async fn generate_patch_artifacts(
             retry_record_path = Some(retry_path);
             break;
         }
-        feedback = report.errors.clone();
-        let non_retryable = feedback.iter().any(|e| {
+        let retry_feedback = summarize_skeleton_feedback(&report.errors);
+        let non_retryable = report.errors.iter().any(|e| {
             e.starts_with("policy_violation:")
                 || e.starts_with("schema_error:")
-                || e.starts_with("entry_error:")
         });
         let retry_path = prepared.run_dir.join("retry-record.json");
         if non_retryable {
@@ -592,12 +605,12 @@ async fn generate_patch_artifacts(
                     attempts,
                     max_attempts,
                     exit_reason: "non_retryable".into(),
-                    feedback: feedback.clone(),
+                    feedback: retry_feedback.clone(),
                 },
             )?;
             return Err(VosError::Message(format!(
                 "skeleton projection non-retryable validation failed: {}",
-                feedback.join("; ")
+                report.errors.join("; ")
             )));
         }
         if attempts >= max_attempts {
@@ -607,14 +620,15 @@ async fn generate_patch_artifacts(
                     attempts,
                     max_attempts,
                     exit_reason: "max_attempts".into(),
-                    feedback: feedback.clone(),
+                    feedback: retry_feedback.clone(),
                 },
             )?;
             return Err(VosError::Message(format!(
                 "skeleton projection validation failed: {}",
-                feedback.join("; ")
+                report.errors.join("; ")
             )));
         }
+        feedback = retry_feedback;
     }
 
     let concurrency_specs = load_selected_concurrency_specs(
@@ -641,6 +655,72 @@ async fn generate_patch_artifacts(
         skeleton_validation_path,
         retry_record_path,
     })
+}
+
+fn summarize_skeleton_feedback(errors: &[String]) -> Vec<String> {
+    let mut summaries = Vec::new();
+
+    let missing_targets = errors
+        .iter()
+        .filter_map(|error| {
+            error
+                .strip_prefix("coverage_error:missing required editable target in skeleton output: ")
+                .map(str::to_string)
+        })
+        .collect::<Vec<_>>();
+    if !missing_targets.is_empty() {
+        summaries.push(format!(
+            "Create or update every required editable target in the skeleton output. Missing targets: {}.",
+            missing_targets.join(", ")
+        ));
+    }
+
+    let missing_linkers = errors
+        .iter()
+        .filter_map(|error| {
+            error
+                .strip_prefix("link_error:missing linker script for skeleton: ")
+                .map(str::to_string)
+        })
+        .collect::<Vec<_>>();
+    if !missing_linkers.is_empty() {
+        summaries.push(format!(
+            "Include the linker script in files_to_create or ensure it already exists: {}.",
+            missing_linkers.join(", ")
+        ));
+    }
+
+    let missing_entries = errors
+        .iter()
+        .filter_map(|error| {
+            error
+                .strip_prefix("entry_error:entry symbol not found in skeleton/build sources: ")
+                .map(str::to_string)
+        })
+        .collect::<Vec<_>>();
+    if !missing_entries.is_empty() {
+        summaries.push(format!(
+            "Define the required entry symbol in the generated skeleton or build sources: {}.",
+            missing_entries.join(", ")
+        ));
+    }
+
+    summaries.extend(errors.iter().filter_map(|error| {
+        if error.starts_with("coverage_error:")
+            || error.starts_with("link_error:")
+            || error.starts_with("entry_error:")
+        {
+            None
+        } else {
+            Some(error.clone())
+        }
+    }));
+
+    if summaries.is_empty() {
+        errors.to_vec()
+    } else {
+        summaries
+    }
 }
 
 fn load_selected_concurrency_specs(
@@ -983,6 +1063,24 @@ mod tests {
             stage_override: None,
         });
         assert!(run_without_build.is_err());
+    }
+
+    #[test]
+    fn summarizes_skeleton_feedback_into_actionable_groups() {
+        let summary = summarize_skeleton_feedback(&[
+            "coverage_error:missing required editable target in skeleton output: include/types.h"
+                .into(),
+            "coverage_error:missing required editable target in skeleton output: kernel/link.ld"
+                .into(),
+            "link_error:missing linker script for skeleton: kernel/link.ld".into(),
+            "entry_error:entry symbol not found in skeleton/build sources: _start".into(),
+        ]);
+
+        assert_eq!(summary.len(), 3);
+        assert!(summary[0].contains("include/types.h"));
+        assert!(summary[0].contains("kernel/link.ld"));
+        assert!(summary[1].contains("kernel/link.ld"));
+        assert!(summary[2].contains("_start"));
     }
 
     #[test]
