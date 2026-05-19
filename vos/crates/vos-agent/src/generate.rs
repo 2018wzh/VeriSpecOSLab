@@ -21,6 +21,7 @@ pub async fn agent_generate(
             apply: options.apply,
             execute_build: options.build,
             execute_run: options.run,
+            require_spec: false,
             stage_override: None,
         },
         progress,

@@ -21,6 +21,7 @@ pub async fn agent_apply_patch(
             apply: options.apply,
             execute_build: options.apply,
             execute_run: options.apply && options.run_validation,
+            require_spec: options.require_spec,
             stage_override: options.stage,
         },
         progress,

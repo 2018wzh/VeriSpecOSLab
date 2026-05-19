@@ -12,7 +12,7 @@ use vos_runtime::{ProgressPlan, ProgressSink, ProgressStageDefinition};
 use crate::codegen::generate_module_waves;
 use crate::patch::{
     PatchFileInput, apply_region_edit, read_patch_file, validate_region_edits,
-    validate_skeleton_files,
+    validate_required_spec_metadata, validate_skeleton_files,
 };
 use crate::rig::{RigStage, RigWorkflow, validate_provider_config};
 use crate::{
@@ -28,6 +28,7 @@ pub(crate) struct GenerationWorkflowOptions {
     pub apply: bool,
     pub execute_build: bool,
     pub execute_run: bool,
+    pub require_spec: bool,
     pub stage_override: Option<String>,
 }
 
@@ -86,7 +87,7 @@ pub(crate) async fn execute_generation_workflow(
         skeleton_validation_path,
         retry_record_path,
     } = match &options.patch_path {
-        Some(path) => load_patch_artifacts(path)?,
+        Some(path) => load_patch_artifacts(path, options.require_spec, &prepared.normalized)?,
         None => generate_patch_artifacts(project_root, &prepared, progress, &progress_plan)
             .await
             .map_err(|err| annotate_run_error(&workflow_run_id, err))?,
@@ -472,12 +473,21 @@ struct PatchArtifacts {
     retry_record_path: Option<PathBuf>,
 }
 
-fn load_patch_artifacts(path: &Path) -> Result<PatchArtifacts> {
+fn load_patch_artifacts(
+    path: &Path,
+    require_spec: bool,
+    normalized: &NormalizedSpecBundle,
+) -> Result<PatchArtifacts> {
+    let patch = read_patch_file(path)?;
+    if require_spec {
+        validate_required_spec_metadata(&patch, normalized)?;
+    }
     let PatchFileInput {
         files_to_create,
         files_to_update,
         region_edits,
-    } = read_patch_file(path)?;
+        ..
+    } = patch;
     Ok(PatchArtifacts {
         files_to_create,
         files_to_update,
@@ -1051,6 +1061,7 @@ mod tests {
             apply: false,
             execute_build: true,
             execute_run: false,
+            require_spec: false,
             stage_override: None,
         });
         assert!(build_without_apply.is_err());
@@ -1062,6 +1073,7 @@ mod tests {
             apply: true,
             execute_build: false,
             execute_run: true,
+            require_spec: false,
             stage_override: None,
         });
         assert!(run_without_build.is_err());
@@ -1099,6 +1111,7 @@ mod tests {
                 apply: false,
                 execute_build: false,
                 execute_run: false,
+                require_spec: false,
                 stage_override: None,
             },
         )
@@ -1127,6 +1140,7 @@ mod tests {
                 apply: false,
                 execute_build: false,
                 execute_run: false,
+                require_spec: false,
                 stage_override: None,
             },
         )
@@ -1152,6 +1166,7 @@ mod tests {
                 apply: false,
                 execute_build: false,
                 execute_run: false,
+                require_spec: false,
                 stage_override: None,
             },
         )
@@ -1161,6 +1176,51 @@ mod tests {
         assert_eq!(selection.value, "phase-two");
         assert_eq!(selection.stage, "phase-two");
         assert_eq!(selection.modules, vec!["alpha", "beta"]);
+    }
+
+    #[test]
+    fn load_patch_artifacts_enforces_required_spec_metadata() {
+        let (temp, _project_root, _spec_root, normalized) = distinct_stage_fixture();
+        let patch_path = temp.path().join("candidate.json");
+        write_patch_json(
+            &patch_path,
+            serde_json::json!({
+                "spec_hash": test_spec_hash(&normalized),
+                "related_specs": ["beta"],
+                "operation_refs": ["beta.op"],
+                "region_edits": [{
+                    "file": "kernel/beta.c",
+                    "start_marker": "// BEGIN beta",
+                    "end_marker": "// END beta",
+                    "code": "int beta(void) { return 0; }"
+                }]
+            }),
+        );
+
+        let artifacts =
+            load_patch_artifacts(&patch_path, true, &normalized).expect("patch should validate");
+        assert_eq!(artifacts.region_edits.len(), 1);
+    }
+
+    #[test]
+    fn load_patch_artifacts_rejects_missing_spec_metadata_when_required() {
+        let (temp, _project_root, _spec_root, normalized) = distinct_stage_fixture();
+        let patch_path = temp.path().join("candidate.json");
+        write_patch_json(
+            &patch_path,
+            serde_json::json!({
+                "region_edits": [{
+                    "file": "kernel/beta.c",
+                    "start_marker": "// BEGIN beta",
+                    "end_marker": "// END beta",
+                    "code": "int beta(void) { return 0; }"
+                }]
+            }),
+        );
+
+        let err = load_patch_artifacts(&patch_path, true, &normalized)
+            .expect_err("missing spec metadata should fail");
+        assert!(err.to_string().contains("missing `spec_hash`"));
     }
 
     #[test]
@@ -1209,6 +1269,7 @@ mod tests {
                 apply: false,
                 execute_build: false,
                 execute_run: false,
+                require_spec: false,
                 stage_override: None,
             },
         )
@@ -1236,6 +1297,7 @@ mod tests {
                 apply: true,
                 execute_build: false,
                 execute_run: false,
+                require_spec: false,
                 stage_override: None,
             },
             None,
@@ -1436,6 +1498,23 @@ mod tests {
             "ENTRY(vos_entry)\nSECTIONS\n{\n  .text : { *(.text*) }\n}\n",
         )
         .expect("write link.ld");
+    }
+
+    fn write_patch_json(path: &Path, value: serde_json::Value) {
+        fs::write(
+            path,
+            serde_json::to_string_pretty(&value).expect("serialize patch"),
+        )
+        .expect("write patch");
+    }
+
+    fn test_spec_hash(normalized: &NormalizedSpecBundle) -> String {
+        normalized
+            .hashes
+            .values()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(":")
     }
 
     fn dummy_toolchain_bundle() -> ToolchainSpecBundle {
