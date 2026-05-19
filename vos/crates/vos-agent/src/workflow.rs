@@ -593,10 +593,10 @@ async fn generate_patch_artifacts(
             break;
         }
         let retry_feedback = summarize_skeleton_feedback(&report.errors);
-        let non_retryable = report.errors.iter().any(|e| {
-            e.starts_with("policy_violation:")
-                || e.starts_with("schema_error:")
-        });
+        let non_retryable = report
+            .errors
+            .iter()
+            .any(|e| e.starts_with("policy_violation:") || e.starts_with("schema_error:"));
         let retry_path = prepared.run_dir.join("retry-record.json");
         if non_retryable {
             vos_runtime::write_json(
@@ -664,7 +664,9 @@ fn summarize_skeleton_feedback(errors: &[String]) -> Vec<String> {
         .iter()
         .filter_map(|error| {
             error
-                .strip_prefix("coverage_error:missing required editable target in skeleton output: ")
+                .strip_prefix(
+                    "coverage_error:missing required editable target in skeleton output: ",
+                )
                 .map(str::to_string)
         })
         .collect::<Vec<_>>();
@@ -1370,8 +1372,6 @@ mod tests {
         let _api_key = std::env::var("VOS_E2E_LLM_API_KEY")
             .expect("VOS_E2E_LLM_API_KEY must be set for the live provider test");
         let base_url = std::env::var("VOS_E2E_LLM_BASE_URL").ok();
-        let use_completions_api = std::env::var("VOS_E2E_LLM_USE_COMPLETIONS_API").ok();
-
         let spec_root = project_root.join("spec");
         fs::create_dir_all(project_root.join(".vos")).expect("create .vos dir");
         fs::create_dir_all(project_root.join("kernel")).expect("create kernel dir");
@@ -1387,9 +1387,6 @@ mod tests {
         );
         if let Some(base_url) = base_url {
             config.push_str(&format!("base_url = \"{base_url}\"\n"));
-        }
-        if let Some(flag) = use_completions_api {
-            config.push_str(&format!("use_completions_api = {flag}\n"));
         }
         config.push_str(
             "\n[agent.auth]\nenv = \"VOS_E2E_LLM_API_KEY\"\n\n[agent.retry]\nmax_attempts = 1\n",

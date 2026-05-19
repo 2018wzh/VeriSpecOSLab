@@ -10,12 +10,14 @@ pub enum VosError {
     Yaml(#[from] serde_yaml::Error),
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("http error: {0}")]
-    Http(#[from] reqwest::Error),
     #[error("toml parse error: {0}")]
     Toml(#[from] toml::de::Error),
     #[error("toml serialize error: {0}")]
     TomlSer(#[from] toml::ser::Error),
+    #[error("timeout: {0}")]
+    Timeout(String),
+    #[error("transport error: {0}")]
+    Transport(String),
     #[error("{0}")]
     Message(String),
 }

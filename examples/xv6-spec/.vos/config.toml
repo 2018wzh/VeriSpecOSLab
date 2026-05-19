@@ -1,20 +1,12 @@
 spec_root = "spec"
 
 [agent]
-provider = "openai-compatible"
+provider = "deepseek"
 model = "deepseek-v4-pro"
 base_url = "https://api.deepseek.com/v1"
 timeout_secs = 30
-use_completions_api = false
-
 [agent.auth]
 env = "DEEPSEEK_API_KEY"
 
 [agent.retry]
 max_attempts = 2
-
-[agent.overrides.skeleton_projection]
-timeout_secs = 90
-
-[agent.overrides.module_codegen_batch]
-timeout_secs = 120

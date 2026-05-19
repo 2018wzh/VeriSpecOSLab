@@ -78,9 +78,8 @@ spec_root = "spec"
 [agent]
 provider = "deepseek"
 model = "deepseek-v4-pro"
-base_url = "https://api.deepseek.com"
+base_url = "https://api.deepseek.com/v1"
 timeout_secs = 120
-use_completions_api = true
 
 [agent.auth]
 env = "DEEPSEEK_API_KEY"

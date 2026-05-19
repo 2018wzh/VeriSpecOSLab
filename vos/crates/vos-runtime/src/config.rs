@@ -22,13 +22,13 @@ pub fn validate_agent_config(config: &AppConfig) -> Result<()> {
     validate_agent_runtime_config(config)
 }
 
-pub fn resolve_agent_config(config: &AppConfig, task_keys: &[&str]) -> Result<ResolvedAgentConfig> {
-    resolve_agent_runtime_config(config, task_keys)
+pub fn resolve_agent_config(config: &AppConfig) -> Result<ResolvedAgentConfig> {
+    resolve_agent_runtime_config(config)
 }
 
 pub async fn doctor(project_root: &Path) -> Result<DoctorReport> {
     let config = load_config(project_root)?;
-    let active_provider = resolve_agent_runtime_config(&config, &[])?;
+    let active_provider = resolve_agent_runtime_config(&config)?;
     let spec_root = crate::scope::resolve_spec_root(project_root, None, &config)?;
     let build_command = if spec_root.exists() {
         let _ = vos_spec::load_toolchain_spec(project_root, &spec_root)?;

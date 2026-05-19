@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use crate::progress::ProgressEvent;
@@ -12,6 +11,8 @@ pub enum AgentProviderKind {
     #[serde(alias = "openai-compatible")]
     #[default]
     OpenAiCompatible,
+    #[serde(alias = "deepseek")]
+    DeepSeek,
     #[serde(alias = "claude")]
     Anthropic,
     #[serde(alias = "google")]
@@ -23,6 +24,7 @@ impl AgentProviderKind {
         match self {
             Self::OpenAi => "openai",
             Self::OpenAiCompatible => "openai-compatible",
+            Self::DeepSeek => "deepseek",
             Self::Anthropic => "anthropic",
             Self::Gemini => "gemini",
         }
@@ -40,15 +42,7 @@ pub struct AgentRetryConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct AgentTaskOverride {
-    pub model: Option<String>,
-    pub timeout_secs: Option<u64>,
-    pub use_completions_api: Option<bool>,
-    #[serde(default)]
-    pub retry: AgentRetryConfig,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AgentRuntimeConfig {
     pub provider: Option<AgentProviderKind>,
     pub model: Option<String>,
@@ -56,11 +50,8 @@ pub struct AgentRuntimeConfig {
     #[serde(default)]
     pub auth: AgentAuthConfig,
     pub timeout_secs: Option<u64>,
-    pub use_completions_api: Option<bool>,
     #[serde(default)]
     pub retry: AgentRetryConfig,
-    #[serde(default)]
-    pub overrides: BTreeMap<String, AgentTaskOverride>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -114,37 +105,35 @@ provider = "openai-compatible"
 model = "deepseek-chat"
 base_url = "https://api.deepseek.com/v1"
 timeout_secs = 90
-use_completions_api = false
 
 [agent.auth]
 env = "DEEPSEEK_API_KEY"
 
 [agent.retry]
 max_attempts = 3
-
-[agent.overrides.skeleton_projection]
-model = "deepseek-reasoner"
-timeout_secs = 180
 "#,
         )
         .expect("config");
 
-        assert_eq!(config.agent.provider, Some(AgentProviderKind::OpenAiCompatible));
+        assert_eq!(
+            config.agent.provider,
+            Some(AgentProviderKind::OpenAiCompatible)
+        );
         assert_eq!(config.agent.model.as_deref(), Some("deepseek-chat"));
         assert_eq!(config.agent.auth.env.as_deref(), Some("DEEPSEEK_API_KEY"));
         assert_eq!(config.agent.retry.max_attempts, Some(3));
-        assert_eq!(
-            config
-                .agent
-                .overrides
-                .get("skeleton_projection")
-                .and_then(|override_| override_.model.as_deref()),
-            Some("deepseek-reasoner")
-        );
     }
 
     #[test]
     fn parses_provider_aliases() {
+        let deepseek: AppConfig = toml::from_str(
+            r#"
+[agent]
+provider = "deepseek"
+model = "deepseek-v4-pro"
+"#,
+        )
+        .expect("deepseek config");
         let claude: AppConfig = toml::from_str(
             r#"
 [agent]
@@ -162,7 +151,63 @@ model = "gemini-2.5-pro"
         )
         .expect("google config");
 
+        assert_eq!(deepseek.agent.provider, Some(AgentProviderKind::DeepSeek));
         assert_eq!(claude.agent.provider, Some(AgentProviderKind::Anthropic));
         assert_eq!(google.agent.provider, Some(AgentProviderKind::Gemini));
+    }
+
+    #[test]
+    fn rejects_legacy_use_completions_api_field() {
+        let err = toml::from_str::<AppConfig>(
+            r#"
+[agent]
+provider = "openai-compatible"
+model = "deepseek-chat"
+use_completions_api = true
+"#,
+        )
+        .expect_err("legacy field should be rejected");
+
+        assert!(
+            err.to_string()
+                .contains("unknown field `use_completions_api`")
+        );
+    }
+
+    #[test]
+    fn rejects_legacy_api_mode_field() {
+        let err = toml::from_str::<AppConfig>(
+            r#"
+[agent]
+provider = "openai-compatible"
+model = "deepseek-chat"
+api_mode = "agent"
+"#,
+        )
+        .expect_err("legacy api_mode should be rejected");
+
+        assert!(err.to_string().contains("unknown field `api_mode`"));
+    }
+
+    #[test]
+    fn rejects_legacy_overrides_section() {
+        let err = toml::from_str::<AppConfig>(
+            r#"
+[agent]
+provider = "openai-compatible"
+model = "deepseek-chat"
+
+[agent.overrides.skeleton_projection]
+timeout_secs = 180
+"#,
+        )
+        .expect_err("legacy overrides should be rejected");
+
+        assert!(
+            err.to_string().contains("unknown field `overrides`")
+                || err
+                    .to_string()
+                    .contains("unknown field `skeleton_projection`")
+        );
     }
 }

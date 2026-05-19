@@ -3,12 +3,15 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
+use rig_core::agent::{Agent, PromptHook};
 use rig_core::client::CompletionClient;
-use rig_core::completion::{AssistantContent, CompletionError, CompletionModel};
-use rig_core::http_client::ReqwestClient;
-use rig_core::providers::{anthropic, gemini, openai};
+use rig_core::completion::{
+    AssistantContent, Completion, CompletionError, CompletionModel, Message,
+};
+use rig_core::providers::{anthropic, deepseek, gemini, openai};
 use serde::Serialize;
 use serde_json::Value;
+use tokio::time::timeout;
 use vos_core::{AgentProviderKind, AppConfig, Result, VosError};
 use vos_runtime::ResolvedAgentConfig;
 
@@ -40,8 +43,8 @@ struct RigFailureArtifact {
     model: String,
     base_url: String,
     timeout_secs: u64,
-    use_completions_api: bool,
     max_attempts: u32,
+    error_kind: String,
     error: String,
 }
 
@@ -62,10 +65,7 @@ impl<'a> RigWorkflow<'a> {
     ) -> Result<String> {
         fs::create_dir_all(run_dir)?;
 
-        let resolved = vos_runtime::resolve_agent_config(
-            self.config,
-            &[prompt.phase.as_str(), prompt.task_kind.as_str()],
-        )?;
+        let resolved = vos_runtime::resolve_agent_config(self.config)?;
         let request = CodegenRequest {
             spec_ref: prompt.spec_ref.clone(),
             phase: prompt.phase.clone(),
@@ -83,8 +83,8 @@ impl<'a> RigWorkflow<'a> {
                     model: resolved.model.clone(),
                     base_url: resolved.base_url.clone(),
                     timeout_secs: resolved.timeout_secs,
-                    use_completions_api: resolved.use_completions_api,
                     max_attempts: resolved.max_attempts,
+                    error_kind: classify_error(&err).to_string(),
                     error: err.to_string(),
                 };
                 let _ = vos_runtime::write_json(&run_dir.join("failure.json"), &failure);
@@ -133,78 +133,90 @@ async fn execute_prompt_once(
     prompt: &PromptEnvelope,
     api_key: &str,
 ) -> Result<RigResponseArtifact> {
-    let http_client = ReqwestClient::builder()
-        .timeout(Duration::from_secs(resolved.timeout_secs))
-        .build()
-        .map_err(|err| VosError::Message(format!("rig http client build failed: {err}")))?;
-
     match resolved.provider {
-        AgentProviderKind::OpenAi | AgentProviderKind::OpenAiCompatible
-            if resolved.use_completions_api =>
-        {
-            let client = openai::CompletionsClient::builder()
-                .api_key(api_key)
-                .base_url(&resolved.base_url)
-                .http_client(http_client)
-                .build()
-                .map_err(map_client_builder_error)?;
-            let model = client.completion_model(&resolved.model);
-            execute_completion_model(model, &resolved.model, prompt).await
-        }
-        AgentProviderKind::OpenAi | AgentProviderKind::OpenAiCompatible => {
+        AgentProviderKind::OpenAi => {
             let client = openai::Client::builder()
                 .api_key(api_key)
                 .base_url(&resolved.base_url)
-                .http_client(http_client)
                 .build()
                 .map_err(map_client_builder_error)?;
-            let model = client.completion_model(&resolved.model);
-            execute_completion_model(model, &resolved.model, prompt).await
+            let agent = client.agent(&resolved.model).build();
+            execute_agent_completion(agent, resolved, prompt).await
+        }
+        AgentProviderKind::OpenAiCompatible => {
+            let client = openai::CompletionsClient::builder()
+                .api_key(api_key)
+                .base_url(&resolved.base_url)
+                .build()
+                .map_err(map_client_builder_error)?;
+            let agent = client
+                .completion_model(&resolved.model)
+                .into_agent_builder()
+                .build();
+            execute_agent_completion(agent, resolved, prompt).await
         }
         AgentProviderKind::Anthropic => {
             let client = anthropic::Client::builder()
                 .api_key(api_key)
                 .base_url(&resolved.base_url)
-                .http_client(http_client)
                 .build()
                 .map_err(map_client_builder_error)?;
-            let model = client.completion_model(&resolved.model);
-            execute_completion_model(model, &resolved.model, prompt).await
+            let agent = client.agent(&resolved.model).build();
+            execute_agent_completion(agent, resolved, prompt).await
+        }
+        AgentProviderKind::DeepSeek => {
+            let client = deepseek::Client::builder()
+                .api_key(api_key)
+                .base_url(&resolved.base_url)
+                .build()
+                .map_err(map_client_builder_error)?;
+            let agent = client.agent(&resolved.model).build();
+            execute_agent_completion(agent, resolved, prompt).await
         }
         AgentProviderKind::Gemini => {
             let client = gemini::Client::builder()
                 .api_key(api_key)
                 .base_url(&resolved.base_url)
-                .http_client(http_client)
                 .build()
                 .map_err(map_client_builder_error)?;
-            let model = client.completion_model(&resolved.model);
-            execute_completion_model(model, &resolved.model, prompt).await
+            let agent = client.agent(&resolved.model).build();
+            execute_agent_completion(agent, resolved, prompt).await
         }
     }
 }
 
-async fn execute_completion_model<M>(
-    model: M,
-    model_name: &str,
+async fn execute_agent_completion<M, P>(
+    agent: Agent<M, P>,
+    resolved: &ResolvedAgentConfig,
     prompt: &PromptEnvelope,
 ) -> Result<RigResponseArtifact>
 where
-    M: CompletionModel,
+    M: CompletionModel + 'static,
     M::Response: Serialize,
+    P: PromptHook<M> + 'static,
 {
-    let request = model.completion_request(prompt.prompt.clone()).build();
-    let response = model
-        .completion(request)
-        .await
-        .map_err(map_completion_error)?;
+    let response = timeout(Duration::from_secs(resolved.timeout_secs), async {
+        let request = agent
+            .completion(prompt.prompt.clone(), Vec::<Message>::new())
+            .await
+            .map_err(map_completion_error)?;
+        request.send().await.map_err(map_completion_error)
+    })
+    .await
+    .map_err(|_| {
+        VosError::Timeout(format!(
+            "rig agent completion timed out after {}s",
+            resolved.timeout_secs
+        ))
+    })??;
+
     let raw_text = extract_text_output(&response.choice)
         .ok_or_else(|| VosError::Message("rig completion did not return text output".into()))?;
     let extracted_code = extract_code_block(&raw_text);
     let raw_response = serde_json::to_value(&response.raw_response)?;
 
     Ok(RigResponseArtifact {
-        model: model_name.to_string(),
+        model: resolved.model.clone(),
         raw_text,
         extracted_code,
         raw_response,
@@ -243,22 +255,36 @@ fn extract_code_block(raw_text: &str) -> String {
     trimmed.to_string()
 }
 
+fn classify_error(error: &VosError) -> &'static str {
+    match error {
+        VosError::Timeout(_) => "timeout",
+        VosError::Transport(_) => "transport",
+        VosError::Message(_) => "message",
+        VosError::Io(_) => "io",
+        VosError::Yaml(_) => "yaml",
+        VosError::Json(_) => "json",
+        VosError::Toml(_) => "toml",
+        VosError::TomlSer(_) => "toml-ser",
+    }
+}
+
 fn is_retryable_error(error: &VosError) -> bool {
     match error {
-        VosError::Message(message) => {
+        VosError::Timeout(_) => true,
+        VosError::Transport(message) | VosError::Message(message) => {
             message.contains("429")
                 || message.contains("503")
                 || message.contains("504")
                 || message.contains("timed out")
                 || message.contains("connection")
+                || message.contains("transport")
         }
-        VosError::Http(err) => err.is_timeout() || err.is_connect(),
         _ => false,
     }
 }
 
 fn map_client_builder_error(error: rig_core::http_client::Error) -> VosError {
-    VosError::Message(format!("rig client build failed: {error}"))
+    VosError::Transport(format!("rig client build failed: {error}"))
 }
 
 fn map_completion_error(error: CompletionError) -> VosError {
@@ -272,12 +298,12 @@ fn map_completion_error(error: CompletionError) -> VosError {
                     "rig completion failed with status {status}: {message}"
                 ))
             }
-            other => VosError::Message(format!("rig http error: {other}")),
+            other => VosError::Transport(format!("rig http error: {other}")),
         },
         CompletionError::JsonError(err) => VosError::Json(err),
-        CompletionError::UrlError(err) => VosError::Message(format!("rig url error: {err}")),
+        CompletionError::UrlError(err) => VosError::Transport(format!("rig url error: {err}")),
         CompletionError::RequestError(err) => {
-            VosError::Message(format!("rig request error: {err}"))
+            VosError::Transport(format!("rig request error: {err}"))
         }
         CompletionError::ResponseError(message) | CompletionError::ProviderError(message) => {
             VosError::Message(message)
@@ -314,6 +340,14 @@ mod tests {
         )));
         assert!(!is_retryable_error(&VosError::Message(
             "rig completion failed with status 400: bad request".into()
+        )));
+    }
+
+    #[test]
+    fn classifies_timeout_and_transport_errors_as_retryable() {
+        assert!(is_retryable_error(&VosError::Timeout("timed out".into())));
+        assert!(is_retryable_error(&VosError::Transport(
+            "rig request error: connection reset".into()
         )));
     }
 }

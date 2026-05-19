@@ -66,7 +66,13 @@ pub fn envelope<T>(
     artifacts: Vec<ArtifactRef>,
     payload: T,
 ) -> CommandEnvelope<T> {
-    envelope_with_run_id(Uuid::new_v4().to_string(), command, status, artifacts, payload)
+    envelope_with_run_id(
+        Uuid::new_v4().to_string(),
+        command,
+        status,
+        artifacts,
+        payload,
+    )
 }
 
 pub fn envelope_with_run_id<T>(
