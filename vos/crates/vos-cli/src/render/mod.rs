@@ -19,9 +19,10 @@ pub fn make_progress_callback(
     let state = Arc::new(Mutex::new(ProgressRenderState::default()));
     Arc::new(move |event: ProgressEvent| {
         let mut state = state.lock().expect("progress state lock poisoned");
-        let rendered = format_progress_message(&event);
+        let rendered_prefix = format_progress_prefix(&event);
+        let rendered_message = format_progress_message(&event);
+        let rendered_line = format_progress_line(&rendered_prefix, &rendered_message);
         let event_key = event_dedup_key(&event);
-        let sticky_line = format!("{rendered}");
 
         match progress_mode(&event) {
             ProgressMode::OverallBar(position) => {
@@ -50,12 +51,13 @@ pub fn make_progress_callback(
             }
         }
 
+        pb.set_prefix(rendered_prefix);
         if state.last_printed.as_deref() != Some(&event_key) {
-            pb.println(sticky_line);
+            pb.println(rendered_line);
             state.last_printed = Some(event_key);
         }
 
-        pb.set_message(rendered);
+        pb.set_message(rendered_message);
         pb.tick();
         if event.stage == "finished" {
             pb.finish_with_message("finished");
@@ -78,17 +80,21 @@ enum ProgressMode {
 }
 
 fn spinner_style() -> ProgressStyle {
-    ProgressStyle::with_template("{spinner:.green} {msg}")
+    ProgressStyle::with_template("{spinner:.cyan} {prefix:.bold} {msg}")
         .unwrap()
         .tick_strings(&["-", "\\", "|", "/"])
 }
 
 fn overall_bar_style() -> ProgressStyle {
-    ProgressStyle::with_template("{bar:30.green/white} {pos:>3}% {msg}").unwrap()
+    ProgressStyle::with_template("{spinner:.cyan} {prefix:.bold} {bar:24.green/white} {pos:>3}% {msg}")
+        .unwrap()
+        .progress_chars("=>-")
 }
 
 fn legacy_bar_style() -> ProgressStyle {
-    ProgressStyle::with_template("{bar:30.green/white} {pos}/{len} {msg}").unwrap()
+    ProgressStyle::with_template("{spinner:.cyan} {prefix:.bold} {bar:24.green/white} {pos}/{len} {msg}")
+        .unwrap()
+        .progress_chars("=>-")
 }
 
 fn progress_mode(event: &ProgressEvent) -> ProgressMode {
@@ -104,15 +110,6 @@ fn progress_mode(event: &ProgressEvent) -> ProgressMode {
 }
 
 fn format_progress_message(event: &ProgressEvent) -> String {
-    let stage_name = event
-        .stage_label
-        .as_deref()
-        .filter(|label| !label.is_empty())
-        .unwrap_or(&event.stage);
-    let stage_header = match (event.stage_index, event.stage_total) {
-        (Some(index), Some(total)) if total > 0 => format!("[阶段 {index}/{total}] "),
-        _ => String::new(),
-    };
     let entity_suffix = match (&event.entity_kind, &event.entity_id) {
         (Some(kind), Some(id)) => format!(" [{kind}:{id}]"),
         (Some(kind), None) => format!(" [{kind}]"),
@@ -125,10 +122,28 @@ fn format_progress_message(event: &ProgressEvent) -> String {
         }
         _ => String::new(),
     };
-    format!(
-        "{stage_header}{stage_name}: {}{}{}",
-        event.message, entity_suffix, counter_suffix
-    )
+    format!("{}{}{}", event.message, entity_suffix, counter_suffix)
+}
+
+fn format_progress_prefix(event: &ProgressEvent) -> String {
+    let stage_name = event
+        .stage_label
+        .as_deref()
+        .filter(|label| !label.is_empty())
+        .unwrap_or(&event.stage);
+    match (event.stage_index, event.stage_total) {
+        (Some(index), Some(total)) if total > 0 => format!("[阶段 {index}/{total}] {stage_name}"),
+        _ => stage_name.to_string(),
+    }
+}
+
+fn format_progress_line(prefix: &str, message: &str) -> String {
+    match (prefix.is_empty(), message.is_empty()) {
+        (true, true) => String::new(),
+        (true, false) => message.to_string(),
+        (false, true) => prefix.to_string(),
+        (false, false) => format!("{prefix} > {message}"),
+    }
 }
 
 fn counter_label(kind: Option<&str>, total: usize) -> String {
@@ -245,8 +260,19 @@ mod tests {
 
         assert_eq!(progress_mode(&event), ProgressMode::OverallBar(12));
         assert_eq!(
+            format_progress_prefix(&event),
+            "[阶段 1/5] 解析工具链"
+        );
+        assert_eq!(
             format_progress_message(&event),
-            "[阶段 1/5] 解析工具链: resolving toolchain (items 1/5)"
+            "resolving toolchain (items 1/5)"
+        );
+        assert_eq!(
+            format_progress_line(
+                &format_progress_prefix(&event),
+                &format_progress_message(&event)
+            ),
+            "[阶段 1/5] 解析工具链 > resolving toolchain (items 1/5)"
         );
     }
 
@@ -268,8 +294,19 @@ mod tests {
 
         assert_eq!(progress_mode(&event), ProgressMode::LegacyBar(3, 6));
         assert_eq!(
+            format_progress_prefix(&event),
+            "generated_module"
+        );
+        assert_eq!(
             format_progress_message(&event),
-            "generated_module: module batch completed [module:memory] (modules 3/6)"
+            "module batch completed [module:memory] (modules 3/6)"
+        );
+        assert_eq!(
+            format_progress_line(
+                &format_progress_prefix(&event),
+                &format_progress_message(&event)
+            ),
+            "generated_module > module batch completed [module:memory] (modules 3/6)"
         );
     }
 }
