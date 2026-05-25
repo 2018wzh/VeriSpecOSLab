@@ -72,6 +72,7 @@ pub async fn agent_generate_envelope(
         vos_agent::AgentGenerateOptions {
             target: args.target,
             from_patch: args.from_patch,
+            resume_run: args.resume_run,
             apply: args.apply,
             build: args.build,
             run: args.run,

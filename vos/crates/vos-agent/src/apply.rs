@@ -18,6 +18,7 @@ pub async fn agent_apply_patch(
             command_name: "vos agent apply-patch".into(),
             target: None,
             patch_path: options.patch_path,
+            resume_run: None,
             apply: options.apply,
             execute_build: options.apply,
             execute_run: options.apply && options.run_validation,

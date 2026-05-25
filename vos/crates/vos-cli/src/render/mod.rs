@@ -173,6 +173,7 @@ fn format_progress_line(prefix: &str, message: &str) -> String {
 
 fn counter_label(kind: Option<&str>, total: usize) -> String {
     match kind {
+        Some(kind) if kind.ends_with("_id") => kind.to_string(),
         Some(kind) if total > 1 && !kind.ends_with('s') => format!("{kind}s"),
         Some(kind) => kind.to_string(),
         None => "items".into(),

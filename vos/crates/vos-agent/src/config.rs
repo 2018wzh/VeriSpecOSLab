@@ -13,6 +13,7 @@ pub struct AgentApplyOptions {
 pub struct AgentGenerateOptions {
     pub target: Option<String>,
     pub from_patch: Option<PathBuf>,
+    pub resume_run: Option<PathBuf>,
     pub apply: bool,
     pub build: bool,
     pub run: bool,

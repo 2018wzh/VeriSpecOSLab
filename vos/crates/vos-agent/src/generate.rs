@@ -18,6 +18,7 @@ pub async fn agent_generate(
             command_name: "vos agent generate".into(),
             target: options.target.clone(),
             patch_path: options.from_patch,
+            resume_run: options.resume_run,
             apply: options.apply,
             execute_build: options.build,
             execute_run: options.run,

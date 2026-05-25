@@ -244,6 +244,12 @@ pub struct AgentGenerateArgs {
     pub target: Option<String>,
     #[arg(long)]
     pub from_patch: Option<PathBuf>,
+    #[arg(
+        long,
+        value_name = "run_id_or_path",
+        help = "Resume generation from an existing .vos/runs/<run_id> directory."
+    )]
+    pub resume_run: Option<PathBuf>,
     #[arg(long, default_value_t = false)]
     pub apply: bool,
     #[arg(long, default_value_t = false)]

@@ -6,6 +6,7 @@ use tokio::task::JoinSet;
 use vos_core::{ConcurrencySpec, NormalizedSpecBundle, Result, VosError};
 use vos_runtime::{ProgressPlan, ProgressSink, progress_percent};
 
+use crate::ModuleBatchCodegenResponse;
 use crate::RegionEdit;
 use crate::rig::{RigStage, RigStreamStatus, RigWorkflow};
 
@@ -24,6 +25,7 @@ pub(crate) async fn generate_module_waves(
     progress: Option<&ProgressSink>,
     progress_plan: &ProgressPlan,
     run_dir: &Path,
+    resume: bool,
 ) -> Result<Vec<RegionEdit>> {
     let mut edits = Vec::new();
     let total_modules = queue.jobs.len();
@@ -79,6 +81,22 @@ pub(crate) async fn generate_module_waves(
             let module_run_dir = run_dir.join(format!("module_{}", module_name));
             let config = config.clone();
             launched_modules += 1;
+            if resume {
+                if let Some(batch) = load_completed_module_batch(&module_run_dir)? {
+                    completed_modules += 1;
+                    progress_plan.emit_stage_count(
+                        progress,
+                        "generate_modules",
+                        "reusing completed module batch response",
+                        Some("module"),
+                        Some(module_name),
+                        completed_modules,
+                        total_modules,
+                    );
+                    edits.extend(batch.region_edits);
+                    continue;
+                }
+            }
             progress_plan.emit_stage_count(
                 progress,
                 "generate_modules",
@@ -107,10 +125,9 @@ pub(crate) async fn generate_module_waves(
                         Some(&stream_progress),
                     )
                     .await?;
-                let parsed = vos_prompt::parse_module_batch_response::<
-                    crate::ModuleBatchCodegenResponse,
-                >(&raw)
-                .map_err(VosError::Message)?;
+                let parsed =
+                    vos_prompt::parse_module_batch_response::<ModuleBatchCodegenResponse>(&raw)
+                        .map_err(VosError::Message)?;
                 Ok::<_, VosError>((module_name, parsed))
             });
         }
@@ -162,6 +179,20 @@ pub(crate) async fn generate_module_waves(
         "module wave generation completed",
     );
     Ok(edits)
+}
+
+fn load_completed_module_batch(
+    module_run_dir: &Path,
+) -> Result<Option<ModuleBatchCodegenResponse>> {
+    let response_path = module_run_dir.join("response.txt");
+    if !response_path.exists() {
+        return Ok(None);
+    }
+    let raw = std::fs::read_to_string(&response_path)?;
+    match vos_prompt::parse_module_batch_response::<ModuleBatchCodegenResponse>(&raw) {
+        Ok(batch) => Ok(Some(batch)),
+        Err(_) => Ok(None),
+    }
 }
 
 fn emit_module_stream_progress(

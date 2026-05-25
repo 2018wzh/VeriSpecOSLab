@@ -25,6 +25,7 @@ pub(crate) struct GenerationWorkflowOptions {
     pub command_name: String,
     pub target: Option<String>,
     pub patch_path: Option<PathBuf>,
+    pub resume_run: Option<PathBuf>,
     pub apply: bool,
     pub execute_build: bool,
     pub execute_run: bool,
@@ -69,6 +70,7 @@ struct PreparedGenerationContext {
     allowed_paths: Vec<PathBuf>,
     run_id: String,
     run_dir: PathBuf,
+    resume: bool,
 }
 
 pub(crate) async fn execute_generation_workflow(
@@ -272,9 +274,22 @@ fn prepare_generation_context(
         5,
     );
     let allowed = vos_runtime::allowed_paths(&normalized, project_root);
-    let run_id = vos_core::new_run_id();
-    let run_dir = project_root.join(".vos").join("runs").join(&run_id);
+    let (run_id, run_dir, resume) = resolve_generation_run_dir(project_root, options)?;
     fs::create_dir_all(&run_dir)?;
+    let run_message = if resume {
+        format!("resuming run directory {}", run_dir.display())
+    } else {
+        format!("created run directory {}", run_dir.display())
+    };
+    progress_plan.emit_stage_count(
+        progress,
+        "prepare_generation_context",
+        &run_message,
+        Some("run_id"),
+        Some(&run_id),
+        5,
+        5,
+    );
     progress_plan.emit_stage_count(
         progress,
         "prepare_generation_context",
@@ -298,7 +313,38 @@ fn prepare_generation_context(
         allowed_paths: allowed,
         run_id,
         run_dir,
+        resume,
     })
+}
+
+fn resolve_generation_run_dir(
+    project_root: &Path,
+    options: &GenerationWorkflowOptions,
+) -> Result<(String, PathBuf, bool)> {
+    let Some(resume_run) = &options.resume_run else {
+        let run_id = vos_core::new_run_id();
+        let run_dir = project_root.join(".vos").join("runs").join(&run_id);
+        return Ok((run_id, run_dir, false));
+    };
+    let run_dir = if resume_run.components().count() == 1 {
+        project_root.join(".vos").join("runs").join(resume_run)
+    } else if resume_run.is_absolute() {
+        resume_run.clone()
+    } else {
+        project_root.join(resume_run)
+    };
+    let run_id = run_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .ok_or_else(|| {
+            VosError::Message(format!(
+                "resume run path must end with a run id: {}",
+                run_dir.display()
+            ))
+        })?
+        .to_string();
+    Ok((run_id, run_dir, true))
 }
 
 fn resolve_target_selection(
@@ -511,9 +557,28 @@ async fn generate_patch_artifacts(
     let skeleton: SkeletonProjectionResponse;
     let skeleton_validation_path;
     let retry_record_path;
+    let existing_attempts = count_existing_skeleton_attempts(&prepared.run_dir)?;
+
+    if prepared.resume {
+        if let Some(cached) =
+            load_completed_skeleton_projection(project_root, prepared, progress, progress_plan)?
+        {
+            return generate_patch_artifacts_from_skeleton(
+                project_root,
+                prepared,
+                progress,
+                progress_plan,
+                cached.skeleton,
+                cached.validation_path,
+                cached.retry_record_path,
+            )
+            .await;
+        }
+    }
 
     loop {
         attempts += 1;
+        let attempt_number = existing_attempts + attempts;
         progress_plan.emit_stage(
             progress,
             "project_skeleton",
@@ -556,7 +621,7 @@ async fn generate_patch_artifacts(
                 message,
                 percent,
                 Some("attempt"),
-                Some(&attempts.to_string()),
+                Some(&attempt_number.to_string()),
                 Some(attempts as usize),
                 Some(max_attempts as usize),
             );
@@ -565,7 +630,7 @@ async fn generate_patch_artifacts(
             .run_prompt_stage(
                 &prepared
                     .run_dir
-                    .join(format!("skeleton_projection_attempt_{attempts}")),
+                    .join(format!("skeleton_projection_attempt_{attempt_number}")),
                 RigStage::ProviderCall,
                 &prompt,
                 Some(&skeleton_stream_progress),
@@ -672,6 +737,7 @@ async fn generate_patch_artifacts(
         progress,
         progress_plan,
         &prepared.run_dir,
+        prepared.resume,
     )
     .await?;
 
@@ -682,6 +748,120 @@ async fn generate_patch_artifacts(
         skeleton_validation_path,
         retry_record_path,
     })
+}
+
+#[derive(Debug)]
+struct CachedSkeletonProjection {
+    skeleton: SkeletonProjectionResponse,
+    validation_path: Option<PathBuf>,
+    retry_record_path: Option<PathBuf>,
+}
+
+async fn generate_patch_artifacts_from_skeleton(
+    project_root: &Path,
+    prepared: &PreparedGenerationContext,
+    progress: Option<&ProgressSink>,
+    progress_plan: &ProgressPlan,
+    skeleton: SkeletonProjectionResponse,
+    skeleton_validation_path: Option<PathBuf>,
+    retry_record_path: Option<PathBuf>,
+) -> Result<PatchArtifacts> {
+    let concurrency_specs = load_selected_concurrency_specs(
+        project_root,
+        &prepared.spec_root,
+        &prepared.selection.modules,
+    )?;
+    let batch_region_edits = generate_module_waves(
+        project_root,
+        &prepared.config,
+        &prepared.normalized,
+        &prepared.selection.queue,
+        &concurrency_specs,
+        progress,
+        progress_plan,
+        &prepared.run_dir,
+        prepared.resume,
+    )
+    .await?;
+
+    Ok(PatchArtifacts {
+        files_to_create: skeleton.files_to_create,
+        files_to_update: skeleton.files_to_update,
+        region_edits: batch_region_edits,
+        skeleton_validation_path,
+        retry_record_path,
+    })
+}
+
+fn load_completed_skeleton_projection(
+    project_root: &Path,
+    prepared: &PreparedGenerationContext,
+    progress: Option<&ProgressSink>,
+    progress_plan: &ProgressPlan,
+) -> Result<Option<CachedSkeletonProjection>> {
+    let mut attempts = skeleton_attempt_dirs(&prepared.run_dir)?;
+    attempts.sort();
+    attempts.reverse();
+    for attempt_dir in attempts {
+        let response_path = attempt_dir.join("response.txt");
+        if !response_path.exists() {
+            continue;
+        }
+        let raw = fs::read_to_string(&response_path)?;
+        let Ok(skeleton) =
+            vos_prompt::parse_skeleton_projection_response::<SkeletonProjectionResponse>(&raw)
+                .map_err(VosError::Message)
+        else {
+            continue;
+        };
+        let report = validate_skeleton_projection(
+            project_root,
+            &prepared.allowed_paths,
+            &prepared.normalized,
+            &prepared.selection.modules,
+            &skeleton,
+        );
+        if !report.ok {
+            continue;
+        }
+        progress_plan.finish_stage(
+            progress,
+            "project_skeleton",
+            &format!("reusing skeleton projection from {}", attempt_dir.display()),
+        );
+        return Ok(Some(CachedSkeletonProjection {
+            skeleton,
+            validation_path: existing_file(prepared.run_dir.join("skeleton-validation.json")),
+            retry_record_path: existing_file(prepared.run_dir.join("retry-record.json")),
+        }));
+    }
+    Ok(None)
+}
+
+fn count_existing_skeleton_attempts(run_dir: &Path) -> Result<u32> {
+    Ok(skeleton_attempt_dirs(run_dir)?.len() as u32)
+}
+
+fn skeleton_attempt_dirs(run_dir: &Path) -> Result<Vec<PathBuf>> {
+    if !run_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut attempts = Vec::new();
+    for entry in fs::read_dir(run_dir)? {
+        let path = entry?.path();
+        if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("skeleton_projection_attempt_"))
+        {
+            attempts.push(path);
+        }
+    }
+    Ok(attempts)
+}
+
+fn existing_file(path: PathBuf) -> Option<PathBuf> {
+    path.exists().then_some(path)
 }
 
 fn summarize_skeleton_feedback(errors: &[String]) -> Vec<String> {
@@ -1143,6 +1323,7 @@ mod tests {
             command_name: "vos agent generate".into(),
             target: Some("memory".into()),
             patch_path: None,
+            resume_run: None,
             apply: false,
             execute_build: true,
             execute_run: false,
@@ -1155,6 +1336,7 @@ mod tests {
             command_name: "vos agent generate".into(),
             target: Some("memory".into()),
             patch_path: None,
+            resume_run: None,
             apply: true,
             execute_build: false,
             execute_run: true,
@@ -1193,6 +1375,7 @@ mod tests {
                 command_name: "vos agent generate".into(),
                 target: None,
                 patch_path: None,
+                resume_run: None,
                 apply: false,
                 execute_build: false,
                 execute_run: false,
@@ -1222,6 +1405,7 @@ mod tests {
                 command_name: "vos agent generate".into(),
                 target: Some("memory".into()),
                 patch_path: None,
+                resume_run: None,
                 apply: false,
                 execute_build: false,
                 execute_run: false,
@@ -1248,6 +1432,7 @@ mod tests {
                 command_name: "vos agent generate".into(),
                 target: Some("phase-two".into()),
                 patch_path: None,
+                resume_run: None,
                 apply: false,
                 execute_build: false,
                 execute_run: false,
@@ -1351,6 +1536,7 @@ mod tests {
                 command_name: "vos agent generate".into(),
                 target: None,
                 patch_path: None,
+                resume_run: None,
                 apply: false,
                 execute_build: false,
                 execute_run: false,
@@ -1379,6 +1565,7 @@ mod tests {
                 command_name: "vos agent generate".into(),
                 target: Some("boot".into()),
                 patch_path: None,
+                resume_run: None,
                 apply: true,
                 execute_build: false,
                 execute_run: false,
