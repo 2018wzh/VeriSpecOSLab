@@ -21,6 +21,7 @@ Rules:\n\
 - Do not create new files.\n\
 - Emit one region edit per editable region.\n\
 - Do not emit explanations outside the JSON block.\n\
+- All code fields must be strict JSON strings: escape newlines as \\n and do not emit invalid backslash escapes such as \\v, \\0, or \\#.\n\
 \n\
 MODULE SPEC\n\
 id: {id}\n\

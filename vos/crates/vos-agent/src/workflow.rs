@@ -704,6 +704,45 @@ fn summarize_skeleton_feedback(errors: &[String]) -> Vec<String> {
         ));
     }
 
+    let missing_markers = errors
+        .iter()
+        .filter_map(|error| {
+            error
+                .strip_prefix(
+                    "coverage_error:missing required editable region markers in skeleton output: ",
+                )
+                .or_else(|| {
+                    error.strip_prefix(
+                        "coverage_error:missing required editable region markers in existing target: ",
+                    )
+                })
+                .map(str::to_string)
+        })
+        .collect::<Vec<_>>();
+    if !missing_markers.is_empty() {
+        summaries.push(format!(
+            "Place every required start_marker/end_marker pair exactly in the target skeleton files. Missing marker regions: {}.",
+            missing_markers.join("; ")
+        ));
+    }
+
+    let missing_updated_targets = errors
+        .iter()
+        .filter_map(|error| {
+            error
+                .strip_prefix(
+                    "coverage_error:files_to_update cannot create missing editable target: ",
+                )
+                .map(str::to_string)
+        })
+        .collect::<Vec<_>>();
+    if !missing_updated_targets.is_empty() {
+        summaries.push(format!(
+            "Use files_to_create, not files_to_update, for editable targets that do not yet exist. Missing files: {}.",
+            missing_updated_targets.join(", ")
+        ));
+    }
+
     let missing_linkers = errors
         .iter()
         .filter_map(|error| {
@@ -924,27 +963,56 @@ fn validate_skeleton_projection(
             ));
         }
     }
-    let required_targets = normalized
-        .operations
-        .iter()
-        .filter(|op| selected_modules.contains(&op.module))
-        .map(|op| op.llm_codegen.editable_region.file.clone())
-        .collect::<BTreeSet<_>>();
     let created_paths = skeleton
         .files_to_create
         .iter()
         .map(|f| f.path.clone())
         .collect::<BTreeSet<_>>();
+    let created_content = skeleton
+        .files_to_create
+        .iter()
+        .map(|f| (f.path.clone(), f.content.as_str()))
+        .collect::<BTreeMap<_, _>>();
     let updated_paths = skeleton
         .files_to_update
         .iter()
         .map(|f| f.file.clone())
         .collect::<BTreeSet<_>>();
-    for required in required_targets {
-        if !created_paths.contains(&required)
-            && !updated_paths.contains(&required)
-            && !project_root.join(&required).exists()
-        {
+    for operation in normalized
+        .operations
+        .iter()
+        .filter(|op| selected_modules.contains(&op.module))
+    {
+        let region = &operation.llm_codegen.editable_region;
+        let required = &region.file;
+        let existing_path = project_root.join(required);
+        if let Some(content) = created_content.get(required) {
+            if !content.contains(&region.start_marker) || !content.contains(&region.end_marker) {
+                errors.push(format!(
+                    "coverage_error:missing required editable region markers in skeleton output: {} [{} .. {}]",
+                    required.display(),
+                    region.start_marker,
+                    region.end_marker
+                ));
+            }
+        } else if existing_path.exists() {
+            match fs::read_to_string(&existing_path) {
+                Ok(content)
+                    if content.contains(&region.start_marker)
+                        && content.contains(&region.end_marker) => {}
+                _ => errors.push(format!(
+                    "coverage_error:missing required editable region markers in existing target: {} [{} .. {}]",
+                    required.display(),
+                    region.start_marker,
+                    region.end_marker
+                )),
+            }
+        } else if updated_paths.contains(required) {
+            errors.push(format!(
+                "coverage_error:files_to_update cannot create missing editable target: {}",
+                required.display()
+            ));
+        } else if !created_paths.contains(required) {
             errors.push(format!(
                 "coverage_error:missing required editable target in skeleton output: {}",
                 required.display()
