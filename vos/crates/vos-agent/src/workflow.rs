@@ -17,8 +17,8 @@ use crate::patch::{
 use crate::rig::{RigStage, RigStreamStatus, RigWorkflow, validate_provider_config};
 use crate::toolchain::{PreparedToolchainGeneration, generate_local_toolchain};
 use crate::{
-    RegionEdit, SkeletonFileEdit, SkeletonProjectionResponse, SkeletonRetryRecord,
-    SkeletonValidationReport,
+    AppliedBatchResult, ModuleWaveEdits, RegionEdit, SkeletonFileEdit, SkeletonProjectionResponse,
+    SkeletonRetryRecord, SkeletonValidationReport,
 };
 
 #[derive(Debug, Clone)]
@@ -44,6 +44,7 @@ pub(crate) struct GenerationWorkflowResult {
     pub generated_waves: Vec<Vec<String>>,
     pub created_files: Vec<PathBuf>,
     pub updated_regions: Vec<PathBuf>,
+    pub applied_batches: Vec<AppliedBatchResult>,
     pub applied: bool,
     pub build: Option<BuildResult>,
     pub run: Option<QemuRunResult>,
@@ -77,6 +78,16 @@ struct PreparedGenerationContext {
     resume: bool,
 }
 
+#[derive(Debug, Clone)]
+struct ApplyBatch {
+    kind: String,
+    label: String,
+    modules: Vec<String>,
+    files_to_create: Vec<SkeletonFileEdit>,
+    files_to_update: Vec<RegionEdit>,
+    region_edits: Vec<RegionEdit>,
+}
+
 pub(crate) async fn execute_generation_workflow(
     project_root: &Path,
     options: GenerationWorkflowOptions,
@@ -87,29 +98,27 @@ pub(crate) async fn execute_generation_workflow(
     let prepared = prepare_generation_context(project_root, &options, progress, &progress_plan)?;
     let workflow_run_id = prepared.run_id.clone();
     let PatchArtifacts {
-        files_to_create,
-        files_to_update,
-        region_edits,
+        apply_batches,
         skeleton_validation_path,
         retry_record_path,
     } = match &options.patch_path {
-        Some(path) => load_patch_artifacts(path, options.require_spec, &prepared.normalized)?,
+        Some(path) => load_patch_artifacts(
+            path,
+            options.require_spec,
+            &prepared.normalized,
+            &prepared.selection.queue,
+        )?,
         None => generate_patch_artifacts(project_root, &prepared, progress, &progress_plan)
             .await
             .map_err(|err| annotate_run_error(&workflow_run_id, err))?,
     };
 
-    validate_generation_outputs(
-        project_root,
-        &prepared.allowed_paths,
-        &files_to_create,
-        &files_to_update,
-        &region_edits,
-    )
-    .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
+    validate_generation_outputs(project_root, &prepared.allowed_paths, &apply_batches)
+        .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
 
     let mut created_files = Vec::new();
     let mut updated_regions = Vec::new();
+    let mut applied_batches = Vec::new();
     let mut toolchain_files = Vec::new();
     let mut toolchain_manifest_path = None;
     let mut toolchain_manifest = None;
@@ -117,20 +126,15 @@ pub(crate) async fn execute_generation_workflow(
     let mut run_result = None;
 
     if options.apply {
-        progress_plan.emit_stage(
-            progress,
-            "apply_code",
-            "writing generated skeleton and region edits",
-        );
-        apply_generation_outputs(
+        progress_plan.emit_stage(progress, "apply_code", "writing generated batches");
+        apply_generation_batches(
             project_root,
-            &files_to_create,
-            &files_to_update,
-            &region_edits,
+            &apply_batches,
             progress,
             &progress_plan,
             &mut created_files,
             &mut updated_regions,
+            &mut applied_batches,
         )
         .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
 
@@ -212,6 +216,7 @@ pub(crate) async fn execute_generation_workflow(
         generated_waves: prepared.selection.queue.waves,
         created_files,
         updated_regions,
+        applied_batches,
         applied: options.apply,
         build: build_result,
         run: run_result,
@@ -547,9 +552,7 @@ fn module_dependency_closure(
 
 #[derive(Debug)]
 struct PatchArtifacts {
-    files_to_create: Vec<SkeletonFileEdit>,
-    files_to_update: Vec<RegionEdit>,
-    region_edits: Vec<RegionEdit>,
+    apply_batches: Vec<ApplyBatch>,
     skeleton_validation_path: Option<PathBuf>,
     retry_record_path: Option<PathBuf>,
 }
@@ -558,21 +561,14 @@ fn load_patch_artifacts(
     path: &Path,
     require_spec: bool,
     normalized: &NormalizedSpecBundle,
+    queue: &GenerationQueue,
 ) -> Result<PatchArtifacts> {
     let patch = read_patch_file(path)?;
     if require_spec {
         validate_required_spec_metadata(&patch, normalized)?;
     }
-    let PatchFileInput {
-        files_to_create,
-        files_to_update,
-        region_edits,
-        ..
-    } = patch;
     Ok(PatchArtifacts {
-        files_to_create,
-        files_to_update,
-        region_edits,
+        apply_batches: build_patch_apply_batches(normalized, queue, patch)?,
         skeleton_validation_path: None,
         retry_record_path: None,
     })
@@ -778,9 +774,11 @@ async fn generate_patch_artifacts(
     .await?;
 
     Ok(PatchArtifacts {
-        files_to_create: skeleton.files_to_create,
-        files_to_update: skeleton.files_to_update,
-        region_edits: batch_region_edits,
+        apply_batches: build_generation_apply_batches(
+            skeleton.files_to_create,
+            skeleton.files_to_update,
+            batch_region_edits,
+        ),
         skeleton_validation_path,
         retry_record_path,
     })
@@ -822,9 +820,11 @@ async fn generate_patch_artifacts_from_skeleton(
     .await?;
 
     Ok(PatchArtifacts {
-        files_to_create: skeleton.files_to_create,
-        files_to_update: skeleton.files_to_update,
-        region_edits: batch_region_edits,
+        apply_batches: build_generation_apply_batches(
+            skeleton.files_to_create,
+            skeleton.files_to_update,
+            batch_region_edits,
+        ),
         skeleton_validation_path,
         retry_record_path,
     })
@@ -1023,69 +1023,279 @@ fn load_selected_concurrency_specs(
     Ok(specs)
 }
 
+fn build_generation_apply_batches(
+    files_to_create: Vec<SkeletonFileEdit>,
+    files_to_update: Vec<RegionEdit>,
+    module_waves: Vec<ModuleWaveEdits>,
+) -> Vec<ApplyBatch> {
+    let mut batches = Vec::new();
+    if !files_to_create.is_empty() || !files_to_update.is_empty() {
+        batches.push(ApplyBatch {
+            kind: "base".into(),
+            label: "base batch".into(),
+            modules: Vec::new(),
+            files_to_create,
+            files_to_update,
+            region_edits: Vec::new(),
+        });
+    }
+    for wave in module_waves {
+        batches.push(ApplyBatch {
+            kind: "wave".into(),
+            label: format!("wave {}", wave.wave_index + 1),
+            modules: wave.modules,
+            files_to_create: Vec::new(),
+            files_to_update: Vec::new(),
+            region_edits: wave.region_edits,
+        });
+    }
+    batches
+}
+
+fn build_patch_apply_batches(
+    normalized: &NormalizedSpecBundle,
+    queue: &GenerationQueue,
+    patch: PatchFileInput,
+) -> Result<Vec<ApplyBatch>> {
+    let PatchFileInput {
+        operation_refs,
+        files_to_create,
+        files_to_update,
+        region_edits,
+        ..
+    } = patch;
+    let base_batch = ApplyBatch {
+        kind: "base".into(),
+        label: "base batch".into(),
+        modules: Vec::new(),
+        files_to_create,
+        files_to_update,
+        region_edits: Vec::new(),
+    };
+
+    let fallback = || {
+        let mut batches = Vec::new();
+        if !base_batch.files_to_create.is_empty() || !base_batch.files_to_update.is_empty() {
+            batches.push(base_batch.clone());
+        }
+        if !region_edits.is_empty() {
+            batches.push(ApplyBatch {
+                kind: "patch".into(),
+                label: "patch batch".into(),
+                modules: Vec::new(),
+                files_to_create: Vec::new(),
+                files_to_update: Vec::new(),
+                region_edits: region_edits.clone(),
+            });
+        }
+        batches
+    };
+
+    if operation_refs.is_empty() || region_edits.is_empty() {
+        return Ok(fallback());
+    }
+
+    let mut module_by_region = BTreeMap::new();
+    for reference in &operation_refs {
+        let Some(op) = normalized
+            .operations
+            .iter()
+            .find(|op| workflow_operation_ref_matches(op, reference))
+        else {
+            return Ok(fallback());
+        };
+        let region = &op.llm_codegen.editable_region;
+        module_by_region.insert(
+            (
+                region.file.clone(),
+                region.start_marker.clone(),
+                region.end_marker.clone(),
+            ),
+            op.module.clone(),
+        );
+    }
+
+    let wave_by_module = queue
+        .waves
+        .iter()
+        .enumerate()
+        .flat_map(|(wave_index, modules)| {
+            modules
+                .iter()
+                .cloned()
+                .map(move |module| (module, wave_index))
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    let mut grouped = BTreeMap::<usize, ApplyBatch>::new();
+    for edit in &region_edits {
+        let Some(module) = module_by_region.get(&(
+            edit.file.clone(),
+            edit.start_marker.clone(),
+            edit.end_marker.clone(),
+        )) else {
+            return Ok(fallback());
+        };
+        let Some(&wave_index) = wave_by_module.get(module) else {
+            return Ok(fallback());
+        };
+        let entry = grouped.entry(wave_index).or_insert_with(|| ApplyBatch {
+            kind: "wave".into(),
+            label: format!("wave {}", wave_index + 1),
+            modules: Vec::new(),
+            files_to_create: Vec::new(),
+            files_to_update: Vec::new(),
+            region_edits: Vec::new(),
+        });
+        entry.modules.push(module.clone());
+        entry.region_edits.push(edit.clone());
+    }
+
+    let mut batches = Vec::new();
+    if !base_batch.files_to_create.is_empty() || !base_batch.files_to_update.is_empty() {
+        batches.push(base_batch);
+    }
+    for (_, mut batch) in grouped {
+        batch.modules.sort();
+        batch.modules.dedup();
+        batches.push(batch);
+    }
+    Ok(batches)
+}
+
+fn workflow_operation_ref_matches(op: &vos_core::OperationContract, reference: &str) -> bool {
+    reference == op.id
+        || reference == op.operation
+        || reference == format!("{}.{}", op.module, op.operation)
+        || reference == format!("{}:{}", op.module, op.operation)
+}
+
 fn validate_generation_outputs(
     project_root: &Path,
     allowed_paths: &[PathBuf],
-    files_to_create: &[SkeletonFileEdit],
-    files_to_update: &[RegionEdit],
-    region_edits: &[RegionEdit],
+    batches: &[ApplyBatch],
 ) -> Result<()> {
-    validate_skeleton_files(project_root, allowed_paths, files_to_create)?;
-    validate_region_edits(project_root, allowed_paths, files_to_update)?;
-    validate_region_edits(project_root, allowed_paths, region_edits)?;
-    preapply_check(project_root, files_to_create, files_to_update, region_edits)?;
+    for batch in batches {
+        validate_skeleton_files(project_root, allowed_paths, &batch.files_to_create)?;
+        validate_region_edits(project_root, allowed_paths, &batch.files_to_update)?;
+        validate_region_edits(project_root, allowed_paths, &batch.region_edits)?;
+    }
     Ok(())
 }
 
-fn apply_generation_outputs(
+fn preapply_batch(project_root: &Path, batch: &ApplyBatch) -> Result<()> {
+    let mut known = BTreeMap::new();
+    for file in &batch.files_to_create {
+        known.insert(file.path.clone(), file.content.clone());
+    }
+    for edit in batch
+        .files_to_update
+        .iter()
+        .chain(batch.region_edits.iter())
+    {
+        let content = if let Some(buffer) = known.get(&edit.file) {
+            buffer.clone()
+        } else {
+            fs::read_to_string(project_root.join(&edit.file)).map_err(|_| {
+                VosError::Message(format!(
+                    "preapply check failed: target file missing {}",
+                    edit.file.display()
+                ))
+            })?
+        };
+        if !content.contains(&edit.start_marker) || !content.contains(&edit.end_marker) {
+            return Err(VosError::Message(format!(
+                "preapply check failed: markers missing in {}",
+                edit.file.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn apply_generation_batches(
     project_root: &Path,
-    files_to_create: &[SkeletonFileEdit],
-    files_to_update: &[RegionEdit],
-    region_edits: &[RegionEdit],
+    batches: &[ApplyBatch],
     progress: Option<&ProgressSink>,
     progress_plan: &ProgressPlan,
     created_files: &mut Vec<PathBuf>,
     updated_regions: &mut Vec<PathBuf>,
+    applied_batches: &mut Vec<AppliedBatchResult>,
 ) -> Result<()> {
-    let total_writes = files_to_create.len() + files_to_update.len() + region_edits.len();
+    let total_writes = batches
+        .iter()
+        .map(|batch| {
+            batch.files_to_create.len() + batch.files_to_update.len() + batch.region_edits.len()
+        })
+        .sum::<usize>();
     let mut written = 0usize;
     if total_writes == 0 {
         progress_plan.finish_stage(progress, "apply_code", "no generated file edits to apply");
         return Ok(());
     }
-    for file in files_to_create {
-        let absolute = project_root.join(&file.path);
-        if let Some(parent) = absolute.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(&absolute, &file.content)?;
-        created_files.push(file.path.clone());
-        written += 1;
+    let total_batches = batches.len();
+    for (batch_index, batch) in batches.iter().enumerate() {
+        preapply_batch(project_root, batch)?;
         progress_plan.emit_stage_count(
             progress,
             "apply_code",
-            "created generated skeleton file",
-            Some("file"),
-            Some(&file.path.display().to_string()),
-            written,
-            total_writes,
+            &format!("applying {}", batch.label),
+            Some("batch"),
+            Some(&batch.label),
+            batch_index + 1,
+            total_batches,
         );
-    }
-    for edit in files_to_update.iter().chain(region_edits.iter()) {
-        apply_region_edit(project_root, edit)?;
-        if !updated_regions.contains(&edit.file) {
-            updated_regions.push(edit.file.clone());
+        let mut batch_created = Vec::new();
+        let mut batch_updated = Vec::new();
+        for file in &batch.files_to_create {
+            let absolute = project_root.join(&file.path);
+            if let Some(parent) = absolute.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&absolute, &file.content)?;
+            created_files.push(file.path.clone());
+            batch_created.push(file.path.clone());
+            written += 1;
+            progress_plan.emit_stage_count(
+                progress,
+                "apply_code",
+                &format!("{}: created generated skeleton file", batch.label),
+                Some("file"),
+                Some(&file.path.display().to_string()),
+                written,
+                total_writes,
+            );
         }
-        written += 1;
-        progress_plan.emit_stage_count(
-            progress,
-            "apply_code",
-            "updated generated editable region",
-            Some("file"),
-            Some(&edit.file.display().to_string()),
-            written,
-            total_writes,
-        );
+        for edit in batch
+            .files_to_update
+            .iter()
+            .chain(batch.region_edits.iter())
+        {
+            apply_region_edit(project_root, edit)?;
+            if !updated_regions.contains(&edit.file) {
+                updated_regions.push(edit.file.clone());
+            }
+            if !batch_updated.contains(&edit.file) {
+                batch_updated.push(edit.file.clone());
+            }
+            written += 1;
+            progress_plan.emit_stage_count(
+                progress,
+                "apply_code",
+                &format!("{}: updated generated editable region", batch.label),
+                Some("file"),
+                Some(&edit.file.display().to_string()),
+                written,
+                total_writes,
+            );
+        }
+        applied_batches.push(AppliedBatchResult {
+            kind: batch.kind.clone(),
+            label: batch.label.clone(),
+            modules: batch.modules.clone(),
+            created_files: batch_created,
+            updated_regions: batch_updated,
+        });
     }
     Ok(())
 }
@@ -1304,37 +1514,6 @@ fn validate_skeleton_projection(
     }
 }
 
-fn preapply_check(
-    project_root: &Path,
-    skeleton_create: &[SkeletonFileEdit],
-    skeleton_update: &[RegionEdit],
-    module_region_edits: &[RegionEdit],
-) -> Result<()> {
-    let mut known = BTreeMap::new();
-    for file in skeleton_create {
-        known.insert(file.path.clone(), file.content.clone());
-    }
-    for edit in skeleton_update.iter().chain(module_region_edits.iter()) {
-        let content = if let Some(buffer) = known.get(&edit.file) {
-            buffer.clone()
-        } else {
-            fs::read_to_string(project_root.join(&edit.file)).map_err(|_| {
-                VosError::Message(format!(
-                    "preapply check failed: target file missing {}",
-                    edit.file.display()
-                ))
-            })?
-        };
-        if !content.contains(&edit.start_marker) || !content.contains(&edit.end_marker) {
-            return Err(VosError::Message(format!(
-                "preapply check failed: markers missing in {}",
-                edit.file.display()
-            )));
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1492,7 +1671,9 @@ mod tests {
 
     #[test]
     fn load_patch_artifacts_enforces_required_spec_metadata() {
-        let (temp, _project_root, _spec_root, normalized) = distinct_stage_fixture();
+        let (temp, project_root, spec_root, normalized) = distinct_stage_fixture();
+        let queue = vos_spec::build_generation_queue(&project_root, &spec_root, "phase-two")
+            .expect("queue");
         let patch_path = temp.path().join("candidate.json");
         write_patch_json(
             &patch_path,
@@ -1509,14 +1690,19 @@ mod tests {
             }),
         );
 
-        let artifacts =
-            load_patch_artifacts(&patch_path, true, &normalized).expect("patch should validate");
-        assert_eq!(artifacts.region_edits.len(), 1);
+        let artifacts = load_patch_artifacts(&patch_path, true, &normalized, &queue)
+            .expect("patch should validate");
+        assert_eq!(artifacts.apply_batches.len(), 1);
+        assert_eq!(artifacts.apply_batches[0].label, "wave 2");
+        assert_eq!(artifacts.apply_batches[0].modules, vec!["beta"]);
+        assert_eq!(artifacts.apply_batches[0].region_edits.len(), 1);
     }
 
     #[test]
     fn load_patch_artifacts_rejects_missing_spec_metadata_when_required() {
-        let (temp, _project_root, _spec_root, normalized) = distinct_stage_fixture();
+        let (temp, project_root, spec_root, normalized) = distinct_stage_fixture();
+        let queue = vos_spec::build_generation_queue(&project_root, &spec_root, "phase-two")
+            .expect("queue");
         let patch_path = temp.path().join("candidate.json");
         write_patch_json(
             &patch_path,
@@ -1530,9 +1716,64 @@ mod tests {
             }),
         );
 
-        let err = load_patch_artifacts(&patch_path, true, &normalized)
+        let err = load_patch_artifacts(&patch_path, true, &normalized, &queue)
             .expect_err("missing spec metadata should fail");
         assert!(err.to_string().contains("missing `spec_hash`"));
+    }
+
+    #[test]
+    fn patch_batches_fallback_without_metadata_group_into_single_patch_batch() {
+        let (_temp, project_root, spec_root, normalized) = distinct_stage_fixture();
+        let queue = vos_spec::build_generation_queue(&project_root, &spec_root, "phase-two")
+            .expect("queue");
+        let batches = build_patch_apply_batches(
+            &normalized,
+            &queue,
+            PatchFileInput {
+                spec_hash: None,
+                related_specs: Vec::new(),
+                operation_refs: Vec::new(),
+                files_to_create: Vec::new(),
+                files_to_update: Vec::new(),
+                region_edits: vec![RegionEdit {
+                    file: PathBuf::from("kernel/beta.c"),
+                    start_marker: "// BEGIN beta".into(),
+                    end_marker: "// END beta".into(),
+                    code: "int beta(void) { return 0; }".into(),
+                }],
+            },
+        )
+        .expect("fallback batches");
+
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].kind, "patch");
+        assert_eq!(batches[0].label, "patch batch");
+    }
+
+    #[test]
+    fn preapply_batch_only_requires_current_batch_markers() {
+        let temp = tempdir().expect("tempdir");
+        let project_root = temp.path();
+        fs::create_dir_all(project_root.join("kernel")).expect("kernel dir");
+        let batch = ApplyBatch {
+            kind: "base".into(),
+            label: "base batch".into(),
+            modules: Vec::new(),
+            files_to_create: vec![SkeletonFileEdit {
+                path: PathBuf::from("kernel/base.c"),
+                content: "// BEGIN base\n// END base\n".into(),
+                create_mode: "create".into(),
+            }],
+            files_to_update: vec![RegionEdit {
+                file: PathBuf::from("kernel/base.c"),
+                start_marker: "// BEGIN base".into(),
+                end_marker: "// END base".into(),
+                code: "int base(void) { return 0; }".into(),
+            }],
+            region_edits: Vec::new(),
+        };
+
+        preapply_batch(project_root, &batch).expect("base batch should validate independently");
     }
 
     #[test]
@@ -1624,6 +1865,7 @@ mod tests {
         assert_eq!(result.target_value, "boot");
         assert_eq!(result.selected_modules, vec!["boot"]);
         assert_eq!(result.generated_waves, vec![vec!["boot".to_string()]]);
+        assert_eq!(result.applied_batches.len(), 2);
         assert!(result.manifest_path.exists());
         assert!(
             result

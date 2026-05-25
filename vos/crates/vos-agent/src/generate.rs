@@ -37,6 +37,7 @@ pub async fn agent_generate(
         generated_waves: payload.generated_waves,
         skeleton_files: payload.created_files,
         updated_regions: payload.updated_regions,
+        applied_batches: payload.applied_batches,
         applied: payload.applied,
         build: payload.build,
         run: payload.run,

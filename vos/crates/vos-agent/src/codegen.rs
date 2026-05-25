@@ -7,7 +7,7 @@ use vos_core::{ConcurrencySpec, NormalizedSpecBundle, Result, VosError};
 use vos_runtime::{ProgressPlan, ProgressSink, progress_percent};
 
 use crate::rig::{RigStage, RigStreamStatus, RigWorkflow};
-use crate::{ModuleBatchCodegenResponse, RegionEdit, SkeletonFileEdit};
+use crate::{ModuleBatchCodegenResponse, ModuleWaveEdits, SkeletonFileEdit};
 
 #[derive(Debug)]
 struct ModuleStreamProgress {
@@ -26,8 +26,8 @@ pub(crate) async fn generate_module_waves(
     progress_plan: &ProgressPlan,
     run_dir: &Path,
     resume: bool,
-) -> Result<Vec<RegionEdit>> {
-    let mut edits = Vec::new();
+) -> Result<Vec<ModuleWaveEdits>> {
+    let mut waves = Vec::new();
     let total_modules = queue.jobs.len();
     let mut launched_modules = 0usize;
     let mut completed_modules = 0usize;
@@ -95,7 +95,11 @@ pub(crate) async fn generate_module_waves(
                         completed_modules,
                         total_modules,
                     );
-                    edits.extend(batch.region_edits);
+                    waves.push(ModuleWaveEdits {
+                        wave_index,
+                        modules: vec![module_name.clone()],
+                        region_edits: batch.region_edits,
+                    });
                     continue;
                 }
             }
@@ -161,7 +165,11 @@ pub(crate) async fn generate_module_waves(
                         completed_modules,
                         total_modules,
                     );
-                    edits.extend(batch.region_edits);
+                    waves.push(ModuleWaveEdits {
+                        wave_index,
+                        modules: vec![module_name],
+                        region_edits: batch.region_edits,
+                    });
                 }
             }
         }
@@ -180,7 +188,27 @@ pub(crate) async fn generate_module_waves(
         "generate_modules",
         "module wave generation completed",
     );
-    Ok(edits)
+    waves.sort_by(|left, right| {
+        left.wave_index
+            .cmp(&right.wave_index)
+            .then_with(|| left.modules.cmp(&right.modules))
+    });
+
+    let mut merged: Vec<ModuleWaveEdits> = Vec::new();
+    for wave in waves {
+        if let Some(last) = merged.last_mut() {
+            if last.wave_index == wave.wave_index {
+                last.modules.extend(wave.modules);
+                last.region_edits.extend(wave.region_edits);
+                last.modules.sort();
+                last.modules.dedup();
+                continue;
+            }
+        }
+        merged.push(wave);
+    }
+
+    Ok(merged)
 }
 
 fn build_target_context(

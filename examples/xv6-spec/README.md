@@ -144,7 +144,7 @@ cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/x
 1. 规范化并检查 `spec/`
 2. 先做 skeleton projection，创建最小可编辑源码骨架
 3. 按依赖波次为各模块生成 `editable_region`
-4. 把生成结果真实写入工作区
+4. 先应用 skeleton/base 批次，再按 generation wave 逐波把生成结果写入工作区
 5. 在 `.vos/runs/<run-id>/` 下记录 manifest、计划、验证报告与重试记录
 
 生成完成后，工作区里应当出现至少这些文件族：

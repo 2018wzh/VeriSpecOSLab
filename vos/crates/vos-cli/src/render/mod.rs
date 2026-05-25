@@ -352,7 +352,7 @@ mod tests {
 
         let applying = ProgressEvent {
             stage: "apply_code".into(),
-            message: "updated generated editable region".into(),
+            message: "wave 1: updated generated editable region".into(),
             entity_kind: Some("file".into()),
             entity_id: Some("kernel/main.c".into()),
             position: Some(1),
@@ -365,7 +365,7 @@ mod tests {
         };
         assert_eq!(
             format_progress_message(&applying),
-            "应用中: updated generated editable region [file:kernel/main.c] (file 1/1)"
+            "应用中: wave 1: updated generated editable region [file:kernel/main.c] (file 1/1)"
         );
     }
 }

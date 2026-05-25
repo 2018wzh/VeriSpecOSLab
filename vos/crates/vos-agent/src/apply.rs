@@ -32,6 +32,7 @@ pub async fn agent_apply_patch(
         run_id: payload.run_id,
         created_files: payload.created_files,
         updated_regions: payload.updated_regions,
+        applied_batches: payload.applied_batches,
         build: payload.build,
         run: payload.run,
         manifest_path: payload.manifest_path,

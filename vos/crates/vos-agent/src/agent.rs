@@ -43,8 +43,29 @@ pub struct SkeletonFileEdit {
     pub create_mode: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct AppliedBatchResult {
+    pub kind: String,
+    pub label: String,
+    #[serde(default)]
+    pub modules: Vec<String>,
+    #[serde(default)]
+    pub created_files: Vec<PathBuf>,
+    #[serde(default)]
+    pub updated_regions: Vec<PathBuf>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ModuleBatchCodegenResponse {
+    #[serde(default)]
+    pub region_edits: Vec<RegionEdit>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ModuleWaveEdits {
+    pub wave_index: usize,
+    #[serde(default)]
+    pub modules: Vec<String>,
     #[serde(default)]
     pub region_edits: Vec<RegionEdit>,
 }
@@ -119,6 +140,8 @@ pub struct GenerationRunResult {
     pub skeleton_files: Vec<PathBuf>,
     #[serde(default)]
     pub updated_regions: Vec<PathBuf>,
+    #[serde(default)]
+    pub applied_batches: Vec<AppliedBatchResult>,
     pub applied: bool,
     pub build: Option<BuildResult>,
     pub run: Option<QemuRunResult>,
@@ -138,6 +161,8 @@ pub struct ApplyPatchResult {
     pub created_files: Vec<PathBuf>,
     #[serde(default)]
     pub updated_regions: Vec<PathBuf>,
+    #[serde(default)]
+    pub applied_batches: Vec<AppliedBatchResult>,
     pub build: Option<BuildResult>,
     pub run: Option<QemuRunResult>,
     pub manifest_path: PathBuf,
