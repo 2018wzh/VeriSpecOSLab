@@ -86,15 +86,19 @@ fn spinner_style() -> ProgressStyle {
 }
 
 fn overall_bar_style() -> ProgressStyle {
-    ProgressStyle::with_template("{spinner:.cyan} {prefix:.bold} {bar:24.green/white} {pos:>3}% {msg}")
-        .unwrap()
-        .progress_chars("=>-")
+    ProgressStyle::with_template(
+        "{spinner:.cyan} {prefix:.bold} {bar:24.green/white} {pos:>3}% {msg}",
+    )
+    .unwrap()
+    .progress_chars("=>-")
 }
 
 fn legacy_bar_style() -> ProgressStyle {
-    ProgressStyle::with_template("{spinner:.cyan} {prefix:.bold} {bar:24.green/white} {pos}/{len} {msg}")
-        .unwrap()
-        .progress_chars("=>-")
+    ProgressStyle::with_template(
+        "{spinner:.cyan} {prefix:.bold} {bar:24.green/white} {pos}/{len} {msg}",
+    )
+    .unwrap()
+    .progress_chars("=>-")
 }
 
 fn progress_mode(event: &ProgressEvent) -> ProgressMode {
@@ -110,6 +114,9 @@ fn progress_mode(event: &ProgressEvent) -> ProgressMode {
 }
 
 fn format_progress_message(event: &ProgressEvent) -> String {
+    let status_prefix = progress_status(event)
+        .map(|status| format!("{status}: "))
+        .unwrap_or_default();
     let entity_suffix = match (&event.entity_kind, &event.entity_id) {
         (Some(kind), Some(id)) => format!(" [{kind}:{id}]"),
         (Some(kind), None) => format!(" [{kind}]"),
@@ -122,7 +129,25 @@ fn format_progress_message(event: &ProgressEvent) -> String {
         }
         _ => String::new(),
     };
-    format!("{}{}{}", event.message, entity_suffix, counter_suffix)
+    format!(
+        "{}{}{}{}",
+        status_prefix, event.message, entity_suffix, counter_suffix
+    )
+}
+
+fn progress_status(event: &ProgressEvent) -> Option<&'static str> {
+    match event.stage.as_str() {
+        "project_skeleton" | "generate_modules" => match event.stage_percent {
+            Some(100) => Some("生成中"),
+            _ if event.message.contains("generating") => Some("生成中"),
+            _ if event.message.contains("completed") || event.message.contains("received") => {
+                Some("生成中")
+            }
+            _ => Some("思考中"),
+        },
+        "apply_code" => Some("应用中"),
+        _ => None,
+    }
 }
 
 fn format_progress_prefix(event: &ProgressEvent) -> String {
@@ -259,10 +284,7 @@ mod tests {
         };
 
         assert_eq!(progress_mode(&event), ProgressMode::OverallBar(12));
-        assert_eq!(
-            format_progress_prefix(&event),
-            "[阶段 1/5] 解析工具链"
-        );
+        assert_eq!(format_progress_prefix(&event), "[阶段 1/5] 解析工具链");
         assert_eq!(
             format_progress_message(&event),
             "resolving toolchain (items 1/5)"
@@ -293,10 +315,7 @@ mod tests {
         };
 
         assert_eq!(progress_mode(&event), ProgressMode::LegacyBar(3, 6));
-        assert_eq!(
-            format_progress_prefix(&event),
-            "generated_module"
-        );
+        assert_eq!(format_progress_prefix(&event), "generated_module");
         assert_eq!(
             format_progress_message(&event),
             "module batch completed [module:memory] (modules 3/6)"
@@ -307,6 +326,45 @@ mod tests {
                 &format_progress_message(&event)
             ),
             "generated_module > module batch completed [module:memory] (modules 3/6)"
+        );
+    }
+
+    #[test]
+    fn agent_progress_messages_include_generation_status() {
+        let thinking = ProgressEvent {
+            stage: "generate_modules".into(),
+            message: "sending module batch prompt".into(),
+            entity_kind: Some("module".into()),
+            entity_id: Some("proc".into()),
+            position: Some(1),
+            total: Some(2),
+            stage_label: Some("模块批量生成".into()),
+            stage_index: Some(4),
+            stage_total: Some(6),
+            stage_percent: Some(50),
+            overall_percent: Some(70),
+        };
+        assert_eq!(
+            format_progress_message(&thinking),
+            "思考中: sending module batch prompt [module:proc] (modules 1/2)"
+        );
+
+        let applying = ProgressEvent {
+            stage: "apply_code".into(),
+            message: "updated generated editable region".into(),
+            entity_kind: Some("file".into()),
+            entity_id: Some("kernel/main.c".into()),
+            position: Some(1),
+            total: Some(1),
+            stage_label: Some("应用代码变更".into()),
+            stage_index: Some(5),
+            stage_total: Some(6),
+            stage_percent: Some(100),
+            overall_percent: Some(90),
+        };
+        assert_eq!(
+            format_progress_message(&applying),
+            "应用中: updated generated editable region [file:kernel/main.c] (file 1/1)"
         );
     }
 }

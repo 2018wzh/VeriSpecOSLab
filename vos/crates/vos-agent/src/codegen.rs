@@ -1,11 +1,19 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use vos_core::{ConcurrencySpec, NormalizedSpecBundle, Result, VosError};
-use vos_runtime::{ProgressPlan, ProgressSink};
+use vos_runtime::{ProgressPlan, ProgressSink, progress_percent};
 
-use crate::{RegionEdit, RigStage, RigWorkflow};
+use crate::RegionEdit;
+use crate::rig::{RigStage, RigStreamStatus, RigWorkflow};
+
+#[derive(Debug)]
+struct ModuleStreamProgress {
+    module_name: String,
+    status: RigStreamStatus,
+}
 
 pub(crate) async fn generate_module_waves(
     project_root: &Path,
@@ -31,6 +39,8 @@ pub(crate) async fn generate_module_waves(
     }
     for (wave_index, wave) in queue.waves.iter().enumerate() {
         let mut set = JoinSet::new();
+        let (stream_progress_tx, mut stream_progress_rx) =
+            mpsc::unbounded_channel::<ModuleStreamProgress>();
         for module_name in wave {
             let module_spec = normalized
                 .modules
@@ -79,10 +89,23 @@ pub(crate) async fn generate_module_waves(
                 total_modules,
             );
             let module_name = module_name.clone();
+            let stream_progress_tx = stream_progress_tx.clone();
             set.spawn(async move {
                 let workflow = RigWorkflow::new(&config);
+                let progress_module = module_name.clone();
+                let stream_progress = move |status| {
+                    let _ = stream_progress_tx.send(ModuleStreamProgress {
+                        module_name: progress_module.clone(),
+                        status,
+                    });
+                };
                 let raw = workflow
-                    .run_prompt_stage(&module_run_dir, RigStage::ProviderCall, &prompt)
+                    .run_prompt_stage(
+                        &module_run_dir,
+                        RigStage::ProviderCall,
+                        &prompt,
+                        Some(&stream_progress),
+                    )
                     .await?;
                 let parsed = vos_prompt::parse_module_batch_response::<
                     crate::ModuleBatchCodegenResponse,
@@ -91,20 +114,46 @@ pub(crate) async fn generate_module_waves(
                 Ok::<_, VosError>((module_name, parsed))
             });
         }
-        while let Some(joined) = set.join_next().await {
-            let (module_name, batch) =
-                joined.map_err(|err| VosError::Message(err.to_string()))??;
-            completed_modules += 1;
-            progress_plan.emit_stage_count(
+        drop(stream_progress_tx);
+        while !set.is_empty() {
+            tokio::select! {
+                Some(stream_progress) = stream_progress_rx.recv() => {
+                    emit_module_stream_progress(
+                        progress,
+                        progress_plan,
+                        &stream_progress,
+                        completed_modules,
+                        total_modules,
+                    );
+                }
+                joined = set.join_next() => {
+                    let Some(joined) = joined else {
+                        break;
+                    };
+                    let (module_name, batch) =
+                        joined.map_err(|err| VosError::Message(err.to_string()))??;
+                    completed_modules += 1;
+                    progress_plan.emit_stage_count(
+                        progress,
+                        "generate_modules",
+                        &format!("module batch completed in wave {}", wave_index + 1),
+                        Some("module"),
+                        Some(&module_name),
+                        completed_modules,
+                        total_modules,
+                    );
+                    edits.extend(batch.region_edits);
+                }
+            }
+        }
+        while let Ok(stream_progress) = stream_progress_rx.try_recv() {
+            emit_module_stream_progress(
                 progress,
-                "generate_modules",
-                &format!("module batch completed in wave {}", wave_index + 1),
-                Some("module"),
-                Some(&module_name),
+                progress_plan,
+                &stream_progress,
                 completed_modules,
                 total_modules,
             );
-            edits.extend(batch.region_edits);
         }
     }
     progress_plan.finish_stage(
@@ -113,4 +162,27 @@ pub(crate) async fn generate_module_waves(
         "module wave generation completed",
     );
     Ok(edits)
+}
+
+fn emit_module_stream_progress(
+    progress: Option<&ProgressSink>,
+    progress_plan: &ProgressPlan,
+    stream_progress: &ModuleStreamProgress,
+    completed_modules: usize,
+    total_modules: usize,
+) {
+    let message = match stream_progress.status {
+        RigStreamStatus::Thinking => "thinking about module batch",
+        RigStreamStatus::Generating => "generating module batch",
+    };
+    progress_plan.emit_stage_progress(
+        progress,
+        "generate_modules",
+        message,
+        progress_percent(completed_modules, total_modules).unwrap_or(0),
+        Some("module"),
+        Some(&stream_progress.module_name),
+        None,
+        None,
+    );
 }

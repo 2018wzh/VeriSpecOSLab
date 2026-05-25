@@ -3,12 +3,14 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
+use futures::StreamExt;
 use rig_core::agent::{Agent, PromptHook};
 use rig_core::client::CompletionClient;
 use rig_core::completion::{
     AssistantContent, Completion, CompletionError, CompletionModel, Message,
 };
 use rig_core::providers::{anthropic, deepseek, gemini, openai};
+use rig_core::streaming::StreamedAssistantContent;
 use serde::Serialize;
 use serde_json::Value;
 use tokio::time::timeout;
@@ -28,6 +30,14 @@ pub enum RigStage {
     ValidateGate,
     Evidence,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RigStreamStatus {
+    Thinking,
+    Generating,
+}
+
+pub(crate) type RigStreamProgressSink<'a> = dyn Fn(RigStreamStatus) + Send + Sync + 'a;
 
 #[derive(Debug, Clone, Serialize)]
 struct RigResponseArtifact {
@@ -57,11 +67,12 @@ impl<'a> RigWorkflow<'a> {
         Self { config }
     }
 
-    pub async fn run_prompt_stage(
+    pub(crate) async fn run_prompt_stage(
         &self,
         run_dir: &Path,
         _stage: RigStage,
         prompt: &PromptEnvelope,
+        stream_progress: Option<&RigStreamProgressSink<'_>>,
     ) -> Result<String> {
         fs::create_dir_all(run_dir)?;
 
@@ -75,7 +86,7 @@ impl<'a> RigWorkflow<'a> {
         vos_runtime::write_json(&run_dir.join("request.json"), &request)?;
         fs::write(run_dir.join("prompt.txt"), &prompt.prompt)?;
 
-        let artifact = match execute_prompt(&resolved, prompt).await {
+        let artifact = match execute_prompt(&resolved, prompt, stream_progress).await {
             Ok(artifact) => artifact,
             Err(err) => {
                 let failure = RigFailureArtifact {
@@ -105,6 +116,7 @@ pub(crate) fn validate_provider_config(config: &AppConfig) -> Result<()> {
 async fn execute_prompt(
     resolved: &ResolvedAgentConfig,
     prompt: &PromptEnvelope,
+    stream_progress: Option<&RigStreamProgressSink<'_>>,
 ) -> Result<RigResponseArtifact> {
     let api_key = env::var(&resolved.api_key_env).map_err(|_| {
         VosError::Message(format!(
@@ -116,7 +128,7 @@ async fn execute_prompt(
 
     let mut last_error = None;
     for attempt in 1..=resolved.max_attempts {
-        match execute_prompt_once(resolved, prompt, &api_key).await {
+        match execute_prompt_once(resolved, prompt, &api_key, stream_progress).await {
             Ok(artifact) => return Ok(artifact),
             Err(err) if attempt < resolved.max_attempts && is_retryable_error(&err) => {
                 last_error = Some(err);
@@ -132,6 +144,7 @@ async fn execute_prompt_once(
     resolved: &ResolvedAgentConfig,
     prompt: &PromptEnvelope,
     api_key: &str,
+    stream_progress: Option<&RigStreamProgressSink<'_>>,
 ) -> Result<RigResponseArtifact> {
     match resolved.provider {
         AgentProviderKind::OpenAi => {
@@ -141,7 +154,7 @@ async fn execute_prompt_once(
                 .build()
                 .map_err(map_client_builder_error)?;
             let agent = client.agent(&resolved.model).build();
-            execute_agent_completion(agent, resolved, prompt).await
+            execute_agent_completion(agent, resolved, prompt, stream_progress).await
         }
         AgentProviderKind::OpenAiCompatible => {
             let client = openai::CompletionsClient::builder()
@@ -153,7 +166,7 @@ async fn execute_prompt_once(
                 .completion_model(&resolved.model)
                 .into_agent_builder()
                 .build();
-            execute_agent_completion(agent, resolved, prompt).await
+            execute_agent_completion(agent, resolved, prompt, stream_progress).await
         }
         AgentProviderKind::Anthropic => {
             let client = anthropic::Client::builder()
@@ -162,7 +175,7 @@ async fn execute_prompt_once(
                 .build()
                 .map_err(map_client_builder_error)?;
             let agent = client.agent(&resolved.model).build();
-            execute_agent_completion(agent, resolved, prompt).await
+            execute_agent_completion(agent, resolved, prompt, stream_progress).await
         }
         AgentProviderKind::DeepSeek => {
             let client = deepseek::Client::builder()
@@ -171,7 +184,7 @@ async fn execute_prompt_once(
                 .build()
                 .map_err(map_client_builder_error)?;
             let agent = client.agent(&resolved.model).build();
-            execute_agent_completion(agent, resolved, prompt).await
+            execute_agent_completion(agent, resolved, prompt, stream_progress).await
         }
         AgentProviderKind::Gemini => {
             let client = gemini::Client::builder()
@@ -180,7 +193,7 @@ async fn execute_prompt_once(
                 .build()
                 .map_err(map_client_builder_error)?;
             let agent = client.agent(&resolved.model).build();
-            execute_agent_completion(agent, resolved, prompt).await
+            execute_agent_completion(agent, resolved, prompt, stream_progress).await
         }
     }
 }
@@ -189,6 +202,7 @@ async fn execute_agent_completion<M, P>(
     agent: Agent<M, P>,
     resolved: &ResolvedAgentConfig,
     prompt: &PromptEnvelope,
+    stream_progress: Option<&RigStreamProgressSink<'_>>,
 ) -> Result<RigResponseArtifact>
 where
     M: CompletionModel + 'static,
@@ -200,7 +214,36 @@ where
             .completion(prompt.prompt.clone(), Vec::<Message>::new())
             .await
             .map_err(map_completion_error)?;
-        request.send().await.map_err(map_completion_error)
+        let mut current_status = None;
+        emit_stream_status(
+            stream_progress,
+            &mut current_status,
+            RigStreamStatus::Thinking,
+        );
+        let mut stream = request.stream().await.map_err(map_completion_error)?;
+        while let Some(chunk) = stream.next().await {
+            match chunk.map_err(map_completion_error)? {
+                StreamedAssistantContent::Text(_) => {
+                    emit_stream_status(
+                        stream_progress,
+                        &mut current_status,
+                        RigStreamStatus::Generating,
+                    );
+                }
+                StreamedAssistantContent::Reasoning(_)
+                | StreamedAssistantContent::ReasoningDelta { .. } => {
+                    emit_stream_status(
+                        stream_progress,
+                        &mut current_status,
+                        RigStreamStatus::Thinking,
+                    );
+                }
+                StreamedAssistantContent::ToolCall { .. }
+                | StreamedAssistantContent::ToolCallDelta { .. }
+                | StreamedAssistantContent::Final(_) => {}
+            }
+        }
+        Ok::<_, VosError>(stream)
     })
     .await
     .map_err(|_| {
@@ -213,7 +256,7 @@ where
     let raw_text = extract_text_output(&response.choice)
         .ok_or_else(|| VosError::Message("rig completion did not return text output".into()))?;
     let extracted_code = extract_code_block(&raw_text);
-    let raw_response = serde_json::to_value(&response.raw_response)?;
+    let raw_response = serde_json::to_value(&response.response)?;
 
     Ok(RigResponseArtifact {
         model: resolved.model.clone(),
@@ -221,6 +264,20 @@ where
         extracted_code,
         raw_response,
     })
+}
+
+fn emit_stream_status(
+    stream_progress: Option<&RigStreamProgressSink<'_>>,
+    current_status: &mut Option<RigStreamStatus>,
+    next_status: RigStreamStatus,
+) {
+    if current_status.as_ref() == Some(&next_status) {
+        return;
+    }
+    *current_status = Some(next_status);
+    if let Some(progress) = stream_progress {
+        progress(next_status);
+    }
 }
 
 fn extract_text_output(choice: &rig_core::OneOrMany<AssistantContent>) -> Option<String> {

@@ -14,7 +14,7 @@ use crate::patch::{
     PatchFileInput, apply_region_edit, read_patch_file, validate_region_edits,
     validate_required_spec_metadata, validate_skeleton_files,
 };
-use crate::rig::{RigStage, RigWorkflow, validate_provider_config};
+use crate::rig::{RigStage, RigStreamStatus, RigWorkflow, validate_provider_config};
 use crate::{
     RegionEdit, SkeletonFileEdit, SkeletonProjectionResponse, SkeletonRetryRecord,
     SkeletonValidationReport,
@@ -545,6 +545,22 @@ async fn generate_patch_artifacts(
             allowed_paths: allowed.to_vec(),
             prompt: skeleton_prompt,
         };
+        let skeleton_stream_progress = |status| {
+            let (message, percent) = match status {
+                RigStreamStatus::Thinking => ("thinking about skeleton projection", 5),
+                RigStreamStatus::Generating => ("generating skeleton projection", 80),
+            };
+            progress_plan.emit_stage_progress(
+                progress,
+                "project_skeleton",
+                message,
+                percent,
+                Some("attempt"),
+                Some(&attempts.to_string()),
+                Some(attempts as usize),
+                Some(max_attempts as usize),
+            );
+        };
         let skeleton_response = workflow
             .run_prompt_stage(
                 &prepared
@@ -552,6 +568,7 @@ async fn generate_patch_artifacts(
                     .join(format!("skeleton_projection_attempt_{attempts}")),
                 RigStage::ProviderCall,
                 &prompt,
+                Some(&skeleton_stream_progress),
             )
             .await?;
         let parsed = vos_prompt::parse_skeleton_projection_response::<SkeletonProjectionResponse>(

@@ -1,12 +1,12 @@
 spec_root = "spec"
 
 [agent]
-provider = "deepseek"
-model = "deepseek-v4-pro"
-base_url = "https://api.deepseek.com/v1"
-timeout_secs = 30
+provider = "gemini"
+model = "gemini-3.5-flash"
+base_url = "https://generativelanguage.googleapis.com"
+timeout_secs = 600
 [agent.auth]
-env = "DEEPSEEK_API_KEY"
+env = "GEMINI_API_KEY"
 
 [agent.retry]
 max_attempts = 2
