@@ -9,6 +9,7 @@ pub fn build_toolchain_codegen_prompt(
     project_root: &Path,
     allowed_paths: &[PathBuf],
     allowed_formats: &[&str],
+    required_phases: &[String],
 ) -> String {
     format!(
         "You are generating a local build system for an OS project from strict toolchain specs.\n\
@@ -57,7 +58,7 @@ PROJECT SOURCE SUMMARY\n\
             .map(|path| path.display().to_string())
             .collect::<Vec<_>>()
             .join("\n"),
-        phases = toolchain.validation.must_pass.join("\n"),
+        phases = required_phases.join("\n"),
         toolchain_yaml = serde_yaml::to_string(toolchain).unwrap_or_default(),
         arch_summary = normalized.architecture.seed.architecture_summary,
         source_summary = summarize_project_sources(project_root),

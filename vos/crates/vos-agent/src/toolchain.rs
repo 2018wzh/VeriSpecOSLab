@@ -40,6 +40,8 @@ pub(crate) async fn generate_local_toolchain(
             "toolchain build.allowed_output_path must declare at least one allowed generated build-system path".into(),
         ));
     }
+    let phase_order =
+        vos_runtime::required_phase_order(&prepared.normalized.architecture.toolchain)?;
     let workflow = RigWorkflow::new(&prepared.config);
     let prompt = PromptEnvelope {
         task_kind: "toolchain_codegen".into(),
@@ -62,6 +64,7 @@ pub(crate) async fn generate_local_toolchain(
             project_root,
             &allowed_paths,
             &["makefile", "cmake", "xtask"],
+            &phase_order,
         ),
     };
     let toolchain_stream_progress = |status| {
@@ -90,8 +93,6 @@ pub(crate) async fn generate_local_toolchain(
         .await?;
     let response = vos_prompt::parse_toolchain_codegen_response::<ToolchainCodegenResponse>(&raw)
         .map_err(VosError::Message)?;
-    let phase_order =
-        vos_runtime::required_phase_order(&prepared.normalized.architecture.toolchain)?;
     validate_toolchain_response(&response, &allowed_paths, &phase_order)?;
     let files = write_toolchain_files(project_root, prepared, &response)?;
     let manifest = ToolchainManifest {
