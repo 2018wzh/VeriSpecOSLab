@@ -151,10 +151,7 @@ fn format_progress_prefix(event: &ProgressEvent) -> String {
     let stage_percent = event.stage_percent.map(|percent| percent.min(100));
     match (event.stage_index, event.stage_total) {
         (Some(index), Some(total)) if total > 0 => {
-            let stage_progress = stage_percent
-                .map(|percent| format!(" · {percent}%"))
-                .unwrap_or_default();
-            format!("[阶段 {index}/{total}{stage_progress}] {stage_name}")
+            format!("[阶段 {index}/{total}] {stage_name}")
         }
         _ => stage_percent
             .map(|percent| format!("[{percent}%] {stage_name}"))
@@ -259,7 +256,10 @@ mod tests {
         };
 
         assert_eq!(progress_mode(&event), ProgressMode::OverallBar(12));
-        assert_eq!(format_progress_prefix(&event), "[阶段 1/5 · 20%] 解析工具链");
+        assert_eq!(
+            format_progress_prefix(&event),
+            "[阶段 1/5 · 20%] 解析工具链"
+        );
         assert_eq!(
             format_progress_message(&event),
             "resolving toolchain (items 1/5)"
