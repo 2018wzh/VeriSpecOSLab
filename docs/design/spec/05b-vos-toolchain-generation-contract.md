@@ -2,15 +2,15 @@
 
 ## 概述
 
-本文档定义 VOS Runtime 如何从语义构建 spec 生成、执行并采集证据。
+本文档定义当前实现中本地 Agent 与 VOS Runtime 如何从语义构建 spec 生成、执行并采集证据。
 
 核心流程：
 ```
 spec/toolchain/toolchain.yaml
     ↓ [vos-spec 解析与验证]
 语义构建阶段 (BuildPhaseSemantics)
-    ↓ [生成器选择与调用]
-工具特定生成物 (Makefile/CMakeLists.txt/task.rs/BUILD)
+    ↓ [vos-agent 生成本地构建系统]
+项目根构建系统文件 + .vos/toolchain.json
     ↓ [vos-runtime 执行]
 构建输出 + 工件
     ↓ [证据采集与映射]
@@ -36,26 +36,15 @@ $ vos build --stage 2
    → BuildSpec 结构化实例
    ```
 
-2. **选择生成器**
+2. **读取当前构建系统 manifest**
    ```
-   if --generator=explicit:
-     use specified generator
-   else:
-     auto-detect from project structure:
-       - C/C++ project + Unix → Makefile
-       - Rust workspace → xtask
-       - multi-language → ask user
+   read .vos/toolchain.json
+   validate spec hash
+   validate files exist
+   validate files are allowed by build.allowed_output_path
    ```
 
-3. **调用生成器**
-   ```
-   generator.generate(spec) → artifact
-     - Makefile generator: outputs Makefile
-     - Xtask generator: outputs xtask/src/tasks.rs
-     - CMake generator: outputs CMakeLists.txt
-   ```
-
-4. **执行生成的构建工具**
+3. **执行当前构建系统**
    ```
    if artifact is Makefile:
      $ make build
@@ -96,44 +85,26 @@ $ vos build --stage 2
 
 ### 1.2 完整命令示例
 
-**自动生成（推荐）**
+**先由 agent 生成，再由 build 执行（推荐）**
 ```bash
-$ vos build --stage 2
-# 自动检测生成器 (likely Makefile for C)
-# 生成 Makefile
-# 执行: make build
-# 采集证据
+$ vos agent generate --apply
+$ vos build
+# agent 根据 spec 生成 Makefile/xtask/CMakeLists.txt 等
+# build 读取 .vos/toolchain.json 并执行
 ```
 
-**指定生成器**
+**仅执行 dry-run**
 ```bash
-$ vos build --stage 2 --generator=xtask
-# 调用 xtask 生成器
-# 生成 xtask/src/tasks.rs
-# 执行: cargo xtask build
+$ vos build --dry-run
+# 不生成新构建系统
+# 仅展示当前 manifest 将执行的 phase 命令
 ```
 
-**仅生成，不执行**
+**显式加载一份 manifest**
 ```bash
-$ vos build --stage 2 --dry-run
-# 生成 Makefile/task.rs/CMakeLists.txt
-# 打印输出路径
-# 不执行
-```
-
-**生成多个工具链**
-```bash
-$ vos build --stage 2 --generators=makefile,xtask,cmake
-# 生成三份配置
-# 用户选择或全部执行
-# 比较构建结果
-```
-
-**使用预生成的构建配置**
-```bash
-$ vos build --stage 2 --toolchain=/path/to/Makefile
-# 跳过生成步骤
-# 直接执行 Makefile
+$ vos build --toolchain=/path/to/toolchain.json
+# 跳过默认 .vos/toolchain.json
+# 直接执行该 manifest 指向的构建系统
 ```
 
 ---
@@ -150,6 +121,7 @@ Input:
     - phases: [BuildPhaseSemantics, ...]
     - toolchain metadata (target arch, triple, etc)
     - project structure hints
+    - build.allowed_output_path
   
   context: GenerationContext
     - project_root: Path
@@ -164,7 +136,7 @@ Input:
 Output:
   artifact: ToolchainArtifact
     - content: string (Makefile, CMakeLists.txt, Rust code, etc)
-    - path: Path (where to write)
+    - path: Path (must be listed in build.allowed_output_path)
     - format: string (makefile, cmake, xtask, bazel, etc)
     
   metadata: GenerationMetadata {

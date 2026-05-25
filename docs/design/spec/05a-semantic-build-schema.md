@@ -18,6 +18,12 @@
 
 ```yaml
 build:
+  allowed_output_path:
+    - Makefile
+    - CMakeLists.txt
+    - xtask/src/tasks.rs
+    - xtask/Cargo.toml
+
   # 通用字段（所有阶段都支持）
   phases:
     - name: phase_name          # 阶段标识，用于依赖、日志、证据映射
@@ -30,6 +36,13 @@ build:
         timeout_secs: int       # 超时时间
         retry_on_failure: int   # 失败重试次数
 ```
+
+`allowed_output_path` 用于声明 agent 允许写入的本地构建系统文件路径。  
+当前实现会用它同时约束：
+
+- toolchain codegen prompt 的允许输出路径
+- agent 落盘前的本地白名单校验
+- `vos build` 读取 `.vos/toolchain.json` 时的 manifest 文件校验
 
 ### 1.2 编译阶段 (compile)
 

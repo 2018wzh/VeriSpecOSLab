@@ -124,6 +124,7 @@ vos submit pack
 - `vos agent generate` 默认生成当前 stage 表示的整个当前系统
 - `vos agent generate <module>` 生成单个模块及其依赖闭包
 - `vos agent generate <stage>` 生成该 stage 对应的整套系统
+- `vos build` 只执行已经由 `vos agent generate --apply` 生成并登记到 `.vos/toolchain.json` 的本地构建系统
 
 如果你还没有把 `vos` 安装到 PATH，可以用 `cargo run` 直接调用：
 

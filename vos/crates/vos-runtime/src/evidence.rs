@@ -53,7 +53,7 @@ pub fn recent_evidence_refs(project_root: &Path) -> Vec<String> {
     refs.into_iter().rev().take(5).collect()
 }
 
-pub(crate) fn stable_bundle_hash(normalized: &NormalizedSpecBundle) -> String {
+pub fn stable_bundle_hash(normalized: &NormalizedSpecBundle) -> String {
     normalized
         .hashes
         .values()

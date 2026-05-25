@@ -110,6 +110,7 @@ environment:
 
 ```yaml
 build:
+  allowed_output_path:
   sources:
   include_paths:
   cflags:
@@ -184,32 +185,50 @@ vos build (工具无关的执行和证据采集)
 
 - **Spec 是设计真相**，Makefile/CMake/etc 是实现细节
 - **多生成器**：从同一 spec 可生成多种工具链配置
-- **生成是可选的**：也可以使用预先写好的 Makefile，绕过生成器
-- **学生选择工具**：vos 可自动检测或由学生显式指定
+- **输出路径受 spec 约束**：`build.allowed_output_path` 声明 agent 允许写入哪些本地构建系统文件
+- **当前实现中生成在 agent 侧完成**：`vos agent generate --apply` 生成并写入本地构建系统，`vos build` 只执行 `.vos/toolchain.json` 中登记的当前构建系统
 
-### 9.1 三种使用模式
+### 9.1 `allowed_output_path`
 
-**模式 A：自动生成（推荐）**
-```bash
-$ vos build --stage 2
-# vos 自动检测最合适的生成器
-# 生成 Makefile 或 task.rs
-# 执行并采集证据
+`build.allowed_output_path` 用于声明“本地 agent 可以生成哪些构建系统文件”。  
+它既约束 prompt 输出，也约束落盘前和执行前的本地白名单校验。
+
+```yaml
+build:
+  allowed_output_path:
+    - Makefile
+    - CMakeLists.txt
+    - xtask/src/tasks.rs
+    - xtask/Cargo.toml
 ```
 
-**模式 B：指定生成器**
+当前实现中：
+
+- agent 只能写入这份列表中的路径
+- `.vos/toolchain.json` 里的 `files` 也必须属于这份列表
+- 若列表为空，agent 会拒绝生成构建系统，`vos build` 也会拒绝执行
+
+### 9.2 当前使用模式
+
+**模式 A：agent 生成后执行（推荐）**
 ```bash
-$ vos build --stage 2 --generator=xtask
-# 强制使用 xtask 生成器
-# 生成 task.rs
-# 执行 cargo xtask build
+$ vos agent generate --apply
+$ vos build
+# agent 根据 spec 生成并写入本地构建系统
+# build 读取 .vos/toolchain.json 并执行
 ```
 
-**模式 C：使用现有构建配置**
+**模式 B：只看 dry-run**
 ```bash
-$ vos build --stage 2 --toolchain=/path/to/Makefile
-# 跳过生成步骤
-# 直接使用预先的 Makefile
+$ vos build --dry-run
+# 不生成新构建系统
+# 只展示当前 manifest 将执行的命令
+```
+
+**模式 C：显式加载某份 manifest**
+```bash
+$ vos build --toolchain=/path/to/toolchain.json
+# 显式加载一份已生成 manifest
 # vos 仍负责执行和证据采集
 ```
 

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use vos_core::{BuildResult, QemuRunResult, SpecRef};
+use vos_core::{BuildResult, QemuRunResult, SpecRef, ToolchainManifest};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromptEnvelope {
@@ -57,6 +57,25 @@ pub struct SkeletonProjectionResponse {
     pub files_to_update: Vec<RegionEdit>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ToolchainCodegenResponse {
+    pub artifact_format: String,
+    #[serde(default)]
+    pub files: Vec<ToolchainFileRecord>,
+    pub command_program: String,
+    #[serde(default)]
+    pub command_args: Vec<String>,
+    pub entry_target: String,
+    #[serde(default)]
+    pub phases: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolchainFileRecord {
+    pub path: PathBuf,
+    pub content: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextBundle {
     pub requested_scope: String,
@@ -104,6 +123,10 @@ pub struct GenerationRunResult {
     pub build: Option<BuildResult>,
     pub run: Option<QemuRunResult>,
     pub manifest_path: PathBuf,
+    #[serde(default)]
+    pub toolchain_files: Vec<PathBuf>,
+    pub toolchain_manifest_path: Option<PathBuf>,
+    pub toolchain_manifest: Option<ToolchainManifest>,
     pub skeleton_validation_path: Option<PathBuf>,
     pub retry_record_path: Option<PathBuf>,
 }

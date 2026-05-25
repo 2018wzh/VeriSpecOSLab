@@ -8,6 +8,10 @@ pub fn parse_module_batch_response<T: DeserializeOwned>(raw: &str) -> Result<T, 
     parse_llm_json(raw).map_err(|err| format!("invalid module batch response: {err}"))
 }
 
+pub fn parse_toolchain_codegen_response<T: DeserializeOwned>(raw: &str) -> Result<T, String> {
+    parse_llm_json(raw).map_err(|err| format!("invalid toolchain codegen response: {err}"))
+}
+
 fn parse_llm_json<T: DeserializeOwned>(raw: &str) -> Result<T, String> {
     let candidate = extract_json_candidate(raw);
     match serde_json::from_str(candidate) {

@@ -7,6 +7,7 @@ mod generate;
 mod patch;
 mod plan;
 mod rig;
+mod toolchain;
 mod workflow;
 
 pub use agent::*;

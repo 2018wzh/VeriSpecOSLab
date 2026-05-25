@@ -265,6 +265,8 @@ pub(crate) enum ToolRequirementYaml {
 pub(crate) struct BuildYaml {
     #[serde(default)]
     pub(crate) phases: Vec<BuildPhaseYaml>,
+    #[serde(default, rename = "allowed_output_path")]
+    pub(crate) allowed_output_paths: Vec<PathBuf>,
     #[serde(default)]
     pub(crate) sources: Vec<PathBuf>,
     #[serde(default)]

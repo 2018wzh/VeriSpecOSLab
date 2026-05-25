@@ -33,6 +33,8 @@ pub struct BuildContract {
     #[serde(default)]
     pub phases: Vec<BuildPhaseSemantics>,
     #[serde(default)]
+    pub allowed_output_paths: Vec<PathBuf>,
+    #[serde(default)]
     pub sources: Vec<PathBuf>,
     #[serde(default)]
     pub include_paths: Vec<PathBuf>,

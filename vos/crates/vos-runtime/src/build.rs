@@ -7,12 +7,11 @@ use vos_core::{
 
 use crate::config::load_config;
 use crate::evidence::write_json;
-use crate::generator::{
-    GeneratedToolchain, generate_toolchain_artifact, load_prebuilt_toolchain_artifact,
-};
+use crate::generator::{GeneratedToolchain, load_generated_toolchain, phase_command_args};
 use crate::process::program_with_timeout_env;
 use crate::progress::{ProgressPlan, ProgressSink, ProgressStageDefinition};
 use crate::scope::resolve_spec_root;
+use crate::stable_bundle_hash;
 use vos_platform::summarize_program_command;
 
 pub async fn build(project_root: &Path, profile: Option<String>) -> Result<BuildResult> {
@@ -42,6 +41,7 @@ pub async fn build_with_progress(
     let config = load_config(project_root)?;
     let spec_root = resolve_spec_root(project_root, None, &config)?;
     let toolchain = vos_spec::load_toolchain_spec(project_root, &spec_root)?;
+    let normalized = crate::normalize_spec(project_root, Some(&spec_root))?;
     progress_plan.finish_stage(progress, "resolve_toolchain", "resolved toolchain spec");
 
     let run_dir = project_root
@@ -51,35 +51,24 @@ pub async fn build_with_progress(
     std::fs::create_dir_all(&run_dir)?;
     write_json(&run_dir.join("toolchain-resolved.json"), &toolchain)?;
 
-    let generated = if let Some(path) = &request.toolchain_path {
-        progress_plan.emit_stage(
-            progress,
-            "prepare_toolchain_artifact",
-            "loading pre-generated toolchain artifact",
-        );
-        let generated =
-            load_prebuilt_toolchain_artifact(project_root, path, &spec_root, &toolchain, &request)?;
-        progress_plan.finish_stage(
-            progress,
-            "prepare_toolchain_artifact",
-            "loaded pre-generated toolchain artifact",
-        );
-        generated
-    } else {
-        progress_plan.emit_stage(
-            progress,
-            "prepare_toolchain_artifact",
-            "generating makefile toolchain artifact",
-        );
-        let generated =
-            generate_toolchain_artifact(project_root, &spec_root, &toolchain, &request, &run_dir)?;
-        progress_plan.finish_stage(
-            progress,
-            "prepare_toolchain_artifact",
-            "generated toolchain artifact",
-        );
-        generated
-    };
+    progress_plan.emit_stage(
+        progress,
+        "prepare_toolchain_artifact",
+        "loading generated toolchain manifest",
+    );
+    let generated = load_generated_toolchain(project_root, &spec_root, &toolchain, &request)?;
+    let expected_spec_hash = stable_bundle_hash(&normalized);
+    if generated.metadata.spec_hash != expected_spec_hash {
+        return Err(VosError::Message(format!(
+            "toolchain manifest spec hash mismatch: expected {}, got {}. Run `vos agent generate --apply` first.",
+            expected_spec_hash, generated.metadata.spec_hash
+        )));
+    }
+    progress_plan.finish_stage(
+        progress,
+        "prepare_toolchain_artifact",
+        "loaded generated toolchain manifest",
+    );
 
     if request.dry_run {
         progress_plan.finish_stage(
@@ -95,7 +84,7 @@ pub async fn build_with_progress(
         let log_path = run_dir.join("build.log");
         let summary = summarize_program_command(
             &generated.command_program,
-            &generated.command_args,
+            &phase_command_args(&generated.command_args, &generated.metadata.entry_target)?,
             Some(&generated.metadata.entry_target),
         );
         std::fs::write(&log_path, format!("# dry-run\n{}\n", summary))?;
@@ -107,7 +96,7 @@ pub async fn build_with_progress(
             exit_code: Some(0),
             log_path,
             generated_artifacts: toolchain.build.generated_artifacts.clone(),
-            generated_toolchain_artifacts: vec![generated.artifact_path.clone()],
+            generated_toolchain_artifacts: toolchain_artifact_paths(&generated),
             phase_results: Vec::new(),
             artifact_checks: Vec::new(),
             generation_metadata: Some(generated.metadata.clone()),
@@ -177,11 +166,10 @@ async fn execute_generated_toolchain(
             .unwrap_or(toolchain.run.timeout_secs.max(1));
         let command = summarize_program_command(
             &generated.command_program,
-            &generated.command_args,
+            &phase_command_args(&generated.command_args, &phase.name)?,
             Some(&phase.name),
         );
-        let mut phase_args = generated.command_args.clone();
-        phase_args.push(phase.name.clone());
+        let phase_args = phase_command_args(&generated.command_args, &phase.name)?;
         let (exit_code, stdout) = program_with_timeout_env(
             &generated.command_program,
             &phase_args,
@@ -242,14 +230,14 @@ async fn execute_generated_toolchain(
     Ok(BuildResult {
         command: summarize_program_command(
             &generated.command_program,
-            &generated.command_args,
+            &phase_command_args(&generated.command_args, &generated.metadata.entry_target)?,
             Some(&generated.metadata.entry_target),
         ),
         success,
         exit_code: final_exit,
         log_path: build_log,
         generated_artifacts: toolchain.build.generated_artifacts.clone(),
-        generated_toolchain_artifacts: vec![generated.artifact_path.clone()],
+        generated_toolchain_artifacts: toolchain_artifact_paths(&generated),
         phase_results,
         artifact_checks,
         generation_metadata: Some(generated.metadata),
@@ -266,7 +254,7 @@ fn build_progress_plan() -> ProgressPlan {
         },
         ProgressStageDefinition {
             key: "prepare_toolchain_artifact",
-            label: "生成/加载工具链工件",
+            label: "加载工具链工件",
             weight: 15,
         },
         ProgressStageDefinition {
@@ -285,6 +273,12 @@ fn build_progress_plan() -> ProgressPlan {
             weight: 10,
         },
     ])
+}
+
+fn toolchain_artifact_paths(generated: &GeneratedToolchain) -> Vec<std::path::PathBuf> {
+    let mut paths = vec![generated.artifact_path.clone()];
+    paths.extend(generated.metadata.files.iter().cloned());
+    paths
 }
 
 fn ensure_toolchain_environment(toolchain: &vos_core::ToolchainSpecBundle) -> Result<()> {

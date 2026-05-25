@@ -2,6 +2,11 @@
 # Tool-agnostic; consumed by vos-runtime via generator selection.
 
 build:
+  allowed_output_path:
+    - Makefile
+    - CMakeLists.txt
+    - xtask/src/tasks.rs
+    - xtask/Cargo.toml
   sources:
     - kernel/**/*.c
   include_paths:

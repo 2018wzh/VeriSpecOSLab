@@ -17,8 +17,9 @@ mod verify;
 pub use arch::*;
 pub use build::*;
 pub use config::*;
-pub use evidence::{build_run_manifest, recent_evidence_refs, write_json};
+pub use evidence::{build_run_manifest, recent_evidence_refs, stable_bundle_hash, write_json};
 pub use fs_guard::{allowed_paths, is_allowed_path};
+pub use generator::{required_phase_order, toolchain_manifest_path};
 pub use progress::{
     ProgressPlan, ProgressSink, ProgressStageDefinition, emit, emit_entity, progress_percent,
     remap_child_event,

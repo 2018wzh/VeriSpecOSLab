@@ -41,6 +41,9 @@ pub async fn agent_generate(
         build: payload.build,
         run: payload.run,
         manifest_path: payload.manifest_path,
+        toolchain_files: payload.toolchain_files,
+        toolchain_manifest_path: payload.toolchain_manifest_path,
+        toolchain_manifest: payload.toolchain_manifest,
         skeleton_validation_path: payload.skeleton_validation_path,
         retry_record_path: payload.retry_record_path,
     })

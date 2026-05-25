@@ -207,12 +207,41 @@ pub struct ToolchainGenerationRequest {
 pub struct ToolchainGenerationMetadata {
     pub generator: String,
     pub stage: Option<String>,
-    pub format: String,
+    pub artifact_format: String,
     pub source_spec: PathBuf,
     pub entry_target: String,
     #[serde(default)]
     pub phases: Vec<String>,
+    #[serde(default)]
+    pub files: Vec<PathBuf>,
+    pub spec_hash: String,
+    pub agent_run_id: String,
+    pub command_program: String,
+    #[serde(default)]
+    pub command_args: Vec<String>,
     pub dry_run: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolchainFileRecord {
+    pub path: PathBuf,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolchainManifest {
+    pub artifact_format: String,
+    #[serde(default)]
+    pub files: Vec<PathBuf>,
+    pub command_program: String,
+    #[serde(default)]
+    pub command_args: Vec<String>,
+    pub entry_target: String,
+    #[serde(default)]
+    pub phases: Vec<String>,
+    pub source_spec: PathBuf,
+    pub spec_hash: String,
+    pub agent_run_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

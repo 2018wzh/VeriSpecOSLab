@@ -200,6 +200,7 @@ fn build_toolchain_bundle(
                     },
                 })
                 .collect(),
+            allowed_output_paths: parsed.build.allowed_output_paths,
             sources: parsed.build.sources,
             include_paths: parsed.build.include_paths,
             cflags: parsed.build.cflags,

@@ -174,7 +174,7 @@ cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/x
 
 ## 第 3 步：生成后先做一次 dry-run 构建
 
-在真正编译前，可以先让运行时只导出 Makefile 并展示入口目标：
+从这版开始，本地构建系统由 `vos agent generate --apply` 在工作区里直接生成，并把当前生效 manifest 写到 `.vos/toolchain.json`。`vos build --dry-run` 只负责读取这份 manifest 并展示将执行的入口目标：
 
 ```powershell
 cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec build --dry-run
@@ -183,8 +183,23 @@ cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/x
 这一步不会编译源码，但会：
 
 - 解析 `spec/toolchain/toolchain.yaml`
-- 生成独立 Makefile 到 `.vos/runs/<run-id>/Makefile`
+- 读取 `.vos/toolchain.json`
+- 校验项目根中已生成的构建系统文件是否存在
+- 校验这些文件是否属于 `spec/toolchain/build.yaml` 中 `build.allowed_output_path` 声明的允许列表
 - 告诉你最终会按什么目标顺序执行
+
+当前示例在 [build.yaml](/home/wzh/VeriSpecOSLab/examples/xv6-spec/spec/toolchain/build.yaml) 中声明了：
+
+```yaml
+build:
+  allowed_output_path:
+    - Makefile
+    - CMakeLists.txt
+    - xtask/src/tasks.rs
+    - xtask/Cargo.toml
+```
+
+这表示 agent 可以在这些路径里选择一种或多种本地构建系统文件来落盘，但不能写到列表之外的位置。
 
 ## 第 4 步：真正构建内核
 

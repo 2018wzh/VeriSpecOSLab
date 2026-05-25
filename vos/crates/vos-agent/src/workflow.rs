@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use vos_core::{
     ArchitectureComposeResult, BuildResult, GenerationQueue, NormalizedSpecBundle, QemuRunResult,
-    Result, VosError,
+    Result, ToolchainManifest, VosError,
 };
 use vos_runtime::{ProgressPlan, ProgressSink, ProgressStageDefinition};
 
@@ -15,6 +15,7 @@ use crate::patch::{
     validate_required_spec_metadata, validate_skeleton_files,
 };
 use crate::rig::{RigStage, RigStreamStatus, RigWorkflow, validate_provider_config};
+use crate::toolchain::{PreparedToolchainGeneration, generate_local_toolchain};
 use crate::{
     RegionEdit, SkeletonFileEdit, SkeletonProjectionResponse, SkeletonRetryRecord,
     SkeletonValidationReport,
@@ -47,6 +48,9 @@ pub(crate) struct GenerationWorkflowResult {
     pub build: Option<BuildResult>,
     pub run: Option<QemuRunResult>,
     pub manifest_path: PathBuf,
+    pub toolchain_files: Vec<PathBuf>,
+    pub toolchain_manifest_path: Option<PathBuf>,
+    pub toolchain_manifest: Option<ToolchainManifest>,
     pub skeleton_validation_path: Option<PathBuf>,
     pub retry_record_path: Option<PathBuf>,
 }
@@ -106,6 +110,9 @@ pub(crate) async fn execute_generation_workflow(
 
     let mut created_files = Vec::new();
     let mut updated_regions = Vec::new();
+    let mut toolchain_files = Vec::new();
+    let mut toolchain_manifest_path = None;
+    let mut toolchain_manifest = None;
     let mut build_result = None;
     let mut run_result = None;
 
@@ -126,6 +133,31 @@ pub(crate) async fn execute_generation_workflow(
             &mut updated_regions,
         )
         .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
+
+        progress_plan.emit_stage(
+            progress,
+            "generate_toolchain",
+            "generating local build system",
+        );
+        let toolchain = generate_local_toolchain(
+            project_root,
+            &PreparedToolchainGeneration {
+                current_stage: prepared.selection.stage.clone(),
+                enabled_modules: prepared.selection.modules.clone(),
+                run_id: prepared.run_id.clone(),
+                run_dir: prepared.run_dir.clone(),
+                spec_root: prepared.spec_root.clone(),
+                config: prepared.config.clone(),
+                normalized: prepared.normalized.clone(),
+            },
+            progress,
+            &progress_plan,
+        )
+        .await
+        .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
+        toolchain_files = toolchain.files;
+        toolchain_manifest_path = Some(toolchain.manifest_path);
+        toolchain_manifest = Some(toolchain.manifest);
     }
 
     if options.apply && options.execute_build {
@@ -184,6 +216,9 @@ pub(crate) async fn execute_generation_workflow(
         build: build_result,
         run: run_result,
         manifest_path: manifest_path.clone(),
+        toolchain_files,
+        toolchain_manifest_path,
+        toolchain_manifest,
         skeleton_validation_path,
         retry_record_path,
     };
@@ -1084,7 +1119,12 @@ fn generation_progress_plan(options: &GenerationWorkflowOptions) -> ProgressPlan
         stages.push(ProgressStageDefinition {
             key: "apply_code",
             label: "应用代码变更",
-            weight: 10,
+            weight: 8,
+        });
+        stages.push(ProgressStageDefinition {
+            key: "generate_toolchain",
+            label: "生成本地构建系统",
+            weight: 7,
         });
     }
     if options.apply && options.execute_build {
@@ -1691,7 +1731,7 @@ mod tests {
 
         fs::write(
             spec_root.join("toolchain").join("toolchain.yaml"),
-            "toolchain:\n  target_arch: riscv64\n  target_triple: riscv64-unknown-elf\n  c_compiler: gcc\n  asm_compiler: gcc\n  linker: ld\n  archiver: ar\nbuild:\n  generated_artifacts:\n    - build/kernel.elf\n  phases:\n    - name: link_kernel\n      semantic:\n        type: custom\n        command: echo build\n        expected_outputs:\n          - build/kernel.elf\nlink:\n  linker_script: kernel/link.ld\n  entry_symbol: start\n  relocation_model: static\nimage:\n  output_kind: kernel\n  required_artifacts:\n    - build/kernel.elf\nrun:\n  emulator: qemu-system-riscv64\n  machine: virt\n  cpu: rv64\n  memory: 128M\n  bios: none\n  kernel_arg: -kernel\n  success_signal: OK\n  timeout_secs: 1\n",
+            "toolchain:\n  target_arch: riscv64\n  target_triple: riscv64-unknown-elf\n  c_compiler: gcc\n  asm_compiler: gcc\n  linker: ld\n  archiver: ar\nbuild:\n  allowed_output_path:\n    - Makefile\n  generated_artifacts:\n    - build/kernel.elf\n  phases:\n    - name: link_kernel\n      semantic:\n        type: custom\n        command: echo build\n        expected_outputs:\n          - build/kernel.elf\nlink:\n  linker_script: kernel/link.ld\n  entry_symbol: start\n  relocation_model: static\nimage:\n  output_kind: kernel\n  required_artifacts:\n    - build/kernel.elf\nrun:\n  emulator: qemu-system-riscv64\n  machine: virt\n  cpu: rv64\n  memory: 128M\n  bios: none\n  kernel_arg: -kernel\n  success_signal: OK\n  timeout_secs: 1\n",
         )
         .expect("write toolchain");
 
@@ -1758,7 +1798,7 @@ mod tests {
 
         fs::write(
             spec_root.join("toolchain").join("toolchain.yaml"),
-            "toolchain:\n  target_arch: riscv64\n  target_triple: riscv64-unknown-elf\n  c_compiler: gcc\n  asm_compiler: gcc\n  linker: ld\n  archiver: ar\nbuild:\n  include_paths:\n    - include\n  sources:\n    - kernel/main.c\n  generated_artifacts:\n    - build/kernel.elf\n  phases:\n    - name: compile_kernel\n      semantic:\n        type: custom\n        command: echo build\n        sources:\n          - pattern: kernel/main.c\n        include_dirs:\n          - include\n        expected_outputs:\n          - build/kernel.elf\nlink:\n  linker_script: kernel/link.ld\n  entry_symbol: vos_entry\n  relocation_model: static\nimage:\n  output_kind: kernel\n  required_artifacts:\n    - build/kernel.elf\nrun:\n  emulator: qemu-system-riscv64\n  machine: virt\n  cpu: rv64\n  memory: 128M\n  bios: none\n  kernel_arg: -kernel\n  success_signal: VOS_BOOT_OK\n  timeout_secs: 1\n",
+            "toolchain:\n  target_arch: riscv64\n  target_triple: riscv64-unknown-elf\n  c_compiler: gcc\n  asm_compiler: gcc\n  linker: ld\n  archiver: ar\nbuild:\n  allowed_output_path:\n    - Makefile\n    - CMakeLists.txt\n    - xtask/src/tasks.rs\n    - xtask/Cargo.toml\n  include_paths:\n    - include\n  sources:\n    - kernel/main.c\n  generated_artifacts:\n    - build/kernel.elf\n  phases:\n    - name: compile_kernel\n      semantic:\n        type: custom\n        command: echo build\n        sources:\n          - pattern: kernel/main.c\n        include_dirs:\n          - include\n        expected_outputs:\n          - build/kernel.elf\nlink:\n  linker_script: kernel/link.ld\n  entry_symbol: vos_entry\n  relocation_model: static\nimage:\n  output_kind: kernel\n  required_artifacts:\n    - build/kernel.elf\nrun:\n  emulator: qemu-system-riscv64\n  machine: virt\n  cpu: rv64\n  memory: 128M\n  bios: none\n  kernel_arg: -kernel\n  success_signal: VOS_BOOT_OK\n  timeout_secs: 1\n",
         )
         .expect("write toolchain");
 
