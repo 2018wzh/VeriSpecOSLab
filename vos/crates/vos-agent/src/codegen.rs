@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use tokio::sync::mpsc;
@@ -6,9 +6,8 @@ use tokio::task::JoinSet;
 use vos_core::{ConcurrencySpec, NormalizedSpecBundle, Result, VosError};
 use vos_runtime::{ProgressPlan, ProgressSink, progress_percent};
 
-use crate::ModuleBatchCodegenResponse;
-use crate::RegionEdit;
 use crate::rig::{RigStage, RigStreamStatus, RigWorkflow};
+use crate::{ModuleBatchCodegenResponse, RegionEdit, SkeletonFileEdit};
 
 #[derive(Debug)]
 struct ModuleStreamProgress {
@@ -22,6 +21,7 @@ pub(crate) async fn generate_module_waves(
     normalized: &NormalizedSpecBundle,
     queue: &vos_core::GenerationQueue,
     concurrency_specs: &BTreeMap<String, Option<ConcurrencySpec>>,
+    skeleton_files: &[SkeletonFileEdit],
     progress: Option<&ProgressSink>,
     progress_plan: &ProgressPlan,
     run_dir: &Path,
@@ -57,12 +57,14 @@ pub(crate) async fn generate_module_waves(
                 .cloned()
                 .collect::<Vec<_>>();
             let concurrency = concurrency_specs.get(module_name).cloned().flatten();
+            let target_context = build_target_context(project_root, skeleton_files, &operations)?;
             let prompt_text = vos_prompt::build_module_codegen_batch_prompt(
                 &module_spec,
                 &operations,
                 concurrency.as_ref(),
                 normalized,
                 project_root,
+                &target_context,
             );
             let allowed_paths = operations
                 .iter()
@@ -179,6 +181,84 @@ pub(crate) async fn generate_module_waves(
         "module wave generation completed",
     );
     Ok(edits)
+}
+
+fn build_target_context(
+    project_root: &Path,
+    skeleton_files: &[SkeletonFileEdit],
+    operations: &[vos_core::OperationContract],
+) -> Result<String> {
+    let skeleton_by_path = skeleton_files
+        .iter()
+        .map(|file| (file.path.clone(), file.content.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    let mut rendered = Vec::new();
+    let mut seen = BTreeSet::new();
+
+    for operation in operations {
+        let region = &operation.llm_codegen.editable_region;
+        if !seen.insert(region.file.clone()) {
+            continue;
+        }
+        let content = if let Some(content) = skeleton_by_path.get(&region.file) {
+            (*content).to_string()
+        } else {
+            let path = project_root.join(&region.file);
+            std::fs::read_to_string(&path).unwrap_or_default()
+        };
+        rendered.push(format!(
+            "file: {}\n{}",
+            region.file.display(),
+            extract_context_for_file(&content, operations, &region.file)
+        ));
+    }
+
+    if rendered.is_empty() {
+        Ok("- none".into())
+    } else {
+        Ok(rendered.join("\n\n---\n"))
+    }
+}
+
+fn extract_context_for_file(
+    content: &str,
+    operations: &[vos_core::OperationContract],
+    file: &std::path::Path,
+) -> String {
+    let lines = content.lines().collect::<Vec<_>>();
+    let mut ranges = Vec::new();
+    for operation in operations {
+        let region = &operation.llm_codegen.editable_region;
+        if region.file != file {
+            continue;
+        }
+        if let Some(marker_line) = lines
+            .iter()
+            .position(|line| line.contains(&region.start_marker))
+        {
+            let start = marker_line.saturating_sub(8);
+            let end = (marker_line + 14).min(lines.len());
+            ranges.push((start, end));
+        }
+    }
+    ranges.sort();
+    ranges.dedup();
+    if ranges.is_empty() {
+        return "context unavailable; emit only code for the listed marker interiors.".into();
+    }
+
+    let mut snippets = Vec::new();
+    for (start, end) in ranges {
+        snippets.push(
+            lines[start..end]
+                .iter()
+                .enumerate()
+                .map(|(idx, line)| format!("{:>4}: {}", start + idx + 1, line))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+    }
+    snippets.join("\n...\n")
 }
 
 fn load_completed_module_batch(

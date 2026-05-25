@@ -9,6 +9,7 @@ pub fn build_module_codegen_batch_prompt(
     concurrency: Option<&ConcurrencySpec>,
     normalized: &NormalizedSpecBundle,
     _project_root: &Path,
+    target_context: &str,
 ) -> String {
     format!(
         "You are generating one module worth of OS code from strict specs.\n\
@@ -22,6 +23,11 @@ Rules:\n\
 - Emit one region edit per editable region.\n\
 - Do not emit explanations outside the JSON block.\n\
 - All code fields must be strict JSON strings: escape newlines as \\n and do not emit invalid backslash escapes such as \\v, \\0, or \\#.\n\
+- The code field is inserted strictly BETWEEN start_marker and end_marker. Do not repeat the markers.\n\
+- Do not emit an enclosing function, global label, .section, .globl, or wrapper that already appears in TARGET FILE CONTEXT.\n\
+- If TARGET FILE CONTEXT shows start_marker inside a function body, emit only statements for that function body.\n\
+- If TARGET FILE CONTEXT shows start_marker inside an assembly label, emit only instructions/directives for that label body. Use .align, never bare align.\n\
+- Keep signatures, prototypes, global tables, labels, and declarations consistent with TARGET FILE CONTEXT; do not redeclare them inside the editable region.\n\
 \n\
 MODULE SPEC\n\
 id: {id}\n\
@@ -47,7 +53,10 @@ GLOBAL ARCHITECTURE SUMMARY\n\
 {arch_summary}\n\
 \n\
 ALLOWED REGION TARGETS\n\
-{targets}\n",
+{targets}\n\
+\n\
+TARGET FILE CONTEXT\n\
+{target_context}\n",
         id = module_spec.id,
         module = module_spec.module,
         stage = module_spec.stage,
@@ -81,5 +90,6 @@ ALLOWED REGION TARGETS\n\
             })
             .collect::<Vec<_>>()
             .join("\n"),
+        target_context = target_context,
     )
 }
