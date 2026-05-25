@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use vos_core::Result;
 use vos_runtime::ProgressSink;
@@ -10,7 +11,7 @@ use crate::workflow::{GenerationWorkflowOptions, execute_generation_workflow};
 pub async fn agent_generate(
     project_root: &Path,
     options: AgentGenerateOptions,
-    progress: Option<&ProgressSink>,
+    progress: Option<Arc<ProgressSink>>,
 ) -> Result<GenerationRunResult> {
     let payload = execute_generation_workflow(
         project_root,

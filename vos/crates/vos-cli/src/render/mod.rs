@@ -21,8 +21,6 @@ pub fn make_progress_callback(
         let mut state = state.lock().expect("progress state lock poisoned");
         let rendered_prefix = format_progress_prefix(&event);
         let rendered_message = format_progress_message(&event);
-        let rendered_line = format_progress_line(&rendered_prefix, &rendered_message);
-        let event_key = event_dedup_key(&event);
 
         match progress_mode(&event) {
             ProgressMode::OverallBar(position) => {
@@ -52,22 +50,16 @@ pub fn make_progress_callback(
         }
 
         pb.set_prefix(rendered_prefix);
-        if state.last_printed.as_deref() != Some(&event_key) {
-            pb.println(rendered_line);
-            state.last_printed = Some(event_key);
-        }
-
-        pb.set_message(rendered_message);
+        pb.set_message(rendered_message.clone());
         pb.tick();
         if event.stage == "finished" {
-            pb.finish_with_message("finished");
+            pb.finish_with_message(rendered_message);
         }
     })
 }
 
 #[derive(Default)]
 struct ProgressRenderState {
-    last_printed: Option<String>,
     bar_total: Option<u64>,
     overall_bar: bool,
 }
@@ -156,18 +148,17 @@ fn format_progress_prefix(event: &ProgressEvent) -> String {
         .as_deref()
         .filter(|label| !label.is_empty())
         .unwrap_or(&event.stage);
+    let stage_percent = event.stage_percent.map(|percent| percent.min(100));
     match (event.stage_index, event.stage_total) {
-        (Some(index), Some(total)) if total > 0 => format!("[阶段 {index}/{total}] {stage_name}"),
-        _ => stage_name.to_string(),
-    }
-}
-
-fn format_progress_line(prefix: &str, message: &str) -> String {
-    match (prefix.is_empty(), message.is_empty()) {
-        (true, true) => String::new(),
-        (true, false) => message.to_string(),
-        (false, true) => prefix.to_string(),
-        (false, false) => format!("{prefix} > {message}"),
+        (Some(index), Some(total)) if total > 0 => {
+            let stage_progress = stage_percent
+                .map(|percent| format!(" · {percent}%"))
+                .unwrap_or_default();
+            format!("[阶段 {index}/{total}{stage_progress}] {stage_name}")
+        }
+        _ => stage_percent
+            .map(|percent| format!("[{percent}%] {stage_name}"))
+            .unwrap_or_else(|| stage_name.to_string()),
     }
 }
 
@@ -178,23 +169,6 @@ fn counter_label(kind: Option<&str>, total: usize) -> String {
         Some(kind) => kind.to_string(),
         None => "items".into(),
     }
-}
-
-fn event_dedup_key(event: &ProgressEvent) -> String {
-    format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
-        event.stage,
-        event.message,
-        event.entity_kind.as_deref().unwrap_or_default(),
-        event.entity_id.as_deref().unwrap_or_default(),
-        event.position.unwrap_or_default(),
-        event.total.unwrap_or_default(),
-        event.stage_label.as_deref().unwrap_or_default(),
-        event.stage_index.unwrap_or_default(),
-        event.stage_total.unwrap_or_default(),
-        event.stage_percent.unwrap_or_default(),
-        event.overall_percent.unwrap_or_default()
-    )
 }
 
 pub fn emit_envelope<T: serde::Serialize + std::fmt::Debug>(
@@ -285,17 +259,10 @@ mod tests {
         };
 
         assert_eq!(progress_mode(&event), ProgressMode::OverallBar(12));
-        assert_eq!(format_progress_prefix(&event), "[阶段 1/5] 解析工具链");
+        assert_eq!(format_progress_prefix(&event), "[阶段 1/5 · 20%] 解析工具链");
         assert_eq!(
             format_progress_message(&event),
             "resolving toolchain (items 1/5)"
-        );
-        assert_eq!(
-            format_progress_line(
-                &format_progress_prefix(&event),
-                &format_progress_message(&event)
-            ),
-            "[阶段 1/5] 解析工具链 > resolving toolchain (items 1/5)"
         );
     }
 
@@ -320,13 +287,6 @@ mod tests {
         assert_eq!(
             format_progress_message(&event),
             "module batch completed [module:memory] (modules 3/6)"
-        );
-        assert_eq!(
-            format_progress_line(
-                &format_progress_prefix(&event),
-                &format_progress_message(&event)
-            ),
-            "generated_module > module batch completed [module:memory] (modules 3/6)"
         );
     }
 
@@ -367,5 +327,24 @@ mod tests {
             format_progress_message(&applying),
             "应用中: wave 1: updated generated editable region [file:kernel/main.c] (file 1/1)"
         );
+    }
+
+    #[test]
+    fn prefix_uses_stage_percent_without_stage_counters() {
+        let event = ProgressEvent {
+            stage: "project_skeleton".into(),
+            message: "requesting skeleton projection".into(),
+            entity_kind: None,
+            entity_id: None,
+            position: None,
+            total: None,
+            stage_label: Some("骨架投影".into()),
+            stage_index: None,
+            stage_total: None,
+            stage_percent: Some(5),
+            overall_percent: Some(17),
+        };
+
+        assert_eq!(format_progress_prefix(&event), "[5%] 骨架投影");
     }
 }

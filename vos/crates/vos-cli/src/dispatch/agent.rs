@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::Arc;
 use vos_core::{CommandEnvelope, CommandStatus, artifact, envelope, envelope_with_run_id};
 
 use crate::args::{AgentApplyPatchArgs, AgentGenerateArgs};
@@ -35,7 +36,7 @@ pub fn agent_plan_envelope(
 pub async fn agent_apply_patch_envelope(
     project_root: &Path,
     args: AgentApplyPatchArgs,
-    progress: Option<&vos_agent::ProgressSink>,
+    progress: Option<Arc<vos_agent::ProgressSink>>,
 ) -> Result<CommandEnvelope<serde_json::Value>, String> {
     let payload = vos_agent::agent_apply_patch(
         project_root,
@@ -65,7 +66,7 @@ pub async fn agent_apply_patch_envelope(
 pub async fn agent_generate_envelope(
     project_root: &Path,
     args: AgentGenerateArgs,
-    progress: Option<&vos_agent::ProgressSink>,
+    progress: Option<Arc<vos_agent::ProgressSink>>,
 ) -> Result<CommandEnvelope<serde_json::Value>, String> {
     let payload = vos_agent::agent_generate(
         project_root,

@@ -242,14 +242,14 @@ pub async fn run() {
         } => emit_async_result(
             cli.json,
             "vos agent generate",
-            agent_generate_envelope(&project_root, args, progress_cb.as_deref()).await,
+            agent_generate_envelope(&project_root, args, progress_cb.clone()).await,
         ),
         Commands::Agent {
             command: AgentCommands::ApplyPatch(args),
         } => emit_async_result(
             cli.json,
             "vos agent apply-patch",
-            agent_apply_patch_envelope(&project_root, args, progress_cb.as_deref()).await,
+            agent_apply_patch_envelope(&project_root, args, progress_cb.clone()).await,
         ),
         Commands::Agent {
             command: AgentCommands::Log,

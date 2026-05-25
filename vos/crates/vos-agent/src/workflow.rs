@@ -146,10 +146,22 @@ impl RunWorkflowLogger {
     }
 }
 
+fn emit_workflow_progress(
+    logger: &RunWorkflowLogger,
+    upstream: Option<&ProgressSink>,
+    scope: &str,
+    event: vos_core::ProgressEvent,
+) {
+    logger.record_event(scope, &event);
+    if let Some(sink) = upstream {
+        sink(event);
+    }
+}
+
 pub(crate) async fn execute_generation_workflow(
     project_root: &Path,
     options: GenerationWorkflowOptions,
-    _progress: Option<&ProgressSink>,
+    progress: Option<Arc<ProgressSink>>,
 ) -> Result<GenerationWorkflowResult> {
     validate_generation_flags(&options)?;
     let progress_plan = generation_progress_plan(&options);
@@ -165,8 +177,14 @@ pub(crate) async fn execute_generation_workflow(
     )
     .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
     let workflow_progress_logger = workflow_logger.clone();
+    let upstream_progress = progress.clone();
     let workflow_progress = move |event: vos_core::ProgressEvent| {
-        workflow_progress_logger.record_event("workflow", &event);
+        emit_workflow_progress(
+            &workflow_progress_logger,
+            upstream_progress.as_deref(),
+            "workflow",
+            event,
+        );
     };
     let prepared = prepare_generation_context(
         project_root,
@@ -1753,6 +1771,48 @@ mod tests {
             content.contains("[build] 执行 build phases stage=100% overall=90% phase=link_kernel")
         );
         assert!(content.contains("completed build phase link_kernel"));
+    }
+
+    #[test]
+    fn workflow_progress_is_written_to_log_and_forwarded_upstream() {
+        let temp = tempdir().expect("tempdir");
+        let log_path = temp.path().join("workflow.log");
+        let logger = RunWorkflowLogger::new(&log_path, "vos agent generate", "run-789", false)
+            .expect("logger");
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let upstream_events = Arc::clone(&captured);
+        let upstream = move |event: vos_core::ProgressEvent| {
+            upstream_events
+                .lock()
+                .expect("upstream events lock")
+                .push(event);
+        };
+        let event = vos_core::ProgressEvent {
+            stage: "project_skeleton".into(),
+            message: "requesting skeleton projection".into(),
+            entity_kind: None,
+            entity_id: None,
+            position: None,
+            total: None,
+            stage_label: Some("骨架投影".into()),
+            stage_index: Some(2),
+            stage_total: Some(5),
+            stage_percent: Some(0),
+            overall_percent: Some(16),
+        };
+
+        emit_workflow_progress(&logger, Some(&upstream), "workflow", event.clone());
+
+        let content = fs::read_to_string(&log_path).expect("read workflow log");
+        assert!(content.contains("[workflow] 骨架投影 stage=0% overall=16% :: requesting skeleton projection"));
+
+        let forwarded = captured.lock().expect("captured events lock");
+        assert_eq!(forwarded.len(), 1);
+        assert_eq!(forwarded[0].stage, event.stage);
+        assert_eq!(forwarded[0].message, event.message);
+        assert_eq!(forwarded[0].stage_label, event.stage_label);
+        assert_eq!(forwarded[0].stage_percent, event.stage_percent);
+        assert_eq!(forwarded[0].overall_percent, event.overall_percent);
     }
 
     #[test]
