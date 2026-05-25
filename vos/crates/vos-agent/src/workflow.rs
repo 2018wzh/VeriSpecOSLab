@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use vos_core::{
@@ -88,15 +90,94 @@ struct ApplyBatch {
     region_edits: Vec<RegionEdit>,
 }
 
+#[derive(Clone)]
+struct RunWorkflowLogger {
+    file: Arc<Mutex<fs::File>>,
+}
+
+impl RunWorkflowLogger {
+    fn new(path: &Path, command_name: &str, run_id: &str, resume: bool) -> Result<Self> {
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?;
+        if file.metadata()?.len() == 0 {
+            writeln!(file, "# VOS workflow log")?;
+            writeln!(file, "command: {command_name}")?;
+            writeln!(file, "run_id: {run_id}")?;
+        }
+        writeln!(file, "session: {}", if resume { "resume" } else { "start" })?;
+        Ok(Self {
+            file: Arc::new(Mutex::new(file)),
+        })
+    }
+
+    fn record_event(&self, scope: &str, event: &vos_core::ProgressEvent) {
+        let stage = event.stage_label.as_deref().unwrap_or(&event.stage);
+        let stage_percent = event
+            .stage_percent
+            .map(|value| format!(" stage={value}%"))
+            .unwrap_or_default();
+        let overall_percent = event
+            .overall_percent
+            .map(|value| format!(" overall={value}%"))
+            .unwrap_or_default();
+        let entity = match (&event.entity_kind, &event.entity_id) {
+            (Some(kind), Some(id)) => format!(" {kind}={id}"),
+            (Some(kind), None) => format!(" {kind}"),
+            _ => String::new(),
+        };
+        self.record_line(format!(
+            "[{scope}] {stage}{stage_percent}{overall_percent}{entity} :: {}",
+            event.message
+        ));
+    }
+
+    fn record_message(&self, scope: &str, message: &str) {
+        self.record_line(format!("[{scope}] {message}"));
+    }
+
+    fn record_line(&self, line: String) {
+        let mut file = self
+            .file
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _ = writeln!(file, "{line}");
+    }
+}
+
 pub(crate) async fn execute_generation_workflow(
     project_root: &Path,
     options: GenerationWorkflowOptions,
-    progress: Option<&ProgressSink>,
+    _progress: Option<&ProgressSink>,
 ) -> Result<GenerationWorkflowResult> {
     validate_generation_flags(&options)?;
     let progress_plan = generation_progress_plan(&options);
-    let prepared = prepare_generation_context(project_root, &options, progress, &progress_plan)?;
-    let workflow_run_id = prepared.run_id.clone();
+    let (workflow_run_id, workflow_run_dir, workflow_resume) =
+        resolve_generation_run_dir(project_root, &options)?;
+    fs::create_dir_all(&workflow_run_dir)
+        .map_err(|err| annotate_run_error(&workflow_run_id, VosError::Message(err.to_string())))?;
+    let workflow_logger = RunWorkflowLogger::new(
+        &workflow_run_dir.join("workflow.log"),
+        &options.command_name,
+        &workflow_run_id,
+        workflow_resume,
+    )
+    .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
+    let workflow_progress_logger = workflow_logger.clone();
+    let workflow_progress = move |event: vos_core::ProgressEvent| {
+        workflow_progress_logger.record_event("workflow", &event);
+    };
+    let prepared = prepare_generation_context(
+        project_root,
+        &options,
+        Some(&workflow_progress),
+        &progress_plan,
+        workflow_run_id.clone(),
+        workflow_run_dir,
+        workflow_resume,
+    )
+    .map_err(|err| log_and_annotate_run_error(&workflow_run_id, &workflow_logger, err))?;
     let PatchArtifacts {
         apply_batches,
         skeleton_validation_path,
@@ -108,13 +189,18 @@ pub(crate) async fn execute_generation_workflow(
             &prepared.normalized,
             &prepared.selection.queue,
         )?,
-        None => generate_patch_artifacts(project_root, &prepared, progress, &progress_plan)
-            .await
-            .map_err(|err| annotate_run_error(&workflow_run_id, err))?,
+        None => generate_patch_artifacts(
+            project_root,
+            &prepared,
+            Some(&workflow_progress),
+            &progress_plan,
+        )
+        .await
+        .map_err(|err| log_and_annotate_run_error(&workflow_run_id, &workflow_logger, err))?,
     };
 
     validate_generation_outputs(project_root, &prepared.allowed_paths, &apply_batches)
-        .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
+        .map_err(|err| log_and_annotate_run_error(&workflow_run_id, &workflow_logger, err))?;
 
     let mut created_files = Vec::new();
     let mut updated_regions = Vec::new();
@@ -126,20 +212,24 @@ pub(crate) async fn execute_generation_workflow(
     let mut run_result = None;
 
     if options.apply {
-        progress_plan.emit_stage(progress, "apply_code", "writing generated batches");
+        progress_plan.emit_stage(
+            Some(&workflow_progress),
+            "apply_code",
+            "writing generated batches",
+        );
         apply_generation_batches(
             project_root,
             &apply_batches,
-            progress,
+            Some(&workflow_progress),
             &progress_plan,
             &mut created_files,
             &mut updated_regions,
             &mut applied_batches,
         )
-        .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
+        .map_err(|err| log_and_annotate_run_error(&workflow_run_id, &workflow_logger, err))?;
 
         progress_plan.emit_stage(
-            progress,
+            Some(&workflow_progress),
             "generate_toolchain",
             "generating local build system",
         );
@@ -154,11 +244,11 @@ pub(crate) async fn execute_generation_workflow(
                 config: prepared.config.clone(),
                 normalized: prepared.normalized.clone(),
             },
-            progress,
+            Some(&workflow_progress),
             &progress_plan,
         )
         .await
-        .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
+        .map_err(|err| log_and_annotate_run_error(&workflow_run_id, &workflow_logger, err))?;
         toolchain_files = toolchain.files;
         toolchain_manifest_path = Some(toolchain.manifest_path);
         toolchain_manifest = Some(toolchain.manifest);
@@ -166,7 +256,7 @@ pub(crate) async fn execute_generation_workflow(
 
     if options.apply && options.execute_build {
         progress_plan.emit_stage(
-            progress,
+            Some(&workflow_progress),
             "build_generated_system",
             "building generated system",
         );
@@ -183,15 +273,40 @@ pub(crate) async fn execute_generation_workflow(
             None,
         )
         .await
-        .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
-        progress_plan.finish_stage(progress, "build_generated_system", "built generated system");
+        .map_err(|err| log_and_annotate_run_error(&workflow_run_id, &workflow_logger, err))?;
+        workflow_logger.record_message(
+            "build",
+            &format!(
+                "build completed; aggregate log: {}",
+                build.log_path.display()
+            ),
+        );
+        progress_plan.finish_stage(
+            Some(&workflow_progress),
+            "build_generated_system",
+            "built generated system",
+        );
         build_result = Some(build.clone());
         if options.execute_run {
-            progress_plan.emit_stage(progress, "run_generated_system", "running generated system");
+            progress_plan.emit_stage(
+                Some(&workflow_progress),
+                "run_generated_system",
+                "running generated system",
+            );
             let run = vos_runtime::run_qemu_with_progress(project_root, None, None)
                 .await
-                .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
-            progress_plan.finish_stage(progress, "run_generated_system", "ran qemu boot smoke");
+                .map_err(|err| {
+                    log_and_annotate_run_error(&workflow_run_id, &workflow_logger, err)
+                })?;
+            workflow_logger.record_message(
+                "run",
+                &format!("run completed; qemu log: {}", run.log_path.display()),
+            );
+            progress_plan.finish_stage(
+                Some(&workflow_progress),
+                "run_generated_system",
+                "ran qemu boot smoke",
+            );
             run_result = Some(run);
         }
     }
@@ -205,7 +320,7 @@ pub(crate) async fn execute_generation_workflow(
     );
     let manifest_path = prepared.run_dir.join("manifest.json");
     vos_runtime::write_json(&manifest_path, &manifest)
-        .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
+        .map_err(|err| log_and_annotate_run_error(&workflow_run_id, &workflow_logger, err))?;
 
     let result = GenerationWorkflowResult {
         run_id: prepared.run_id,
@@ -228,18 +343,27 @@ pub(crate) async fn execute_generation_workflow(
         retry_record_path,
     };
     vos_runtime::write_json(&prepared.run_dir.join("generation-result.json"), &result)
-        .map_err(|err| annotate_run_error(&workflow_run_id, err))?;
+        .map_err(|err| log_and_annotate_run_error(&workflow_run_id, &workflow_logger, err))?;
     progress_plan.finish_stage(
-        progress,
+        Some(&workflow_progress),
         "write_manifest",
         "wrote generation manifest and result",
     );
-    progress_plan.finish(progress, "generation workflow finished");
+    progress_plan.finish(Some(&workflow_progress), "generation workflow finished");
+    workflow_logger.record_message(
+        "workflow",
+        "workflow result written to generation-result.json",
+    );
     Ok(result)
 }
 
 fn annotate_run_error(run_id: &str, err: VosError) -> VosError {
     VosError::Message(format!("[run_id:{run_id}] {err}"))
+}
+
+fn log_and_annotate_run_error(run_id: &str, logger: &RunWorkflowLogger, err: VosError) -> VosError {
+    logger.record_message("workflow", &format!("error: {err}"));
+    annotate_run_error(run_id, err)
 }
 
 fn validate_generation_flags(options: &GenerationWorkflowOptions) -> Result<()> {
@@ -261,6 +385,9 @@ fn prepare_generation_context(
     options: &GenerationWorkflowOptions,
     progress: Option<&ProgressSink>,
     progress_plan: &ProgressPlan,
+    run_id: String,
+    run_dir: PathBuf,
+    resume: bool,
 ) -> Result<PreparedGenerationContext> {
     let config = vos_runtime::load_config(project_root)?;
     if options.patch_path.is_none() {
@@ -314,7 +441,6 @@ fn prepare_generation_context(
         5,
     );
     let allowed = vos_runtime::allowed_paths(&normalized, project_root);
-    let (run_id, run_dir, resume) = resolve_generation_run_dir(project_root, options)?;
     fs::create_dir_all(&run_dir)?;
     let run_message = if resume {
         format!("resuming run directory {}", run_dir.display())
@@ -1565,6 +1691,68 @@ mod tests {
             stage_override: None,
         });
         assert!(run_without_build.is_err());
+    }
+
+    #[test]
+    fn run_workflow_logger_creates_workflow_log() {
+        let temp = tempdir().expect("tempdir");
+        let log_path = temp.path().join("workflow.log");
+        let logger = RunWorkflowLogger::new(&log_path, "vos agent generate", "run-123", false)
+            .expect("logger");
+
+        logger.record_event(
+            "workflow",
+            &vos_core::ProgressEvent {
+                stage: "prepare_generation_context".into(),
+                message: "normalized strict spec bundle".into(),
+                entity_kind: Some("step".into()),
+                entity_id: Some("normalize".into()),
+                position: Some(1),
+                total: Some(5),
+                stage_label: Some("准备生成上下文".into()),
+                stage_index: Some(1),
+                stage_total: Some(5),
+                stage_percent: Some(20),
+                overall_percent: Some(3),
+            },
+        );
+
+        let content = fs::read_to_string(&log_path).expect("read workflow log");
+        assert!(content.contains("# VOS workflow log"));
+        assert!(content.contains("command: vos agent generate"));
+        assert!(content.contains("run_id: run-123"));
+        assert!(content.contains("[workflow] 准备生成上下文 stage=20% overall=3% step=normalize"));
+    }
+
+    #[test]
+    fn run_workflow_logger_records_child_scope_lines() {
+        let temp = tempdir().expect("tempdir");
+        let log_path = temp.path().join("workflow.log");
+        let logger = RunWorkflowLogger::new(&log_path, "vos agent generate", "run-456", false)
+            .expect("logger");
+
+        logger.record_event(
+            "build",
+            &vos_core::ProgressEvent {
+                stage: "execute_build_phases".into(),
+                message: "completed build phase link_kernel".into(),
+                entity_kind: Some("phase".into()),
+                entity_id: Some("link_kernel".into()),
+                position: Some(1),
+                total: Some(1),
+                stage_label: Some("执行 build phases".into()),
+                stage_index: Some(4),
+                stage_total: Some(5),
+                stage_percent: Some(100),
+                overall_percent: Some(90),
+            },
+        );
+
+        let content = fs::read_to_string(&log_path).expect("read workflow log");
+        assert!(
+            content.contains("[build] 执行 build phases stage=100% overall=90% phase=link_kernel")
+        );
+        assert!(content.contains("completed build phase link_kernel"));
     }
 
     #[test]
