@@ -286,10 +286,11 @@ pub async fn run() {
         ),
     };
 
+    if let Some(pb) = progress.as_ref() {
+        pb.finish_and_clear();
+    }
+
     if let Err(err) = result {
-        if let Some(pb) = progress {
-            pb.finish_and_clear();
-        }
         let (run_id, message) =
             vos_core::extract_run_id_marker(&err).unwrap_or_else(|| (vos_core::new_run_id(), err));
         let failure = vos_core::envelope_with_run_id(

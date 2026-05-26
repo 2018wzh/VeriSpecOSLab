@@ -72,14 +72,14 @@ enum ProgressMode {
 }
 
 fn spinner_style() -> ProgressStyle {
-    ProgressStyle::with_template("{spinner:.cyan} {prefix:.bold} {msg}")
+    ProgressStyle::with_template("{spinner:.cyan} {prefix:.bold} [{elapsed_precise}] {msg}")
         .unwrap()
         .tick_strings(&["-", "\\", "|", "/"])
 }
 
 fn overall_bar_style() -> ProgressStyle {
     ProgressStyle::with_template(
-        "{spinner:.cyan} {prefix:.bold} {bar:24.green/white} {pos:>3}% {msg}",
+        "{spinner:.cyan} {prefix:.bold} {bar:24.green/white} {pos:>3}% [{elapsed_precise}] {msg}",
     )
     .unwrap()
     .progress_chars("=>-")
@@ -87,7 +87,7 @@ fn overall_bar_style() -> ProgressStyle {
 
 fn legacy_bar_style() -> ProgressStyle {
     ProgressStyle::with_template(
-        "{spinner:.cyan} {prefix:.bold} {bar:24.green/white} {pos}/{len} {msg}",
+        "{spinner:.cyan} {prefix:.bold} {bar:24.green/white} {pos}/{len} [{elapsed_precise}] {msg}",
     )
     .unwrap()
     .progress_chars("=>-")
@@ -258,7 +258,7 @@ mod tests {
         assert_eq!(progress_mode(&event), ProgressMode::OverallBar(12));
         assert_eq!(
             format_progress_prefix(&event),
-            "[阶段 1/5 · 20%] 解析工具链"
+            "[阶段 1/5] 解析工具链"
         );
         assert_eq!(
             format_progress_message(&event),
