@@ -565,7 +565,23 @@ fn resolve_target_selection(
             .iter()
             .any(|module| module.module == raw_target)
     {
-        let modules = module_dependency_closure(&raw_target, &queue.blocked_by)?;
+        let root_modules = compose
+            .enabled_modules
+            .iter()
+            .cloned()
+            .into_iter()
+            .filter(|module| {
+                normalized
+                    .modules
+                    .iter()
+                    .any(|candidate| candidate.module == raw_target)
+                    && (module == &raw_target
+                        || module
+                            .strip_prefix(&raw_target)
+                            .is_some_and(|suffix| suffix.starts_with('/')))
+            })
+            .collect::<Vec<_>>();
+        let modules = module_dependency_closure(&root_modules, &queue.blocked_by)?;
         let filtered_compose = filter_compose(&compose, &modules);
         let filtered_queue = filter_queue(&queue, &modules);
         return Ok(TargetSelection {
@@ -668,11 +684,11 @@ fn filter_queue(queue: &GenerationQueue, modules: &[String]) -> GenerationQueue 
 }
 
 fn module_dependency_closure(
-    module: &str,
+    roots: &[String],
     blocked_by: &BTreeMap<String, Vec<String>>,
 ) -> Result<Vec<String>> {
     let mut seen = BTreeSet::new();
-    let mut stack = vec![module.to_string()];
+    let mut stack = roots.iter().rev().cloned().collect::<Vec<_>>();
     while let Some(current) = stack.pop() {
         if !seen.insert(current.clone()) {
             continue;
@@ -1241,13 +1257,7 @@ fn build_patch_apply_batches(
 
     let mut module_by_region = BTreeMap::new();
     for reference in &operation_refs {
-        let Some(op) = normalized
-            .operations
-            .iter()
-            .find(|op| workflow_operation_ref_matches(op, reference))
-        else {
-            return Ok(fallback());
-        };
+        let op = vos_spec::resolve_operation_reference(&normalized.operations, reference)?;
         let region = &op.llm_codegen.editable_region;
         module_by_region.insert(
             (
@@ -1305,13 +1315,6 @@ fn build_patch_apply_batches(
         batches.push(batch);
     }
     Ok(batches)
-}
-
-fn workflow_operation_ref_matches(op: &vos_core::OperationContract, reference: &str) -> bool {
-    reference == op.id
-        || reference == op.operation
-        || reference == format!("{}.{}", op.module, op.operation)
-        || reference == format!("{}:{}", op.module, op.operation)
 }
 
 fn validate_generation_outputs(
@@ -1677,7 +1680,8 @@ mod tests {
             ("process".to_string(), vec!["memory".to_string()]),
         ]);
 
-        let modules = module_dependency_closure("process", &blocked_by).expect("closure");
+        let modules =
+            module_dependency_closure(&["process".to_string()], &blocked_by).expect("closure");
 
         assert_eq!(modules, vec!["boot", "memory", "process"]);
     }
@@ -1804,7 +1808,9 @@ mod tests {
         emit_workflow_progress(&logger, Some(&upstream), "workflow", event.clone());
 
         let content = fs::read_to_string(&log_path).expect("read workflow log");
-        assert!(content.contains("[workflow] 骨架投影 stage=0% overall=16% :: requesting skeleton projection"));
+        assert!(content.contains(
+            "[workflow] 骨架投影 stage=0% overall=16% :: requesting skeleton projection"
+        ));
 
         let forwarded = captured.lock().expect("captured events lock");
         assert_eq!(forwarded.len(), 1);
@@ -1859,7 +1865,15 @@ mod tests {
         assert_eq!(selection.stage, "syscall");
         assert_eq!(
             selection.modules,
-            vec!["headers", "boot", "memory", "trap", "process", "syscall"]
+            vec![
+                "kernel/headers",
+                "kernel/boot",
+                "kernel/memory",
+                "kernel/trap",
+                "kernel/process",
+                "user/programs",
+                "kernel/syscall",
+            ]
         );
     }
 
@@ -1872,7 +1886,7 @@ mod tests {
             &spec_root,
             &GenerationWorkflowOptions {
                 command_name: "vos agent generate".into(),
-                target: Some("memory".into()),
+                target: Some("kernel/memory".into()),
                 patch_path: None,
                 resume_run: None,
                 apply: false,
@@ -1885,9 +1899,12 @@ mod tests {
         .expect("selection should resolve");
 
         assert_eq!(selection.kind, "module");
-        assert_eq!(selection.value, "memory");
+        assert_eq!(selection.value, "kernel/memory");
         assert_eq!(selection.stage, "memory");
-        assert_eq!(selection.modules, vec!["boot", "headers", "memory"]);
+        assert_eq!(
+            selection.modules,
+            vec!["kernel/boot", "kernel/headers", "kernel/memory"]
+        );
     }
 
     #[test]

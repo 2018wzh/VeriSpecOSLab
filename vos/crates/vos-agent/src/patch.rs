@@ -2,7 +2,7 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use vos_core::{NormalizedSpecBundle, OperationContract, Result, VosError};
+use vos_core::{NormalizedSpecBundle, Result, VosError};
 
 use crate::{RegionEdit, SkeletonFileEdit};
 
@@ -61,15 +61,7 @@ pub(crate) fn validate_required_spec_metadata(
     let referenced_ops = patch
         .operation_refs
         .iter()
-        .map(|reference| {
-            normalized
-                .operations
-                .iter()
-                .find(|op| operation_ref_matches(op, reference))
-                .ok_or_else(|| {
-                    VosError::Message(format!("patch references unknown operation `{reference}`"))
-                })
-        })
+        .map(|reference| vos_spec::resolve_operation_reference(&normalized.operations, reference))
         .collect::<Result<Vec<_>>>()?;
 
     // Every region edit must target an editable region declared by one referenced operation.
@@ -91,13 +83,6 @@ pub(crate) fn validate_required_spec_metadata(
         }
     }
     Ok(())
-}
-
-fn operation_ref_matches(op: &OperationContract, reference: &str) -> bool {
-    reference == op.id
-        || reference == op.operation
-        || reference == format!("{}.{}", op.module, op.operation)
-        || reference == format!("{}:{}", op.module, op.operation)
 }
 
 fn stable_spec_hash(normalized: &NormalizedSpecBundle) -> String {

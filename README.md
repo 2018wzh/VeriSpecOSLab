@@ -102,7 +102,7 @@ cargo run -p vos-cli -- --help
 cd examples/xv6-spec
 vos stage show
 vos spec lint spec/architecture/seed.yaml
-vos spec normalize spec/modules/memory/module.yaml
+vos spec normalize spec/modules/kernel/memory/module.yaml
 vos spec check-consistency spec/architecture/seed.yaml
 vos arch lint spec/architecture/seed.yaml
 vos arch compose spec/architecture/seed.yaml
@@ -114,7 +114,7 @@ vos verify public
 vos trace syscall
 vos debug explain-log path/to/log
 vos agent generate
-vos agent generate memory
+vos agent generate kernel/memory
 vos report generate
 vos submit pack
 ```

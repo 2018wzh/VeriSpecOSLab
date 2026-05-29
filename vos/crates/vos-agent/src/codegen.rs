@@ -80,7 +80,10 @@ pub(crate) async fn generate_module_waves(
                 allowed_paths,
                 prompt: prompt_text,
             };
-            let module_run_dir = run_dir.join(format!("module_{}", module_name));
+            let module_run_dir = run_dir.join(format!(
+                "module_{}",
+                vos_spec::module_path_token(module_name)
+            ));
             let config = config.clone();
             launched_modules += 1;
             if resume {

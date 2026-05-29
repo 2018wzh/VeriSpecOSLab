@@ -1,0 +1,8 @@
+node_modules
+dist
+.vite
+*.tsbuildinfo
+tailwind.config.d.ts
+tailwind.config.js
+vite.config.d.ts
+vite.config.js

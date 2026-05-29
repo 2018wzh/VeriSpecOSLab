@@ -1,0 +1,14 @@
+[package]
+name = "vos-course"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+vos-core = { path = "../vos-core" }
+
