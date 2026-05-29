@@ -5,12 +5,13 @@
 
 当前规格的最终阶段是 `syscall`。对这个阶段执行一次完整生成，会按依赖顺序覆盖：
 
-- `headers`
-- `boot`
-- `memory`
-- `process`
-- `trap`
-- `syscall`
+- `kernel/headers`
+- `kernel/boot`
+- `kernel/memory`
+- `kernel/trap`
+- `kernel/process`
+- `user/programs`
+- `kernel/syscall`
 
 也就是说，`vos agent generate --apply` 是“从零生成整个当前 xv6 MVP”的入口。
 在这个示例里，省略 target 会默认回落到当前 stage，也就是 `syscall`。
@@ -123,7 +124,7 @@ cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/x
 
 - `spec/` 全量规格可被加载并通过一致性检查
 - 当前架构阶段是 `syscall`
-- 生成波次是 `headers -> boot -> memory -> process -> trap -> syscall`
+- 生成波次是 `kernel/headers -> kernel/boot -> kernel/memory -> kernel/trap -> kernel/process -> user/programs -> kernel/syscall`
 
 如果只想看 agent 视角下允许生成哪些文件，可以再执行：
 
@@ -166,7 +167,7 @@ cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/x
 如果你只想生成单个模块，也可以显式传模块名，比如：
 
 ```powershell
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate memory --apply
+cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate kernel/memory --apply
 ```
 
 如果你想显式指定当前 stage，也仍然可以写成 `agent generate syscall --apply`。
@@ -188,7 +189,7 @@ cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/x
 - 校验这些文件是否属于 `spec/toolchain/build.yaml` 中 `build.allowed_output_path` 声明的允许列表
 - 告诉你最终会按什么目标顺序执行
 
-当前示例在 [build.yaml](/home/wzh/VeriSpecOSLab/examples/xv6-spec/spec/toolchain/build.yaml) 中声明了：
+当前示例在 `spec/toolchain/build.yaml` 中声明了：
 
 ```yaml
 build:
@@ -284,7 +285,7 @@ cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/x
 examples/xv6-spec/
 ├── spec/                  # 唯一真相源
 │   ├── architecture/      # 架构 seed、slice、composition、ADR
-│   ├── modules/           # 模块、操作契约、并发约束、测试绑定
+│   ├── modules/           # 聚合模块、叶子模块、操作契约、并发约束、测试绑定
 │   ├── toolchain/         # build/link/run/profile/debug 规格
 │   ├── verification/      # public matrix、evidence schema、report contract
 │   ├── goals/             # 目标与验收

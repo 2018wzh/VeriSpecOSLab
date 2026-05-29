@@ -8,4 +8,5 @@ image:
     - OpenSBI -> kernel.elf
   required_artifacts:
     - build/kernel.elf
+
     - build/kernel.bin

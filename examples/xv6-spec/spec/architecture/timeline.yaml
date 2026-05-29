@@ -12,7 +12,7 @@ timeline:
       - SBI console abstraction
       - boot banner display
       - graceful shutdown
-    affected_modules: [boot]
+    affected_modules: [kernel/boot]
     validation_gate: [build_kernel, qemu_boot_smoke, verify_boot_banner]
 
   - stage: memory
@@ -23,7 +23,7 @@ timeline:
       - Sv39 three-level page table
       - kernel identity mapping
       - satp paging enable
-    affected_modules: [memory]
+    affected_modules: [kernel/memory]
     validation_gate: [build_kernel, verify_page_allocator, verify_kernel_page_table]
 
   - stage: trap
@@ -35,7 +35,7 @@ timeline:
       - usertrap / kerneltrap dispatch
       - timer interrupt handling
       - userret trampoline
-    affected_modules: [trap, process]
+    affected_modules: [kernel/trap, kernel/process]
     validation_gate: [build_kernel, verify_trap_vector, verify_timer_interrupt]
 
   - stage: process
@@ -46,7 +46,7 @@ timeline:
       - per-process kernel stack and pagetable
       - round-robin scheduler (swtch)
       - fork / exit / wait lifecycle
-    affected_modules: [process, memory, trap]
+    affected_modules: [kernel/process, kernel/memory, kernel/trap, user]
     validation_gate: [build_kernel, verify_fork_exit_wait]
 
   - stage: syscall
@@ -57,5 +57,5 @@ timeline:
       - argument marshalling from a0-a5
       - user-pointer validation
       - sys_write / sys_exit / sys_fork / sys_wait / sys_sbrk
-    affected_modules: [syscall, process, memory]
+    affected_modules: [kernel/syscall, kernel/process, kernel/memory]
     validation_gate: [build_kernel, verify_syscall_dispatch, verify_sys_write, verify_fork_syscall]

@@ -1,9 +1,10 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::Path;
 
 use vos_core::{ConsistencyReport, NormalizedSpecBundle, Result};
 
 use crate::graph::validate_slice_dependency_graph;
+use crate::hierarchy::{module_reference_exists, resolve_operation_reference};
 use crate::paths::collect_spec_files;
 
 pub fn check_consistency(
@@ -19,6 +20,7 @@ pub fn check_consistency(
         .iter()
         .map(|m| m.module.clone())
         .collect();
+    let module_name_set = module_names.iter().cloned().collect::<BTreeSet<_>>();
     let op_names: HashSet<String> = normalized
         .operations
         .iter()
@@ -33,7 +35,7 @@ pub fn check_consistency(
 
     for slice in &normalized.architecture.slices {
         for module in &slice.affected_modules {
-            if !module_names.contains(module) {
+            if !module_reference_exists(&module_name_set, module) {
                 errors.push(format!(
                     "slice `{}` references missing module `{module}`",
                     slice.id
@@ -64,7 +66,7 @@ pub fn check_consistency(
 
     for rule in &normalized.architecture.composition.cross_component_rules {
         for module in &rule.affected_modules {
-            if !module_names.contains(module) {
+            if !module_reference_exists(&module_name_set, module) {
                 errors.push(format!(
                     "composition rule `{}` references missing module `{module}`",
                     rule.name
@@ -82,6 +84,28 @@ pub fn check_consistency(
     }
 
     for operation in &normalized.operations {
+        if !module_reference_exists(&module_name_set, &operation.module) {
+            errors.push(format!(
+                "operation `{}` references missing module `{}`",
+                operation.id, operation.module
+            ));
+        }
+        for module in &operation.depends_on.requires_modules {
+            if !module_reference_exists(&module_name_set, module) {
+                errors.push(format!(
+                    "operation `{}` depends on missing module `{module}`",
+                    operation.id
+                ));
+            }
+        }
+        for reference in &operation.depends_on.requires_ops {
+            if let Err(err) = resolve_operation_reference(&normalized.operations, reference) {
+                errors.push(format!(
+                    "operation `{}` has invalid requires_ops reference `{reference}`: {err}",
+                    operation.id
+                ));
+            }
+        }
         let file = project_root.join(&operation.llm_codegen.editable_region.file);
         if !file.starts_with(project_root) {
             errors.push(format!(

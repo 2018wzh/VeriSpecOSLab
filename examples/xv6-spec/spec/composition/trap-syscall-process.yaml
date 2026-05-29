@@ -1,14 +1,19 @@
 id: trap-syscall-process-composition
+
 title: Trap / Syscall / Process Cross-Module Composition
 related_slices:
   - slice-03-trap
   - slice-04-process
   - slice-05-syscall
 affected_modules:
-  - trap
-  - syscall
-  - process
-  - memory
+  - kernel/trap
+
+  - kernel/syscall
+
+  - kernel/process
+
+  - kernel/memory
+
 
 cross_component_rules:
   - name: ecall-trap-dispatch-chain

@@ -1,4 +1,5 @@
 id: xv6-riscv-arch-composition
+
 title: Cross-Module Architectural Composition
 summary: >
   Synthesises the cross-cutting invariants, authority boundaries,
@@ -12,7 +13,7 @@ related_slices:
   - slice-04-process
   - slice-05-syscall
 
-affected_modules: [boot, memory, trap, process, syscall]
+affected_modules: [kernel, user]
 
 cross_component_rules:
   - name: boot-to-paging-transition
@@ -23,7 +24,7 @@ cross_component_rules:
     invariant: >
       All kernel accesses after paging_init use virtual addresses
       backed by kernel_pagetable.
-    affected_modules: [boot, memory]
+    affected_modules: [kernel/boot, kernel/memory]
     tests: [kvmmake_identity_mapping]
 
   - name: trap-dispatches-to-syscall
@@ -34,7 +35,7 @@ cross_component_rules:
     invariant: >
       scause == 8 (environment call from U-mode) always
       reaches syscall() with sepc advanced by 4.
-    affected_modules: [trap, syscall]
+    affected_modules: [kernel/trap, kernel/syscall]
     tests: [usertrap_syscall_dispatched, syscall_valid_number]
 
   - name: syscall-validates-via-memory
@@ -44,7 +45,7 @@ cross_component_rules:
       No raw user address may be used as a kernel pointer.
     invariant: >
       Kernel never segfaults from a raw user pointer dereference.
-    affected_modules: [syscall, memory]
+    affected_modules: [kernel/syscall, kernel/memory]
     tests: [copyin_invalid_address, sys_write_invalid_buffer]
 
   - name: process-memory-isolation
@@ -55,5 +56,5 @@ cross_component_rules:
     invariant: >
       satp in U-mode always points to the current process's
       user page table; kernel mappings are not accessible.
-    affected_modules: [process, memory, trap]
+    affected_modules: [kernel/process, kernel/memory, kernel/trap]
     tests: [fork_memory_isolation]

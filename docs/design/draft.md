@@ -1562,7 +1562,7 @@ ReviewAgent
 vos init
 vos arch lint spec/architecture/seed.yaml
 vos arch derive-tests spec/architecture/seed.yaml
-vos spec lint spec/modules/memory/page_allocator.yaml
+vos spec lint spec/modules/kernel/memory/ops/kalloc.yaml
 vos build
 vos run qemu
 vos verify base

@@ -176,10 +176,10 @@ debug_output:
 
 ```text
 task_kind=codegen
-module=syscall
+module=kernel/syscall
 operation=sys_write
 phase=logic
-spec_bindings=[syscall.write]
+spec_bindings=[kernel/syscall.sys_write]
 expected_output=function_draft
 ```
 

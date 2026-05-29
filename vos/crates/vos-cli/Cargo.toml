@@ -17,3 +17,4 @@ tokio.workspace = true
 vos-agent = { path = "../vos-agent" }
 vos-core = { path = "../vos-core" }
 vos-runtime = { path = "../vos-runtime" }
+vos-spec = { path = "../vos-spec" }

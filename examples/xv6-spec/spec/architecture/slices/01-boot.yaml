@@ -1,4 +1,5 @@
 id: slice-01-boot
+
 stage: boot
 title: Early Boot and Banner
 summary: >
@@ -15,13 +16,19 @@ mechanisms:
   - boot banner display
   - shutdown via SBI SRST
 affected_modules:
-  - headers
-  - boot
+  - kernel/headers
+
+  - kernel/boot
+
 new_operations:
-  - boot.boot_banner
-  - boot.console_putchar
-  - boot.console_write
-  - boot.shutdown
+  - kernel/boot.boot_banner
+
+  - kernel/boot.console_putchar
+
+  - kernel/boot.console_write
+
+  - kernel/boot.shutdown
+
 removed_or_replaced_mechanisms: []
 
 invariants:

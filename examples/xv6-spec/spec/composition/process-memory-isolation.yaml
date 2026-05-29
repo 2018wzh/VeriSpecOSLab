@@ -1,11 +1,14 @@
 id: process-memory-isolation-composition
+
 title: Process / Memory Address Space Isolation
 related_slices:
   - slice-02-memory
   - slice-04-process
 affected_modules:
-  - process
-  - memory
+  - kernel/process
+
+  - kernel/memory
+
 
 cross_component_rules:
   - name: fork-copies-memory

@@ -1,4 +1,5 @@
 id: slice-02-memory
+
 stage: memory
 title: Physical Memory and Page Table Setup
 summary: >
@@ -16,14 +17,21 @@ mechanisms:
   - kernel direct-mapped identity mapping (0x80000000+)
   - satp write to enable paging
 affected_modules:
-  - memory
+  - kernel/memory
+
 new_operations:
-  - memory.kinit
-  - memory.kalloc
-  - memory.kfree
-  - memory.kvmmake
-  - memory.kvmmap
-  - memory.walk
+  - kernel/memory.kinit
+
+  - kernel/memory.kalloc
+
+  - kernel/memory.kfree
+
+  - kernel/memory.kvmmake
+
+  - kernel/memory.kvmmap
+
+  - kernel/memory.walk
+
 removed_or_replaced_mechanisms: []
 
 invariants:

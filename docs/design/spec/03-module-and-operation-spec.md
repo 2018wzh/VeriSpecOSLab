@@ -15,20 +15,36 @@
 
 ```text
 spec/modules/
-  memory/
-    module.yaml
-    concurrency.yaml
-    tests.yaml
-    ops/
-      alloc_page.yaml
-      free_page.yaml
-      map_page.yaml
-  syscall/
-    module.yaml
-    ops/
-      sys_write.yaml
-      sys_exit.yaml
+  kernel/
+    module.yaml            # 聚合父模块，可被 architecture/composition 引用
+    memory/
+      module.yaml
+      concurrency.yaml
+      tests.yaml
+      ops/
+        kalloc.yaml
+        kfree.yaml
+        kvmmake.yaml
+    syscall/
+      module.yaml
+      ops/
+        syscall.yaml
+        sys_write.yaml
+  user/
+    module.yaml            # 聚合父模块
+    programs/
+      module.yaml
+      ops/
+        init.yaml
+        user_ld.yaml
 ```
+
+约定：
+
+- `module` 字段必须与 `spec/modules/` 下的相对目录一致，例如 `spec/modules/kernel/memory/module.yaml` 对应 `module: kernel/memory`。
+- 父模块是可引用的一等 `ModuleSpec`，但可以只做聚合，不必拥有自己的 `ops/`。
+- 当 `affected_modules` 或 `requires_modules` 引用父模块时，会按当前目标 stage 自动展开到活跃子模块。
+- 跨模块操作引用应优先写全限定形式，例如 `kernel/syscall.sys_write`。
 
 ## 3. ModuleSpec 最小字段
 
@@ -143,15 +159,15 @@ llm_codegen:
 ## 7. 示例
 
 ```yaml
-id: syscall.write
+id: kernel/syscall.sys_write
 stage: syscall-basic
-module: syscall
+module: kernel/syscall
 operation: sys_write
 
 purpose: write bytes from a user buffer to a writable object
 related_slice: 05-syscall-basic
 depends_on:
-  requires_modules: [syscall, fd, object, memory]
+  requires_modules: [kernel/syscall, fd, object, kernel/memory]
 
 rely:
   callable_interfaces:

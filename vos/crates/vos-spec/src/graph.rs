@@ -2,15 +2,23 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use vos_core::{ArchitectureSlice, ModuleGenerationJob, Result, VosError};
 
+use crate::hierarchy::expand_module_reference;
+
 pub(crate) fn module_dependencies(
     operations: &[vos_core::OperationContract],
+    active_modules: &BTreeSet<String>,
+    active_executable_modules: &BTreeSet<String>,
     module: &str,
 ) -> Vec<String> {
     let mut deps = BTreeSet::new();
     for operation in operations.iter().filter(|op| op.module == module) {
-        for dep in &operation.depends_on.requires_modules {
-            if dep != module {
-                deps.insert(dep.clone());
+        for reference in &operation.depends_on.requires_modules {
+            for dependency in
+                expand_module_reference(reference, active_modules, active_executable_modules, true)
+            {
+                if dependency != module {
+                    deps.insert(dependency);
+                }
             }
         }
     }

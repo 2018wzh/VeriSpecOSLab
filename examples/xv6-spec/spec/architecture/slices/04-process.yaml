@@ -1,4 +1,5 @@
 id: slice-04-process
+
 stage: process
 title: Process Abstraction and Scheduler
 summary: >
@@ -19,18 +20,29 @@ mechanisms:
   - "exit: release resources and set ZOMBIE state"
   - "wait: reap child processes"
 affected_modules:
-  - process
-  - memory
-  - trap
+  - kernel/process
+  - kernel/memory
+  - kernel/trap
+  - user
+
 new_operations:
-  - process.proc_init
-  - process.allocproc
-  - process.scheduler
-  - process.swtch
-  - process.fork
-  - process.exit
-  - process.wait
-  - process.growproc
+  - kernel/process.proc_init
+
+  - kernel/process.allocproc
+
+  - kernel/process.scheduler
+
+  - kernel/process.swtch
+
+  - kernel/process.fork
+
+  - kernel/process.exit
+
+  - kernel/process.wait
+  - kernel/process.growproc
+  - user/programs.generate_user_ld
+  - user/programs.generate_init_c
+
 removed_or_replaced_mechanisms: []
 
 invariants:

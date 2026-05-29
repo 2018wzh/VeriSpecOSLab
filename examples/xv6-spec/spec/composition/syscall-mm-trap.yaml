@@ -1,12 +1,16 @@
 id: syscall-mm-trap-composition
+
 title: Syscall / Memory / Trap Cross-Module Composition
 related_slices:
   - slice-03-trap
   - slice-05-syscall
 affected_modules:
-  - syscall
-  - memory
-  - trap
+  - kernel/syscall
+
+  - kernel/memory
+
+  - kernel/trap
+
 
 cross_component_rules:
   - name: user-pointer-validation-chain

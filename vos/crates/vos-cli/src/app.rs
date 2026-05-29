@@ -17,11 +17,7 @@ pub async fn run() {
             .unwrap_or_else(|_| cli.project_root.clone())
     };
 
-    let progress = if json {
-        None
-    } else {
-        Some(make_progress())
-    };
+    let progress = if json { None } else { Some(make_progress()) };
     let progress_cb = progress.as_ref().map(make_progress_callback);
 
     enum RunOutcome {
@@ -74,7 +70,11 @@ pub async fn run() {
             ),
             Commands::Toolchain {
                 command: ToolchainCommands::Lint,
-            } => emit_result(json, "vos toolchain lint", toolchain_lint_envelope(&project_root)),
+            } => emit_result(
+                json,
+                "vos toolchain lint",
+                toolchain_lint_envelope(&project_root),
+            ),
             Commands::Spec {
                 command:
                     SpecCommands::Patch {
@@ -304,8 +304,8 @@ pub async fn run() {
     match outcome {
         RunOutcome::Completed(Ok(())) => {}
         RunOutcome::Completed(Err(err)) => {
-            let (run_id, message) =
-                vos_core::extract_run_id_marker(&err).unwrap_or_else(|| (vos_core::new_run_id(), err));
+            let (run_id, message) = vos_core::extract_run_id_marker(&err)
+                .unwrap_or_else(|| (vos_core::new_run_id(), err));
             let failure = vos_core::envelope_with_run_id(
                 run_id,
                 "vos",
@@ -358,14 +358,16 @@ fn command_name(command: &Commands) -> &'static str {
             command: SpecCommands::CheckConsistency(_),
         } => "vos spec check-consistency",
         Commands::Spec {
-            command: SpecCommands::Patch {
-                command: SpecPatchCommands::Lint(_),
-            },
+            command:
+                SpecCommands::Patch {
+                    command: SpecPatchCommands::Lint(_),
+                },
         } => "vos spec patch lint",
         Commands::Spec {
-            command: SpecCommands::Patch {
-                command: SpecPatchCommands::Apply(_),
-            },
+            command:
+                SpecCommands::Patch {
+                    command: SpecPatchCommands::Apply(_),
+                },
         } => "vos spec patch apply",
         Commands::Toolchain {
             command: ToolchainCommands::Lint,
@@ -443,7 +445,7 @@ mod tests {
             "--json",
             "spec",
             "lint",
-            "spec/modules/boot/ops/boot_banner.yaml",
+            "spec/modules/kernel/boot/ops/boot_banner.yaml",
         ])
         .expect("documented spec lint command should parse");
 
@@ -454,7 +456,7 @@ mod tests {
             } => {
                 assert_eq!(
                     args.spec_path,
-                    std::path::PathBuf::from("spec/modules/boot/ops/boot_banner.yaml")
+                    std::path::PathBuf::from("spec/modules/kernel/boot/ops/boot_banner.yaml")
                 );
             }
             _ => panic!("unexpected parsed command"),
@@ -618,14 +620,17 @@ mod tests {
 
     #[test]
     fn command_names_cover_nested_variants() {
-        assert_eq!(command_name(&Commands::Build(BuildArgs {
-            profile: None,
-            stage: None,
-            generator: None,
-            generators: Vec::new(),
-            dry_run: false,
-            toolchain: None,
-        })), "vos build");
+        assert_eq!(
+            command_name(&Commands::Build(BuildArgs {
+                profile: None,
+                stage: None,
+                generator: None,
+                generators: Vec::new(),
+                dry_run: false,
+                toolchain: None,
+            })),
+            "vos build"
+        );
 
         assert_eq!(
             command_name(&Commands::Agent {

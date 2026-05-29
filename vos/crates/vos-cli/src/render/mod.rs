@@ -256,10 +256,7 @@ mod tests {
         };
 
         assert_eq!(progress_mode(&event), ProgressMode::OverallBar(12));
-        assert_eq!(
-            format_progress_prefix(&event),
-            "[阶段 1/5] 解析工具链"
-        );
+        assert_eq!(format_progress_prefix(&event), "[阶段 1/5] 解析工具链");
         assert_eq!(
             format_progress_message(&event),
             "resolving toolchain (items 1/5)"

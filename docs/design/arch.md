@@ -125,18 +125,20 @@ verispecoslab/
       composition.yaml
       final-synthesis.yaml
     modules/
-      boot/
-      memory/
-      trap/
-      scheduler/
-      syscall/
-      ipc/
-      capability/
-      object/
-      namespace/
-      vfs/
-      fs/
-      driver/
+      kernel/
+        boot/
+        memory/
+        trap/
+        scheduler/
+        syscall/
+      services/
+        ipc/
+        capability/
+        object/
+        namespace/
+        vfs/
+        fs/
+        driver/
     goals/
     evolution/
     reports/
@@ -238,7 +240,7 @@ OS 开发：
 
 ```bash
 vos init
-vos spec lint spec/modules/memory/page_allocator.yaml
+vos spec lint spec/modules/kernel/memory/ops/kalloc.yaml
 vos arch lint spec/architecture/seed.yaml
 vos arch derive-tests spec/architecture/seed.yaml
 vos build
@@ -758,8 +760,8 @@ ArchitectureCompositionSpec:
 云端 StageGate 中 memory 阶段的公开要求投影
 spec/architecture/slices/02-memory.yaml
 spec/architecture/decisions/ADR-001-memory-layout.yaml
-spec/modules/memory/page_allocator.yaml
-spec/modules/memory/memory_map.yaml
+spec/modules/kernel/memory/ops/kalloc.yaml
+spec/modules/kernel/memory/ops/kvmmake.yaml
 include/kernel/mm/page_allocator.h
 tests/unit/test_page_allocator.c
 最近一次 vos verify stage memory-management 日志
@@ -935,7 +937,7 @@ vos arch lint
 vos agent ask "根据 MemorySpec 检查当前 page allocator"
 vos agent fix --test tests/unit/test_page_allocator.c
 vos agent debug --log build/qemu/serial.log
-vos agent spec refine spec/modules/trap/trap.yaml
+vos agent spec refine spec/modules/kernel/trap/module.yaml
 vos agent arch review spec/architecture/seed.yaml
 ```
 
@@ -1244,7 +1246,7 @@ AICollaborationLog.md
   "task": "implement page allocator free_page",
   "files": [
     "spec/architecture/seed.yaml",
-    "spec/modules/memory/page_allocator.yaml",
+    "spec/modules/kernel/memory/ops/kalloc.yaml",
     "src/kernel/mm/page_allocator.c"
   ],
   "agent": "CodeGenAgent",

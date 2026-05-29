@@ -88,7 +88,7 @@ vos agent arch review spec/architecture/seed.yaml
 例如 `memory-management` 阶段：
 
 ```bash
-vos spec lint spec/modules/memory/page_allocator.yaml
+vos spec lint spec/modules/kernel/memory/ops/kalloc.yaml
 vos arch lint spec/architecture/slices/02-memory.yaml
 vos verify public --stage memory-management
 ```

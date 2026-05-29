@@ -1,4 +1,5 @@
 id: slice-03-trap
+
 stage: trap
 title: Trap Handling and Context Switching
 summary: >
@@ -18,14 +19,21 @@ mechanisms:
   - timer interrupt handling via SBI
   - userret trampoline for returning to U-mode
 affected_modules:
-  - trap
-  - process
+  - kernel/trap
+
+  - kernel/process
+
 new_operations:
-  - trap.trap_init
-  - trap.usertrap
-  - trap.kerneltrap
-  - trap.usertrapret
-  - trap.devintr
+  - kernel/trap.trap_init
+
+  - kernel/trap.usertrap
+
+  - kernel/trap.kerneltrap
+
+  - kernel/trap.usertrapret
+
+  - kernel/trap.devintr
+
 removed_or_replaced_mechanisms: []
 
 invariants:

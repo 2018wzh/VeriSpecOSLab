@@ -55,7 +55,7 @@ vos agent context
 
 示例：
 
-- `sys_write` 修改前先做 `vos agent context --spec spec/modules/syscall/ops/sys_write.yaml`
+- `sys_write` 修改前先做 `vos agent context --spec spec/modules/kernel/syscall/ops/sys_write.yaml`
 - codegen 后至少跑 `vos verify patch`
 - 若 QEMU 或 syscall trace 失败，再跑 `vos debug explain-log`
 

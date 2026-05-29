@@ -5,11 +5,17 @@
 
 includes:
   - profile.yaml
+
   - build.yaml
+
   - link.yaml
+
   - image.yaml
+
   - run.yaml
+
   - debug.yaml
+
 
 validation:
   must_pass:

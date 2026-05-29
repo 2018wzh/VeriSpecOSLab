@@ -5,10 +5,14 @@ build:
   allowed_output_path:
     - Makefile
     - CMakeLists.txt
+
     - xtask/src/tasks.rs
+
     - xtask/Cargo.toml
+
   sources:
     - kernel/**/*.c
+
   include_paths:
     - include
     - kernel/include
@@ -22,8 +26,11 @@ build:
   forbidden_flags: []
   generated_artifacts:
     - build/kernel.elf
+
     - build/kernel.bin
+
     - build/kernel.asm
+
   phases:
     # Phase 1: compile kernel core code
     - name: kernel_compile
@@ -75,14 +82,23 @@ build:
         linker: ld
         input_artifacts:
           - build/kernel/entry.o
+
           - build/kernel/boot.o
+
           - build/kernel/memory.o
+
           - build/kernel/process.o
+
           - build/kernel/trap.o
+
           - build/kernel/syscall.o
+
           - build/kernel/kernelvec.o
+
           - build/kernel/trampoline.o
+
           - build/kernel/swtch.o
+
         output_file: build/kernel.elf
         output_format: elf64
         linker_script: kernel/link.ld

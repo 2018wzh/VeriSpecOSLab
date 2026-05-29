@@ -21,7 +21,7 @@
 
 ## 3. Rely / Guarantee 映射
 
-将现有 `spec/modules/*/ops/*.yaml` 中字段映射到 prompt：
+将现有 `spec/modules/**/ops/*.yaml` 中字段映射到 prompt：
 
 - `rely.state_assumptions` -> imported assumptions
 - `rely.callable_interfaces` -> callable interfaces
