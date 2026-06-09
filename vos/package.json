@@ -1,0 +1,17 @@
+{
+  "name": "vos",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "apps/vos-agent",
+    "apps/vos-web"
+  ],
+  "scripts": {
+    "dev:agent": "cd apps/vos-agent && bun run app/main.ts serve --host 127.0.0.1 --port 8787",
+    "dev:web": "npm --prefix apps/vos-web run dev",
+    "typecheck": "cd apps/vos-agent && bun run typecheck && cd ../vos-web && npm run lint",
+    "test": "cd apps/vos-agent && bun test",
+    "build": "cd apps/vos-agent && bun run build && cd ../vos-web && npm run build"
+  }
+}

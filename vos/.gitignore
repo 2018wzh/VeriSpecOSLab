@@ -1,5 +1,5 @@
-
-#Added by cargo
-
-/target
-Cargo.lock
+node_modules/
+dist/
+coverage/
+.vos-agent/
+.vos/
