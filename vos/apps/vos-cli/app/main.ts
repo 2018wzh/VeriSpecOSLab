@@ -36,6 +36,7 @@ import type {
 import { CliError, AgentOutputError } from "./errors.ts";
 import { EvidenceWriter } from "./evidence/index.ts";
 import { collectStringListByKey, parseTopLevelYaml } from "./utils/yaml.ts";
+import { withProjectEnv } from "./utils/dotenv.ts";
 import {
   ensureDefaultProjectConfig,
   loadPolicyConfig,
@@ -88,70 +89,72 @@ async function main(): Promise<void> {
     }
 
     const projectRoot = path.resolve(parsed.global.projectRoot);
-    await ensureDefaultProjectConfig(projectRoot);
+    await withProjectEnv(projectRoot, async () => {
+      await ensureDefaultProjectConfig(projectRoot);
 
-    const evidence = await EvidenceWriter.create({
-      projectRoot,
-      evidenceDir: parsed.global.evidenceDir ?? ".vos",
-      command: commandToArray(parsed.command),
-      args: process.argv.slice(2),
-    });
-
-    try {
-      const outcome = await executeCommand(parsed.command, {
+      const evidence = await EvidenceWriter.create({
         projectRoot,
-        global: parsed.global,
-        evidence,
-      });
-      const manifest = await evidence.finalize(outcome.status, {
-        message: typeof outcome.details.message === "string" ? outcome.details.message : undefined,
+        evidenceDir: parsed.global.evidenceDir ?? ".vos",
+        command: commandToArray(parsed.command),
+        args: process.argv.slice(2),
       });
 
-      const finalOutput = {
-        ok: isSuccessStatus(outcome.status),
-        run_id: evidence.run_id,
-        command: manifest.command,
-        status: manifest.status,
-        artifacts: manifest.artifacts,
-        evidence_refs: manifest.evidence_refs,
-        started_at: manifest.started_at,
-        finished_at: manifest.finished_at,
-        message: (outcome.details.message as string | undefined) ?? "ok",
-        details: outcome.details,
-      };
+      try {
+        const outcome = await executeCommand(parsed.command, {
+          projectRoot,
+          global: parsed.global,
+          evidence,
+        });
+        const manifest = await evidence.finalize(outcome.status, {
+          message: typeof outcome.details.message === "string" ? outcome.details.message : undefined,
+        });
 
-      if (parsed.global.reportPath) {
-        await writeFile(parsed.global.reportPath, `${JSON.stringify(finalOutput, null, 2)}\n`);
+        const finalOutput = {
+          ok: isSuccessStatus(outcome.status),
+          run_id: evidence.run_id,
+          command: manifest.command,
+          status: manifest.status,
+          artifacts: manifest.artifacts,
+          evidence_refs: manifest.evidence_refs,
+          started_at: manifest.started_at,
+          finished_at: manifest.finished_at,
+          message: (outcome.details.message as string | undefined) ?? "ok",
+          details: outcome.details,
+        };
+
+        if (parsed.global.reportPath) {
+          await writeFile(parsed.global.reportPath, `${JSON.stringify(finalOutput, null, 2)}\n`);
+        }
+
+        printResult(finalOutput, parsed.global.json);
+      } catch (error) {
+        const status = classifyErrorStatus(error);
+        await evidence.finalize(status, {
+          message: error instanceof Error ? error.message : "unknown error",
+        });
+        const manifest = await evidence.writeManifest({
+          status,
+          finishedAt: new Date().toISOString(),
+          message: error instanceof Error ? error.message : "unknown error",
+        });
+        printResult({
+          ok: false,
+          run_id: evidence.run_id,
+          command: manifest.command,
+          status,
+          artifacts: manifest.artifacts,
+          evidence_refs: manifest.evidence_refs,
+          started_at: manifest.started_at,
+          finished_at: manifest.finished_at,
+          message: error instanceof Error ? error.message : "unknown error",
+          details: {
+            error: true,
+          },
+        }, parsed.global.json);
+        process.exitCode = isSuccessStatus(status) ? 0 : 1;
+        return;
       }
-
-      printResult(finalOutput, parsed.global.json);
-    } catch (error) {
-      const status = classifyErrorStatus(error);
-      await evidence.finalize(status, {
-        message: error instanceof Error ? error.message : "unknown error",
-      });
-      const manifest = await evidence.writeManifest({
-        status,
-        finishedAt: new Date().toISOString(),
-        message: error instanceof Error ? error.message : "unknown error",
-      });
-      printResult({
-        ok: false,
-        run_id: evidence.run_id,
-        command: manifest.command,
-        status,
-        artifacts: manifest.artifacts,
-        evidence_refs: manifest.evidence_refs,
-        started_at: manifest.started_at,
-        finished_at: manifest.finished_at,
-        message: error instanceof Error ? error.message : "unknown error",
-        details: {
-          error: true,
-        },
-      }, parsed.global.json);
-      process.exitCode = isSuccessStatus(status) ? 0 : 1;
-      return;
-    }
+    });
   } catch (error) {
     if (error instanceof Error) {
       console.error(error.message);

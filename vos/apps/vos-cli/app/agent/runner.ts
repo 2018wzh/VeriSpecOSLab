@@ -12,6 +12,7 @@ import {
   runHeadlessAgentPrompt,
   startAgentHttpServer,
 } from "vos-agent/headless";
+import { readProjectEnv } from "../utils/dotenv.ts";
 
 export interface AgentRunResult {
   resultText: string;
@@ -113,7 +114,10 @@ export function buildAgentEnv(params: {
 }): { env: Record<string, string | undefined>; model?: string } {
   const config = readLocalAgentConfig(params.projectRoot);
 
-  const mapped: Record<string, string | undefined> = { ...params.env };
+  const mapped: Record<string, string | undefined> = {
+    ...readProjectEnv(params.projectRoot),
+    ...params.env,
+  };
   if (!config) return { env: mapped };
 
   if (config.provider) {
