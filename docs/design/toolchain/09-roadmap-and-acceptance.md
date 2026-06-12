@@ -141,7 +141,7 @@
 
 - `README.md` 能串起全部子文档
 - 仅阅读 `README + 01` 即可区分 `VOS Runtime` 与 `ToolchainSpec`
-- 仅阅读 `03 + 04 + 05 + 06` 即可开始搭建 Rust crate 与命令骨架
+- 仅阅读 `03 + 04 + 05 + 06` 即可开始搭建 TypeScript package 与命令骨架
 - `07 + 08 + 09` 足以支持 Agent 路径和验收设计
 - 不依赖旧 `toolchain.md` 正文才能理解实现边界
 

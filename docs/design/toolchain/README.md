@@ -3,7 +3,7 @@
 本目录定义 VeriSpecOSLab 的 `VOS Runtime` / `VOS CLI` / `VOS Orchestrator` 设计，用于约束：
 
 - `vos` 如何读取本地 `spec/`、消费云端约束投影并编排验证流程
-- Rust + Tokio 实现中各模块、数据模型、adapter 和执行模型如何划分
+- Bun / TypeScript 实现中各 package、数据模型、adapter 和执行模型如何划分
 - Agent、CI 和课程平台如何通过统一入口获得可审计、可复现的运行结果
 
 边界说明：

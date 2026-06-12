@@ -4,7 +4,7 @@
 
 - `VOS Runtime` 的总体层次结构是什么
 - 一次 `vos` 命令从输入到证据输出经历哪些层
-- 架构中哪些部分与 Rust crate 边界一一对应
+- 架构中哪些部分与 TypeScript package 边界一一对应
 
 上游依赖文档：
 

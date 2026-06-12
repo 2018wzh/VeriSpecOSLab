@@ -2,7 +2,7 @@
 
 回答的问题：
 
-- `vos` 内部需要哪些稳定 JSON / Rust 数据结构
+- `vos` 内部需要哪些稳定 JSON / TypeScript 数据结构
 - 各结构的字段语义、来源和消费者是什么
 - `.vos/` 目录如何映射到这些结构
 
@@ -15,10 +15,11 @@
 
 - `vos-core`
 - `vos-spec`
-- `vos-patch`
+- `vos-policy`
 - `vos-runtime`
+- `vos-adapter`
 - `vos-evidence`
-- `vos-agent`
+- `vos-agent-core`
 
 ## 1. `NormalizedSpecBundle`
 

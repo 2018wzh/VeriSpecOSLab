@@ -1,6 +1,12 @@
-# Portal Implementation Blueprint: Data Model (Rust/SQLx)
+# Portal Implementation Blueprint: Data Model (Legacy Rust/SQLx Draft)
 
-本文件定义了后端的 Rust Struct 与数据库表结构的精确映射，用于驱动 Vibe Coding 生成数据库迁移文件和模型层代码。
+> Historical note: this file is a legacy Rust/SQLx-oriented blueprint kept for
+> reference. The active implementation direction is Bun / TypeScript, with
+> shared contracts moving toward `vos-core`, `vos-evidence`, `vos-policy`, and
+> the Portal API hosted by `apps/vos-agent`. Do not treat the Rust snippets
+> below as the current implementation target.
+
+本文件保留了早期后端模型与数据库表结构的映射草案，用于参考字段和关系设计。当前实现应将这些概念迁移为 TypeScript 类型、storage adapter 和共享 JSON contract。
 
 ## 1. 核心枚举定义 (Postgres Enum Mapping)
 ```rust

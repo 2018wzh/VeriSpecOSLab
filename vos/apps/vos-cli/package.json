@@ -1,0 +1,25 @@
+{
+  "name": "vos-cli",
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "vos-agent": "workspace:*",
+    "yaml": "^2.9.0"
+  },
+  "bin": {
+    "vos": "./app/main.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "bun build --compile ./app/main.ts --outfile dist/vos",
+    "test": "bun test",
+    "start": "bun run app/main.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  }
+}

@@ -24,6 +24,7 @@
 所有命令都应支持：
 
 ```bash
+--project-root <dir>
 --json
 --report <path>
 --evidence-dir <dir>

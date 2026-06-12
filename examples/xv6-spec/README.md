@@ -1,7 +1,6 @@
 # xv6-spec: 从零生成、构建并运行 xv6
 
-`examples/xv6-spec` 是一个“只有规格、没有内核源码”的示例工程。  
-它的目标不是在仓库里直接附带一份手写的 xv6，而是把 `spec/` 作为真相源，通过 `vos` 的 skeleton projection + module generation 流程，从零生成整个 xv6-riscv MVP，然后再构建、启动和验证。
+`examples/xv6-spec` 是一个“只有规格、没有内核源码”的示例工程。它的目标不是在仓库里直接附带一份手写的 xv6，而是把 `spec/` 作为真相源，通过 `vos` 的 skeleton projection + module generation 流程，从零生成整个 xv6-riscv MVP，然后再构建、启动和验证。
 
 当前规格的最终阶段是 `syscall`。对这个阶段执行一次完整生成，会按依赖顺序覆盖：
 
@@ -13,8 +12,7 @@
 - `user/programs`
 - `kernel/syscall`
 
-也就是说，`vos agent generate --apply` 是“从零生成整个当前 xv6 MVP”的入口。
-在这个示例里，省略 target 会默认回落到当前 stage，也就是 `syscall`。
+也就是说，`vos agent generate --apply` 是“从零生成整个当前 xv6 MVP”的入口。在这个示例里，省略 target 会默认回落到当前 stage，也就是 `syscall`。
 
 ## 工程现状
 
@@ -43,12 +41,20 @@
 
 ## 前置依赖
 
-### 1. Rust
+### 1. Bun / TypeScript VOS CLI
 
-需要能在仓库根目录执行：
+目标实现使用 Bun / TypeScript workspace。需要能在仓库根目录执行：
 
 ```powershell
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --help
+cd vos
+bun install
+bun run typecheck
+```
+
+当 `vos-cli` package 落地后，推荐把 `vos` 安装到 PATH，或从仓库根目录使用目标 wrapper：
+
+```powershell
+bun run vos -- --help
 ```
 
 ### 2. 构建工具链
@@ -66,12 +72,12 @@ cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --help
 运行下面的命令可以先检查工具链规格是否被正确解析：
 
 ```powershell
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec toolchain lint
+vos --project-root examples/xv6-spec toolchain lint
 ```
 
 ### 3. Agent / LLM 提供方
 
-从零生成源码需要可用的 LLM provider。当前项目默认配置在 [`.vos/config.toml`](E:/文件/ECNU/比赛/OS/VeriSpecOSLab/examples/xv6-spec/.vos/config.toml)：
+从零生成源码需要可用的 LLM provider。当前项目默认配置在 `.vos/config.toml`：
 
 ```toml
 spec_root = "spec"
@@ -101,10 +107,16 @@ $env:DEEPSEEK_API_KEY="..."
 统一格式如下：
 
 ```powershell
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec <subcommand>
+vos --project-root examples/xv6-spec <subcommand>
 ```
 
-如果你已经把 `vos` 单独安装到了 PATH，也可以在 `examples/xv6-spec` 目录中直接运行：
+如果尚未把 `vos` 安装到 PATH，目标 TypeScript workspace 应提供等价调用：
+
+```powershell
+bun run vos -- --project-root examples/xv6-spec <subcommand>
+```
+
+如果你已经在 `examples/xv6-spec` 目录中，也可以直接运行：
 
 ```powershell
 vos <subcommand>
@@ -115,9 +127,9 @@ vos <subcommand>
 建议至少先跑这几条：
 
 ```powershell
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec spec check-consistency spec
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec arch compose spec/architecture/seed.yaml
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent plan --stage syscall
+vos --project-root examples/xv6-spec spec check-consistency spec
+vos --project-root examples/xv6-spec arch compose spec/architecture/seed.yaml
+vos --project-root examples/xv6-spec agent plan --stage syscall
 ```
 
 这几条分别会确认：
@@ -129,7 +141,7 @@ cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/x
 如果只想看 agent 视角下允许生成哪些文件，可以再执行：
 
 ```powershell
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent context --stage syscall
+vos --project-root examples/xv6-spec agent context --stage syscall
 ```
 
 ## 第 2 步：从零生成整个 xv6 MVP
@@ -137,7 +149,7 @@ cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/x
 这是最关键的一步：
 
 ```powershell
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate --apply
+vos --project-root examples/xv6-spec agent generate --apply
 ```
 
 这条命令会做几件事：
@@ -167,18 +179,19 @@ cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/x
 如果你只想生成单个模块，也可以显式传模块名，比如：
 
 ```powershell
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate kernel/memory --apply
+vos --project-root examples/xv6-spec agent generate kernel/memory --apply
 ```
 
-如果你想显式指定当前 stage，也仍然可以写成 `agent generate syscall --apply`。
-但默认推荐写法是省略 target，让命令按当前 stage 生成整个系统。
+如果你想显式指定当前 stage，也仍然可以写成 `agent generate syscall --apply`。但默认推荐写法是省略 target，让命令按当前 stage 生成整个系统。
 
 ## 第 3 步：生成后先做一次 dry-run 构建
 
-从这版开始，本地构建系统由 `vos agent generate --apply` 在工作区里直接生成，并把当前生效 manifest 写到 `.vos/toolchain.json`。`vos build --dry-run` 只负责读取这份 manifest 并展示将执行的入口目标：
+本地构建系统由 `vos agent generate --apply` 在工作区里直接生成，并把当前生效 manifest 写到 `.vos/toolchain.json`。如果 agent 已经生成了 `Makefile`、`CMakeLists.txt` 或 `xtask/Cargo.toml` 等允许的构建入口，但还没有写出 `.vos/toolchain.json`，`vos toolchain lint`、`vos build`、`vos run qemu` 和 `vos verify` 会根据 `spec/toolchain/build.yaml` 与 `spec/toolchain/run.yaml` 物化一份默认 manifest，并在 `generator` 字段标记来源为 `vos-cli/default-toolchain-manifest`。
+
+`vos build --dry-run` 负责读取当前 manifest 并展示将执行的入口目标：
 
 ```powershell
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec build --dry-run
+vos --project-root examples/xv6-spec build --dry-run
 ```
 
 这一步不会编译源码，但会：
@@ -205,7 +218,7 @@ build:
 ## 第 4 步：真正构建内核
 
 ```powershell
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec build
+vos --project-root examples/xv6-spec build
 ```
 
 当前工具链规格要求最终产物至少包括：
@@ -222,7 +235,7 @@ cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/x
 ## 第 5 步：启动 QEMU
 
 ```powershell
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec run qemu
+vos --project-root examples/xv6-spec run qemu
 ```
 
 `spec/toolchain/run.yaml` 当前绑定的是：
@@ -242,10 +255,10 @@ QEMU 输出会保存到：
 公开验证会串起构建和运行：
 
 ```powershell
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec verify public
+vos --project-root examples/xv6-spec verify public
 ```
 
-公开验证要求来自 [spec/verification/public-matrix.yaml](E:/文件/ECNU/比赛/OS/VeriSpecOSLab/examples/xv6-spec/spec/verification/public-matrix.yaml)，核心覆盖：
+公开验证要求来自 `spec/verification/public-matrix.yaml`，核心覆盖：
 
 - boot banner
 - page allocator
@@ -263,7 +276,7 @@ cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/x
 如果你确认 provider、交叉工具链和 QEMU 都已经就绪，可以直接：
 
 ```powershell
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate --apply --build --run
+vos --project-root examples/xv6-spec agent generate --apply --build --run
 ```
 
 这个命令等价于：
@@ -277,7 +290,7 @@ cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/x
 - `--build` 依赖 `--apply`
 - `--run` 依赖 `--build`
 
-这是 CLI 当前实现中的硬约束。
+这是 CLI 目标实现中的硬约束。
 
 ## 目录说明
 
@@ -302,7 +315,9 @@ examples/xv6-spec/
 
 ## 当前实现边界
 
-这份 README 只描述当前代码里已经实现的链路。下面这些命令在实现中仍是未完成状态，不应纳入“从零生成并跑起来”的主流程：
+这份 README 描述全 TypeScript `vos` CLI 的目标链路。当前仓库已经具备 `apps/vos-agent` 与 `apps/vos-web`，但 `packages/vos-cli`、`packages/vos-runtime`、`packages/vos-agent-core` 等 package 仍需按设计文档落地。
+
+下面这些命令不应纳入“从零生成并跑起来”的首个主流程：
 
 - `vos trace syscall`
 - `vos report generate`
@@ -316,16 +331,29 @@ examples/xv6-spec/
 如果你只想从空工程一路跑到可启动的 xv6，按下面顺序执行即可：
 
 ```powershell
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec toolchain lint
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec spec check-consistency spec
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate --apply
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec build
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec run qemu
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec verify public
+vos --project-root examples/xv6-spec toolchain lint
+vos --project-root examples/xv6-spec spec check-consistency spec
+vos --project-root examples/xv6-spec agent generate --apply
+vos --project-root examples/xv6-spec build
+vos --project-root examples/xv6-spec run qemu
+vos --project-root examples/xv6-spec verify public
 ```
 
 如果你已经具备稳定的 provider 与交叉工具链环境，也可以直接：
 
 ```powershell
-cargo run --manifest-path vos/Cargo.toml -p vos-cli -- --project-root examples/xv6-spec agent generate --apply --build --run
+vos --project-root examples/xv6-spec agent generate --apply --build --run
+```
+
+## 可选真实复现检查
+
+默认自动化测试应使用 fake/headless runner 与 dry-run 路径，不依赖真实 LLM、RISC-V 工具链或 QEMU。若本机已经配置好 `DEEPSEEK_API_KEY`、交叉工具链与 `qemu-system-riscv64`，可以手动执行真实链路：
+
+```powershell
+cd vos
+bun install
+bun run typecheck
+bun test
+vos --project-root ../examples/xv6-spec agent generate --apply --build --run
+vos --project-root ../examples/xv6-spec verify public
 ```

@@ -410,7 +410,7 @@ validation:
 
 `ToolchainSpec` 语义层由 VOS Runtime 负责：
 
-1. **解析**：vos-spec 将 YAML 解析为类型化的 Rust 结构
+1. **解析**：vos-spec 将 YAML 解析为类型化的 TypeScript 结构
 2. **验证**：检查循环依赖、类型约束、引用有效性
 3. **生成**：调用适当的生成器（Makefile、Xtask、CMake 等）
 4. **执行**：运行生成的构建工具，采集证据

@@ -2,10 +2,10 @@
 
 ## Phase 0: Skeleton
 
-- [x] Add `vos-course` domain crate.
-- [x] Add `vos-portal` Axum backend crate.
+- [x] Add TypeScript Portal domain models in the backend/API surface.
+- [x] Add Bun `apps/vos-agent` backend with Portal REST API and Agent Gateway.
 - [x] Add React/Vite `vos-web` app.
-- [x] Add PostgreSQL migration contracts.
+- [x] Add PostgreSQL storage contracts in the design docs.
 - [x] Add local demo adapters for experiment projection, pipeline, and Agent.
 - [x] Add implementation docs under `docs/portal`.
 
@@ -20,8 +20,8 @@
 - [x] Add frontend login and bearer-token API client.
 - [x] Implement student dashboard and teacher admin views.
 - [ ] Replace demo password handling with a real password hash implementation.
-- [x] Add SQLx repository implementation behind the `postgres` feature.
-- [ ] Add API integration tests with Axum router and demo store.
+- [ ] Add TypeScript PostgreSQL repository implementation behind a storage adapter.
+- [ ] Add API integration tests with the Bun router and demo store.
 - [ ] Add PostgreSQL CRUD integration tests against a temporary database.
 
 ## Phase 2: Evidence and Stage Gates

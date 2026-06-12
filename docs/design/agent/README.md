@@ -27,6 +27,7 @@
 8. [07-os-specialization.md](./07-os-specialization.md)
 9. [08-audit-and-safety.md](./08-audit-and-safety.md)
 10. [09-roadmap-and-acceptance.md](./09-roadmap-and-acceptance.md)
+11. [10-typescript-cli-wrapper.md](./10-typescript-cli-wrapper.md)
 
 核心原则：
 
@@ -34,3 +35,4 @@
 - Agent 只通过受控 `vos` 工具工作。
 - 核心改动默认绑定 `OperationContract`，而不是自由生成。
 - 生成、验证、修复、引用都必须进入 evidence 与审计闭环。
+- 在全 TypeScript 路线下，`vos agent` 子命令作为 `vos-agent` 的受控 wrapper：fixed prompt 负责角色与输出 schema，policy、patch gate、stage gate 与 evidence 由确定性 runtime 负责。

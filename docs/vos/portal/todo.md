@@ -12,11 +12,11 @@
 
 ## 第一阶段：MVP (最小可行闭环)
 
-### 后端 (Vos-Server) - 基于 Rust (Axum)
-- [ ] **基础框架搭建**：初始化 Axum + PostgreSQL 异步后端，定义核心 Domain Model。
+### 后端 (Vos-Server) - 基于 Bun / TypeScript
+- [ ] **基础框架搭建**：在 `apps/vos-agent` 的 Portal API 基础上整理 TypeScript 后端边界，定义核心 Domain Model。
 - [ ] **Agent Gateway (核心能力)**：
     - [ ] 实现 OpenAI 兼容的 `/v1/chat/completions` 接口。
-    - [ ] 注入 `vos-prompt` 管理的系统提示词与上下文（读取本地 spec 文件）。
+    - [ ] 注入 `vos-agent-core` 构造的 `ContextBundle` / `PromptEnvelope` 与版本化 fixed prompt。
     - [ ] 异步记录 AI 协作请求到数据库。
 - [ ] **Evidence 接收器**：提供 API 接收 CI 运行生成的 Evidence JSON，并关联到学生项目。
 - [ ] **实验进度管理**：支持定义 StageGate（如：Memory 阶段、Trap 阶段），记录学生当前状态。
@@ -60,6 +60,6 @@
 ---
 
 ## 任务关联与依赖
-1. **依赖 `vos-core` / `vos-spec`**：后端必须引入 `vos` 的 Rust 库以解析规格和验证证据。
+1. **依赖 `vos-core` / `vos-spec` / `vos-evidence`**：后端必须引入 TypeScript package 以解析规格、验证证据并共享数据契约。
 2. **依赖 Gitea**：用于托管学生代码并运行 CI。
 3. **依赖 vLLM**：提供本地模型推理能力。

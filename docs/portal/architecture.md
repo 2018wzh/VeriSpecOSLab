@@ -3,40 +3,49 @@
 ## Service Layout
 
 ```text
-vos-course
+vos-core
   -> platform-neutral course, stage, evidence, score, audit models
   -> pure workflow functions
-  -> Repo/Pipeline/Experiment/Agent adapter traits
+  -> shared JSON contracts for CLI, backend, and frontend
 
-vos-portal
-  -> Axum HTTP API
-  -> auth and RBAC boundary
+vos-evidence
+  -> RunManifest and events.jsonl persistence
+  -> evidence indexes and report inputs
+
+vos-policy
+  -> role, stage, visibility, path, and tool policies
+
+apps/vos-agent
+  -> Bun HTTP API
+  -> OpenAI-compatible Agent Gateway
+  -> Portal REST API
   -> demo in-memory store
-  -> PostgreSQL migrations and SQLx store behind the postgres feature
-  -> local demo adapters
+  -> future storage adapter host
 
-vos-web
+apps/vos-web
   -> React/Vite app
   -> student dashboard
   -> architecture, evidence, audit, teacher, score views
 ```
 
-`vos-platform` remains the lower-level host/fs/command adapter crate. Course and
-Portal concepts intentionally live in `vos-course` to avoid overloading that
-existing crate.
+The current implementation keeps Portal handlers and the demo store inside
+`apps/vos-agent`. Shared packages should be introduced incrementally as the
+course runtime becomes real, using the target boundaries in
+`docs/design/toolchain/03-runtime-modules.md`.
 
 ## Adapter Boundary
 
-The backend uses replaceable adapter traits from `vos-course`:
+The backend should use replaceable TypeScript adapter interfaces:
 
 - `RepoProvisioner`: creates or binds repositories/workspaces.
 - `PipelineOrchestrator`: derives and queues VOS verification runs.
 - `ExperimentAdapter`: projects domain-specific spec and verification rules.
 - `AgentGateway`: routes OpenAI-compatible calls and returns auditable summaries.
+- `PortalStore`: persists users, courses, projects, evidence, scores, and audits.
 
-The current `vos-portal` implementation ships local demo adapters. Production
-Gitea, Runner, Artifact Store, and model gateway integrations should replace
-these implementations without changing API shape.
+The current `apps/vos-agent` implementation ships local demo adapters.
+Production Gitea, Runner, Artifact Store, PostgreSQL, and model gateway
+integrations should replace these implementations without changing API shape.
 
 ## SpecLab Extensibility
 
@@ -49,6 +58,10 @@ and score model.
 ## Runtime Modes
 
 - Default: in-memory demo store, no external services.
-- `postgres` feature: enables the SQLx/PostgreSQL store. Startup runs migrations
-  from `vos/crates/vos-portal/migrations`; `VOS_PORTAL_DEMO=1` seeds the demo
-  course, stages, project, evidence, rubric, and score into PostgreSQL.
+- PostgreSQL adapter: future production store for Portal data.
+- Integrations profile: optional Gitea/runner/artifact services for pipeline
+  orchestration.
+
+Every runtime mode must preserve the same visibility boundary: hidden tests,
+staff-only rubrics, and other students' projects never enter student-facing or
+Agent-facing projections.

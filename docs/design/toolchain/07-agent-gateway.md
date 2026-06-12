@@ -24,6 +24,28 @@
 - 不开放任意 shell
 - LLM 不是 runtime 的强依赖
 - 所有 Agent 行为都必须进入 evidence 与协作日志
+- 在全 TypeScript 路线下，`vos agent` 子命令作为 `vos-agent` 的受控 wrapper；fixed prompt 负责角色行为与输出 schema，policy、patch gate、stage gate 和验证 DAG 由确定性 runtime 裁决
+
+## 1.5 Wrapper 分工
+
+`vos agent` 子命令分为两类：
+
+- 确定性命令：`agent context`、`agent apply-patch`、`agent log`
+- LLM wrapper 命令：`agent plan`、`agent generate`、`agent debug`
+
+LLM wrapper 命令必须：
+
+- 先构造 `ContextBundle` 与 `PromptEnvelope`
+- 选择版本化 fixed prompt
+- 调用 `vos-agent` headless runner 或共享 runner API
+- 校验结构化输出
+- 将 prompt version、context ref、输出 ref、risk flags 写入 evidence 与 `AICollaborationLog`
+
+LLM wrapper 命令不得：
+
+- 直接应用 patch
+- 降低 policy 或验证要求
+- 把 hidden tests、staff-only rubric 或其他学生代码放入 `ContextBundle`
 
 ## 2. `vos agent serve`
 

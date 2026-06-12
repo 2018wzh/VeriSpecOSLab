@@ -3,9 +3,9 @@
 本设计文档旨在细化 VeriSpecOSLab 教学实验门户的实现细节，涵盖数据库、API、前端架构及评测业务流程。
 
 ## 1. 总体架构
-*   **Backend**: Rust (Axum) + SQLx (PostgreSQL) + Redis (Session/Cache)
+*   **Backend**: Bun / TypeScript (`apps/vos-agent`) + optional PostgreSQL / Redis adapters
 *   **Frontend**: React + TypeScript + Vite + Shadcn/UI + TailwindCSS
-*   **Integration**: 通过 Webhook 接收 Gitea 事件，通过本地库调用 `vos-core` 解析证据。
+*   **Integration**: 通过 Webhook 接收 Gitea 事件，通过 TypeScript `vos-core` / `vos-evidence` 解析证据。
 
 ---
 
