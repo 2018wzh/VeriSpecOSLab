@@ -339,7 +339,9 @@ function looksLikeSpecBinding(text: string): boolean {
 }
 
 function bindingResolvesToLocalSpec(projectRoot: string, binding: string): boolean {
-  const normalized = path.normalize(binding.trim());
+  const ref = normalizeSpecRef(binding);
+  if (!ref) return false;
+  const normalized = path.normalize(ref.trim());
   if (!normalized || path.isAbsolute(normalized) || normalized.startsWith("..")) {
     return false;
   }
@@ -461,7 +463,11 @@ function recordMatchesOperationRef(
 function normalizeSpecRef(value: string): string | undefined {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
-  return trimmed.replace(/\\/g, "/").replace(/\.yaml$/i, "");
+  const withoutDescription = trimmed.split(":")[0]?.trim() ?? trimmed;
+  const withoutClause = withoutDescription
+    .replace(/\.(guarantee|preconditions|postconditions|invariants_preserved|concurrency|assumptions|requirements)\b.*$/i, "")
+    .replace(/\.(proof|obligation|side_effects|returns|effects)\b.*$/i, "");
+  return withoutClause.replace(/\\/g, "/").replace(/\.yaml$/i, "");
 }
 
 function stringValue(value: unknown): string | undefined {

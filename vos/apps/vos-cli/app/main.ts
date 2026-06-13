@@ -777,14 +777,38 @@ async function executeAgentGenerate(
       task,
     }),
   );
+  const strictCodegenContract = [
+    "STRICT OUTPUT CONTRACT:",
+    "Return exactly one JSON object and nothing else.",
+    "Do not use markdown, tables, bullets, or prose.",
+    "The JSON object must contain:",
+    `  - task: string`,
+    `  - patch: string`,
+    `  - bound_clauses: string[]`,
+    `  - changed_paths: string[]`,
+    `  - changed_code_files: string[]`,
+    `  - output_kind: "unified_diff" | "file_changes"`,
+    `  - self_reported_risks: string[]`,
+    "The patch field must be a single unified diff string suitable for git apply.",
+    "If you cannot produce a patch, return patch as an empty string and explain only via self_reported_risks.",
+  ].join("\n");
   const agentResult = await runAgentWithPrompt({
     projectRoot,
-    rolePrompt: prompt,
+    rolePrompt: `${prompt}\n\n${strictCodegenContract}`,
     courseMode: true,
     allowedVosCommands: await loadAgentAllowedCommands(projectRoot),
     runner: context.agentRunner,
   });
-  const parsed = parsePatchProposal(parseAgentJson(agentResult.resultText, "agent_generate"));
+  const rawResponsePath = path.join(projectRoot, ".vos", "agent-generate-raw.txt");
+  let parsed;
+  try {
+    parsed = parsePatchProposal(parseAgentJson(agentResult.resultText, "agent_generate"));
+  } catch (error) {
+    await mkdir(path.dirname(rawResponsePath), { recursive: true });
+    await writeFile(rawResponsePath, `${agentResult.resultText}\n`);
+    evidence.addArtifact("agent", path.relative(projectRoot, rawResponsePath), "raw agent generate response");
+    throw error;
+  }
   let applyStatus: "skipped" | "ok" | "failed" = "skipped";
   let applyOutput: string | undefined;
   let applyValidationSummary: unknown[] = [];

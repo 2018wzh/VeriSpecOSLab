@@ -64,7 +64,8 @@ export function parsePlanDraft(value: unknown): PlanDraft {
 export function parsePatchProposal(value: unknown): PatchProposal {
   if (!isRecord(value)) throw new Error("agent output is not an object");
   if (typeof value.task !== "string") throw new Error("PatchProposal.task must be string");
-  if (typeof value.patch !== "string") throw new Error("PatchProposal.patch must be string");
+  const patch = coercePatchText(value.patch);
+  if (!patch) throw new Error("PatchProposal.patch must be string");
   if (!Array.isArray(value.bound_clauses)) throw new Error("PatchProposal.bound_clauses must be array");
   if (!Array.isArray(value.changed_paths)) throw new Error("PatchProposal.changed_paths must be array");
   if (!Array.isArray(value.changed_code_files)) throw new Error("PatchProposal.changed_code_files must be array");
@@ -73,7 +74,7 @@ export function parsePatchProposal(value: unknown): PatchProposal {
   }
   return {
     task: value.task,
-    patch: value.patch,
+    patch,
     bound_clauses: value.bound_clauses.map(String),
     changed_paths: value.changed_paths.map(String),
     changed_code_files: value.changed_code_files.map(String),
@@ -82,6 +83,35 @@ export function parsePatchProposal(value: unknown): PatchProposal {
       ? value.self_reported_risks.map(String)
       : [],
   };
+}
+
+function coercePatchText(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+    return value.join("\n");
+  }
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const candidates = [
+    value.patch,
+    value.diff,
+    value.text,
+    value.content,
+    value.unified_diff,
+    value.unifiedDiff,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string") return candidate;
+    if (Array.isArray(candidate) && candidate.every((entry) => typeof entry === "string")) {
+      return candidate.join("\n");
+    }
+  }
+
+  return undefined;
 }
 
 export function parseDebugOutput(value: unknown): DebugOutput {
@@ -102,4 +132,3 @@ export function parseDebugOutput(value: unknown): DebugOutput {
       : undefined,
   };
 }
-
