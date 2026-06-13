@@ -13,6 +13,18 @@ Agent Runtime 对外可以表现为统一模型，对内收敛为以下角色：
 
 如需 OS 领域增强，由 `07-os-specialization.md` 描述的 specialization 规则附加，而不是再复制一套角色体系。
 
+课程身份层角色不直接新增 runtime role。`StudentAgent`、`TaAgent`、`TeacherAgent`、`ReviewAgent`、`ReportAgent` 是面向用户、权限与可见性投影的 persona；它们通过 [`11-role-parameter-catalog.md`](./11-role-parameter-catalog.md) 选择一个或多个 runtime role preset。
+
+工作流文档中出现的历史名称按以下规则收敛：
+
+| 工作流名称 | Runtime preset |
+|---|---|
+| `DesignAgent` | `SpecAssistant` + `GatewayAgent` |
+| `SpecAgent` | `SpecAssistant` + `SpecValidator` |
+| `VerificationAgent` | `SpecValidator` + `DebugAgent` |
+| `ReviewAgent` | `SpecValidator` + `DebugAgent` |
+| `ReportAgent` | `KnowledgeBaseAgent` + `GatewayAgent` |
+
 ## 2. 角色职责
 
 ### `GatewayAgent`
@@ -23,6 +35,7 @@ Agent Runtime 对外可以表现为统一模型，对内收敛为以下角色：
 - 调用 `vos agent context` 构造上下文
 - 绑定 policy、allowed paths、required validations
 - 选择下游 agent 与 generation mode
+- 选择 [`AgentRoleConfig`](./11-role-parameter-catalog.md) 中的 fixed prompt、tool profile、skill profile 和输出 schema
 
 不负责：
 
@@ -112,3 +125,5 @@ Agent Runtime 对外可以表现为统一模型，对内收敛为以下角色：
 - `SpecValidator` -> `ValidatorFeedback`
 - `DebugAgent` -> `DiagnosticReport` enhancement
 - `KnowledgeBaseAgent` -> `ReferencePayload`
+
+角色的 fixed prompt id、推荐 mode、工具白名单、skill、MCP 与审计字段不在本文件重复展开，以 [`11-role-parameter-catalog.md`](./11-role-parameter-catalog.md) 为准。

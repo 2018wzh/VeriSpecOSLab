@@ -28,6 +28,7 @@
 9. [08-audit-and-safety.md](./08-audit-and-safety.md)
 10. [09-roadmap-and-acceptance.md](./09-roadmap-and-acceptance.md)
 11. [10-typescript-cli-wrapper.md](./10-typescript-cli-wrapper.md)
+12. [11-role-parameter-catalog.md](./11-role-parameter-catalog.md)
 
 核心原则：
 
@@ -36,3 +37,4 @@
 - 核心改动默认绑定 `OperationContract`，而不是自由生成。
 - 生成、验证、修复、引用都必须进入 evidence 与审计闭环。
 - 在全 TypeScript 路线下，`vos agent` 子命令作为 `vos-agent` 的受控 wrapper：fixed prompt 负责角色与输出 schema，policy、patch gate、stage gate 与 evidence 由确定性 runtime 负责。
+- 角色参数以 [`11-role-parameter-catalog.md`](./11-role-parameter-catalog.md) 为实现目录：课程身份层角色映射到 runtime role，并统一声明 fixed prompt、mode、tool、skill、MCP、schema 与审计要求。

@@ -14,14 +14,15 @@
 
 所有 agent 消息按以下顺序组装：
 
-1. 注入 `policy_flags` 与 `task_kind`
-2. 注入 `ContextBundle` 摘要
-3. 注入绑定 spec 的结构化摘录
-4. 如为 codegen，注入 `RELY / GUARANTEE / SPECIFICATION / refine`
-5. 注入输出 schema
-6. 注入禁止项
+1. 注入固定 system/developer 层角色指令，包括 `fixed_prompt_id`、runtime role、tool profile、visibility 和禁止项。
+2. 注入 `policy_flags` 与 `task_kind`。
+3. 注入 `ContextBundle` 摘要。
+4. 注入绑定 spec 的结构化摘录。
+5. 如为 codegen，注入 `RELY / GUARANTEE / SPECIFICATION / refine`。
+6. 注入输出 schema。
+7. 注入用户 task 与 requested scope。
 
-不允许在第 6 步之后再追加新的自由指令。
+不允许在第 7 步之后再追加新的自由指令。用户 task 只能进入 `PromptEnvelope` 或 wrapper prompt body，不能覆盖 fixed prompt、role config、tool profile、visibility、schema 或禁止项。
 
 ## 3. 通用 `PromptEnvelope`
 
@@ -30,6 +31,7 @@
 ```yaml
 prompt_envelope:
   agent_role:
+  course_persona:
   task_kind:
   requested_scope:
   spec_bindings:
@@ -38,7 +40,40 @@ prompt_envelope:
   allowed_paths:
   required_validations:
   policy_flags:
+  fixed_prompt_id:
+  tool_profile:
+  skill_profile:
+  mcp_profile:
 ```
+
+## 3.5 `AgentRoleConfig`
+
+`AgentRoleConfig` 是 prompt builder 与 `vos agent` wrapper 的角色参数源。完整目录见 [`11-role-parameter-catalog.md`](./11-role-parameter-catalog.md)。
+
+```yaml
+AgentRoleConfig:
+  role_id:
+  course_persona: StudentAgent | TaAgent | TeacherAgent | ReviewAgent | ReportAgent
+  runtime_role: GatewayAgent | SpecAssistant | SpecCompiler | SpecValidator | DebugAgent | KnowledgeBaseAgent
+  fixed_prompt_id:
+  mode: smart | deep | rush
+  task_kinds: [string]
+  tool_profile:
+  skill_profile:
+  mcp_profile:
+  output_schema:
+  visibility_scope: student-public | agent-public | staff-full
+  audit_requirements: [string]
+```
+
+规则：
+
+- `fixed_prompt_id` 必须版本化，并写入 `PromptEnvelope`、run manifest 与 `AICollaborationLog`。
+- fixed prompt 必须作为 system/developer 层指令或等价固定指令注入；模型不能把普通用户 task 当成角色规则。
+- tools 由 `ToolRegistry` 与 policy 控制，prompt 只说明如何使用已暴露工具。
+- skills 延迟加载；prompt 只注入当前任务触发的 skill 内容。
+- MCP 工具必须使用 `mcp__<server>__<tool>` 名称，并经 role policy 与 visibility 过滤。
+- schema 解析失败必须返回 `AgentOutputError`，不得进入 patch apply。
 
 ## 4. `SpecCompiler` contract
 
