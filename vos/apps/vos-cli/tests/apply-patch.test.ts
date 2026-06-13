@@ -43,6 +43,42 @@ describe("agent apply-patch spec gate", () => {
     expect(readFileSync(join(projectRoot, "kernel", "boot.c"), "utf8")).toContain("return 1");
   });
 
+  test("rejects malformed model patches instead of repairing them", async () => {
+    const projectRoot = makeProject();
+    mkdirSync(join(projectRoot, "kernel"), { recursive: true });
+    mkdirSync(join(projectRoot, "spec", "modules", "kernel", "boot", "ops"), { recursive: true });
+    writeFileSync(join(projectRoot, "kernel", "boot.c"), "int boot(void) { return 0; }\n");
+    writeFileSync(join(projectRoot, "spec", "modules", "kernel", "boot", "ops", "kernel_main.yaml"), [
+      "id: kernel/boot.kernel_main",
+      "module: kernel/boot",
+      "operation: kernel_main",
+      "llm_codegen:",
+      "  editable_region:",
+      "    file: kernel/boot.c",
+      "",
+    ].join("\n"));
+
+    const result = await applyPatchText({
+      projectRoot,
+      patchText: [
+        "diff --git a/kernel/boot.c b/kernel/boot.c",
+        "--- a/kernel/boot.c",
+        "+++ b/kernel/boot.c",
+        "@@ -0,0 +1,1 @@",
+        "-int missing_context(void) { return 0; }",
+        "+int boot(void) { return 1; }",
+        "",
+      ].join("\n"),
+      specBindings: ["spec/modules/kernel/boot/ops/kernel_main.yaml"],
+      allowedPaths: ["kernel/boot.c"],
+      requireSpec: true,
+      runValidation: false,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.reason).toBe("patch_apply_failed");
+  });
+
   test("accepts operation id bindings resolved from normalized spec cache", async () => {
     const projectRoot = makeProject();
     mkdirSync(join(projectRoot, "kernel"), { recursive: true });
@@ -216,7 +252,12 @@ describe("agent apply-patch spec gate", () => {
   test("rolls back an applied patch when validation fails", async () => {
     const projectRoot = makeProject();
     mkdirSync(join(projectRoot, "kernel"), { recursive: true });
+    mkdirSync(join(projectRoot, "spec", "modules", "kernel", "boot", "ops"), { recursive: true });
     writeFileSync(join(projectRoot, "kernel", "boot.c"), "int boot(void) { return 0; }\n");
+    writeFileSync(
+      join(projectRoot, "spec", "modules", "kernel", "boot", "ops", "kernel_main.yaml"),
+      "id: kernel/boot.kernel_main\n",
+    );
 
     const result = await applyPatchText({
       projectRoot,

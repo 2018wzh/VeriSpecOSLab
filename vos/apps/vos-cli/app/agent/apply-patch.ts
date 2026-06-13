@@ -84,6 +84,7 @@ export async function applyPatchText(params: {
   const apply = await runCommand({
     command: ["git", "apply", patchFile],
     cwd: params.projectRoot,
+    env: gitApplyProjectEnv(params.projectRoot),
     timeoutMs: 120_000,
   });
 
@@ -106,6 +107,7 @@ export async function applyPatchText(params: {
     const rollback = await runCommand({
       command: ["git", "apply", "-R", patchFile],
       cwd: params.projectRoot,
+      env: gitApplyProjectEnv(params.projectRoot),
       timeoutMs: 120_000,
     });
     const rollbackOutput = rollback.exitCode === 0
@@ -152,7 +154,7 @@ async function runMinimalValidationDag(
   summary.push({
     name: "toolchain_manifest",
     status: toolchainExists ? "ok" : "failed",
-    details: toolchainExists ? undefined : "missing .vos/toolchain.json",
+    details: toolchainExists ? undefined : "missing .vos/toolchain.json or supported build entrypoint",
   });
   if (!toolchainExists) {
     return { status: "failed", summary };
@@ -165,11 +167,21 @@ async function runMinimalValidationDag(
     if (status.status === "failed") return { status: "failed", summary };
   }
 
-  const buildResult = await runBuildCommand({
-    projectRoot,
-    evidence,
-    dryRun: false,
-  });
+  let buildResult;
+  try {
+    buildResult = await runBuildCommand({
+      projectRoot,
+      evidence,
+      dryRun: false,
+    });
+  } catch (error) {
+    summary.push({
+      name: "build",
+      status: "failed",
+      details: error instanceof Error ? error.message : String(error),
+    });
+    return { status: "failed", summary };
+  }
   summary.push({ name: "build", status: buildResult.status, details: buildResult.output });
   if (buildResult.status === "failed") return { status: "failed", summary };
 
@@ -303,6 +315,12 @@ function extractChangedPaths(diff: string): string[] {
     }
   }
   return [...paths];
+}
+
+function gitApplyProjectEnv(projectRoot: string): Record<string, string> {
+  return {
+    GIT_CEILING_DIRECTORIES: path.dirname(path.resolve(projectRoot)),
+  };
 }
 
 function allPathsAllowed(changed: string[], allowed: string[]): boolean {
@@ -467,7 +485,7 @@ function normalizeSpecRef(value: string): string | undefined {
   const withoutClause = withoutDescription
     .replace(/\.(guarantee|preconditions|postconditions|invariants_preserved|concurrency|assumptions|requirements)\b.*$/i, "")
     .replace(/\.(proof|obligation|side_effects|returns|effects)\b.*$/i, "");
-  return withoutClause.replace(/\\/g, "/").replace(/\.yaml$/i, "");
+  return withoutClause.replace(/\\/g, "/");
 }
 
 function stringValue(value: unknown): string | undefined {

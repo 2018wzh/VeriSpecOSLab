@@ -55,7 +55,12 @@ import { runTestCommand } from "./runtime/test.ts";
 import { runVerifyCommand } from "./runtime/verify.ts";
 import { resolveToolchainManifestPath } from "./runtime/toolchain-manifest.ts";
 import { buildContextBundle, loadAgentAllowedPaths } from "./agent/context.ts";
-import { buildPromptEnvelope, formatPrompt, FIXED_PROMPT_IDS } from "./agent/prompt.ts";
+import {
+  buildAgentDebugPrompt,
+  buildAgentGeneratePrompt,
+  buildAgentPlanPrompt,
+  FIXED_PROMPT_IDS,
+} from "./agent/prompt.ts";
 import {
   parseJsonFromText,
   runAgentWithPrompt,
@@ -449,18 +454,11 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
     case "agent_plan": {
       const requestedScope = command.scope ?? "agent.plan";
       const bundle = await buildContextBundle({ projectRoot, requestedScope });
-      const prompt = formatPrompt(buildPromptEnvelope({
-        role: "specAssistant",
-        taskKind: "design_review",
+      const prompt = buildAgentPlanPrompt({
+        bundle,
         requestedScope,
-        specBindings: bundle.resolved_specs,
-        contextBundleRef: "agent-context",
-        evidenceRefs: bundle.recent_evidence.map((entry) => entry.run_id),
-        allowedPaths: bundle.allowed_paths,
-        requiredValidations: [],
-        policyFlags: bundle.policy_flags,
         task: command.task,
-      }));
+      });
       const agentResult = await runAgentWithPrompt({
         projectRoot,
         rolePrompt: prompt,
@@ -763,38 +761,15 @@ async function executeAgentGenerate(
     requestedScope: "agent.generate",
   });
   const task = command.task ?? command.target ?? bundle.current_stage;
-  const prompt = formatPrompt(
-    buildPromptEnvelope({
-      role: "specCompiler",
-      taskKind: "codegen",
-      requestedScope: "agent.generate",
-      specBindings: bundle.resolved_specs,
-      contextBundleRef: "agent-context",
-      evidenceRefs: bundle.recent_evidence.map((entry) => entry.run_id),
-      allowedPaths: bundle.allowed_paths,
-      requiredValidations: [],
-      policyFlags: bundle.policy_flags,
-      task,
-    }),
-  );
-  const strictCodegenContract = [
-    "STRICT OUTPUT CONTRACT:",
-    "Return exactly one JSON object and nothing else.",
-    "Do not use markdown, tables, bullets, or prose.",
-    "The JSON object must contain:",
-    `  - task: string`,
-    `  - patch: string`,
-    `  - bound_clauses: string[]`,
-    `  - changed_paths: string[]`,
-    `  - changed_code_files: string[]`,
-    `  - output_kind: "unified_diff" | "file_changes"`,
-    `  - self_reported_risks: string[]`,
-    "The patch field must be a single unified diff string suitable for git apply.",
-    "If you cannot produce a patch, return patch as an empty string and explain only via self_reported_risks.",
-  ].join("\n");
-  const agentResult = await runAgentWithPrompt({
+  const rolePrompt = buildAgentGeneratePrompt({
+    bundle,
+    task,
+    buildRequested: command.build,
+    runRequested: command.run,
+  });
+  let agentResult = await runAgentWithPrompt({
     projectRoot,
-    rolePrompt: `${prompt}\n\n${strictCodegenContract}`,
+    rolePrompt,
     courseMode: true,
     allowedVosCommands: await loadAgentAllowedCommands(projectRoot),
     runner: context.agentRunner,
@@ -932,20 +907,10 @@ async function executeAgentDebug(
     return { status: "failed", details: { message: "log path required" } };
   }
   const text = await readFile(logPath, "utf8");
-  const prompt = formatPrompt(
-    buildPromptEnvelope({
-      role: "debugAgent",
-      taskKind: "debug",
-      requestedScope: "agent.debug",
-      specBindings: [],
-      contextBundleRef: "agent-context",
-      evidenceRefs: [path.basename(logPath)],
-      allowedPaths: ["logs", "tests", "spec", "src"],
-      requiredValidations: [],
-      policyFlags: ["no_exec"],
-      task: text,
-    }),
-  );
+  const prompt = buildAgentDebugPrompt({
+    logText: text,
+    logRef: path.basename(logPath),
+  });
   const response = await runAgentWithPrompt({
     projectRoot,
     rolePrompt: prompt,

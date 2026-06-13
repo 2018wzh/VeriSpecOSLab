@@ -21,6 +21,7 @@ export interface ContextBundle {
   visibility_scope: "public" | "agent-only";
   spec_snippets: Array<{ kind: string; summary: string; path?: string }>;
   policy_flags: string[];
+  project_tree: string[];
 }
 
 export async function buildContextBundle(params: {
@@ -53,6 +54,7 @@ export async function buildContextBundle(params: {
 
   const resolvedSpecs = await collectSpecSnippets(params.projectRoot);
   const recentEvidence = await scanRecentEvidenceRefs(params.projectRoot);
+  const projectTree = await collectProjectTree(params.projectRoot);
 
   const currentStage = project.current_stage;
   const recommended = buildRecommendedCommands(currentStage, stages);
@@ -84,6 +86,7 @@ export async function buildContextBundle(params: {
       `effective_allowed_paths:${allowedPaths.length}`,
       `visibility:${policy.visibility_scope ?? "public"}`,
     ],
+    project_tree: projectTree,
   };
 }
 
@@ -109,6 +112,23 @@ async function collectSpecSnippets(projectRoot: string): Promise<string[]> {
 
   const files = (await readDirectory(specRoot, [".yaml", ".yml"])) as string[];
   return files.slice(0, 20);
+}
+
+async function collectProjectTree(projectRoot: string): Promise<string[]> {
+  const suffixes = [".c", ".h", ".S", ".s", ".ld", ".mk", ".toml", ".json", ".yaml", ".yml", ".txt"];
+  const roots = ["Makefile", "CMakeLists.txt", "include", "kernel", "user", "src", "tests", "spec", ".vos/toolchain.json"];
+  const out: string[] = [];
+  for (const entry of roots) {
+    const absolute = path.join(projectRoot, entry);
+    if (!existsSync(absolute)) continue;
+    if (entry === "Makefile" || entry === "CMakeLists.txt" || entry.endsWith(".json")) {
+      out.push(entry);
+      continue;
+    }
+    const files = await readDirectory(absolute, suffixes);
+    out.push(...files.map((file) => normalizeProjectPath(path.relative(projectRoot, file))));
+  }
+  return uniquePaths(out).slice(0, 200);
 }
 
 async function collectSpecBoundEditablePaths(projectRoot: string): Promise<string[]> {
