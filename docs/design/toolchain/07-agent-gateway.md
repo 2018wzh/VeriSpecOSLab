@@ -20,32 +20,32 @@
 
 ## 1. 基本原则
 
-- Agent 永远经由 `vos` 子命令工作
+- Agent 写入和验证永远经由 `vos` 确定性 gate 工作
 - 不开放任意 shell
 - LLM 不是 runtime 的强依赖
 - 所有 Agent 行为都必须进入 evidence 与协作日志
-- 在全 TypeScript 路线下，`vos agent` 子命令作为 `vos-agent` 的受控 wrapper；fixed prompt 负责角色行为与输出 schema，policy、patch gate、stage gate 和验证 DAG 由确定性 runtime 裁决
+- Agent 会话由 `AgentIdentity` 选择唯一 `role_prompt_id` 和唯一 `capability_pack_id`；policy、stage gate、验证 DAG 和 evidence 由确定性 runtime 裁决
 
-## 1.5 Wrapper 分工
+## 1.5 身份与能力包
 
-`vos agent` 子命令分为两类：
+Agent Gateway 只启动一种强项目 Agent runner。每次会话必须先解析：
 
-- 确定性命令：`agent context`、`agent apply-patch`、`agent log`
-- LLM wrapper 命令：`agent plan`、`agent generate`、`agent debug`
+- `agent_identity_id`
+- `role_prompt_id`
+- `capability_pack_id`
+- user persona / visibility scope
+- policy snapshot
 
-LLM wrapper 命令必须：
+任务身份绑定固定能力包。persona、stage 和 project policy 只能收窄能力包，不能扩权。
 
-- 先构造 `ContextBundle` 与 `PromptEnvelope`
-- 选择版本化 fixed prompt
-- 调用 `vos-agent` headless runner 或共享 runner API
-- 校验结构化输出
-- 将 prompt version、context ref、输出 ref、risk flags 写入 evidence 与 `AICollaborationLog`
+Gateway 必须记录身份、能力包、上下文引用、输出引用、risk flags 和 evidence refs。
 
-LLM wrapper 命令不得：
+Gateway 不得：
 
-- 直接应用 patch
-- 降低 policy 或验证要求
-- 把 hidden tests、staff-only rubric 或其他学生代码放入 `ContextBundle`
+- 通过提示词授予工具或路径
+- 为身份临时拼接未绑定的工具集
+- 降低 policy、stage gate 或验证要求
+- 把 hidden tests、staff-only rubric 或其他学生代码放入 agent session context
 
 ## 2. `vos agent serve`
 
@@ -65,11 +65,11 @@ LLM wrapper 命令不得：
 - 服务启动状态
 - 当前 policy 摘要
 
-## 3. `vos agent context`
+## 3. Agent Session Context
 
 职责：
 
-- 构造 `ContextBundle`
+- 构造 agent session context
 
 输入：
 
@@ -90,11 +90,11 @@ LLM wrapper 命令不得：
 - 只能返回公开与 agent-only 可见信息
 - 不返回 hidden tests 源码
 
-## 4. `vos agent plan`
+## 4. Agent Task Preview
 
 职责：
 
-- 生成 `PlanDraft`
+- 生成非执行性 task preview
 - 不改文件，不执行 patch
 
 输入：
@@ -136,31 +136,30 @@ LLM wrapper 命令不得：
 - 相关公开测试
 - 必需 invariant check
 
-## 5.5 `vos agent generate`
+## 5.5 Stage-Bounded Generation
 
 职责：
 
-- 基于当前 spec 生成 skeleton 与模块实现
-- 生成目标可以是整个当前系统、某个 stage，或某个模块
+- `implementer.v2` 基于当前 spec 生成 skeleton 与模块实现
+- 生成目标可以是当前 stage 的完整系统、某个 stage，或某个模块依赖闭包
 
 输入：
 
 - 可选 `target`
-- `--apply`
 - `--build`
 - `--run`
 
 契约：
 
-- `vos agent generate`：省略 target，默认解析为当前 `current_stage`，并生成该 stage 对应的全部 `enabled_modules`
-- `vos agent generate <module>`：生成该模块及其依赖闭包
-- `vos agent generate <stage>`：生成该 stage 对应的完整系统
+- 省略 target 时，默认解析为当前 `current_stage`，并生成该 stage 对应的全部 `enabled_modules`
+- 传入 module 时，生成该模块及其依赖闭包
+- 传入 stage 时，生成该 stage 对应的完整系统
 
 约束：
 
 - 默认“整个系统”不是单独 schema 字段，而是由当前 stage 的架构组合结果导出
-- `--build` 依赖 `--apply`
 - `--run` 依赖 `--build`
+- 不得生成未来阶段模块或绕过必需 SpecPatch
 
 ## 6. `vos agent log`
 
@@ -182,4 +181,4 @@ LLM wrapper 命令不得：
 
 - [08-evidence-reporting-and-ci.md](./08-evidence-reporting-and-ci.md)
 - [09-roadmap-and-acceptance.md](./09-roadmap-and-acceptance.md)
-- [../agent.md](../agent.md)
+- [../agent/README.md](../agent/README.md)

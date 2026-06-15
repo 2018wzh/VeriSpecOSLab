@@ -39,6 +39,7 @@ vos stage show
 vos spec lint spec/modules/kernel/memory/ops/kalloc.yaml
 vos arch lint spec/architecture/seed.yaml
 vos arch derive-tests spec/architecture/seed.yaml
+vos build generate
 vos build
 vos run qemu
 vos test
@@ -83,7 +84,7 @@ Spec -> Agent -> Patch -> Build -> Test -> Verify -> Evidence -> Feedback
 `VOS Runtime` 明确不做：
 
 ```text
-1. 不提供“一键生成完整 OS”。
+1. 不提供越过当前 StageGate 的完整系统生成。
 2. 不允许无 Spec 直接生成核心模块实现。
 3. 不暴露 hidden tests 源码、mutation 点和 anti-gaming 规则。
 4. 不替代教师评分策略。

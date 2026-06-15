@@ -185,13 +185,13 @@ vos build (工具无关的执行和证据采集)
 
 - **Spec 是设计真相**，Makefile/CMake/etc 是实现细节
 - **多生成器**：从同一 spec 可生成多种工具链配置
-- **输出路径受 spec 约束**：`build.allowed_output_path` 声明 agent 允许写入哪些本地构建系统文件
-- **当前实现中生成在 agent 侧完成**：`vos agent generate --apply` 生成并写入本地构建系统，`vos build` 只执行 `.vos/toolchain.json` 中登记的当前构建系统
+- **输出路径受 spec 约束**：`build.allowed_output_path` 声明 `vos build generate` 允许物化哪些本地构建系统文件
+- **构建系统由 VOS 确定性生成**：Agent 修改 `ToolchainSpec`，`vos build generate` 物化本地构建系统和 `.vos/toolchain.json`，`vos build` 只执行登记的当前 manifest
 
 ### 9.1 `allowed_output_path`
 
-`build.allowed_output_path` 用于声明“本地 agent 可以生成哪些构建系统文件”。  
-它既约束 prompt 输出，也约束落盘前和执行前的本地白名单校验。
+`build.allowed_output_path` 用于声明 `vos build generate` 可以物化哪些构建系统文件。
+它约束生成器输出、落盘前校验和执行前 manifest 校验。
 
 ```yaml
 build:
@@ -204,17 +204,17 @@ build:
 
 当前实现中：
 
-- agent 只能写入这份列表中的路径
+- `vos build generate` 只能写入这份列表中的路径
 - `.vos/toolchain.json` 里的 `files` 也必须属于这份列表
-- 若列表为空，agent 会拒绝生成构建系统，`vos build` 也会拒绝执行
+- 若列表为空，`vos build generate` 会拒绝物化构建系统，`vos build` 也会拒绝执行
 
 ### 9.2 当前使用模式
 
-**模式 A：agent 生成后执行（推荐）**
+**模式 A：确定性物化后执行（推荐）**
 ```bash
-$ vos agent generate --apply
+$ vos build generate
 $ vos build
-# agent 根据 spec 生成并写入本地构建系统
+# build generate 根据 ToolchainSpec 写入本地构建系统和 .vos/toolchain.json
 # build 读取 .vos/toolchain.json 并执行
 ```
 

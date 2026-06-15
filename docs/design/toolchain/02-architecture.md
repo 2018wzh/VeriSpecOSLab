@@ -25,7 +25,7 @@
 IDE / Web / CLI Agent
         |
         v
-OpenAI-compatible Agent Gateway
+Agent Identity Gateway
         |
         v
 Cloud Spec Service
@@ -132,21 +132,21 @@ VOS Runtime
 
 输入：
 
-- `ContextBundle`
+- `AgentSession`
 - `DiagnosticReport`
 - patch 文件
 - policy
 
 输出：
 
-- `PlanDraft`
+- changed targets
 - patch 应用 verdict
 - 本地 OpenAI-compatible 响应
 
 职责：
 
-- 构造受控上下文
-- 暴露 `agent` 子命令
+- 解析 AgentIdentity 与 CapabilityPack
+- 构造受控上下文和 policy snapshot
 - 拦截越权行为
 
 ## 3. 主数据流

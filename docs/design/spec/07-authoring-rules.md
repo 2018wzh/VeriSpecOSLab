@@ -26,9 +26,9 @@
 
 ## 5. LLM 使用规则
 
-1. Agent 生成 patch 前，必须绑定至少一个相关 `OperationContract`。
+1. Agent 写入核心实现前，必须绑定相关 `ModuleSpec`、`OperationContract` 或 `codegen.targets`。
 2. Agent 不应在缺少核心字段时直接补完整实现。
-3. Agent 生成的 patch 必须能说明修改对应哪条 Spec 条款。
+3. Agent 产生的写入必须能说明修改对应哪条 Spec 条款。
 4. Agent 不得通过删除测试、关闭检查器或绕过权限来“满足” Spec。
 
 ## 6. 最小落地建议

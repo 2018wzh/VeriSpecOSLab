@@ -125,9 +125,25 @@ POST /api/projects/{projectId}/freeze
 
 - `project_id`
 - `commit_sha`
+- `parent_sha`
 - `branch`
 - `stage`
 - `trigger_actor`
+- clean tree gate result
+- `.vos/commit-ledger.jsonl` entry ref
+
+提交只能绑定当前 `HEAD` commit。提交前必须确认工作树干净，定义为：
+
+```text
+git status --porcelain --untracked-files=all
+```
+
+输出为空；`.gitignore` 已排除的 build/cache/run artifact 不计入 dirty。
+平台不得接收未提交文件、未跟踪文件或本地 `.vos/runs/` 作为提交输入。
+
+Agent commit 和 human commit 都必须进入同一条 ledger 链。human commit 允许
+出现在两次 VOS 操作之间，但在下一次 `vos build generate`、`vos build` 或
+`vos submit pack` 前必须补齐协作记录，说明修改意图以及是否基于 Agent 输出。
 
 ### 6.2 冻结流程
 
@@ -135,6 +151,8 @@ POST /api/projects/{projectId}/freeze
 teacher or policy freeze
   -> reject mutable pipeline triggers
   -> snapshot visible rules
+  -> require clean tree
+  -> validate commit ledger
   -> snapshot target commit
   -> hand off to Judge
 ```
@@ -143,6 +161,7 @@ teacher or policy freeze
 
 - 冻结提交唯一且不可变
 - 关联规则快照不可变
+- ledger 记录存在且与冻结 commit diff 一致
 - 公开反馈与评分结果可追溯
 
 ## 7. 失败模式与约束

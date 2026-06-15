@@ -52,12 +52,16 @@ report publish
 生成 `PipelinePlan` 的输入为：
 
 - `project_id`
-- `commit_sha`
+- `commit_sha`，作为唯一复现锚点
 - 当前阶段
 - 项目绑定的规则快照
 - 学生仓库当前 `spec/` 摘要
 - `ToolchainSpec` 摘要
 - 触发类型
+
+Pipeline 不接受本地未提交文件、未跟踪文件或本地 `.vos/runs/` 作为复现
+输入。所有可复现 metadata 必须来自提交历史中的 `.vos/commit-ledger.jsonl`
+或等价 tracked trailer。
 
 ## 3. 测试矩阵派生
 
@@ -106,10 +110,14 @@ POST /api/pipelines/{pipelineRunId}/cancel
 ## 5. 执行流程
 
 ```text
-load project snapshot
+checkout commit_sha
+  -> verify commit ledger
+  -> load project snapshot
   -> derive test matrix
   -> allocate runner
-  -> execute vos commands
+  -> execute vos build generate
+  -> execute vos build
+  -> execute vos verify
   -> collect evidence
   -> classify result
   -> write public summary
@@ -119,9 +127,14 @@ load project snapshot
 每步都必须保存：
 
 - 输入快照
+- `commit_sha`
+- ledger record ref
 - 开始/结束时间
 - 退出状态
 - artifact 引用
+
+`vos build generate`、`vos build` 和提交前检查都必须从 clean tree 开始。
+在平台 Runner 中，checkout 后的工作树也必须通过等价的 clean tree gate。
 
 ## 6. 失败分类
 
@@ -135,7 +148,12 @@ verification_failure
 infra_failure
 timeout
 policy_blocked
+reproducibility_error
 ```
+
+缺少 ledger 记录、ledger 与 commit diff 不匹配、提交包引用非当前 `HEAD`、
+或复现依赖未提交文件时，标记为 `policy_blocked` 或
+`reproducibility_error`。
 
 公共摘要只能暴露：
 
@@ -189,6 +207,8 @@ VeriSpecOSLab 额外生成：
 平台通过 `vos` 与 OS 项目交互，至少调用：
 
 ```text
+git checkout <commit_sha>
+vos build generate
 vos spec lint
 vos arch lint
 vos build

@@ -2,14 +2,14 @@
 
 ## 概述
 
-本文档定义当前实现中本地 Agent 与 VOS Runtime 如何从语义构建 spec 生成、执行并采集证据。
+本文档定义 VOS Runtime 如何从语义构建 spec 物化构建系统、执行并采集证据。
 
 核心流程：
 ```
 spec/toolchain/toolchain.yaml
     ↓ [vos-spec 解析与验证]
 语义构建阶段 (BuildPhaseSemantics)
-    ↓ [vos-agent 生成本地构建系统]
+    ↓ [vos build generate 物化本地构建系统]
 项目根构建系统文件 + .vos/toolchain.json
     ↓ [vos-runtime 执行]
 构建输出 + 工件
@@ -85,11 +85,11 @@ $ vos build --stage 2
 
 ### 1.2 完整命令示例
 
-**先由 agent 生成，再由 build 执行（推荐）**
+**先由 VOS 物化，再由 build 执行（推荐）**
 ```bash
-$ vos agent generate --apply
+$ vos build generate
 $ vos build
-# agent 根据 spec 生成 Makefile/xtask/CMakeLists.txt 等
+# build generate 根据 ToolchainSpec 生成 Makefile/xtask/CMakeLists.txt 等
 # build 读取 .vos/toolchain.json 并执行
 ```
 

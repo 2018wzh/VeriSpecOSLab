@@ -1,40 +1,190 @@
-# Agent Runtime 文档集
+# Agent Identity And Capability Model
 
-本目录定义 SpecLab / VeriSpecOSLab 的 Agent Runtime 内部设计。
+This directory is the single target-state Agent design for SpecLab and
+VeriSpecOSLab. The previous split-agent design was removed by
+[`ADR-001-agent-identity-capability-refactor`](../adr/ADR-001-agent-identity-capability-refactor.md).
 
-回答的问题：
+## Core Model
 
-- runtime 内部有哪些角色，它们如何协作
-- `vos-agent` 如何消费 `ContextBundle`、`PlanDraft`、验证结果和参考材料
-- prompt 如何从“描述性文档”收敛为可直接实现的 contract
-- 如何吸收 SYSSPEC / SPECFS 的方法而不把项目收窄成文件系统生成器
+The runtime exposes one strong project Agent runner. A session chooses exactly
+one task identity, and that identity is bound to exactly one capability pack.
+The system prompt defines behavior; the capability pack defines tools. They are
+resolved together and audited together.
 
-不重复定义的内容：
+```yaml
+agent_identity:
+  id:
+  role_prompt_id:
+  capability_pack_id:
+  output_contract:
+  audit_level:
+```
 
-- 本地 Spec 结构与字段真相：[`../spec/`](../spec/README.md)
-- `vos` 命令、执行 DAG、evidence 与数据模型：[`../toolchain/`](../toolchain/README.md)
-- 平台权限、治理和会话审计：[`../platform/`](../platform/README.md)
+```yaml
+capability_pack:
+  id:
+  allowed_tools:
+  allowed_vos_commands:
+  allowed_mcp_servers:
+  allowed_skills:
+  readable_context:
+  writable_targets:
+  required_gates:
+  forbidden_actions:
+```
 
-建议阅读顺序：
+The task identity is not a user persona. `Student`, `TA`, `Teacher`, `Review`,
+and `Report` personas only set visibility and policy ceilings. They can remove
+capabilities from the selected pack, but they cannot add capabilities.
 
-1. [00-overview.md](./00-overview.md)
-2. [01-runtime-roles.md](./01-runtime-roles.md)
-3. [02-context-and-retrieval.md](./02-context-and-retrieval.md)
-4. [03-prompt-contract.md](./03-prompt-contract.md)
-5. [04-specfs-inspired-generation-loop.md](./04-specfs-inspired-generation-loop.md)
-6. [05-verification-and-repair-loop.md](./05-verification-and-repair-loop.md)
-7. [06-knowledgebase-and-reference-policy.md](./06-knowledgebase-and-reference-policy.md)
-8. [07-os-specialization.md](./07-os-specialization.md)
-9. [08-audit-and-safety.md](./08-audit-and-safety.md)
-10. [09-roadmap-and-acceptance.md](./09-roadmap-and-acceptance.md)
-11. [10-typescript-cli-wrapper.md](./10-typescript-cli-wrapper.md)
-12. [11-role-parameter-catalog.md](./11-role-parameter-catalog.md)
+## Required Identities
 
-核心原则：
+| Identity | Purpose | Capability pack |
+|---|---|---|
+| `spec-author.v2` | Write and review Architecture, Module, Operation, Composition, Goal, and SpecPatch documents. | Read docs/specs, write spec targets, run `vos spec lint` and `vos arch lint`. |
+| `implementer.v2` | Implement stage-bounded code from approved specs. | Read project context, write `codegen.targets`, run build and public verification. |
+| `debugger.v2` | Diagnose build, QEMU, trace, and public verification failures. | Read logs/evidence/source, run diagnostic build/run/debug commands, no code writes. |
+| `reviewer.v2` | Review patches, evidence, risk flags, and audit records. | Read patch/spec/evidence, no implementation writes. |
+| `reporter.v2` | Produce reports and evidence maps. | Read evidence/spec/report inputs, write report targets only. |
+| `toolchain-author.v2` | Maintain build/run/debug semantics. | Write `spec/toolchain/**`, run `vos build generate` and `vos build`. |
 
-- Agent 必须以本地 `spec/` 为第一真相。
-- Agent 只通过受控 `vos` 工具工作。
-- 核心改动默认绑定 `OperationContract`，而不是自由生成。
-- 生成、验证、修复、引用都必须进入 evidence 与审计闭环。
-- 在全 TypeScript 路线下，`vos agent` 子命令作为 `vos-agent` 的受控 wrapper：fixed prompt 负责角色与输出 schema，policy、patch gate、stage gate 与 evidence 由确定性 runtime 负责。
-- 角色参数以 [`11-role-parameter-catalog.md`](./11-role-parameter-catalog.md) 为实现目录：课程身份层角色映射到 runtime role，并统一声明 fixed prompt、mode、tool、skill、MCP、schema 与审计要求。
+## Session Envelope
+
+```yaml
+agent_session:
+  agent_identity_id:
+  role_prompt_id:
+  capability_pack_id:
+  user_persona:
+  visibility_scope:
+  task_brief:
+  spec_bindings:
+  policy_snapshot_ref:
+  required_evidence:
+```
+
+Rules:
+
+1. Selecting an identity selects its single `role_prompt_id` and single
+   `capability_pack_id`.
+2. A system prompt cannot grant tools, paths, credentials, hidden material, or
+   validation authority.
+3. A capability pack cannot change the Agent's task identity or output
+   obligations.
+4. Project policy, stage gates, and persona visibility can only narrow the
+   selected capability pack.
+5. All writes, generated build systems, validation results, and audit entries
+   are produced or accepted by deterministic VOS runtime gates.
+
+## Code Generation Boundary
+
+The target-state spec schema uses `codegen.targets`; source marker regions are
+not a supported design mechanism.
+
+```yaml
+codegen:
+  targets:
+    - kind: file | symbol | module | test | build
+      path:
+      symbols:
+      owner:
+      mode: create | modify | replace
+  forbidden_changes:
+  required_followup_checks:
+```
+
+`implementer.v2` may edit only targets admitted by the active specs, project
+policy, stage gate, and persona visibility. The Agent may generate all modules
+enabled by the current stage or a requested module dependency closure. It may
+not generate future-stage modules or bypass a required SpecPatch.
+
+## Commit-Bound Reproducibility
+
+All write-generating Agent work is bounded by Git commits. The reproducible
+unit for local audit and server-side evaluation is the current `HEAD`
+`commit_sha`, not a workspace snapshot, unstaged file, untracked file, or local
+run directory.
+
+Clean tree means this command returns no output:
+
+```text
+git status --porcelain --untracked-files=all
+```
+
+Files ignored by `.gitignore`, such as build outputs, caches, QEMU run
+artifacts, and `.vos/runs/`, do not make the tree dirty.
+
+Rules:
+
+1. `implementer.v2` and `toolchain-author.v2` must pass the clean tree gate
+   before any write-generating `generate` operation.
+2. `vos build generate` and `vos build` must start from a clean tree. Build
+   evidence is therefore attributable to the current `HEAD`.
+3. A successful write-generating `generate` operation must create a VOS-managed
+   commit. The commit includes generated tracked changes and the matching
+   `.vos/commit-ledger.jsonl` entry.
+4. A no-op generate run creates no commit, but it still records a no-op run
+   record and evidence reference.
+5. `vos submit pack` and server submissions require a clean tree and submit
+   only the current `HEAD` commit.
+6. Human commits are allowed between VOS operations, but each human commit must
+   have a ledger record before the next generate, build, or submit gate passes.
+7. Agent sessions may only begin write work from a clean `HEAD`, so human draft
+   files cannot be silently mixed into Agent evidence.
+
+The tracked commit ledger is `.vos/commit-ledger.jsonl`. Each line records:
+
+```yaml
+commit_sha:
+parent_sha:
+actor: agent | human
+agent_identity_id:
+capability_pack_id:
+run_id:
+spec_refs:
+changed_targets:
+evidence_refs:
+created_at:
+collaboration_intent:
+based_on_agent_output:
+```
+
+`agent_identity_id`, `capability_pack_id`, and `run_id` are required for Agent
+commits and optional for human commits. Human commits must still record
+`collaboration_intent` and whether the change is based on Agent output.
+
+## Toolchain Boundary
+
+The Agent edits `ToolchainSpec`. VOS materializes the build system:
+
+```text
+spec/toolchain/** -> vos build generate -> build files + .vos/toolchain.json
+.vos/toolchain.json -> vos build -> evidence
+```
+
+Generated build files are deterministic artifacts. `vos build` executes the
+manifest and records evidence; it does not infer new build semantics from chat.
+
+## Audit Requirements
+
+Every Agent session records:
+
+- `agent_identity_id`
+- `role_prompt_id`
+- `capability_pack_id`
+- `commit_sha`
+- `parent_sha`
+- `.vos/commit-ledger.jsonl` record
+- user persona and visibility scope
+- policy snapshot
+- advertised tools and commands
+- loaded skills and MCP servers
+- changed targets or generated reports
+- validation and evidence refs
+- clean tree gate status
+- user accepted/rejected status
+- risk flags
+
+Risk flags include unbound writes, policy denial, hidden-context requests,
+checker bypass attempts, stage-boundary violations, schema failures, dirty tree
+gate failures, missing ledger records, and commit/evidence mismatches.

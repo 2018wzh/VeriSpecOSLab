@@ -139,8 +139,13 @@ test_obligations:
   generated:
   hidden_tags:
 
-llm_codegen:
-  editable_region:
+codegen:
+  targets:
+    - kind: file | symbol | module | test | build
+      path:
+      symbols:
+      owner:
+      mode: create | modify | replace
   forbidden_changes:
   required_followup_checks:
 ```

@@ -140,11 +140,11 @@ student-facing 输出泄露 staff-only 或 hidden 信息。
 - `PolicyError`
 - `AgentOutputError`
 
-`AgentOutputError` 只表示 fixed prompt 返回内容不满足 schema 或结构化校验失败；它不能被当作 policy 通过，也不能替代 `apply-patch` 的确定性 gate。
+`AgentOutputError` 只表示 Agent 身份输出不满足声明的 output contract 或结构化校验失败；它不能被当作 policy 通过，也不能替代写入、验证和审计的确定性 gate。
 
 ## 相关文档
 
 - [06-adapters-and-command-model.md](./06-adapters-and-command-model.md)
 - [08-evidence-reporting-and-ci.md](./08-evidence-reporting-and-ci.md)
 - [09-roadmap-and-acceptance.md](./09-roadmap-and-acceptance.md)
-- [../agent/10-typescript-cli-wrapper.md](../agent/10-typescript-cli-wrapper.md)
+- [../agent/README.md](../agent/README.md)

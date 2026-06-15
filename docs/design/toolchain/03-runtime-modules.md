@@ -30,7 +30,7 @@ vos/
     vos-evidence/
     vos-runtime/
     vos-adapter/
-    vos-agent-core/
+    vos-agent-session/
     vos-cli/
   apps/
     vos-agent/
@@ -176,12 +176,12 @@ vos/
 - `DebugAdapter`
 - `TraceAdapter`
 
-### `vos-agent-core`
+### `vos-agent-session`
 
 责任：
 
-- 实现 `agent context / plan / generate / apply-patch / debug / log` 的确定性编排
-- 构造 `ContextBundle`、`PromptEnvelope` 与 fixed prompt 输入
+- 解析 `AgentIdentity` 与其唯一绑定的 `CapabilityPack`
+- 构造 `agent_session`、上下文引用与 policy snapshot
 - 调用 `apps/vos-agent` 的 headless runner 或共享 runner API
 - 校验模型返回的结构化输出
 - 写入 `AICollaborationLog` 与 evidence
@@ -189,12 +189,12 @@ vos/
 主要输入 / 输出：
 
 - 输入：spec、logs、policy、patch、stage、recent evidence
-- 输出：`ContextBundle`、`PlanDraft`、patch proposal、`DiagnosticReport` 增强、audit record
+- 输出：context ref、agent session record、changed targets、diagnostic summary、audit record
 
 核心接口：
 
 - `ContextAssembler`
-- `PromptEnvelopeBuilder`
+- `AgentSessionResolver`
 - `AgentRunnerClient`
 - `PatchGate`
 - `AgentAuditWriter`
@@ -206,9 +206,9 @@ vos/
 - `vos-cli` 可以依赖所有 package，但 package 不反向依赖 `vos-cli`
 - `vos-runtime` 不依赖 `apps/vos-agent`
 - `vos-adapter` 消费 `ToolchainSpec`，不反向依赖 Spec authoring 文档
-- `vos-evidence` 不反向依赖 `vos-agent-core`
+- `vos-evidence` 不反向依赖 `vos-agent-session`
 - `vos-policy` 不依赖具体 adapter 实现
-- `apps/vos-agent` 可以复用 `vos-agent-core`，但不能绕过 `vos-policy` 和 `vos-evidence`
+- `apps/vos-agent` 可以复用 `vos-agent-session`，但不能绕过 `vos-policy` 和 `vos-evidence`
 
 推荐依赖图：
 
@@ -220,9 +220,9 @@ vos-cli
   -> vos-evidence
   -> vos-runtime
   -> vos-adapter
-  -> vos-agent-core
+  -> vos-agent-session
 
-vos-agent-core
+vos-agent-session
   -> vos-core
   -> vos-spec
   -> vos-policy
@@ -230,7 +230,7 @@ vos-agent-core
   -> vos-runtime
 
 apps/vos-agent
-  -> vos-agent-core
+  -> vos-agent-session
   -> vos-core
 
 apps/vos-web
@@ -242,7 +242,7 @@ apps/vos-web
 - `vos-spec`：规格与语义检查
 - `vos-runtime` / `vos-adapter`：命令执行编排
 - `vos-evidence` / `vos-policy`：证据、审计与安全边界
-- `vos-agent-core` / `apps/vos-agent`：Agent wrapper、LLM runner 与固定 prompt contract
+- `vos-agent-session` / `apps/vos-agent`：Agent identity resolution、capability packs 与 LLM runner
 - `apps/vos-web`：课程平台前端
 
 ## 相关文档
@@ -250,4 +250,4 @@ apps/vos-web
 - [04-data-model.md](./04-data-model.md)
 - [05-runtime-and-concurrency.md](./05-runtime-and-concurrency.md)
 - [06-adapters-and-command-model.md](./06-adapters-and-command-model.md)
-- [../agent/10-typescript-cli-wrapper.md](../agent/10-typescript-cli-wrapper.md)
+- [../agent/README.md](../agent/README.md)

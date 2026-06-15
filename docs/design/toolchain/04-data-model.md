@@ -19,7 +19,7 @@
 - `vos-runtime`
 - `vos-adapter`
 - `vos-evidence`
-- `vos-agent-core`
+- `vos-agent-session`
 
 ## 1. `NormalizedSpecBundle`
 
@@ -158,41 +158,43 @@
 - 学生 CLI
 - `vos-agent`
 
-## 6. `ContextBundle`
+## 6. `AgentSession`
 
 用途：
 
-- 为 Agent 暴露受控上下文，而不是整个仓库快照
+- 记录一次 Agent 身份、能力包、上下文和策略快照的绑定
 
 字段：
 
-- `requested_scope`
-- `resolved_specs`
-- `recent_evidence`
-- `allowed_paths`
-- `recommended_commands`
+- `agent_identity_id`
+- `role_prompt_id`
+- `capability_pack_id`
+- `user_persona`
 - `visibility_scope`
+- `context_ref`
+- `policy_snapshot_ref`
+- `required_evidence`
 
 来源：
 
-- `vos-agent`
+- `vos-agent-session`
 
 消费者：
 
 - `agent context`
 - `agent serve`
 
-## 7. `PlanDraft`
+## 7. `AgentTaskRecord`
 
 用途：
 
-- 表示 Agent 的非执行性计划输出
+- 表示 Agent 的任务输出、写入目标和验证要求
 
 字段：
 
 - `task`
 - `related_specs`
-- `suspected_files`
+- `changed_targets`
 - `required_validations`
 - `notes`
 

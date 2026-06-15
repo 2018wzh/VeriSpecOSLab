@@ -102,8 +102,8 @@ ToolchainSpec (语义: 源文件、编译标志、链接脚本...)
 
 Agent 在本体系中的角色是“受控协作开发者”，而不是自由代码生成器。要求：
 
-- Agent 通过 `vos agent *` 与 `vos` 子命令工作
-- patch 必须绑定本地 spec 或 `SpecPatch`
+- Agent 会话必须选择一个 `AgentIdentity`，并使用它唯一绑定的 `CapabilityPack`
+- 写入必须绑定本地 spec、`SpecPatch` 或 `codegen.targets`
 - 关键改动必须触发最小验证集
 - 所有 Agent 行为进入审计日志
 
@@ -112,6 +112,7 @@ Agent 不得：
 - 规避 spec-first 和 validation-first 约束
 - 关闭检查器或删除测试
 - 以“回答文本”替代 evidence
+- 通过提示词扩张工具、路径或可见性
 
 ## 5. 角色与权限
 

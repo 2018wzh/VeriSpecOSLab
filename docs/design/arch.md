@@ -69,13 +69,10 @@ VS Code / JetBrains / Cursor / Continue / Cline / Aider
         v
 +--------------------------------+
 | VeriSpecOSLab Agent Runtime    |
-| - ArchitectureSpecAssistant    |
-| - SpecAssistant                |
-| - CodeGenAgent / SpecCompiler  |
-| - SpecValidatorAgent           |
-| - KernelDebugAgent             |
-| - TestGenAgent                 |
-| - ReviewAgent                  |
+| - one project Agent runner     |
+| - AgentIdentity registry       |
+| - CapabilityPack registry      |
+| - policy / evidence gates      |
 +--------------------------------+
         |
         v
@@ -260,7 +257,7 @@ Agent 不直接猜测项目命令，而是通过 `vos` 调用标准工具链。
 
 ---
 
-## 4. OpenAI-Compatible Agent Gateway
+## 4. Agent Identity Gateway
 
 Agent Gateway 是 IDE 与内部 Agent Runtime 之间的适配层。
 
@@ -280,11 +277,7 @@ POST /v1/responses   可选
 {
   "object": "list",
   "data": [
-    { "id": "verispecoslab-agent", "object": "model" },
-    { "id": "architecture-spec-assistant", "object": "model" },
-    { "id": "spec-assistant", "object": "model" },
-    { "id": "kernel-debugger", "object": "model" },
-    { "id": "spec-validator", "object": "model" }
+    { "id": "verispecoslab-agent", "object": "model" }
   ]
 }
 ```
@@ -306,7 +299,7 @@ Agent Gateway 不只是模型转发器，而是项目感知控制层。
 ```text
 1. 接收 IDE 请求
 2. 识别当前项目、文件、选区、任务类型
-3. 注入课程系统提示词、项目规范和 AI 使用策略
+3. 解析 AgentIdentity、CapabilityPack、项目规范和 AI 使用策略
 4. 检索相关 specs / code / tests / logs
 5. 调用内部 Agent Runtime
 6. 根据权限调用工具
@@ -319,154 +312,32 @@ Agent Gateway 不只是模型转发器，而是项目感知控制层。
 
 ## 5. Agent Runtime 设计
 
-Agent Runtime 内部由多个角色组成。对外可以统一暴露为 `verispecoslab-agent`，对内按任务路由。
+Agent Runtime 只有一个强项目 Agent runner。对外暴露统一模型，对内由
+`AgentIdentity` 选择任务身份，并由该身份唯一绑定的 `CapabilityPack`
+限制工具、上下文、写入目标和验证门禁。
 
-### 5.1 ArchitectureSpecAssistant
-
-用于帮助学生编写、检查和完善架构设计规格。
-
-能力：
+目标身份：
 
 ```text
-- 引导学生从内核组织、执行模型、保护模型、通信模型、资源模型等维度描述架构
-- 检查是否只是贴 Linux/L4/NT/Plan9 等标签而缺少具体语义
-- 检查架构机制组合是否存在冲突
-- 检查 reference_systems 是否说明 borrowed / modified / rejected concepts
-- 检查是否有 non-goals
-- 检查架构设计是否绑定测试、不变量和 benchmark
-- 生成 ArchitectureCompositionSpec 草案
+spec-author.v2
+implementer.v2
+debugger.v2
+reviewer.v2
+reporter.v2
+toolchain-author.v2
 ```
 
-### 5.2 SpecAssistant
-
-用于帮助学生编写、整理、检查模块规格。
-
-能力：
+强制规则：
 
 ```text
-- 根据模块草案生成规格模板
-- 检查 pre/postcondition 是否缺失
-- 检查 invariant 是否可测试
-- 检查 rely/guarantee 是否匹配
-- 检查并发规则是否模糊
-- 将自然语言设计转换为结构化 spec
-```
-
-### 5.3 CodeGenAgent / SpecCompiler
-
-用于根据规格生成或修改代码。
-
-约束：
-
-```text
-- 不允许脱离 spec 生成核心模块
-- 不允许一次性生成完整 OS
-- 必须指出对应的 spec 条款
-- 必须生成测试建议
-- 必须说明可能破坏的不变量
-- 对架构层变化，必须先更新当前 ArchitectureSlice、SpecPatch 或 ArchitectureCompositionSpec
-```
-
-复杂并发模块采用两阶段生成：
-
-```text
-Phase 1: 生成顺序逻辑
-Phase 2: 根据 ConcurrencySpec 添加锁、原子操作、中断关闭、引用计数等并发控制
-```
-
-### 5.4 SpecValidatorAgent
-
-用于检查实现是否满足规格。
-
-工具链：
-
-```text
-- spec_lint
-- arch_lint
-- 静态检查
-- 编译检查
-- 单元测试
-- QEMU regression test
-- invariant checker
-- syscall / IPC / object trace compare
-- fuzz test 可选
-```
-
-工作流：
-
-```text
-生成代码
-  ↓
-编译 / 测试 / 规格检查
-  ↓
-失败则提取错误
-  ↓
-反馈给 CodeGenAgent
-  ↓
-重新生成 patch
-```
-
-### 5.5 KernelDebugAgent
-
-用于解释 OS 开发错误。
-
-典型输入：
-
-```text
-serial.log
-qemu.log
-gdb backtrace
-objdump
-readelf
-page table dump
-trap frame dump
-```
-
-典型问题：
-
-```text
-- QEMU 启动失败
-- triple fault / page fault / prefetch abort
-- trap frame 分析
-- linker script 错误
-- ELF 加载错误
-- syscall 返回值错误
-- deadlock / missed wakeup
-- 用户态地址访问错误
-```
-
-### 5.6 TestGenAgent
-
-用于根据规格生成测试。
-
-测试类别：
-
-```text
-- 正常路径测试
-- 错误路径测试
-- 边界条件测试
-- precondition violation 测试
-- postcondition 检查
-- invariant preservation 测试
-- concurrency stress test
-- architecture composition test
-```
-
-### 5.7 ReviewAgent
-
-用于教学评价与代码审查。
-
-检查重点：
-
-```text
-- 是否直接 AI 代写
-- 是否缺少规格依据
-- 是否删除测试绕过失败
-- 是否破坏 invariant checker
-- 是否存在未解释的复杂代码
-- 是否有 AICollaborationLog
-- 是否存在架构标签化但缺少机制说明
-- 是否存在架构组合但缺少 cross-component invariant
+- 身份选择同时决定 role_prompt_id 与 capability_pack_id
+- persona / stage / project policy 只能收窄能力包
+- system prompt 不能授予工具、路径、hidden context 或验证 authority
+- capability pack 不能改变任务身份
+- 写入必须绑定 spec、SpecPatch 或 codegen.targets
+- 当前 stage 可以生成完整 enabled_modules 或模块依赖闭包
+- 不得生成未来阶段模块、删除测试、关闭 checker 或绕过权限
+- 所有写入、验证、审计由 VOS runtime 确定性执行
 ```
 
 ---
@@ -849,6 +720,7 @@ Agent：
 
 ```text
 - 根据已有规格补全模块
+- 在当前 StageGate 内生成完整 enabled_modules 或模块依赖闭包
 - 根据测试失败修复代码
 - 生成单元测试
 - 解释异常日志
@@ -872,7 +744,7 @@ Agent：
 ### 10.3 禁止
 
 ```text
-- 一次性生成完整 OS
+- 越过当前 StageGate 生成未来阶段或未批准模块
 - 删除测试来通过 CI
 - 移除 invariant checker
 - 绕过权限检查
@@ -1249,7 +1121,8 @@ AICollaborationLog.md
     "spec/modules/kernel/memory/ops/kalloc.yaml",
     "src/kernel/mm/page_allocator.c"
   ],
-  "agent": "CodeGenAgent",
+  "agent_identity_id": "implementer.v2",
+  "capability_pack_id": "implementer-tools.v2",
   "model": "verispecoslab-agent",
   "spec_used": true,
   "tools": [
@@ -1338,11 +1211,14 @@ MVP 目标：
       run_spec_lint
       run_arch_lint
       derive_arch_tests
-  - 支持 4 个 Agent：
-      ArchitectureSpecAssistant
-      SpecAssistant
-      CodeGenAgent
-      DebugAgent
+  - 支持统一项目 Agent runner
+  - 支持 6 个 AgentIdentity：
+      spec-author.v2
+      implementer.v2
+      debugger.v2
+      reviewer.v2
+      reporter.v2
+      toolchain-author.v2
   - 自动记录 AICollaborationLog
 ```
 
@@ -1357,11 +1233,9 @@ agent/
     router.py
 
   runtime/
-    agents/
-      architecture_spec_assistant.py
-      spec_assistant.py
-      codegen.py
-      debug.py
+    identities/
+      agent_identity_registry.ts
+      capability_pack_registry.ts
     tools/
       fs.py
       build.py
@@ -1440,4 +1314,3 @@ Spec / Code 修正
 ```
 
 同时，个性化架构不再通过固定 `*-like profile` 表达，而是通过 `ArchitectureSeed`、`ArchitectureSlice`、`ArchitectureCompositionSpec` 和 `FinalArchitectureSynthesis` 精确描述。平台根据具体架构特性和组合不变量自动推导测试矩阵，从而既支持自由组合式系统设计，又能考察学生对架构的理解、掌控和验证能力。
-

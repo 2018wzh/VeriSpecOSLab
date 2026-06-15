@@ -23,11 +23,11 @@
 
 本文件只定义平台视角下的 Agent 接口、权限与审计，不重复定义：
 
-- Agent Runtime 内部 prompt
+- Agent identity 与 capability pack 目录
 - 代码索引实现
 - workspace 内工具实现细节
 
-这些由 [`../arch.md`](../arch.md) 负责。
+这些由 [`../agent/`](../agent/README.md) 和 [`../arch.md`](../arch.md) 负责。
 
 ## 2. 对外接口
 
@@ -54,7 +54,9 @@ POST /api/projects/{projectId}/agent-policy/recompute
 
 - `user_id`
 - `project_id`
-- `role`
+- user persona
+- `agent_identity_id`
+- `capability_pack_id`
 - 当前阶段
 - 可见性投影
 - 工具策略快照
@@ -75,13 +77,13 @@ POST /api/projects/{projectId}/agent-policy/recompute
 
 ## 4. 权限矩阵
 
-| 能力 | 学生 Agent | 教师 Agent | Review Agent |
+| 能力 | Student persona | Teacher persona | Review persona |
 |---|---:|---:|---:|
 | 读本项目公开 spec | 允许 | 允许 | 允许 |
 | 读本项目 repo | 允许 | 允许 | 允许 |
 | 读公开 pipeline 摘要 | 允许 | 允许 | 允许 |
 | 读 hidden rules | 禁止 | 受控允许 | 受控允许 |
-| 生成 patch 建议 | 允许 | 可选 | 可选 |
+| 选择实现身份 | 允许 | 可选 | 可选 |
 | 直接执行 workspace 工具 | 受控允许 | 受控允许 | 受控允许 |
 | 修改评分 | 禁止 | 禁止 | 禁止 |
 | 读他人项目 | 禁止 | 课程内受控 | 课程内受控 |
@@ -90,7 +92,7 @@ POST /api/projects/{projectId}/agent-policy/recompute
 
 平台必须对 Agent 工具调用执行以下控制：
 
-- 工具白名单
+- 身份绑定能力包
 - 参数校验
 - 项目路径隔离
 - 触发者身份校验
@@ -100,9 +102,10 @@ POST /api/projects/{projectId}/agent-policy/recompute
 
 - 会话 id
 - 模型 id
+- Agent identity 与 capability pack
 - 读取的上下文摘要
 - 调用的工具与参数
-- 是否产生 patch
+- 是否产生写入或报告
 - 学生是否接受
 
 ## 6. 审计要求
@@ -111,6 +114,7 @@ POST /api/projects/{projectId}/agent-policy/recompute
 
 - 请求时间
 - 用户与项目
+- Agent identity 与 capability pack
 - 上下文投影摘要
 - 工具调用列表
 - 输出摘要
