@@ -70,12 +70,13 @@ test_obligations:
     - uvmcreate_zeroed
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: kernel/memory.c
-    start_marker: "// VOS-EDIT-START:kernel/memory.uvmcreate"
-    end_marker: "// VOS-EDIT-END:kernel/memory.uvmcreate"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/memory.c
+      symbols: [uvmcreate]
+      owner: kernel/memory
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

@@ -77,12 +77,13 @@ test_obligations:
     - uvmcopy_out_of_memory
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: kernel/memory.c
-    start_marker: "// VOS-EDIT-START:kernel/memory.uvmcopy"
-    end_marker: "// VOS-EDIT-END:kernel/memory.uvmcopy"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/memory.c
+      symbols: [uvmcopy]
+      owner: kernel/memory
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

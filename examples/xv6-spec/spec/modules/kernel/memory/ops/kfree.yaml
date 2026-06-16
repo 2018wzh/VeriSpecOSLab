@@ -79,12 +79,13 @@ test_obligations:
     - kfree_double_free_detection
     - kfree_use_after_free
 
-llm_codegen:
-  editable_region:
-    file: kernel/memory.c
-    start_marker: "// VOS-EDIT-START:kernel/memory.kfree"
-    end_marker: "// VOS-EDIT-END:kernel/memory.kfree"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/memory.c
+      symbols: [kfree]
+      owner: kernel/memory
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

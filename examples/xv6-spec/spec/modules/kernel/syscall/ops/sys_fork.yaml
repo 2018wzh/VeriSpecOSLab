@@ -76,12 +76,13 @@ test_obligations:
     - sys_fork_failure
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: kernel/syscall.c
-    start_marker: "// VOS-EDIT-START:kernel/syscall.sys_fork"
-    end_marker: "// VOS-EDIT-END:kernel/syscall.sys_fork"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/syscall.c
+      symbols: [sys_fork]
+      owner: kernel/syscall
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

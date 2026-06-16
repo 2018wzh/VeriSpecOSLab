@@ -76,12 +76,13 @@ test_obligations:
     - fetchstr_maxlen_boundary
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: kernel/syscall.c
-    start_marker: "// VOS-EDIT-START:kernel/syscall.fetchstr"
-    end_marker: "// VOS-EDIT-END:kernel/syscall.fetchstr"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/syscall.c
+      symbols: [fetchstr]
+      owner: kernel/syscall
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

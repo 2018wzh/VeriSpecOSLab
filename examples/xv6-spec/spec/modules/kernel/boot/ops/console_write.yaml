@@ -71,12 +71,13 @@ test_obligations:
     - console_write_no_null_terminator
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: kernel/boot.c
-    start_marker: "// VOS-EDIT-START:kernel/boot.console_write"
-    end_marker: "// VOS-EDIT-END:kernel/boot.console_write"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/boot.c
+      symbols: [console_write]
+      owner: kernel/boot
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

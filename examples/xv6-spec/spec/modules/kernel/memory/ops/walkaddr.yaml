@@ -73,12 +73,13 @@ test_obligations:
     - walkaddr_invalid_va
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: kernel/memory.c
-    start_marker: "// VOS-EDIT-START:kernel/memory.walkaddr"
-    end_marker: "// VOS-EDIT-END:kernel/memory.walkaddr"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/memory.c
+      symbols: [walkaddr]
+      owner: kernel/memory
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

@@ -67,12 +67,13 @@ test_obligations:
   generated: []
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: kernel/process.c
-    start_marker: "// VOS-EDIT-START:kernel/process.proc_init"
-    end_marker: "// VOS-EDIT-END:kernel/process.proc_init"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/process.c
+      symbols: [proc_init]
+      owner: kernel/process
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

@@ -99,12 +99,13 @@ test_obligations:
   generated: []
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: kernel/boot.c
-    start_marker: "// VOS-EDIT-START:kernel/boot.kernel_main"
-    end_marker: "// VOS-EDIT-END:kernel/boot.kernel_main"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/boot.c
+      symbols: [kernel_main]
+      owner: kernel/boot
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

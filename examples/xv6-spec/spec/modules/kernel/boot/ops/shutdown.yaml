@@ -66,12 +66,13 @@ test_obligations:
     - qemu_exits_on_shutdown
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: kernel/boot.c
-    start_marker: "// VOS-EDIT-START:kernel/boot.shutdown"
-    end_marker: "// VOS-EDIT-END:kernel/boot.shutdown"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/boot.c
+      symbols: [shutdown]
+      owner: kernel/boot
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

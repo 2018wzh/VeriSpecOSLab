@@ -73,12 +73,13 @@ test_obligations:
   hidden_tags:
     - copyin_race
 
-llm_codegen:
-  editable_region:
-    file: kernel/memory.c
-    start_marker: "// VOS-EDIT-START:kernel/memory.copyin"
-    end_marker: "// VOS-EDIT-END:kernel/memory.copyin"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/memory.c
+      symbols: [copyin]
+      owner: kernel/memory
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

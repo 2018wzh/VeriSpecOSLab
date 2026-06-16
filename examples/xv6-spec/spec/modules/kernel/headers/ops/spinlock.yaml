@@ -79,12 +79,13 @@ test_obligations:
   generated: []
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: include/spinlock.h
-    start_marker: "/* VOS-EDIT-START:kernel/headers.spinlock */"
-    end_marker: "/* VOS-EDIT-END:kernel/headers.spinlock */"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: file
+      path: include/spinlock.h
+      symbols: [generate_spinlock_h]
+      owner: kernel/headers
+      mode: create
   forbidden_changes:
     - do not modify files outside include/
   required_followup_checks:

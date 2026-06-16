@@ -81,12 +81,13 @@ test_obligations:
   generated: []
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: user/user.ld
-    start_marker: "/* VOS-EDIT-START:user/programs.user_ld */"
-    end_marker: "/* VOS-EDIT-END:user/programs.user_ld */"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: file
+      path: user/user.ld
+      symbols: [generate_user_ld]
+      owner: user/programs
+      mode: create
   forbidden_changes:
     - do not modify files outside user/
   required_followup_checks:

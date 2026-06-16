@@ -97,12 +97,13 @@ test_obligations:
   generated: []
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: include/elf.h
-    start_marker: "/* VOS-EDIT-START:kernel/headers.elf */"
-    end_marker: "/* VOS-EDIT-END:kernel/headers.elf */"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: file
+      path: include/elf.h
+      symbols: [generate_elf_h]
+      owner: kernel/headers
+      mode: create
   forbidden_changes:
     - do not modify files outside include/
   required_followup_checks:

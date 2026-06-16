@@ -152,12 +152,13 @@ test_obligations:
   generated: []
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: include/riscv.h
-    start_marker: "/* VOS-EDIT-START:kernel/headers.riscv */"
-    end_marker: "/* VOS-EDIT-END:kernel/headers.riscv */"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: file
+      path: include/riscv.h
+      symbols: [generate_riscv_h]
+      owner: kernel/headers
+      mode: create
   forbidden_changes:
     - do not modify files outside include/
   required_followup_checks:

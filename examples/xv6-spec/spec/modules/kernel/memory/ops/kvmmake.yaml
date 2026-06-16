@@ -76,12 +76,13 @@ test_obligations:
     - kvmmake_page_table_depth
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: kernel/memory.c
-    start_marker: "// VOS-EDIT-START:kernel/memory.kvmmake"
-    end_marker: "// VOS-EDIT-END:kernel/memory.kvmmake"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/memory.c
+      symbols: [kvmmake]
+      owner: kernel/memory
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

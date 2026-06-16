@@ -98,12 +98,13 @@ test_obligations:
   generated: []
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: include/memlayout.h
-    start_marker: "/* VOS-EDIT-START:kernel/headers.memlayout */"
-    end_marker: "/* VOS-EDIT-END:kernel/headers.memlayout */"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: file
+      path: include/memlayout.h
+      symbols: [generate_memlayout_h]
+      owner: kernel/headers
+      mode: create
   forbidden_changes:
     - do not modify files outside include/
   required_followup_checks:

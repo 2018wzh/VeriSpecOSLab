@@ -68,12 +68,13 @@ test_obligations:
     - putchar_buffer_roundtrip
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: kernel/boot.c
-    start_marker: "// VOS-EDIT-START:kernel/boot.console_putchar"
-    end_marker: "// VOS-EDIT-END:kernel/boot.console_putchar"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/boot.c
+      symbols: [console_putchar]
+      owner: kernel/boot
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

@@ -149,12 +149,13 @@ test_obligations:
   generated: []
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: include/defs.h
-    start_marker: "/* VOS-EDIT-START:kernel/headers.defs */"
-    end_marker: "/* VOS-EDIT-END:kernel/headers.defs */"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: file
+      path: include/defs.h
+      symbols: [generate_defs_h]
+      owner: kernel/headers
+      mode: create
   forbidden_changes:
     - do not modify files outside include/
   required_followup_checks:

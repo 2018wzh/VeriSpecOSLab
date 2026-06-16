@@ -72,12 +72,13 @@ test_obligations:
   generated: []
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: user/init.c
-    start_marker: "/* VOS-EDIT-START:user/programs.init */"
-    end_marker: "/* VOS-EDIT-END:user/programs.init */"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: user/init.c
+      symbols: [generate_init_c]
+      owner: user/programs
+      mode: create
   forbidden_changes:
     - do not modify files outside user/
   required_followup_checks:

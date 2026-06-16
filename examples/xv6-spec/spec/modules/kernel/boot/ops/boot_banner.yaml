@@ -70,12 +70,13 @@ test_obligations:
   hidden_tags:
     - banner_does_not_panic
 
-llm_codegen:
-  editable_region:
-    file: kernel/boot.c
-    start_marker: "// VOS-EDIT-START:kernel/boot.boot_banner"
-    end_marker: "// VOS-EDIT-END:kernel/boot.boot_banner"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/boot.c
+      symbols: [boot_banner]
+      owner: kernel/boot
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

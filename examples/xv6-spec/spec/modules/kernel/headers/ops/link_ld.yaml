@@ -90,12 +90,13 @@ test_obligations:
   generated: []
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: kernel/link.ld
-    start_marker: "/* VOS-EDIT-START:kernel/headers.link_ld */"
-    end_marker: "/* VOS-EDIT-END:kernel/headers.link_ld */"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: file
+      path: kernel/link.ld
+      symbols: [generate_link_ld]
+      owner: kernel/headers
+      mode: create
   forbidden_changes:
     - do not modify files outside kernel/
   required_followup_checks:

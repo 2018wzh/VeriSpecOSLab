@@ -109,12 +109,13 @@ test_obligations:
   generated: []
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: include/proc.h
-    start_marker: "/* VOS-EDIT-START:kernel/headers.proc */"
-    end_marker: "/* VOS-EDIT-END:kernel/headers.proc */"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: file
+      path: include/proc.h
+      symbols: [generate_proc_h]
+      owner: kernel/headers
+      mode: create
   forbidden_changes:
     - do not modify files outside include/
   required_followup_checks:

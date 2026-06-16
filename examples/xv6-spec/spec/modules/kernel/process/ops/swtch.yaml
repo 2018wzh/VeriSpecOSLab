@@ -70,12 +70,13 @@ test_obligations:
   generated: []
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: kernel/swtch.S
-    start_marker: "# VOS-EDIT-START:kernel/process.swtch"
-    end_marker: "# VOS-EDIT-END:kernel/process.swtch"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/swtch.S
+      symbols: [swtch]
+      owner: kernel/process
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

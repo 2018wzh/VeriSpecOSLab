@@ -92,12 +92,13 @@ test_obligations:
   hidden_tags:
     - sys_write_overflow
 
-llm_codegen:
-  editable_region:
-    file: kernel/syscall.c
-    start_marker: "// VOS-EDIT-START:kernel/syscall.sys_write"
-    end_marker: "// VOS-EDIT-END:kernel/syscall.sys_write"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/syscall.c
+      symbols: [sys_write]
+      owner: kernel/syscall
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

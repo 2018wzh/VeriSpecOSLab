@@ -71,12 +71,13 @@ test_obligations:
   hidden_tags:
     - devintr_timer_frequency
 
-llm_codegen:
-  editable_region:
-    file: kernel/trap.c
-    start_marker: "// VOS-EDIT-START:kernel/trap.devintr"
-    end_marker: "// VOS-EDIT-END:kernel/trap.devintr"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/trap.c
+      symbols: [devintr]
+      owner: kernel/trap
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

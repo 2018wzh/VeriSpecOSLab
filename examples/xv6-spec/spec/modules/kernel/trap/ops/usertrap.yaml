@@ -85,12 +85,13 @@ test_obligations:
   hidden_tags:
     - usertrap_nesting
 
-llm_codegen:
-  editable_region:
-    file: kernel/trap.c
-    start_marker: "// VOS-EDIT-START:kernel/trap.usertrap"
-    end_marker: "// VOS-EDIT-END:kernel/trap.usertrap"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/trap.c
+      symbols: [usertrap]
+      owner: kernel/trap
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

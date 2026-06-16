@@ -76,12 +76,13 @@ test_obligations:
     - uvmunmap_missing_pte_panic
   hidden_tags: []
 
-llm_codegen:
-  editable_region:
-    file: kernel/memory.c
-    start_marker: "// VOS-EDIT-START:kernel/memory.uvmunmap"
-    end_marker: "// VOS-EDIT-END:kernel/memory.uvmunmap"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/memory.c
+      symbols: [uvmunmap]
+      owner: kernel/memory
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files

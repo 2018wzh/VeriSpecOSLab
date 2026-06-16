@@ -77,12 +77,13 @@ test_obligations:
     - kalloc_race
     - kalloc_memory_leak
 
-llm_codegen:
-  editable_region:
-    file: kernel/memory.c
-    start_marker: "// VOS-EDIT-START:kernel/memory.kalloc"
-    end_marker: "// VOS-EDIT-END:kernel/memory.kalloc"
-    create_if_missing: true
+codegen:
+  targets:
+    - kind: symbol
+      path: kernel/memory.c
+      symbols: [kalloc]
+      owner: kernel/memory
+      mode: create
   forbidden_changes:
     - do not modify code outside the marked region
     - do not create helper files
