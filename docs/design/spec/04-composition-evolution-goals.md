@@ -64,9 +64,17 @@ negative_tradeoff_checks:
 evidence_required:
 ```
 
-## 3. SpecPatch
+## 3. Commit-backed SpecPatch
 
 `SpecPatch` 用于表达设计演化，要求先改 Spec 再改代码。
+
+SpecPatch 不是裸 diff，也不应被 commit message 完全替代。推荐模型是
+commit-backed SpecPatch：
+
+- `SpecPatch` 是语义 envelope，记录演化原因、影响范围、风险和回归要求。
+- Git commit 是不可变变更本体和审计锚点，提供 DAG、复现、review、revert
+  与 cherry-pick 能力。
+- VOS gate 同时读取 SpecPatch metadata 与对应 commit diff，完成影响分析和验证选择。
 
 推荐目录：
 
@@ -85,6 +93,10 @@ title:
 reason:
 kind: architecture_change | module_change | operation_change | toolchain_change
 
+commit_sha:
+parent_sha:
+spec_commit_sha: optional
+
 affected_specs:
 affected_modules:
 affected_operations:
@@ -94,6 +106,34 @@ after:
 risks:
 required_regressions:
 approval_notes:
+```
+
+推荐两段式提交流程：
+
+```text
+1. spec commit
+   - 更新 spec/evolution/patch-*.yaml
+   - 更新 ArchitectureSlice / ADR / CompositionSpec / ModuleSpec / OperationContract
+   - 生成可引用的 spec_commit_sha
+
+2. implementation commit
+   - 实现代码或工具链变化
+   - commit trailer 引用 SpecPatch ID 与 spec_commit_sha
+   - 作为验证、提交和审计的 commit_sha
+```
+
+兼容情况下，可以使用单个 commit 同时包含 SpecPatch metadata 与实现变更。
+但首选流程仍是先形成 spec commit，再进入实现 commit。
+
+推荐 commit trailer：
+
+```text
+Spec-Patch-ID: patch-003-cow-fork
+Spec-Stage: memory
+Spec-Kind: operation_change
+Affected-Specs: spec/modules/kernel/memory/ops/uvmcopy.yaml
+Required-Regressions: public,memory
+Spec-Commit-SHA: <sha>
 ```
 
 ## 4. 触发 SpecPatch 的情形

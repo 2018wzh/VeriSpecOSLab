@@ -74,7 +74,7 @@
 
 完成定义：
 
-- 支持 `SpecPatch` DAG 检查
+- 支持 commit-backed `SpecPatch` DAG 检查
 - 支持影响分析与选择性验证
 - 公开 test matrix 可从 spec 派生
 
@@ -113,7 +113,7 @@
 
 - YAML parse / normalize
 - cross-spec consistency
-- `SpecPatch` DAG 校验
+- commit-backed `SpecPatch` DAG 校验
 - adapter resolution
 - policy / path validation
 

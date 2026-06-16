@@ -103,7 +103,7 @@ ToolchainSpec (语义: 源文件、编译标志、链接脚本...)
 Agent 在本体系中的角色是“受控协作开发者”，而不是自由代码生成器。要求：
 
 - Agent 会话必须选择一个 `AgentIdentity`，并使用它唯一绑定的 `CapabilityPack`
-- 写入必须绑定本地 spec、`SpecPatch` 或 `codegen.targets`
+- 写入必须绑定本地 spec、SpecPatch ID、commit-backed SpecPatch ref 或 `codegen.targets`
 - 关键改动必须触发最小验证集
 - 所有 Agent 行为进入审计日志
 

@@ -50,11 +50,13 @@
 
 用途：
 
-- 描述某个 `SpecPatch` 或代码 patch 会影响哪些 spec、哪些测试与哪些验证
+- 描述某个 commit-backed `SpecPatch` 或代码 patch 会影响哪些 spec、哪些测试与哪些验证
 
 字段：
 
 - `patch_id`
+- `commit_sha`
+- `parent_sha`
 - `affected_specs`
 - `affected_code_paths`
 - `required_checks`

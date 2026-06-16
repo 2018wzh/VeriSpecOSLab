@@ -89,14 +89,14 @@
 - 可见证据：syscall trace、resource tests、composition 报告、风险标签。
 - 下一阶段入口：资源模型稳定后解锁个性化机制或 namespace 阶段。
 
-## 8. Week 8: Personalized Goal 与 SpecPatch 引入新机制
+## 8. Week 8: Personalized Goal 与 commit-backed SpecPatch 引入新机制
 
 - 触发条件：学生希望引入 `capability IPC` 或其他个性化机制。
-- 教师动作：审核 `SpecPatch` 是否说明引入原因、设计变化和非目标。
-- 助教动作：检查 patch 历史、确认学生先改 Spec 再改代码。
-- 学生动作：更新 `spec/evolution/patch-*.yaml`、ADR、CompositionSpec，并实现新机制。
+- 教师动作：审核 `SpecPatch` 是否说明引入原因、设计变化、非目标和绑定 commit。
+- 助教动作：检查 patch 历史和 commit SHA，确认学生先改 Spec 再改代码。
+- 学生动作：更新 `spec/evolution/patch-*.yaml`、ADR、CompositionSpec，形成可引用 spec commit 后实现新机制。
 - 平台/Agent 自动动作：平台重派生验证矩阵；Agent 提醒新增资源生命周期或权限边界风险。
-- 可见证据：SpecPatch、ADR、派生测试矩阵摘要、goal contract、benchmark 或新测试结果。
+- 可见证据：SpecPatch、绑定 commit、ADR、派生测试矩阵摘要、goal contract、benchmark 或新测试结果。
 - 下一阶段入口：个性化目标通过后解锁 `resource-and-namespace` 或 `final-synthesis`。
 
 ## 9. Week 9: Namespace / Service

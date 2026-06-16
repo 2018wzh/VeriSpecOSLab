@@ -90,7 +90,7 @@
 | `boot-minimum` | boot chain、入口约定、启动可观察性 | boot slice、串口日志 | 解锁 memory |
 | `memory-management` | 内存模型与不变量自洽 | allocator tests、ModuleSpec | 解锁 trap |
 | `syscall-ipc` | ABI、错误语义、权限边界 | trace、IPC tests | 解锁资源阶段 |
-| `personalized-goal` | 新机制是否通过 SpecPatch 合法引入 | patch history、goal contract | 通过或要求补充设计 |
+| `personalized-goal` | 新机制是否通过 commit-backed SpecPatch 合法引入 | patch history、goal contract | 通过或要求补充设计 |
 | `final-synthesis` | 历史是否可追溯、最终评分是否可解释 | final report、evidence map | 正式评分与发布 |
 
 ## 5. override、冻结与评分

@@ -159,7 +159,7 @@ Gateway 不得：
 
 - 默认“整个系统”不是单独 schema 字段，而是由当前 stage 的架构组合结果导出
 - `--run` 依赖 `--build`
-- 不得生成未来阶段模块或绕过必需 SpecPatch
+- 不得生成未来阶段模块或绕过必需 commit-backed SpecPatch gate
 
 ## 6. `vos agent log`
 

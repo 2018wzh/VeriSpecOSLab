@@ -97,7 +97,7 @@ Architecture / Module / Operation
   -> Toolchain Binding
 
 Any structural change
-  -> Evolution / SpecPatch
+  -> Evolution / commit-backed SpecPatch
 ```
 
 ## 4. StageGate 约束
@@ -108,5 +108,5 @@ Any structural change
 2. 没有 `ModuleSpec`，不得生成该模块核心实现。
 3. 没有 `OperationContract`，不得修改核心函数。
 4. 没有 `CompositionSpec`，不得合并跨模块机制。
-5. 没有 `SpecPatch`，不得引入架构级变化。
+5. 没有 commit-backed `SpecPatch`，不得引入架构级变化。
 6. 没有 `test_obligations`，不得进入 `verify patch`。

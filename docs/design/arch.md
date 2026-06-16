@@ -334,7 +334,7 @@ toolchain-author.v2
 - persona / stage / project policy 只能收窄能力包
 - system prompt 不能授予工具、路径、hidden context 或验证 authority
 - capability pack 不能改变任务身份
-- 写入必须绑定 spec、SpecPatch 或 codegen.targets
+- 写入必须绑定 spec、SpecPatch ID、commit-backed SpecPatch ref 或 codegen.targets
 - 当前 stage 可以生成完整 enabled_modules 或模块依赖闭包
 - 不得生成未来阶段模块、删除测试、关闭 checker 或绕过权限
 - 所有写入、验证、审计由 VOS runtime 确定性执行
@@ -348,7 +348,7 @@ toolchain-author.v2
 
 平台不再要求学生在固定的 `Linux-like`、`L4-like`、`Darwin-like`、`NT-like`、`Plan9-like`、`RTOS`、`Unikernel` profile 中选择。`*-like` 只作为参考系统标签，不作为架构模板，也不直接决定测试集。
 
-学生提交的不是一份开课早期一次性写完的架构总说明，而是一组随课程阶段演化的架构设计包：`ArchitectureSeed`、`ArchitectureSlice[]`、`ArchitectureDecisionRecord[]`、`ArchitectureCompositionSpec`、`SpecPatch[]` 与 `FinalArchitectureSynthesis`。它们共同说明系统由哪些机制组成、参考了哪些现有系统、修改和拒绝了哪些设计、各模块如何组合，以及这些组合如何被验证。
+学生提交的不是一份开课早期一次性写完的架构总说明，而是一组随课程阶段演化的架构设计包：`ArchitectureSeed`、`ArchitectureSlice[]`、`ArchitectureDecisionRecord[]`、`ArchitectureCompositionSpec`、commit-backed `SpecPatch[]` 与 `FinalArchitectureSynthesis`。它们共同说明系统由哪些机制组成、参考了哪些现有系统、修改和拒绝了哪些设计、各模块如何组合，以及这些组合如何被验证。
 
 ### 6.2 架构综合视图模板
 
@@ -620,7 +620,7 @@ ArchitectureCompositionSpec:
 6. 对应 ModuleSpec / InterfaceSpec / ConcurrencySpec
 7. ArchitectureCompositionSpec
 8. 当前测试失败日志与最近验证证据
-9. 最近 SpecPatch
+9. 最近 commit-backed SpecPatch
 10. 任务相关的 agent-only hidden property 标签
 11. 相关接口头文件与少量相邻实现
 ```
@@ -725,7 +725,7 @@ Agent：
 - 生成单元测试
 - 解释异常日志
 - 重构小模块
-- 生成 spec patch 草案
+- 生成 commit-backed SpecPatch 草案
 - 检查 rely/guarantee
 - 检查架构组合不变量
 ```
@@ -735,7 +735,7 @@ Agent：
 ```text
 - 对核心模块，没有 spec 不允许直接生成实现
 - 对架构层变化，必须先更新当前 ArchitectureSlice、ADR 或 ArchitectureCompositionSpec
-- 对大规模修改，必须先生成 spec patch
+- 对大规模修改，必须先生成 commit-backed SpecPatch
 - 对并发模块，必须有 ConcurrencySpec
 - 对 syscall / IPC / VFS / VM 修改，必须运行 regression test
 - 对硬件移植代码，必须绑定 HardwarePortSpec
@@ -1275,7 +1275,7 @@ Sandbox:
   每个项目 workspace 独立挂载
 
 Patch:
-  unified diff
+  commit-backed SpecPatch + unified diff
   git apply --check
   git worktree 可选
 

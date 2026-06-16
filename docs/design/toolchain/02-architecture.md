@@ -68,7 +68,7 @@ VOS Runtime
 
 - `NormalizedSpecBundle`
 - 当前命令参数
-- `SpecPatch`
+- commit-backed `SpecPatch`
 - stage 与 policy 信息
 
 输出：

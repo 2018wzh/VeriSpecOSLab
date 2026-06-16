@@ -96,7 +96,8 @@ codegen:
 `implementer.v2` may edit only targets admitted by the active specs, project
 policy, stage gate, and persona visibility. The Agent may generate all modules
 enabled by the current stage or a requested module dependency closure. It may
-not generate future-stage modules or bypass a required SpecPatch.
+not generate future-stage modules or bypass a required commit-backed SpecPatch
+gate.
 
 ## Commit-Bound Reproducibility
 
@@ -141,6 +142,7 @@ actor: agent | human
 agent_identity_id:
 capability_pack_id:
 run_id:
+spec_patch_id:
 spec_refs:
 changed_targets:
 evidence_refs:
@@ -174,6 +176,7 @@ Every Agent session records:
 - `capability_pack_id`
 - `commit_sha`
 - `parent_sha`
+- `spec_patch_id` when the session implements or reviews a SpecPatch
 - `.vos/commit-ledger.jsonl` record
 - user persona and visibility scope
 - policy snapshot

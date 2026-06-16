@@ -55,4 +55,4 @@ MVP 阶段建议优先把以下内容写细：
 2. 只写“支持 Linux-like syscall”，不写 ABI 和错误语义。
 3. 只写“保证安全”，不写 authority / isolation / pointer policy。
 4. 只写“通过测试”，不写哪些性质和哪些证据。
-5. 只改代码，不补 Spec 或 SpecPatch。
+5. 只改代码，不补 Spec 或 commit-backed SpecPatch metadata。

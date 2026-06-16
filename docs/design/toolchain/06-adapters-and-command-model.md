@@ -93,16 +93,32 @@ load normalized bundle -> cross-spec consistency -> emit report
 内部执行链：
 
 ```text
-parse patch -> validate schema -> validate DAG -> summarize impact
+load SpecPatch YAML or commit-ish
+  -> parse SpecPatch metadata and commit trailers
+  -> read git diff when a commit ref is supplied
+  -> validate schema, DAG, spec binding, and impact scope
+  -> summarize required regressions
 ```
+
+`commit-ish` 可以是 commit SHA、branch ref 或 tag。SpecPatch YAML 仍保存在
+`spec/evolution/*.yaml`，但推荐绑定 `commit_sha` / `parent_sha` 作为不可变审计锚点。
 
 ### `vos spec patch apply`
 
 内部执行链：
 
 ```text
-validate DAG -> compute impact -> update normalized cache -> refresh projection -> mark affected tests
+load SpecPatch YAML or commit-ish
+  -> resolve commit-backed SpecPatch metadata
+  -> read git diff
+  -> validate DAG, spec binding, allowed paths, and impact scope
+  -> update normalized cache
+  -> refresh projection
+  -> mark affected tests and regressions
 ```
+
+Agent 的 unified diff gate 仍可作为局部写入入口存在；commit-backed
+SpecPatch 是设计演化、复现和提交审计的首选路径。
 
 ## 3. Architecture 命令
 
@@ -213,7 +229,7 @@ compose lint/build/run/test/invariant DAG -> execute -> summarize verdict
 内部执行链：
 
 ```text
-load SpecPatch -> impact analysis -> select minimum required checks -> execute verification DAG
+load commit-backed SpecPatch -> impact analysis -> select minimum required checks -> execute verification DAG
 ```
 
 ### `vos verify full`

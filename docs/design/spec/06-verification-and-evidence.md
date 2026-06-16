@@ -68,8 +68,12 @@ evidence_item:
 - 相关 ArchitectureSlice
 - 相关 ModuleSpec / OperationContract
 - 对应验证证据
-- 是否触发过 SpecPatch
+- 是否触发过 SpecPatch，以及对应的 `spec_patch_id`
+- 复现锚点 `commit_sha`，必要时包括 `parent_sha`
 - 是否有 AI 参与和参考材料使用
+
+验证复现以 commit SHA 为输入锚点。SpecPatch metadata 用于解释设计影响、
+选择最小验证范围和列出 required regressions；它不替代 commit diff。
 
 ## 7. 与评分映射的关系
 

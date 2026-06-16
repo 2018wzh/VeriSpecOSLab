@@ -4,7 +4,7 @@
 
 - 学生在整个实验周期内的主线工作是什么
 - 每个阶段学生要提交什么、运行什么、看到什么
-- 学生如何通过 SpecPatch 演化设计并完成最终综合提交
+- 学生如何通过 commit-backed SpecPatch 演化设计并完成最终综合提交
 
 上游依赖文档：
 
@@ -93,13 +93,14 @@ vos arch lint spec/architecture/slices/02-memory.yaml
 vos verify public --stage memory-management
 ```
 
-## 5. 通过 SpecPatch 演化设计
+## 5. 通过 commit-backed SpecPatch 演化设计
 
 当学生引入新机制或改变关键设计时，必须先更新：
 
 ```text
 spec/evolution/patch-*.yaml
   -> ArchitectureSlice / ADR / CompositionSpec
+  -> 形成可引用的 spec commit
   -> 再进入 build / test / verify
 ```
 
@@ -108,6 +109,7 @@ spec/evolution/patch-*.yaml
 - 新机制是被解释过的
 - 平台能重新派生验证计划
 - 教师与助教能追踪设计变化来源
+- 验证和审计能绑定到不可变 commit SHA
 
 ## 6. 最终综合提交
 

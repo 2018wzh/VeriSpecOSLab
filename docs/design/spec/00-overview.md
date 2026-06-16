@@ -71,7 +71,7 @@ Operation
 
 1. 采用比“模块总说明”更细的操作级规格粒度。
 2. 强调 `rely / guarantee / failure semantics / tests` 的结构化表达。
-3. 要求规格演化先于代码演化，复杂修改先通过 `SpecPatch` 进入验证。
+3. 要求规格演化先于代码演化，复杂修改先通过 commit-backed `SpecPatch` 进入验证。
 
 VeriSpecOSLab 在此基础上增加课程与平台场景必需的字段：
 
