@@ -46,6 +46,24 @@ describe("vos-agent HTTP server", () => {
       owned_by: "vos-agent",
       root: "test-deep",
     });
+
+    const profile = await fetchJson("/api/v1/agent/profile", {
+      method: "POST",
+      body: { task_kind: "debug" },
+    }) as {
+      agent_profile: {
+        promptId: string;
+        skills: string[];
+        mcpServers: string[];
+        outputSchema: string;
+      };
+    };
+    expect(profile.agent_profile).toMatchObject({
+      promptId: "debug-agent.v1",
+      skills: ["verification-diagnosis"],
+      outputSchema: "debug_output.v1",
+    });
+    expect(profile.agent_profile.mcpServers).toContain("evidence-store");
   });
 
   test("serves VOS portal API routes used by vos-web", async () => {
@@ -113,6 +131,75 @@ describe("vos-agent HTTP server", () => {
       item.session_id === response.thread_id &&
       item.response_summary?.includes("VOS says hello")
     )).toBe(true);
+  });
+
+  test("runs a VOS-native profile-based agent task", async () => {
+    const chat = new ScriptedChatClient([
+      textResponse(JSON.stringify({
+        failure_class: "impl_gap",
+        summary: "boot log is missing expected output",
+        suspected_clauses: ["boot.console"],
+        related_specs: ["spec/boot.yaml"],
+        suggested_next_commands: ["build"],
+        risk_flags: ["large_patch_proposal"],
+      })),
+    ]);
+    server = startServer(chat);
+
+    const response = await fetchJson("/api/v1/agent/tasks", {
+      method: "POST",
+      body: {
+        task_kind: "debug",
+        project_id: "project-demo-student",
+        user_id: "student-demo",
+        task: "explain this boot failure",
+      },
+    }) as {
+      session_id: string;
+      agent_profile: {
+        promptId: string;
+        skills: string[];
+        mcpServers: string[];
+        outputSchema: string;
+      };
+      model: string;
+      structured_output?: { failure_class?: string };
+    };
+
+    expect(response.session_id).toStartWith("VOS-");
+    expect(response.agent_profile).toMatchObject({
+      promptId: "debug-agent.v1",
+      skills: ["verification-diagnosis"],
+      outputSchema: "debug_output.v1",
+    });
+    expect(Object.keys(response)).not.toContain("role_id");
+    expect(Object.keys(response)).not.toContain("runtime_role");
+    expect(response.model).toBe("test-smart");
+    expect(response.structured_output?.failure_class).toBe("impl_gap");
+    expect(chat.requests[0].model).toBe("test-smart");
+    expect(String(chat.requests[0].messages[0].content)).toContain("fixed VOS task profile");
+    expect(chat.requests[0].tools.map((tool) => tool.function.name).sort()).toEqual([
+      "Glob",
+      "Grep",
+      "Read",
+      "Task",
+      "TodoRead",
+      "Vos",
+    ]);
+
+    const login = await fetchJson("/api/v1/auth/login", {
+      method: "POST",
+      body: { username: "student", password: "student" },
+    }) as { token: string };
+    const audit = await fetchJson("/api/v1/projects/project-demo-student/agent-audit", {
+      headers: { Authorization: `Bearer ${login.token}` },
+    }) as Array<{ session_id: string; task_kind: string; risk_flags: string[]; risk_level: string }>;
+    const entry = audit.find((item) => item.session_id === response.session_id);
+    expect(entry).toMatchObject({
+      task_kind: "debug",
+      risk_flags: ["large_patch_proposal"],
+      risk_level: "high",
+    });
   });
 
   test("rejects streaming requests with a structured error", async () => {

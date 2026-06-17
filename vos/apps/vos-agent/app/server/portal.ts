@@ -498,8 +498,10 @@ export class PortalStore {
     sessionId: string;
     userId?: string;
     model: string;
+    taskKind?: string;
     prompt: string;
     response?: string;
+    riskFlags?: readonly string[];
   }): AgentAuditRecord | undefined {
     if (!input.projectId || !this.data.projects.some((project) => project.id === input.projectId)) {
       return undefined;
@@ -510,11 +512,11 @@ export class PortalStore {
       user_id: input.userId ?? "system-agent",
       project_id: input.projectId,
       model: input.model,
-      task_kind: "chat_completion",
+      task_kind: input.taskKind ?? "chat_completion",
       prompt_summary: summarize(input.prompt),
       response_summary: input.response ? summarize(input.response) : undefined,
-      risk_flags: [],
-      risk_level: "low",
+      risk_flags: [...(input.riskFlags ?? [])],
+      risk_level: riskLevel(input.riskFlags ?? []),
       created_at: new Date().toISOString(),
     };
     this.data.audits.push(audit);
@@ -1109,6 +1111,25 @@ function deepClone<T>(value: T): T {
 function summarize(text: string): string {
   const compact = text.replace(/\s+/g, " ").trim();
   return compact.length <= 220 ? compact : `${compact.slice(0, 217)}...`;
+}
+
+function riskLevel(flags: readonly string[]): AgentAuditRecord["risk_level"] {
+  if (flags.length === 0) return "low";
+  if (flags.some((flag) =>
+    flag.includes("hidden_context") ||
+    flag.includes("test_or_checker_bypass") ||
+    flag.includes("unsafe_tool")
+  )) {
+    return "critical";
+  }
+  if (flags.some((flag) =>
+    flag.includes("policy") ||
+    flag.includes("unbound") ||
+    flag.includes("large_patch")
+  )) {
+    return "high";
+  }
+  return "medium";
 }
 
 function isEvidenceResult(value: string | undefined): value is EvidenceResult {

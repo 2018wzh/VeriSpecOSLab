@@ -1,9 +1,20 @@
 import { randomUUID } from "node:crypto";
 import type { Config, ReasoningEffort } from "../config.ts";
 import { resolveModeDefinition } from "../config.ts";
+import { resolveActiveModelSettings } from "../resolve-model.ts";
 import type { ChatClient } from "../agent/loop.ts";
 import { runSessionTurn } from "../session/run-turn.ts";
 import type { ThreadStore } from "../session/thread-store.ts";
+import type { SessionEvent } from "../session/types.ts";
+import {
+  buildAgentTaskSystemPrompt,
+  buildAgentTaskUserPrompt,
+  createProfileToolPolicy,
+  publicAgentTaskProfile,
+  resolveAgentTaskProfile,
+  resolveProfileVosCommands,
+  type AgentTaskProfileInput,
+} from "../agent/profiles.ts";
 import {
   createSeededPortalStore,
   handlePortalApiRequest,
@@ -26,6 +37,30 @@ type ChatCompletionRequest = {
   messages?: ChatMessage[];
   project_id?: string;
   thread_id?: string;
+  stream?: boolean;
+};
+
+type AgentTaskHttpRequest = {
+  task_kind?: string;
+  requested_scope?: string;
+  agent_profile?: AgentTaskProfileInput;
+  task?: string;
+  prompt?: string;
+  context?: unknown;
+  context_refs?: string[];
+  evidence_refs?: string[];
+  allowed_paths?: string[];
+  required_validations?: string[];
+  policy_flags?: string[];
+  allowed_vos_commands?: string[];
+  project_id?: string;
+  user_id?: string;
+  thread_id?: string;
+  model?: string;
+  mode?: string;
+  max_iterations?: number;
+  disabled_tools?: string[];
+  course_mode?: boolean;
   stream?: boolean;
 };
 
@@ -63,6 +98,8 @@ async function handleRequest(
   if (request.method === "OPTIONS") {
     return corsResponse();
   }
+  const agentResponse = await handleAgentApiRequest(request, opts);
+  if (agentResponse) return agentResponse;
   const portalResponse = await handlePortalApiRequest(request, opts.portalStore);
   if (portalResponse) return portalResponse;
   if (request.method === "GET" && url.pathname === "/health") {
@@ -80,6 +117,139 @@ async function handleRequest(
     return jsonResponse(await chatCompletion(body, opts));
   }
   return jsonResponse({ error: { message: "not found", type: "not_found" } }, 404);
+}
+
+async function handleAgentApiRequest(
+  request: Request,
+  opts: AgentHttpServerOptions & { portalStore: PortalStore },
+): Promise<Response | undefined> {
+  const url = new URL(request.url);
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (request.method === "POST" && url.pathname === "/api/v1/agent/profile") {
+    const body = await request.json() as AgentTaskHttpRequest;
+    const profile = resolveAgentTaskProfile({
+      taskKind: body.task_kind,
+    }, body.agent_profile);
+    return jsonResponse({ agent_profile: publicAgentTaskProfile(profile) });
+  }
+  if (request.method === "POST" && url.pathname === "/api/v1/agent/tasks") {
+    const body = await request.json() as AgentTaskHttpRequest;
+    return jsonResponse(await runAgentHttpTask(body, opts));
+  }
+  if (
+    request.method === "POST" &&
+    parts[0] === "api" &&
+    parts[1] === "v1" &&
+    parts[2] === "agent" &&
+    parts[3] === "sessions" &&
+    parts[5] === "turns"
+  ) {
+    const body = await request.json() as AgentTaskHttpRequest;
+    return jsonResponse(await runAgentHttpTask({ ...body, thread_id: parts[4] }, opts));
+  }
+  if (
+    request.method === "GET" &&
+    parts[0] === "api" &&
+    parts[1] === "v1" &&
+    parts[2] === "agent" &&
+    parts[3] === "sessions" &&
+    parts.length === 5
+  ) {
+    const thread = opts.store.load(parts[4]);
+    return jsonResponse({
+      id: thread.id,
+      title: thread.title,
+      created_at: thread.createdAt,
+      updated_at: thread.updatedAt,
+      workspace_root: thread.workspaceRoot,
+      model: thread.model,
+      mode: thread.mode,
+      reasoning_effort: thread.reasoningEffort,
+      archived_at: thread.archivedAt,
+      message_count: thread.messages.length,
+      todos: thread.todos,
+    });
+  }
+  return undefined;
+}
+
+async function runAgentHttpTask(
+  request: AgentTaskHttpRequest,
+  opts: AgentHttpServerOptions & { portalStore: PortalStore },
+): Promise<Record<string, unknown>> {
+  if (request.stream) {
+    throw new Error("streaming agent tasks are not implemented by vos-agent HTTP yet");
+  }
+  const task = request.task ?? request.prompt;
+  if (!task) {
+    throw new Error("agent task request must include task or prompt");
+  }
+  const profile = resolveAgentTaskProfile({
+    taskKind: request.task_kind,
+  }, request.agent_profile);
+  const modelSettings = request.model
+    ? { model: request.model, mode: request.mode }
+    : resolveActiveModelSettings(opts.config, {
+      model: undefined,
+      mode: request.mode ?? profile.mode,
+    });
+  const prompt = buildAgentTaskUserPrompt({
+    profile,
+    task,
+    taskKind: request.task_kind,
+    requestedScope: request.requested_scope,
+    context: request.context,
+    contextRefs: asStringArray(request.context_refs),
+    evidenceRefs: asStringArray(request.evidence_refs),
+    allowedPaths: asStringArray(request.allowed_paths),
+    requiredValidations: asStringArray(request.required_validations),
+    policyFlags: asStringArray(request.policy_flags),
+    promptOverride: request.prompt && !request.task ? request.prompt : undefined,
+  });
+  const events: SessionEvent[] = [];
+  const result = await runSessionTurn({
+    chat: opts.chat,
+    store: opts.store,
+    workspaceRoot: opts.workspaceRoot,
+    startDir: opts.workspaceRoot,
+    prompt,
+    threadId: request.thread_id,
+    model: modelSettings.model,
+    mode: modelSettings.mode,
+    reasoningEffort: modelSettings.reasoningEffort,
+    disabledTools: mergeDisabledTools(opts.config.tools.disabled, request.disabled_tools),
+    maxIterations: request.max_iterations,
+    courseMode: request.course_mode ?? true,
+    allowedVosCommands: resolveProfileVosCommands(profile, request.allowed_vos_commands),
+    toolPolicy: createProfileToolPolicy(profile),
+    fixedSystemPrompt: buildAgentTaskSystemPrompt(profile),
+    onEvent: (event) => {
+      events.push(event);
+    },
+  });
+  const structuredOutput = parseJsonFromText(result.content ?? "");
+  opts.portalStore.recordAgentAudit({
+    projectId: request.project_id,
+    userId: request.user_id,
+    sessionId: result.thread.id,
+    model: request.model ?? modelSettings.model,
+    taskKind: request.task_kind ?? profile.taskKinds[0],
+    prompt,
+    response: result.content ?? undefined,
+    riskFlags: collectRiskFlags(structuredOutput),
+  });
+
+  return {
+    session_id: result.thread.id,
+    thread_id: result.thread.id,
+    agent_profile: publicAgentTaskProfile(profile),
+    model: modelSettings.model,
+    mode: modelSettings.mode,
+    reasoning_effort: modelSettings.reasoningEffort,
+    content: result.content ?? "",
+    structured_output: structuredOutput,
+    events,
+  };
 }
 
 async function chatCompletion(
@@ -196,6 +366,52 @@ function contentToText(content: unknown): string {
     }
   }
   return parts.join("\n");
+}
+
+function asStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function mergeDisabledTools(
+  configDisabledTools: readonly string[],
+  requestDisabledTools: readonly string[] | undefined,
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of [...configDisabledTools, ...(requestDisabledTools ?? [])]) {
+    const normalized = value.trim();
+    if (!normalized || seen.has(normalized.toLowerCase())) continue;
+    seen.add(normalized.toLowerCase());
+    out.push(normalized);
+  }
+  return out;
+}
+
+function parseJsonFromText(text: string): unknown | undefined {
+  if (!text.trim()) return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    const firstBrace = text.indexOf("{");
+    const lastBrace = text.lastIndexOf("}");
+    if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) {
+      return undefined;
+    }
+    try {
+      return JSON.parse(text.slice(firstBrace, lastBrace + 1));
+    } catch {
+      return undefined;
+    }
+  }
+}
+
+function collectRiskFlags(value: unknown): string[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  const riskFlags = (value as { risk_flags?: unknown }).risk_flags;
+  return Array.isArray(riskFlags)
+    ? riskFlags.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
