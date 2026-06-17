@@ -79,7 +79,7 @@ export async function applyPatchText(params: {
 
   const patchFile = path.join(params.projectRoot, ".vos", "apply.patch");
   mkdirSync(path.dirname(patchFile), { recursive: true });
-  await writeFile(patchFile, params.patchText);
+  await writeFile(patchFile, normalizePatchForGitApply(params.patchText));
 
   const apply = await runCommand({
     command: ["git", "apply", patchFile],
@@ -133,6 +133,40 @@ export async function applyPatchText(params: {
     validationSummary,
     output: `applied ${changed.length} files`,
   };
+}
+
+function normalizePatchForGitApply(text: string): string {
+  const withoutFinalNewline = text.endsWith("\n") ? text.slice(0, -1) : text;
+  const lines = withoutFinalNewline.split("\n");
+  const out: string[] = [];
+  let inHunk = false;
+
+  for (const line of lines) {
+    if (line.startsWith("diff --git ")) {
+      inHunk = false;
+      out.push(line);
+      continue;
+    }
+    if (line.startsWith("@@ ")) {
+      inHunk = true;
+      out.push(line);
+      continue;
+    }
+    if (inHunk && !isHunkLine(line)) {
+      out.push(` ${line}`);
+      continue;
+    }
+    out.push(line);
+  }
+
+  return `${out.join("\n")}\n`;
+}
+
+function isHunkLine(line: string): boolean {
+  return line.startsWith(" ") ||
+    line.startsWith("+") ||
+    line.startsWith("-") ||
+    line.startsWith("\\");
 }
 
 async function runMinimalValidationDag(
@@ -294,7 +328,7 @@ function matchesChangedPath(suiteName: string, changedPaths: string[], projectRo
 }
 
 export async function readPatchFromStdin(): Promise<string> {
-  return await readFile(0, "utf8").catch(() => "");
+  return await Bun.stdin.text().catch(() => "");
 }
 
 function extractChangedPaths(diff: string): string[] {
