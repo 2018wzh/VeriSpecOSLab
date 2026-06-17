@@ -28,16 +28,19 @@ extensible.
 ```
 app/
 ├── main.ts                   CLI entrypoint. Wiring only.
+├── headless.ts               package API for prompt and profile-based tasks
 ├── cli.ts                    parseArgs(argv) → interactive/execute/thread commands
 ├── config.ts                 loadConfig(env) → Config (modes + providers)
 ├── resolve-model.ts          resolveActiveModelSettings(config, args)
 ├── session/                  local threads + runSessionTurn()
 ├── context/                  AGENTS.md guidance discovery
+├── server/                   HTTP gateway, VOS-native agent routes, portal API
 ├── terminal/                 slash commands + interactive loop
 ├── tui/                      alternate-screen rendering + raw prompt input
 ├── output/                   stream-json helpers
 ├── agent/
-│   └── loop.ts               runAgent({...}); ChatClient interface
+│   ├── loop.ts               runAgent({...}); ChatClient interface
+│   └── profiles.ts           task profile registry and tool policy
 ├── llm/
 │   ├── openai-client.ts      OpenAI-backed ChatClient
 │   ├── anthropic-client.ts   Anthropic-backed ChatClient

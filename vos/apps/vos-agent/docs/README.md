@@ -22,14 +22,16 @@ each one stands on its own as a reference.
    and fork local conversation threads.
 7. [**Stream JSON automation**](stream-json.md) — JSONL output/input
    schemas for scripted integrations.
-8. [**Error logbook**](error-log.md) — implementation errors and fixes
+8. [**Headless profile API**](headless-api.md) — profile-based package and
+   HTTP APIs for `vos-cli`, `vos-web`, and local integrations.
+9. [**Error logbook**](error-log.md) — implementation errors and fixes
    recorded during agent build loops.
-9. [**Testing**](testing.md) — strategy, the four test layers, and the
+10. [**Testing**](testing.md) — strategy, the four test layers, and the
    stub `ChatClient` helpers used to drive scenarios deterministically.
-10. [**TUI evaluation**](tui-evaluation.md) — tmux setup, manual UX
+11. [**TUI evaluation**](tui-evaluation.md) — tmux setup, manual UX
     checklist, latency benchmarks, and feedback template for the VOS Agent
     terminal UI.
-11. [**TypeScript CLI wrapper design**](../../../../docs/design/agent/10-typescript-cli-wrapper.md)
+12. [**TypeScript CLI wrapper design**](../../../../docs/design/agent/10-typescript-cli-wrapper.md)
     — how `vos agent <subcommand>` should call VOS Agent through
     versioned fixed prompts while keeping policy, patch gates, and
     evidence deterministic.
