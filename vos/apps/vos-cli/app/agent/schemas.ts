@@ -29,14 +29,20 @@ export interface DebugOutput {
 export interface AICollaborationLog {
   session_id: string;
   task_kind: string;
-  agent_role: string;
+  agent_profile: {
+    prompt_id: string;
+    system_prompt?: string;
+    mode?: string;
+    skills: string[];
+    mcp_servers: string[];
+    output_schema: string;
+  };
   related_specs: string[];
   allowed_paths: string[];
   output_kind: string;
   patch_ref?: string;
   evidence_ref?: string;
   result: "accepted" | "rejected" | "pending" | "failed";
-  fixed_prompt_id?: string;
   created_at: string;
 }
 

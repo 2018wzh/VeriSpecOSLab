@@ -1,15 +1,18 @@
-export const FIXED_PROMPT_IDS = {
-  specCompanion: "spec-companion.v1",
-  specCompiler: "spec-compiler.v1",
-  specAssistant: "spec-assistant.v1",
-  debugAgent: "debug-agent.v1",
-  specValidator: "spec-validator.v1",
-} as const;
+import {
+  resolveAgentTaskProfile,
+  type AgentTaskProfile,
+} from "vos-agent/headless";
 
-export type AgentRole = keyof typeof FIXED_PROMPT_IDS;
+export interface PromptProfileEnvelope {
+  prompt_id: string;
+  system_prompt: string;
+  mode: string;
+  skills: string[];
+  mcp_servers: string[];
+  output_schema: string;
+}
 
 export interface PromptEnvelope {
-  agent_role: AgentRole;
   task_kind: string;
   requested_scope: string;
   spec_bindings: string[];
@@ -18,7 +21,7 @@ export interface PromptEnvelope {
   allowed_paths: string[];
   required_validations: string[];
   policy_flags: string[];
-  fixed_prompt_id: string;
+  agent_profile: PromptProfileEnvelope;
 }
 
 export interface WrappedPrompt {
@@ -36,7 +39,6 @@ interface PromptBundle {
 }
 
 export function buildPromptEnvelope(args: {
-  role: AgentRole;
   taskKind: string;
   requestedScope: string;
   specBindings: string[];
@@ -45,11 +47,13 @@ export function buildPromptEnvelope(args: {
   allowedPaths: string[];
   requiredValidations: string[];
   policyFlags: string[];
+  agentProfile?: AgentTaskProfile;
   task?: string;
 }): WrappedPrompt {
-  const fixedPromptId = FIXED_PROMPT_IDS[args.role];
+  const agentProfile = args.agentProfile ?? resolveAgentTaskProfile({
+    taskKind: args.taskKind,
+  });
   const envelope: PromptEnvelope = {
-    agent_role: args.role,
     task_kind: args.taskKind,
     requested_scope: args.requestedScope,
     spec_bindings: args.specBindings,
@@ -58,7 +62,7 @@ export function buildPromptEnvelope(args: {
     allowed_paths: args.allowedPaths,
     required_validations: args.requiredValidations,
     policy_flags: args.policyFlags,
-    fixed_prompt_id: fixedPromptId,
+    agent_profile: toPromptProfileEnvelope(agentProfile),
   };
 
   const instructions = [
@@ -66,7 +70,11 @@ export function buildPromptEnvelope(args: {
     `Use the schema contract exactly.`,
     `Do not execute commands.`,
     `Return JSON only.`,
-    `Role: ${args.role}`,
+    `Prompt id: ${agentProfile.promptId}`,
+    `Mode: ${agentProfile.mode}`,
+    `Skills: ${agentProfile.skills.length > 0 ? agentProfile.skills.join(", ") : "none"}`,
+    `MCP servers: ${agentProfile.mcpServers.length > 0 ? agentProfile.mcpServers.join(", ") : "none"}`,
+    `Output schema: ${agentProfile.outputSchema}`,
     `Task kind: ${args.taskKind}`,
     `Allowed paths: ${args.allowedPaths.join(", ")}`,
     args.task ? `Task: ${args.task}` : "",
@@ -90,14 +98,17 @@ export function formatPrompt(wrapped: WrappedPrompt): string {
   }, null, 2);
 }
 
+export function resolvePromptProfileEnvelope(taskKind: string): PromptProfileEnvelope {
+  return toPromptProfileEnvelope(resolveAgentTaskProfile({ taskKind }));
+}
+
 export function buildAgentPlanPrompt(args: {
   bundle: PromptBundle;
   requestedScope: string;
   task?: string;
 }): string {
   return formatPrompt(buildPromptEnvelope({
-    role: "specAssistant",
-    taskKind: "design_review",
+    taskKind: "plan",
     requestedScope: args.requestedScope,
     specBindings: args.bundle.resolved_specs,
     contextBundleRef: "agent-context",
@@ -115,7 +126,6 @@ export function buildAgentDebugPrompt(args: {
 }): string {
   return formatPrompt(
     buildPromptEnvelope({
-      role: "debugAgent",
       taskKind: "debug",
       requestedScope: "agent.debug",
       specBindings: [],
@@ -137,7 +147,6 @@ export function buildAgentGeneratePrompt(args: {
 }): string {
   const basePrompt = formatPrompt(
     buildPromptEnvelope({
-      role: "specCompiler",
       taskKind: "codegen",
       requestedScope: "agent.generate",
       specBindings: args.bundle.resolved_specs,
@@ -200,4 +209,15 @@ export function buildAgentGeneratePrompt(args: {
     : "";
 
   return `${basePrompt}\n\n${strictCodegenContract}\n\n${contextReviewContract}${buildRunContract ? `\n\n${buildRunContract}` : ""}`;
+}
+
+function toPromptProfileEnvelope(profile: AgentTaskProfile): PromptProfileEnvelope {
+  return {
+    prompt_id: profile.promptId,
+    system_prompt: profile.systemPrompt,
+    mode: profile.mode,
+    skills: [...profile.skills],
+    mcp_servers: [...profile.mcpServers],
+    output_schema: profile.outputSchema,
+  };
 }

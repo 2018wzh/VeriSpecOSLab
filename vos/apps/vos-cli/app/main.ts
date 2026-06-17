@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { parseArgs, type ParsedInvocation } from "./cli.ts";
+import { parseArgs } from "./cli.ts";
 import type {
   AgentApplyPatchCommand,
   AgentContextCommand,
@@ -21,6 +21,7 @@ import type {
   InitCommand,
   ReportGenerateCommand,
   RunQemuCommand,
+  ParsedInvocation,
   StageShowCommand,
   SpecCheckConsistencyCommand,
   SpecLintCommand,
@@ -59,7 +60,7 @@ import {
   buildAgentDebugPrompt,
   buildAgentGeneratePrompt,
   buildAgentPlanPrompt,
-  FIXED_PROMPT_IDS,
+  resolvePromptProfileEnvelope,
 } from "./agent/prompt.ts";
 import {
   parseJsonFromText,
@@ -210,7 +211,7 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
 
     case "toolchain_lint": {
       const lint = await runToolchainLint(projectRoot);
-      return { status: lint.status, details: lint };
+      return { status: lint.status, details: lint as unknown as Record<string, unknown> };
     }
 
     case "spec_lint": {
@@ -314,7 +315,7 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
       });
       return {
         status: result.status,
-        details: result,
+        details: result as unknown as Record<string, unknown>,
       };
     }
 
@@ -447,7 +448,7 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
       evidence.addArtifact("agent", path.relative(projectRoot, contextArtifact), "context bundle");
       return {
         status: "passed",
-        details: bundle as Record<string, unknown>,
+        details: bundle as unknown as Record<string, unknown>,
       };
     }
 
@@ -461,7 +462,10 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
       });
       const agentResult = await runAgentWithPrompt({
         projectRoot,
-        rolePrompt: prompt,
+        taskPrompt: prompt,
+        taskKind: "plan",
+        requestedScope,
+        context: bundle,
         courseMode: true,
         allowedVosCommands: await loadAgentAllowedCommands(projectRoot),
         runner: context.agentRunner,
@@ -474,13 +478,12 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
         event: {
           session_id: contextSessionId(context),
           task_kind: "plan",
-          agent_role: "specAssistant",
+          agent_profile: resolvePromptProfileEnvelope("plan"),
           related_specs: parsed.related_specs,
           allowed_paths: bundle.allowed_paths,
           output_kind: "plan",
           result: "accepted",
           created_at: new Date().toISOString(),
-          fixed_prompt_id: FIXED_PROMPT_IDS.specAssistant,
         },
       });
       evidence.addArtifact("agent", path.relative(projectRoot, logPath), "agent plan log");
@@ -761,7 +764,7 @@ async function executeAgentGenerate(
     requestedScope: "agent.generate",
   });
   const task = command.task ?? command.target ?? bundle.current_stage;
-  const rolePrompt = buildAgentGeneratePrompt({
+  const taskPrompt = buildAgentGeneratePrompt({
     bundle,
     task,
     buildRequested: command.build,
@@ -769,7 +772,10 @@ async function executeAgentGenerate(
   });
   let agentResult = await runAgentWithPrompt({
     projectRoot,
-    rolePrompt,
+    taskPrompt,
+    taskKind: "codegen",
+    requestedScope: "agent.generate",
+    context: bundle,
     courseMode: true,
     allowedVosCommands: await loadAgentAllowedCommands(projectRoot),
     runner: context.agentRunner,
@@ -818,7 +824,7 @@ async function executeAgentGenerate(
         changedPaths: applyResult.changedPaths,
         validationStatus: applyResult.validationStatus,
         validationSummary: applyResult.validationSummary ?? [],
-      }, null, 2)}\n`);
+      })}\n`);
       evidence.addArtifactFromPath("agent", applySummaryPath, "agent-generated patch applied");
     } else if (command.apply) {
       const applySummaryPath = path.join(evidence.artifacts_root, "agent", "agent-generate-apply.json");
@@ -828,7 +834,7 @@ async function executeAgentGenerate(
         changedPaths: applyResult.changedPaths,
         validationStatus: applyResult.validationStatus,
         validationSummary: applyResult.validationSummary ?? [],
-      }, null, 2)}\n`);
+      })}\n`);
       evidence.addArtifactFromPath("agent", applySummaryPath, "agent-generated patch apply result");
     }
     if (applyResult.status === "ok" && command.run) {
@@ -892,7 +898,7 @@ async function executeAgentApplyPatch(
       : result.status;
   return {
     status,
-    details: result,
+    details: result as unknown as Record<string, unknown>,
   };
 }
 
@@ -913,7 +919,9 @@ async function executeAgentDebug(
   });
   const response = await runAgentWithPrompt({
     projectRoot,
-    rolePrompt: prompt,
+    taskPrompt: prompt,
+    taskKind: "debug",
+    requestedScope: "agent.debug",
     courseMode: true,
     allowedVosCommands: await loadAgentAllowedCommands(projectRoot),
     runner: context.agentRunner,
@@ -1121,7 +1129,7 @@ async function listYamlFiles(root: string): Promise<string[]> {
       }
     }
   };
-  await walk(normalizedRoot);
+  await walk(root);
   return out;
 }
 
@@ -1214,13 +1222,12 @@ async function recordAICollaboration(params: {
   event: {
     session_id: string;
     task_kind: string;
-    agent_role: string;
+    agent_profile: unknown;
     related_specs: string[];
     allowed_paths: string[];
     output_kind: string;
     result: "accepted" | "rejected" | "pending" | "failed";
     created_at: string;
-    fixed_prompt_id?: string;
     patch_ref?: string;
     evidence_ref?: string;
   };
@@ -1248,7 +1255,7 @@ function printResult(result: Record<string, unknown>, asJson: boolean): void {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
-  console.log(renderOutput(result as BaseCommandResult));
+  console.log(renderOutput(result as unknown as BaseCommandResult));
 }
 
 function printHelp(topic?: string): void {

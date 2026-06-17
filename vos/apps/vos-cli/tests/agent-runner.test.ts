@@ -9,6 +9,7 @@ import { buildContextBundle, loadAgentAllowedPaths } from "../app/agent/context.
 import { executeCommand } from "../app/main.ts";
 import { EvidenceWriter } from "../app/evidence/index.ts";
 import type { HeadlessAgentOptions } from "vos-agent/headless";
+import type { AgentTaskRequest } from "vos-agent/headless";
 
 const tmpRoots: string[] = [];
 
@@ -32,7 +33,7 @@ describe("vos-cli package agent runner", () => {
 
     const result = await runAgentWithPrompt({
       projectRoot,
-      rolePrompt: "hello from vos-cli",
+      taskPrompt: "hello from vos-cli",
       courseMode: true,
       allowedVosCommands: ["build"],
       runner,
@@ -45,6 +46,37 @@ describe("vos-cli package agent runner", () => {
     expect(captured?.courseMode).toBe(true);
     expect(captured?.allowedVosCommands).toEqual(["build"]);
     expect(Object.keys(captured ?? {})).not.toContain("binary");
+  });
+
+  test("uses profile-based task runner when no legacy runner is injected", async () => {
+    const projectRoot = makeProject();
+    let captured: AgentTaskRequest | undefined;
+    const taskRunner = async (options: AgentTaskRequest) => {
+      captured = options;
+      return {
+        content: "{\"ok\":true}",
+        structuredOutput: { ok: true },
+        events: [],
+      };
+    };
+
+    const result = await runAgentWithPrompt({
+      projectRoot,
+      taskPrompt: "debug this log",
+      taskKind: "debug",
+      courseMode: true,
+      allowedVosCommands: ["build"],
+      taskRunner,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.parsedResult).toEqual({ ok: true });
+    expect(captured?.task).toBe("debug this log");
+    expect(captured?.promptOverride).toBe("debug this log");
+    expect(Object.keys(captured ?? {})).not.toContain("roleId");
+    expect(captured?.taskKind).toBe("debug");
+    expect(captured?.courseMode).toBe(true);
+    expect(captured?.allowedVosCommands).toEqual(["build"]);
   });
 
   test("executes agent plan through command-level fake package runner", async () => {
@@ -101,6 +133,7 @@ describe("vos-cli package agent runner", () => {
     expect(captured?.courseMode).toBe(true);
     expect(captured?.allowedVosCommands).toEqual(["build --dry-run"]);
     expect(captured && "binary" in captured).toBe(false);
+    expect(captured?.prompt).not.toContain(["agent", "role"].join("_"));
   });
 
   test("maps xv6 DeepSeek config to OpenAI-compatible agent env", () => {

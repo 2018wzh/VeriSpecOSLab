@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { appendFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import type { CommandStatus } from "../types.ts";
-import { RunArtifact, EvidenceRef, RunManifest } from "./manifest.ts";
+import type { RunArtifact, EvidenceRef, RunManifest } from "./manifest.ts";
 import { createRunEvent, eventToLine, type RunEvent } from "./events.ts";
 
 export interface EvidenceWriterOptions {
@@ -166,7 +166,7 @@ export class EvidenceWriter {
       project_root: this.projectRoot,
     };
     if (payload.message) {
-      (manifest as Record<string, unknown>).message = payload.message;
+      (manifest as unknown as Record<string, unknown>).message = payload.message;
     }
     await Bun.write(this.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     return manifest;

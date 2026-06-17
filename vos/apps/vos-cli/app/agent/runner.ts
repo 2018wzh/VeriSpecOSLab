@@ -4,11 +4,14 @@ import { readFileSync } from "node:fs";
 import type {
   AgentHttpPackageServerOptions,
   AgentHttpPackageServerResult,
+  AgentTaskProfileInput,
+  AgentTaskRequest,
   HeadlessAgentOptions,
   HeadlessAgentResult,
   ToolPolicy,
 } from "vos-agent/headless";
 import {
+  runAgentTask,
   runHeadlessAgentPrompt,
   startAgentHttpServer,
 } from "vos-agent/headless";
@@ -22,10 +25,24 @@ export interface AgentRunResult {
 }
 
 export type HeadlessAgentRunner = (options: HeadlessAgentOptions) => Promise<HeadlessAgentResult>;
+export type HeadlessAgentTaskRunner = (options: AgentTaskRequest) => Promise<{
+  content: string | null;
+  structuredOutput?: unknown;
+  events: unknown[];
+}>;
 
 export async function runAgentWithPrompt(params: {
   projectRoot: string;
-  rolePrompt: string;
+  taskPrompt: string;
+  taskKind?: string;
+  requestedScope?: string;
+  agentProfile?: AgentTaskProfileInput;
+  context?: unknown;
+  contextRefs?: readonly string[];
+  evidenceRefs?: readonly string[];
+  allowedPaths?: readonly string[];
+  requiredValidations?: readonly string[];
+  policyFlags?: readonly string[];
   model?: string;
   mode?: string;
   threadId?: string;
@@ -36,35 +53,64 @@ export async function runAgentWithPrompt(params: {
   allowedVosCommands?: readonly string[];
   onEvent?: (event: Record<string, unknown>) => void;
   runner?: HeadlessAgentRunner;
+  taskRunner?: HeadlessAgentTaskRunner;
 }): Promise<AgentRunResult> {
   const bootstrap = buildAgentEnv({
     projectRoot: params.projectRoot,
     env: process.env,
   });
 
-  const runner = params.runner ?? runHeadlessAgentPrompt;
-  const result = await runner({
-    projectRoot: params.projectRoot,
-    prompt: params.rolePrompt,
-    model: params.model ?? bootstrap.model,
-    mode: params.mode,
-    threadId: params.threadId,
-    maxIterations: params.maxIterations,
-    disabledTools: params.disabledTools,
-    courseMode: params.courseMode,
-    toolPolicy: params.toolPolicy,
-    allowedVosCommands: params.allowedVosCommands,
-    env: bootstrap.env,
-    onEvent: async (event) => {
-      if (event) {
-        await (params.onEvent?.(event as Record<string, unknown>));
-      }
-    },
-  });
+  const result = params.runner
+    ? await params.runner({
+      projectRoot: params.projectRoot,
+      prompt: params.taskPrompt,
+      model: params.model ?? bootstrap.model,
+      mode: params.mode,
+      threadId: params.threadId,
+      maxIterations: params.maxIterations,
+      disabledTools: params.disabledTools,
+      courseMode: params.courseMode,
+      toolPolicy: params.toolPolicy,
+      allowedVosCommands: params.allowedVosCommands,
+      env: bootstrap.env,
+      onEvent: async (event) => {
+        if (event) {
+          await (params.onEvent?.(event as Record<string, unknown>));
+        }
+      },
+    })
+    : await (params.taskRunner ?? runAgentTask)({
+      projectRoot: params.projectRoot,
+      task: params.taskPrompt,
+      promptOverride: params.taskPrompt,
+      taskKind: params.taskKind,
+      requestedScope: params.requestedScope,
+      agentProfile: params.agentProfile,
+      context: params.context,
+      contextRefs: params.contextRefs,
+      evidenceRefs: params.evidenceRefs,
+      allowedPaths: params.allowedPaths,
+      requiredValidations: params.requiredValidations,
+      policyFlags: params.policyFlags,
+      model: params.model ?? bootstrap.model,
+      mode: params.mode,
+      threadId: params.threadId,
+      maxIterations: params.maxIterations,
+      disabledTools: params.disabledTools,
+      courseMode: params.courseMode,
+      toolPolicy: params.toolPolicy,
+      allowedVosCommands: params.allowedVosCommands,
+      env: bootstrap.env,
+      onEvent: async (event) => {
+        if (event) {
+          await (params.onEvent?.(event as Record<string, unknown>));
+        }
+      },
+    });
 
   return {
     resultText: result.content ?? "",
-    parsedResult: undefined,
+    parsedResult: "structuredOutput" in result ? result.structuredOutput : undefined,
     rawEvents: result.events.map((event) => event as Record<string, unknown>),
     exitCode: 0,
   };
