@@ -101,8 +101,10 @@ export async function runQemuCommand(params: {
     command: [runSpec.command, ...runSpec.args],
     cwd: params.projectRoot,
     timeoutMs: runSpec.timeoutMs,
+    timeoutGraceMs: 500,
     onStdoutLine: () => {},
     onStderrLine: () => {},
+    stopWhen: ({ stdout, stderr }) => new RegExp(runSpec.successSignal).test(`${stdout}${stderr}`),
   });
 
   const output = `${runResult.stdout}${runResult.stderr}`;

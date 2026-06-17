@@ -15,9 +15,11 @@ export interface ExecutorOptions {
   cwd?: string;
   env?: Record<string, string | undefined>;
   timeoutMs?: number;
+  timeoutGraceMs?: number;
   stdin?: string;
   onStdoutLine?: (line: string) => void;
   onStderrLine?: (line: string) => void;
+  stopWhen?: (output: { stdout: string; stderr: string }) => boolean;
 }
 
 export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult> {
@@ -35,6 +37,7 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
 
     const outChunks: string[] = [];
     const errChunks: string[] = [];
+    let stoppedByCondition = false;
 
     const onData = (buffer: Buffer, target: string[]) => {
       const text = buffer.toString();
@@ -48,6 +51,13 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
           opts.onStderrLine?.(line);
         }
       }
+      if (!stoppedByCondition && opts.stopWhen?.({
+        stdout: outChunks.join(""),
+        stderr: errChunks.join(""),
+      })) {
+        stoppedByCondition = true;
+        proc.kill("SIGTERM");
+      }
     };
 
     proc.stdout?.on("data", (chunk) => onData(chunk as Buffer, outChunks));
@@ -58,20 +68,31 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
       proc.stdin?.end();
     }
 
+    const killProcess = () => {
+      proc.kill("SIGKILL");
+    };
+
+    let graceTimer: ReturnType<typeof setTimeout> | undefined;
     const timer = opts.timeoutMs !== undefined
       ? setTimeout(() => {
           timedOut = true;
-          proc.kill("SIGKILL");
+          if (opts.timeoutGraceMs && outChunks.length === 0 && errChunks.length === 0) {
+            graceTimer = setTimeout(killProcess, opts.timeoutGraceMs);
+          } else {
+            killProcess();
+          }
         }, opts.timeoutMs)
       : undefined;
 
     proc.on("error", (error) => {
       if (timer !== undefined) clearTimeout(timer);
+      if (graceTimer !== undefined) clearTimeout(graceTimer);
       reject(error);
     });
 
     proc.on("close", (code, signal) => {
       if (timer !== undefined) clearTimeout(timer);
+      if (graceTimer !== undefined) clearTimeout(graceTimer);
       const durationMs = Date.now() - start;
       resolve({
         command: opts.command,
@@ -85,4 +106,3 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
     });
   });
 }
-

@@ -68,9 +68,9 @@ async function materializeDefaultManifest(
   const buildArtifacts = collectStringListByKey(buildSpec, "generated_artifacts");
   const runSpec = await readRunSpec(projectRoot);
   const artifact = runSpec.artifact
-    ?? buildArtifacts.find((value) => value.endsWith(".elf"))
     ?? buildArtifacts.find((value) => value.endsWith(".bin"))
-    ?? "build/kernel.elf";
+    ?? buildArtifacts.find((value) => value.endsWith(".elf"))
+    ?? "build/kernel.bin";
   const manifest: MaterializedManifest = {
     generator: {
       name: "vos-cli",
