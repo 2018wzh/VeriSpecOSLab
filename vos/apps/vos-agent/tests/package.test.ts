@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import packageJson from "../package.json";
 import {
+  resolveAgentTaskProfile,
+  runAgentTask,
   runHeadlessAgentPrompt,
   startAgentHttpServer,
 } from "vos-agent/headless";
@@ -34,6 +36,8 @@ describe("package metadata", () => {
       ".": "./app/main.ts",
       "./headless": "./app/headless.ts",
     });
+    expect(typeof resolveAgentTaskProfile).toBe("function");
+    expect(typeof runAgentTask).toBe("function");
     expect(typeof runHeadlessAgentPrompt).toBe("function");
     expect(typeof startAgentHttpServer).toBe("function");
   });
