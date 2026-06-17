@@ -165,9 +165,7 @@ function isCourseAllowedIntent(
   if (!allowedCommands || allowedCommands.length === 0) return false;
   const normalizedIntent = matchCommandIntent(args);
   return normalizeAllowedCommand(normalizedIntent) !== "" &&
-    new Set(allowedCommands.map((command) => normalizeAllowedCommand(command))).has(
-      normalizedIntent,
-    );
+    allowedCommandIntents(allowedCommands).has(normalizedIntent);
 }
 
 function resolveCliCommand(
@@ -220,7 +218,7 @@ function isAllowedCoursedCommand(
     return true;
   }
   const allowed = new Set(
-    allowedCommands.map((value) => normalizeAllowedCommand(value)),
+    Array.from(allowedCommandIntents(allowedCommands)),
   );
   return allowed.has(matchCommandIntent(args));
 }
@@ -237,6 +235,13 @@ function matchCommandIntent(args: string[]): string {
 
 function normalizeAllowedCommand(raw: string): string {
   return raw.trim().replace(/\s+/g, " ");
+}
+
+function allowedCommandIntents(commands: readonly string[]): Set<string> {
+  return new Set(commands.map((command) => {
+    const normalized = normalizeVosCommand(command);
+    return normalized.ok ? matchCommandIntent(normalized.args) : "";
+  }).filter(Boolean));
 }
 
 function normalizeVosCommand(command: string):

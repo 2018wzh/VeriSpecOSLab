@@ -31,6 +31,7 @@ export interface RunSessionTurnOptions {
   courseMode?: boolean;
   allowedVosCommands?: readonly string[];
   streamAssistant?: boolean;
+  fixedSystemPrompt?: string;
   onEvent?: (event: SessionEvent) => void | Promise<void>;
 }
 
@@ -103,7 +104,7 @@ export async function runSessionTurn(
       rootDir: resolvedWorkspaceRoot,
       startDir,
     });
-    system = buildAgentSystemPrompt(guidance);
+    system = combineSystemPrompts(opts.fixedSystemPrompt, buildAgentSystemPrompt(guidance));
     thread = store.create({
       prompt,
       model: turnModel,
@@ -227,4 +228,14 @@ export async function runSessionTurn(
   } finally {
     await mcpProvider.close();
   }
+}
+
+function combineSystemPrompts(
+  fixedSystemPrompt: string | undefined,
+  workspaceSystemPrompt: string | undefined,
+): string | undefined {
+  if (fixedSystemPrompt && workspaceSystemPrompt) {
+    return `${fixedSystemPrompt}\n\n${workspaceSystemPrompt}`;
+  }
+  return fixedSystemPrompt ?? workspaceSystemPrompt;
 }
