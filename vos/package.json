@@ -5,15 +5,13 @@
   "type": "module",
   "workspaces": [
     "apps/vos-agent",
-    "apps/vos-cli",
-    "apps/vos-web"
+    "apps/vos-cli"
   ],
   "scripts": {
     "vos": "cd apps/vos-cli && bun run app/main.ts",
     "dev:agent": "cd apps/vos-agent && bun run app/main.ts serve --host 127.0.0.1 --port 8787",
-    "dev:web": "npm --prefix apps/vos-web run dev",
-    "typecheck": "cd apps/vos-cli && bun run typecheck && cd ../vos-agent && bun run typecheck && cd ../vos-web && npm run lint",
+    "typecheck": "cd apps/vos-cli && bun run typecheck && cd ../vos-agent && bun run typecheck",
     "test": "cd apps/vos-cli && bun test && cd ../vos-agent && bun test",
-    "build": "cd apps/vos-cli && bun run build && cd ../vos-agent && bun run build && cd ../vos-web && npm run build"
+    "build": "cd apps/vos-cli && bun run build && cd ../vos-agent && bun run build"
   }
 }
