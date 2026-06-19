@@ -32,7 +32,7 @@ guarantee:
     - void
   state_updates: []
   side_effects:
-    - *sb populated from disk block 1
+    - "*sb populated from disk block 1"
   emitted_events: []
 
 preconditions:

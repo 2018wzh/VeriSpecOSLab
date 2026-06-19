@@ -43,7 +43,7 @@ resource_lifetime_rules:
   - directory entries are freed when a file is unlinked
 security_boundary:
   - path traversal validates each component via dirlookup
-  - "." and ".." are restricted to prevent escape
+  - '"." and ".." are restricted to prevent escape'
   - file permissions are checked through struct file flags
 test_surfaces:
   - inode alloc/free cycle

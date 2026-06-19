@@ -33,7 +33,7 @@ guarantee:
     - 0 on failure
   state_updates: []
   side_effects:
-    - *name points into path for the last component
+    - "*name points into path for the last component"
   emitted_events: []
 
 preconditions:

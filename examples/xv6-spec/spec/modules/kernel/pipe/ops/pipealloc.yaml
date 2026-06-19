@@ -40,7 +40,7 @@ guarantee:
 preconditions:
   - neither file descriptor is in use
 postconditions:
-  - on success: *f0 is the read end, *f1 is the write end
+  - "on success: *f0 is the read end, *f1 is the write end"
 invariants_preserved:
   []
 failure_semantics:

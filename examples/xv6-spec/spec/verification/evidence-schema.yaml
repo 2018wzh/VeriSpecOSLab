@@ -10,7 +10,7 @@ evidence_items:
 
       - kernel/boot.boot_banner
 
-    pass_condition: XV6_BOOT_OK appears in output
+    pass_condition: XV6_BOOT_OK and the shell prompt appear in output
     artifact_paths:
       - build/qemu_boot.log
 

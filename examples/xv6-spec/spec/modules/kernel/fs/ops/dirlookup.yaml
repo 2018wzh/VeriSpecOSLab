@@ -32,7 +32,7 @@ guarantee:
     - int: 0 on success (found), -1 on failure (not found)
   state_updates: []
   side_effects:
-    - *poff set to byte offset if poff != 0
+    - "*poff set to byte offset if poff != 0"
   emitted_events: []
 
 preconditions:

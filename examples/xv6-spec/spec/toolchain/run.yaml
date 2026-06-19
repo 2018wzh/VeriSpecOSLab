@@ -13,5 +13,5 @@ run:
     - -no-reboot
     - -serial
     - mon:stdio
-  success_signal: XV6_BOOT_OK
+  success_signal: 'init: starting sh\s+\$ '
   timeout_secs: 30

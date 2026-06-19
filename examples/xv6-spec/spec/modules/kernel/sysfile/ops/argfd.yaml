@@ -31,12 +31,12 @@ guarantee:
     - -1 on invalid fd
   state_updates: []
   side_effects:
-    - *pfd and *pf set on success
+    - "*pfd and *pf set on success"
   emitted_events: []
 preconditions:
   []
 postconditions:
-  - *pf points to a valid struct file with ref>=1
+  - "*pf points to a valid struct file with ref>=1"
 invariants_preserved:
   []
 failure_semantics:
