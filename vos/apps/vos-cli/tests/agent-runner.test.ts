@@ -363,6 +363,40 @@ describe("vos-cli package agent runner", () => {
     });
   });
 
+  test("extends policy paths with codegen target paths from spec yaml", async () => {
+    const projectRoot = makeProject();
+    mkdirSync(join(projectRoot, "spec", "modules", "kernel", "boot", "ops"), { recursive: true });
+    writeFileSync(join(projectRoot, ".vos", "policy.yaml"), [
+      "allowed_paths:",
+      "  - spec",
+      "  - .vos",
+      "visibility_scope: public",
+      "",
+    ].join("\n"));
+    writeFileSync(join(projectRoot, ".vos", "project.yaml"), [
+      "project_id: codegen-path-test",
+      "spec_root: spec",
+      "current_stage: boot",
+      "",
+    ].join("\n"));
+    writeFileSync(join(projectRoot, "spec", "modules", "kernel", "boot", "ops", "boot_banner.yaml"), [
+      "id: kernel/boot.boot_banner",
+      "codegen:",
+      "  targets:",
+      "    - kind: symbol",
+      "      path: kernel/boot.c",
+      "      symbols: [main]",
+      "    - kind: header",
+      "      path: include/defs.h",
+      "",
+    ].join("\n"));
+
+    const allowedPaths = await loadAgentAllowedPaths(projectRoot);
+
+    expect(allowedPaths).toContain("kernel/boot.c");
+    expect(allowedPaths).toContain("include/defs.h");
+  });
+
   test("agent subcommands keep package runner in course mode without binary options", () => {
     const source = readFileSync(new URL("../app/main.ts", import.meta.url), "utf8");
     expect(source.match(/courseMode: true/g)?.length).toBeGreaterThanOrEqual(3);

@@ -6,6 +6,7 @@ import type {
   AgentLogCommand,
   AgentPlanCommand,
   AgentServeCommand,
+  AgentValidateGeneratedCommand,
   ArchComposeCommand,
   ArchDeriveTestsCommand,
   ArchLintCommand,
@@ -54,6 +55,8 @@ const VALUE_FLAGS = new Set([
   "--run",
   "--no-require-spec",
   "--run-validation",
+  "--patch-file",
+  "--keep-worktree",
 ]);
 
 export function parseArgs(argv: string[]): ParsedInvocation {
@@ -541,6 +544,53 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
         requireSpec,
         runValidation,
       } satisfies AgentApplyPatchCommand;
+    }
+    if (second === "validate-generated") {
+      let target: string | undefined;
+      let patchFile: string | undefined;
+      let keepWorktree = false;
+      for (let i = 1; i < rest.length; i++) {
+        const arg = rest[i];
+        if (arg === "--target") {
+          target = resolveRequiredValue(rest, i, arg);
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--target=")) {
+          target = arg.slice("--target=".length);
+          continue;
+        }
+        if (arg === "--patch-file") {
+          patchFile = resolveRequiredValue(rest, i, arg);
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--patch-file=")) {
+          patchFile = arg.slice("--patch-file=".length);
+          continue;
+        }
+        if (arg === "--keep-worktree") {
+          keepWorktree = true;
+          continue;
+        }
+        if (!arg.startsWith("-") && target === undefined) {
+          target = arg;
+          continue;
+        }
+        if (arg.startsWith("-")) {
+          throw new Error(`unknown flag for agent validate-generated: ${arg}`);
+        }
+        throw new Error(`unexpected positional value for agent validate-generated: ${arg}`);
+      }
+      if (!target || target.trim().length === 0) {
+        throw new Error("agent validate-generated requires --target <spec-ref|stage>");
+      }
+      return {
+        kind: "agent_validate_generated",
+        target,
+        patchFile,
+        keepWorktree,
+      } satisfies AgentValidateGeneratedCommand;
     }
     if (second === "debug") {
       return { kind: "agent_debug", logPath: parseOptionalStringValue(rest, "--log") } satisfies AgentDebugCommand;

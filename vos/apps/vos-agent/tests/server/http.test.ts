@@ -85,7 +85,7 @@ describe("vos-agent HTTP server", () => {
     }) as Array<{ project: { id: string }; current_stage: { key: string } }>;
     expect(projects).toHaveLength(1);
     expect(projects[0].project.id).toBe("project-demo-student");
-    expect(projects[0].current_stage.key).toBe("boot-minimum");
+    expect(projects[0].current_stage.key).toBe("memory-management");
 
     const progress = await fetchJson("/api/v1/projects/project-demo-student/progress", {
       headers: { Authorization: `Bearer ${login.token}` },

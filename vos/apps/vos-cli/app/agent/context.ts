@@ -175,6 +175,7 @@ async function collectEditablePathsFromSpecYaml(projectRoot: string): Promise<st
     for (const value of [
       ...collectStringListByKey(parsed, "file"),
       ...collectStringListByKey(parsed, "target_file"),
+      ...collectStringListByKey(parsed, "path"),
     ]) {
       if (looksLikeEditableProjectPath(value)) {
         out.push(value);

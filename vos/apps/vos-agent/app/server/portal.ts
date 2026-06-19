@@ -629,6 +629,22 @@ export function createSeededPortalStore(): PortalStore {
     status: "active",
     password: "student",
   };
+  const studentMemory: UserRecord = {
+    id: "user-student-memory",
+    username: "memory",
+    display_name: "Memory Track Student",
+    role: "student",
+    status: "active",
+    password: "memory",
+  };
+  const studentRisk: UserRecord = {
+    id: "user-student-risk",
+    username: "risk",
+    display_name: "Risk Review Student",
+    role: "student",
+    status: "active",
+    password: "risk",
+  };
   const ta: UserRecord = {
     id: "user-ta",
     username: "ta",
@@ -721,12 +737,27 @@ export function createSeededPortalStore(): PortalStore {
       visibility_scope: "student-public",
     },
   };
+  const resourceStage: StageGate = {
+    id: "stage-resource-namespace",
+    experiment_id: experiment.id,
+    key: "resource-and-namespace",
+    name: "Resource / Namespace",
+    sequence: 4,
+    gate_type: "hybrid",
+    status: "active",
+    config: {
+      required_artifacts: ["spec/architecture/slices/05-resource-namespace.yaml"],
+      required_evidence: [{ suite: "resource", case_name: "fd_lifetime_contract", required_result: "pass" }],
+      manual_review_required: true,
+      visibility_scope: "student-public",
+    },
+  };
   const finalStage: StageGate = {
     id: "stage-final-defense",
     experiment_id: experiment.id,
     key: "final-defense",
     name: "Final Defense",
-    sequence: 4,
+    sequence: 5,
     gate_type: "manual",
     status: "active",
     config: {
@@ -741,9 +772,27 @@ export function createSeededPortalStore(): PortalStore {
     student_user_id: student.id,
     experiment_id: experiment.id,
     repo_url: "local://student/xv6-spec",
-    current_stage_id: bootStage.id,
+    current_stage_id: memoryStage.id,
     status: "active",
-    last_commit_sha: "demo001",
+    last_commit_sha: "demo042",
+  };
+  const memoryProject: Project = {
+    id: "project-memory-track",
+    student_user_id: studentMemory.id,
+    experiment_id: experiment.id,
+    repo_url: "local://student/memory-track",
+    current_stage_id: trapStage.id,
+    status: "active",
+    last_commit_sha: "mem118",
+  };
+  const riskProject: Project = {
+    id: "project-risk-review",
+    student_user_id: studentRisk.id,
+    experiment_id: experiment.id,
+    repo_url: "local://student/risk-review",
+    current_stage_id: syscallStage.id,
+    status: "needs_review",
+    last_commit_sha: "risk733",
   };
   const pipeline: PipelineRun = {
     id: "pipeline-demo-boot",
@@ -762,6 +811,59 @@ export function createSeededPortalStore(): PortalStore {
     started_at: now,
     finished_at: now,
   };
+  const memoryPipeline: PipelineRun = {
+    id: "pipeline-demo-memory",
+    project_id: project.id,
+    commit_sha: "demo042",
+    trigger_type: "push",
+    status: "failed",
+    stage_scope: "memory-management",
+    public_summary: {
+      status: "failed",
+      passed: 1,
+      failed: 1,
+      total: 2,
+      failure_class: "implementation",
+      message: "page_allocator_tests failed; kernel_pagetable_smoke passed",
+    },
+    started_at: now,
+    finished_at: now,
+  };
+  const memoryTrackPipeline: PipelineRun = {
+    id: "pipeline-memory-track-trap",
+    project_id: memoryProject.id,
+    commit_sha: "mem118",
+    trigger_type: "push",
+    status: "passed",
+    stage_scope: "trap-privilege",
+    public_summary: {
+      status: "passed",
+      passed: 3,
+      failed: 0,
+      total: 3,
+      message: "Trap and pointer checks passed",
+    },
+    started_at: now,
+    finished_at: now,
+  };
+  const riskPipeline: PipelineRun = {
+    id: "pipeline-risk-syscall",
+    project_id: riskProject.id,
+    commit_sha: "risk733",
+    trigger_type: "push",
+    status: "failed",
+    stage_scope: "syscall-surface",
+    public_summary: {
+      status: "failed",
+      passed: 5,
+      failed: 2,
+      total: 7,
+      failure_class: "policy-risk",
+      message: "Syscall trace failed and Agent risk review is required",
+    },
+    started_at: now,
+    finished_at: now,
+  };
   const evidence: EvidenceRecord = {
     id: "evidence-boot-banner",
     project_id: project.id,
@@ -774,6 +876,54 @@ export function createSeededPortalStore(): PortalStore {
     log_segment: "[SPECLAB] kernel_init\nXV6_BOOT_OK",
     artifact_uri: ".vos/runs/demo/qemu.log",
   };
+  const memoryFailEvidence: EvidenceRecord = {
+    id: "evidence-memory-double-free",
+    project_id: project.id,
+    pipeline_run_id: memoryPipeline.id,
+    kind: "test",
+    suite: "memory",
+    case_name: "page_allocator_tests",
+    result: "fail",
+    metrics: { failed_case: "double_free_guard", allocation_rounds: 128 },
+    log_segment: "panic: page allocator accepted duplicate free for pa=0x80402000",
+    artifact_uri: ".vos/runs/demo/memory.log",
+  };
+  const memoryPassEvidence: EvidenceRecord = {
+    id: "evidence-memory-pagetable",
+    project_id: project.id,
+    pipeline_run_id: memoryPipeline.id,
+    kind: "test",
+    suite: "memory",
+    case_name: "kernel_pagetable_smoke",
+    result: "pass",
+    metrics: { mappings_checked: 42, kernel_stack_guard: true },
+    log_segment: "kernel_pagetable_smoke: ok",
+    artifact_uri: ".vos/runs/demo/memory.log",
+  };
+  const trapEvidence: EvidenceRecord = {
+    id: "evidence-trap-invalid-pointer",
+    project_id: memoryProject.id,
+    pipeline_run_id: memoryTrackPipeline.id,
+    kind: "test",
+    suite: "trap",
+    case_name: "invalid_user_pointer",
+    result: "pass",
+    metrics: { traps: 6, killed_processes: 2 },
+    log_segment: "invalid_user_pointer: ok",
+    artifact_uri: ".vos/runs/memory-track/trap.log",
+  };
+  const riskEvidence: EvidenceRecord = {
+    id: "evidence-risk-copyin",
+    project_id: riskProject.id,
+    pipeline_run_id: riskPipeline.id,
+    kind: "test",
+    suite: "syscall",
+    case_name: "copyin_copyout_contract",
+    result: "fail",
+    metrics: { failed_calls: ["write", "exec"], suspicious_patch: true },
+    log_segment: "copyin_copyout_contract: failed on invalid user pointer path",
+    artifact_uri: ".vos/runs/risk-review/syscall.log",
+  };
   const rubric: EvaluationRubric = {
     id: "rubric-boot-evidence",
     experiment_id: experiment.id,
@@ -785,6 +935,37 @@ export function createSeededPortalStore(): PortalStore {
     weight: 10,
     description: "Boot banner and success marker are present.",
   };
+  const architectureRubric: EvaluationRubric = {
+    id: "rubric-architecture-design",
+    experiment_id: experiment.id,
+    name: "Architecture design",
+    status: "active",
+    target_kind: "review",
+    target_suite: "architecture",
+    weight: 20,
+    description: "ArchitectureSeed, slices, ADRs, and non-goals are specific and traceable.",
+  };
+  const memoryRubric: EvaluationRubric = {
+    id: "rubric-memory-evidence",
+    experiment_id: experiment.id,
+    name: "Memory evidence",
+    status: "active",
+    target_kind: "test",
+    target_suite: "memory",
+    target_case: "page_allocator_tests",
+    weight: 15,
+    description: "Allocator invariants and pagetable smoke checks pass public evidence.",
+  };
+  const aiRubric: EvaluationRubric = {
+    id: "rubric-ai-audit",
+    experiment_id: experiment.id,
+    name: "AI audit hygiene",
+    status: "active",
+    target_kind: "audit",
+    target_suite: "agent",
+    weight: 10,
+    description: "Agent usage is disclosed, scoped, and backed by validation evidence.",
+  };
   const score: ScoreItem = {
     id: "score-boot-evidence",
     project_id: project.id,
@@ -793,12 +974,54 @@ export function createSeededPortalStore(): PortalStore {
     feedback: "Boot evidence passed in the seeded public verification run.",
     is_final: false,
   };
+  const architectureScore: ScoreItem = {
+    id: "score-architecture-design",
+    project_id: project.id,
+    rubric_id: architectureRubric.id,
+    auto_score: 16,
+    feedback: "Architecture seed approved; memory slice requires one invariant clarification.",
+    is_final: false,
+  };
+  const memoryScore: ScoreItem = {
+    id: "score-memory-evidence",
+    project_id: project.id,
+    rubric_id: memoryRubric.id,
+    auto_score: 7,
+    feedback: "One memory public case failed and remains provisional.",
+    is_final: false,
+  };
+  const aiScore: ScoreItem = {
+    id: "score-ai-audit",
+    project_id: project.id,
+    rubric_id: aiRubric.id,
+    auto_score: 10,
+    feedback: "Agent collaboration stayed within current-stage projection.",
+    is_final: false,
+  };
   const submission: DesignSubmission = {
     id: "submission-memory-design",
     project_id: project.id,
     stage_gate_id: memoryStage.id,
     commit_sha: "demo001",
     artifact_ref: "docs/memory-design.md",
+    review_status: "pending",
+  };
+  const trapSubmission: DesignSubmission = {
+    id: "submission-trap-design",
+    project_id: memoryProject.id,
+    stage_gate_id: trapStage.id,
+    commit_sha: "mem118",
+    artifact_ref: "spec/architecture/slices/03-trap.yaml",
+    review_status: "approved",
+    reviewer_user_id: ta.id,
+    feedback: "Pointer validation strategy is aligned with public evidence.",
+  };
+  const riskSubmission: DesignSubmission = {
+    id: "submission-risk-syscall-design",
+    project_id: riskProject.id,
+    stage_gate_id: syscallStage.id,
+    commit_sha: "risk733",
+    artifact_ref: "spec/modules/kernel/syscall/module.yaml",
     review_status: "pending",
   };
   const audit: AgentAuditRecord = {
@@ -814,6 +1037,19 @@ export function createSeededPortalStore(): PortalStore {
     risk_level: "low",
     created_at: now,
   };
+  const riskAudit: AgentAuditRecord = {
+    id: "audit-risk-generated-patch",
+    session_id: "risk-demo",
+    user_id: studentRisk.id,
+    project_id: riskProject.id,
+    model: "vos-local-agent",
+    task_kind: "agent_generate",
+    prompt_summary: "Student requested broad syscall implementation changes before design approval.",
+    response_summary: "Generated patch proposal touched syscall and test paths; staff review required before acceptance.",
+    risk_flags: ["large_patch", "stage_boundary", "validation_missing"],
+    risk_level: "high",
+    created_at: now,
+  };
 
   const tokens = new Map<string, string>([
     ["demo-teacher", teacher.id],
@@ -821,18 +1057,18 @@ export function createSeededPortalStore(): PortalStore {
     ["demo-ta", ta.id],
   ]);
   return new PortalStore({
-    users: [teacher, student, ta],
+    users: [teacher, student, studentMemory, studentRisk, ta],
     tokens,
     courses: [course],
     experiments: [experiment],
-    stages: [bootStage, memoryStage, trapStage, syscallStage, finalStage],
-    projects: [project],
-    submissions: [submission],
-    pipelines: [pipeline],
-    evidence: [evidence],
-    rubrics: [rubric],
-    scores: [score],
-    audits: [audit],
+    stages: [bootStage, memoryStage, trapStage, syscallStage, resourceStage, finalStage],
+    projects: [project, memoryProject, riskProject],
+    submissions: [submission, trapSubmission, riskSubmission],
+    pipelines: [pipeline, memoryPipeline, memoryTrackPipeline, riskPipeline],
+    evidence: [evidence, memoryFailEvidence, memoryPassEvidence, trapEvidence, riskEvidence],
+    rubrics: [rubric, architectureRubric, memoryRubric, aiRubric],
+    scores: [score, architectureScore, memoryScore, aiScore],
+    audits: [audit, riskAudit],
   });
 }
 

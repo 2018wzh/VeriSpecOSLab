@@ -188,6 +188,13 @@ export interface AgentApplyPatchCommand extends BaseCommand {
   runValidation: boolean;
 }
 
+export interface AgentValidateGeneratedCommand extends BaseCommand {
+  kind: "agent_validate_generated";
+  target: string;
+  patchFile?: string;
+  keepWorktree: boolean;
+}
+
 export interface AgentDebugCommand extends BaseCommand {
   kind: "agent_debug";
   logPath?: string;
@@ -225,6 +232,7 @@ export type CliCommand =
   | AgentPlanCommand
   | AgentGenerateCommand
   | AgentApplyPatchCommand
+  | AgentValidateGeneratedCommand
   | AgentDebugCommand
   | AgentLogCommand
   | { kind: "help"; topic?: string };
