@@ -51,6 +51,14 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { renderOutput } from "./output.ts";
+import { createCommandProgress } from "./progress/index.ts";
+import type { CommandProgress, ProgressUpdate } from "./progress/types.ts";
+import { runProgressMcpServer } from "./progress/mcp-server.ts";
+import {
+  appendAgentProgressInstructions,
+  createProgressMcpServerConfig,
+  progressUpdateFromAgentEvent,
+} from "./progress/agent.ts";
 import { runBuildCommand } from "./runtime/build.ts";
 import { runQemuCommand } from "./runtime/run.ts";
 import { runTestCommand } from "./runtime/test.ts";
@@ -91,10 +99,16 @@ interface ExecContext {
   global: ParsedInvocation["global"];
   evidence: EvidenceWriter;
   agentRunner?: HeadlessAgentRunner;
+  progress?: CommandProgress;
 }
 
 async function main(): Promise<void> {
   try {
+    if (process.argv[2] === "internal" && process.argv[3] === "progress-mcp") {
+      await runProgressMcpServer();
+      return;
+    }
+
     const parsed = parseArgs(process.argv);
 
     if (parsed.command.kind === "help") {
@@ -112,12 +126,19 @@ async function main(): Promise<void> {
         command: commandToArray(parsed.command),
         args: process.argv.slice(2),
       });
+      const progress = createCommandProgress({
+        mode: parsed.global.progress,
+        json: parsed.global.json,
+      });
+      progress.start(commandLabel(parsed.command), "starting");
 
       try {
+        progress.update({ stage: commandLabel(parsed.command), status: "running", message: "running" });
         const outcome = await executeCommand(parsed.command, {
           projectRoot,
           global: parsed.global,
           evidence,
+          progress,
         });
         const manifest = await evidence.finalize(outcome.status, {
           message: typeof outcome.details.message === "string" ? outcome.details.message : undefined,
@@ -140,6 +161,7 @@ async function main(): Promise<void> {
           await writeFile(parsed.global.reportPath, `${JSON.stringify(finalOutput, null, 2)}\n`);
         }
 
+        progress.finish(outcome.status, typeof outcome.details.message === "string" ? outcome.details.message : undefined);
         printResult(finalOutput, parsed.global.json);
       } catch (error) {
         const status = classifyErrorStatus(error);
@@ -168,6 +190,7 @@ async function main(): Promise<void> {
         if (parsed.global.reportPath) {
           await writeFile(parsed.global.reportPath, `${JSON.stringify(finalOutput, null, 2)}\n`);
         }
+        progress.finish(status, error instanceof Error ? error.message : "unknown error");
         printResult(finalOutput, parsed.global.json);
         process.exitCode = isSuccessStatus(status) ? 0 : 1;
         return;
@@ -369,18 +392,19 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
     }
 
     case "build":
-      return executeBuild(command, evidence, projectRoot);
+      return executeBuild(command, context, evidence, projectRoot);
 
     case "run_qemu":
-      return executeRunQemu(command, evidence, projectRoot);
+      return executeRunQemu(command, context, evidence, projectRoot);
 
     case "test":
-      return executeTest(command, evidence, projectRoot);
+      return executeTest(command, context, evidence, projectRoot);
 
     case "verify":
       return executeVerify(command, context, evidence);
 
     case "trace_syscall": {
+      updateProgress(context, { stage: "trace syscall", status: "running", message: "running qemu" });
       const result = await runQemuCommand({
         projectRoot,
         evidence,
@@ -466,20 +490,25 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
 
     case "agent_plan": {
       const requestedScope = command.scope ?? "agent.plan";
+      updateProgress(context, { stage: "agent plan", status: "running", message: "building context" });
       const bundle = await buildContextBundle({ projectRoot, requestedScope });
       const prompt = buildAgentPlanPrompt({
         bundle,
         requestedScope,
         task: command.task,
       });
+      updateProgress(context, { stage: "agent plan", status: "running", message: "waiting for agent" });
+      const agentProgress = createAgentProgressParams(context, "agent plan");
       const agentResult = await runAgentWithPrompt({
         projectRoot,
-        taskPrompt: prompt,
+        taskPrompt: agentProgress.taskPrompt(prompt),
         taskKind: "plan",
         requestedScope,
         context: bundle,
         courseMode: true,
         allowedVosCommands: await loadAgentAllowedCommands(projectRoot),
+        extraMcpServers: agentProgress.extraMcpServers,
+        onEvent: agentProgress.onEvent,
         runner: context.agentRunner,
       });
       const parsed = parsePlanDraft(
@@ -668,7 +697,8 @@ function isSuccessStatus(status: CommandStatus): boolean {
   return status === "passed" || status === "ok" || status === "planned";
 }
 
-async function executeBuild(command: BuildCommand, evidence: EvidenceWriter, projectRoot: string): Promise<CommandOutcome> {
+async function executeBuild(command: BuildCommand, context: ExecContext, evidence: EvidenceWriter, projectRoot: string): Promise<CommandOutcome> {
+  updateProgress(context, { stage: "build", status: "running", message: command.dryRun ? "planning build" : "running build" });
   const result = await runBuildCommand({
     projectRoot,
     evidence,
@@ -685,7 +715,8 @@ async function executeBuild(command: BuildCommand, evidence: EvidenceWriter, pro
   };
 }
 
-async function executeRunQemu(command: RunQemuCommand, evidence: EvidenceWriter, projectRoot: string): Promise<CommandOutcome> {
+async function executeRunQemu(command: RunQemuCommand, context: ExecContext, evidence: EvidenceWriter, projectRoot: string): Promise<CommandOutcome> {
+  updateProgress(context, { stage: "run qemu", status: "running", message: command.dryRun ? "planning run" : "running qemu" });
   const result = await runQemuCommand({
     projectRoot,
     evidence,
@@ -704,7 +735,8 @@ async function executeRunQemu(command: RunQemuCommand, evidence: EvidenceWriter,
   };
 }
 
-async function executeTest(command: TestCommand, evidence: EvidenceWriter, projectRoot: string): Promise<CommandOutcome> {
+async function executeTest(command: TestCommand, context: ExecContext, evidence: EvidenceWriter, projectRoot: string): Promise<CommandOutcome> {
+  updateProgress(context, { stage: "test", status: "running", message: command.dryRun ? "planning tests" : "running tests" });
   const result = await runTestCommand({
     projectRoot,
     evidence,
@@ -739,6 +771,7 @@ async function executeVerify(
     });
   }
 
+  updateProgress(context, { stage: "verify", status: "running", message: `verifying ${command.scope}` });
   const result = await runVerifyCommand({
     projectRoot,
     evidence,
@@ -790,6 +823,7 @@ async function executeAgentGenerate(
   }
 
   const projectRoot = context.projectRoot;
+  updateProgress(context, { stage: "agent generate", status: "running", message: "building context" });
   const bundle = await buildContextBundle({
     projectRoot,
     requestedScope: "agent.generate",
@@ -801,14 +835,18 @@ async function executeAgentGenerate(
     buildRequested: command.build,
     runRequested: command.run,
   });
+  updateProgress(context, { stage: "agent generate", status: "running", message: "waiting for agent" });
+  const agentProgress = createAgentProgressParams(context, "agent generate");
   let agentResult = await runAgentWithPrompt({
     projectRoot,
-    taskPrompt,
+    taskPrompt: agentProgress.taskPrompt(taskPrompt),
     taskKind: "codegen",
     requestedScope: "agent.generate",
     context: bundle,
     courseMode: true,
     allowedVosCommands: await loadAgentAllowedCommands(projectRoot),
+    extraMcpServers: agentProgress.extraMcpServers,
+    onEvent: agentProgress.onEvent,
     runner: context.agentRunner,
   });
   const rawResponsePath = path.join(projectRoot, ".vos", "agent-generate-raw.txt");
@@ -828,6 +866,7 @@ async function executeAgentGenerate(
   let runOutput: string | undefined;
   let resultStatus: CommandStatus = "passed";
   if (command.apply) {
+    updateProgress(context, { stage: "agent generate", status: "running", message: "applying patch", percent: 70 });
     const applyResult = await applyPatchText({
       projectRoot,
       patchText: parsed.patch,
@@ -869,6 +908,7 @@ async function executeAgentGenerate(
       evidence.addArtifactFromPath("agent", applySummaryPath, "agent-generated patch apply result");
     }
     if (applyResult.status === "ok" && command.run) {
+      updateProgress(context, { stage: "agent generate", status: "running", message: "running qemu", percent: 88 });
       const runResult = await runQemuCommand({
         projectRoot,
         evidence,
@@ -958,6 +998,7 @@ async function executeTraceValidation(params: {
 }): Promise<CommandOutcome> {
   const { context, evidence } = params;
   const projectRoot = context.projectRoot;
+  updateProgress(context, { stage: "trace validation", status: "running", message: "checking worktree" });
   await ensureCleanGitWorktree(projectRoot);
   const recentEvidence = await collectRunManifestSummaries(projectRoot);
   const traceInput = await buildTraceValidationInput({
@@ -970,14 +1011,18 @@ async function executeTraceValidation(params: {
   let lastAgentOutput = "";
   let lastError: unknown;
   for (let attempt = 1; attempt <= TRACE_VALIDATION_AGENT_ATTEMPTS; attempt++) {
+    updateProgress(context, { stage: "trace validation", status: "running", message: `agent attempt ${attempt}`, current: attempt, total: TRACE_VALIDATION_AGENT_ATTEMPTS });
+    const agentProgress = createAgentProgressParams(context, "trace validation");
     const agentResult = await runAgentWithPrompt({
       projectRoot,
-      taskPrompt: prompt,
+      taskPrompt: agentProgress.taskPrompt(prompt),
       taskKind: "trace-validation",
       requestedScope: params.requestedScope,
       context: traceInput,
       courseMode: true,
       allowedVosCommands: await loadAgentAllowedCommands(projectRoot),
+      extraMcpServers: agentProgress.extraMcpServers,
+      onEvent: agentProgress.onEvent,
       runner: context.agentRunner,
     });
     rawEvents.push(...agentResult.rawEvents);
@@ -1039,6 +1084,7 @@ async function executeAgentDebug(
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
+  updateProgress(context, { stage: "agent debug", status: "running", message: "loading log" });
   const logPath = command.logPath ?? (await findLatestLogPath(projectRoot));
   if (!logPath) {
     return { status: "failed", details: { message: "log path required" } };
@@ -1048,13 +1094,17 @@ async function executeAgentDebug(
     logText: text,
     logRef: path.basename(logPath),
   });
+  updateProgress(context, { stage: "agent debug", status: "running", message: "waiting for agent" });
+  const agentProgress = createAgentProgressParams(context, "agent debug");
   const response = await runAgentWithPrompt({
     projectRoot,
-    taskPrompt: prompt,
+    taskPrompt: agentProgress.taskPrompt(prompt),
     taskKind: "debug",
     requestedScope: "agent.debug",
     courseMode: true,
     allowedVosCommands: await loadAgentAllowedCommands(projectRoot),
+    extraMcpServers: agentProgress.extraMcpServers,
+    onEvent: agentProgress.onEvent,
     runner: context.agentRunner,
   });
   const debugOutput = parseDebugOutput(parseAgentJson(response.resultText, "agent_debug"));
@@ -1101,6 +1151,53 @@ async function loadAgentAllowedCommands(projectRoot: string): Promise<string[]> 
 function isAllowedModelVosCommand(command: string): boolean {
   const normalized = command.trim().replace(/\s+/g, " ");
   return normalized !== "agent" && !normalized.startsWith("agent ");
+}
+
+function updateProgress(context: ExecContext, update: ProgressUpdate): void {
+  context.progress?.update(update);
+  void context.evidence.appendEvent({
+    type: "progress",
+    visibility: "agent-only",
+    payload: {
+      stage: update.stage,
+      ...(update.phase ? { phase: update.phase } : {}),
+      ...(update.step ? { step: update.step } : {}),
+      ...(typeof update.current === "number" ? { current: update.current } : {}),
+      ...(typeof update.total === "number" ? { total: update.total } : {}),
+      ...(typeof update.percent === "number" ? { percent: update.percent } : {}),
+      ...(update.status ? { status: update.status } : {}),
+      ...(update.message ? { message: update.message } : {}),
+      ...(typeof update.confidence === "number" ? { confidence: update.confidence } : {}),
+    },
+  });
+}
+
+function createAgentProgressParams(context: ExecContext, stage: string): {
+  taskPrompt: (prompt: string) => string;
+  extraMcpServers: ReturnType<typeof createProgressMcpServerConfig>[];
+  onEvent: (event: Record<string, unknown>) => Promise<void>;
+} {
+  if (!context.progress?.enabled) {
+    return {
+      taskPrompt: (prompt) => prompt,
+      extraMcpServers: [],
+      onEvent: async () => {},
+    };
+  }
+  return {
+    taskPrompt: appendAgentProgressInstructions,
+    extraMcpServers: [createProgressMcpServerConfig(context.projectRoot)],
+    onEvent: async (event) => {
+      const update = progressUpdateFromAgentEvent(event, stage);
+      if (update) {
+        updateProgress(context, { ...update, stage: update.stage || stage });
+      }
+    },
+  };
+}
+
+function commandLabel(command: CliCommand): string {
+  return commandToArray(command).join(" ");
 }
 
 function commandToArray(command: CliCommand): string[] {
@@ -1368,6 +1465,9 @@ function buildAgentTraceValidationPrompt(input: TraceValidationInput): string {
     "Do not modify spec files.",
     "Use the validation input as the source of truth: target, public requirements, module test surfaces, coverage hints, project tree, toolchain, and recent evidence.",
     "Before writing the final JSON, use available file-reading tools to inspect every source file you modify and any spec file that names the mapped requirement.",
+    "If target names a specific module or requirement, every case must map to that target through requirement_id, related_specs, and expected_trace_events.",
+    "For a module-specific target, do not select unrelated public requirements just because they are easier to exercise from the shell.",
+    "You may use boot or shell commands as carriers only when the trace event directly observes the target module behavior; keep requirement_id and related_specs tied to the target module.",
     "Choose a validation plan that is representative of every target-relevant module, not a hard-coded file or case.",
     "Use coverageHints to select cases: when coverageHints has N modules, include at least min(N, 6) validation cases unless fewer modules are actually runnable from the current toolchain.",
     "Prefer one high-signal QEMU case per coverageHints module. If one case naturally covers multiple modules, keep it, but explain the coverage through requirement_id, related_specs, and expected_trace_events in the JSON fields.",
@@ -1546,6 +1646,7 @@ function printHelp(topic?: string): void {
     "Global:",
     "  --project-root <dir>",
     "  --json",
+    "  --progress auto|always|never",
     "  --agent-session <id>",
     "  --report <path>",
     "  --evidence-dir <path>",

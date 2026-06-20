@@ -1,5 +1,7 @@
 import type { Tool, ToolPolicy } from "../tools/types.ts";
 
+export const PROGRESS_MCP_TOOL_NAME = "mcp__vos-progress__report_progress";
+
 type ToolProfile =
   | "readonly-routing"
   | "readonly-spec"
@@ -184,7 +186,7 @@ export function publicAgentTaskProfile(profile: AgentTaskProfile): AgentTaskProf
 
 export function createProfileToolPolicy(profile: ResolvedAgentTaskProfile): ToolPolicy {
   const allowed = new Set(
-    (TOOL_PROFILE_TOOLS[profile.toolProfile] ?? []).map(normalizeToolName),
+    [...(TOOL_PROFILE_TOOLS[profile.toolProfile] ?? []), PROGRESS_MCP_TOOL_NAME].map(normalizeToolName),
   );
   return {
     canAdvertise: (tool: Tool) => allowed.has(normalizeToolName(tool.name)),

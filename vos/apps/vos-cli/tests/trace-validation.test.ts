@@ -9,6 +9,8 @@ import {
   buildTraceValidationInput,
   collectModuleTestSurfaces,
   collectPublicRequirements,
+  filterModuleTestsForTarget,
+  filterPublicRequirementsForTarget,
   parseTraceValidationPlan,
   parseVosTraceLines,
   validateInstrumentationPatch,
@@ -37,6 +39,12 @@ describe("trace validation runtime", () => {
       required_tests: ["boot_banner_printable", "shell_boots"],
       required_artifacts: ["qemu_boot.log"],
     }, {
+      id: "verify-page-allocator",
+      description: "physical page allocator cycles pages",
+      related_specs: ["kernel/memory.kalloc", "kernel/memory.kfree"],
+      required_tests: ["kalloc_alignment", "kalloc_kfree_cycle"],
+      required_artifacts: ["kernel.elf"],
+    }, {
       id: "verify-syscall-dispatch",
       description: "syscalls dispatch through the kernel table",
       related_specs: ["kernel/syscall.dispatch"],
@@ -63,6 +71,13 @@ describe("trace validation runtime", () => {
       ],
       source: "spec/modules/kernel/fs/tests.yaml",
     }, {
+      module: "kernel/memory",
+      tests: [
+        { id: "kalloc_alignment", description: "allocated pages are aligned" },
+        { id: "kalloc_kfree_cycle" },
+      ],
+      source: "spec/modules/kernel/memory/tests.yaml",
+    }, {
       module: "kernel/syscall",
       tests: [
         { id: "echo_uses_write", description: "echo reaches write syscall" },
@@ -84,6 +99,7 @@ describe("trace validation runtime", () => {
     expect(input.coverageHints.map((item) => item.module)).toEqual([
       "kernel/boot",
       "kernel/fs",
+      "kernel/memory",
       "kernel/syscall",
     ]);
     expect(input.coverageHints.find((item) => item.module === "kernel/syscall")).toEqual({
@@ -93,6 +109,28 @@ describe("trace validation runtime", () => {
       related_specs: ["kernel/syscall.dispatch"],
       source: "spec/modules/kernel/syscall/tests.yaml",
     });
+  });
+
+  test("filters trace validation input to a requested module target", async () => {
+    const projectRoot = makeTraceProject();
+    const input = await buildTraceValidationInput({
+      projectRoot,
+      target: "kernel/memory",
+      recentEvidence: [],
+    });
+
+    expect(input.publicRequirements.map((item) => item.id)).toEqual(["verify-page-allocator"]);
+    expect(input.moduleTests.map((item) => item.module)).toEqual(["kernel/memory"]);
+    expect(input.coverageHints).toEqual([{
+      module: "kernel/memory",
+      requirement_ids: ["verify-page-allocator"],
+      required_tests: ["kalloc_alignment", "kalloc_kfree_cycle"],
+      related_specs: ["kernel/memory.kalloc", "kernel/memory.kfree"],
+      source: "spec/modules/kernel/memory/tests.yaml",
+    }]);
+
+    expect(filterPublicRequirementsForTarget("full-syscall", input.publicRequirements)).toEqual(input.publicRequirements);
+    expect(filterModuleTestsForTarget("kernel/memory", input.moduleTests, input.publicRequirements)).toEqual(input.moduleTests);
   });
 
   test("validates agent plans, instrumentation paths, and trace lines", () => {
@@ -207,6 +245,8 @@ describe("trace validation runtime", () => {
     expect(captured?.courseMode).toBe(true);
     expect(captured?.prompt).toContain("verify-boot-banner");
     expect(captured?.prompt).toContain("coverageHints");
+    expect(captured?.prompt).toContain("If target names a specific module or requirement");
+    expect(captured?.prompt).toContain("do not select unrelated public requirements");
     expect(captured?.prompt).toContain("kernel/syscall");
     expect(captured?.prompt).toContain("kernel/fs");
     expect(captured?.prompt).toContain("include at least min(N, 6) validation cases");
@@ -395,6 +435,7 @@ function makeTraceProject(): string {
   mkdirSync(join(root, "spec", "verification"), { recursive: true });
   mkdirSync(join(root, "spec", "modules", "kernel", "boot"), { recursive: true });
   mkdirSync(join(root, "spec", "modules", "kernel", "fs"), { recursive: true });
+  mkdirSync(join(root, "spec", "modules", "kernel", "memory"), { recursive: true });
   mkdirSync(join(root, "spec", "modules", "kernel", "syscall"), { recursive: true });
   mkdirSync(join(root, "spec", "toolchain"), { recursive: true });
   writeFileSync(join(root, ".gitignore"), [
@@ -461,6 +502,18 @@ function makeTraceProject(): string {
     "      - shell_boots",
     "    required_artifacts:",
     "      - qemu_boot.log",
+    "  - id: verify-page-allocator",
+    "    description: physical page allocator cycles pages",
+    "    related_specs:",
+    "      - module: kernel/memory",
+    "        operation: kalloc",
+    "      - module: kernel/memory",
+    "        operation: kfree",
+    "    required_tests:",
+    "      - kalloc_alignment",
+    "      - kalloc_kfree_cycle",
+    "    required_artifacts:",
+    "      - kernel.elf",
     "  - id: verify-syscall-dispatch",
     "    description: syscalls dispatch through the kernel table",
     "    related_specs:",
@@ -499,6 +552,16 @@ function makeTraceProject(): string {
     "required_tests:",
     "  - test: cat_reads_file",
     "    description: cat prints file contents",
+    "",
+  ].join("\n"));
+  writeFileSync(join(root, "spec", "modules", "kernel", "memory", "tests.yaml"), [
+    "module: kernel/memory",
+    "test_surfaces:",
+    "  - kalloc_alignment",
+    "  - kalloc_kfree_cycle",
+    "required_tests:",
+    "  - test: kalloc_alignment",
+    "    description: allocated pages are aligned",
     "",
   ].join("\n"));
   writeFileSync(join(root, "spec", "modules", "kernel", "syscall", "tests.yaml"), [

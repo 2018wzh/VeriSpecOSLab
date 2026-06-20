@@ -53,8 +53,9 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
       };
       if (!delayedStdinWritten && opts.stdinAfter && new RegExp(opts.stdinAfter.pattern).test(`${output.stdout}${output.stderr}`)) {
         delayedStdinWritten = true;
-        proc.stdin?.write(opts.stdinAfter.text);
-        proc.stdin?.end();
+        proc.stdin?.write(opts.stdinAfter.text, () => {
+          proc.stdin?.end();
+        });
       }
       const lines = text.split(/\r?\n/);
       for (const line of lines) {
@@ -74,7 +75,9 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
     proc.stdout?.on("data", (chunk) => onData(chunk as Buffer, outChunks));
     proc.stderr?.on("data", (chunk) => onData(chunk as Buffer, errChunks));
 
-    if (opts.stdin !== undefined && !opts.stdinAfter) {
+    if (opts.stdinAfter) {
+      proc.stdin?.write("");
+    } else if (opts.stdin !== undefined) {
       proc.stdin?.write(opts.stdin);
       proc.stdin?.end();
     }

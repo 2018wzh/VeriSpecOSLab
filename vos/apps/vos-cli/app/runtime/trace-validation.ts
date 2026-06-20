@@ -230,8 +230,10 @@ export async function buildTraceValidationInput(params: {
   target: string;
   recentEvidence: Array<{ run_id: string; status?: string }>;
 }): Promise<TraceValidationInput> {
-  const publicRequirements = await collectPublicRequirements(params.projectRoot);
-  const moduleTests = await collectModuleTestSurfaces(params.projectRoot);
+  const allPublicRequirements = await collectPublicRequirements(params.projectRoot);
+  const allModuleTests = await collectModuleTestSurfaces(params.projectRoot);
+  const publicRequirements = filterPublicRequirementsForTarget(params.target, allPublicRequirements);
+  const moduleTests = filterModuleTestsForTarget(params.target, allModuleTests, publicRequirements);
   return {
     target: params.target,
     publicRequirements,
@@ -241,6 +243,33 @@ export async function buildTraceValidationInput(params: {
     projectTree: await collectTraceProjectTree(params.projectRoot),
     toolchain: await collectToolchainSummary(params.projectRoot),
   };
+}
+
+export function filterPublicRequirementsForTarget(
+  target: string,
+  publicRequirements: PublicRequirement[],
+): PublicRequirement[] {
+  const normalizedTarget = normalizeTargetName(target);
+  const matches = publicRequirements.filter((requirement) => {
+    if (normalizeTargetName(requirement.id) === normalizedTarget) return true;
+    return requirement.related_specs.some((spec) => moduleMatchesTarget(specModuleName(spec), normalizedTarget));
+  });
+  return matches.length > 0 ? matches : publicRequirements;
+}
+
+export function filterModuleTestsForTarget(
+  target: string,
+  moduleTests: ModuleTestSurface[],
+  publicRequirements: PublicRequirement[],
+): ModuleTestSurface[] {
+  const normalizedTarget = normalizeTargetName(target);
+  const requirementModules = new Set(publicRequirements.flatMap((requirement) =>
+    requirement.related_specs.map((spec) => specModuleName(spec))
+  ));
+  const matches = moduleTests.filter((surface) =>
+    moduleMatchesTarget(surface.module, normalizedTarget) || requirementModules.has(surface.module)
+  );
+  return matches.length > 0 ? matches : moduleTests;
 }
 
 export function buildTraceCoverageHints(
@@ -731,6 +760,21 @@ async function listFilesWithSuffixes(root: string, suffixes: string[]): Promise<
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function moduleMatchesTarget(moduleName: string, normalizedTarget: string): boolean {
+  const normalizedModule = normalizeTargetName(moduleName);
+  return normalizedModule === normalizedTarget
+    || normalizedModule.endsWith(`/${normalizedTarget}`)
+    || normalizedTarget.endsWith(`/${normalizedModule}`);
+}
+
+function specModuleName(spec: string): string {
+  return spec.split(".")[0] ?? spec;
+}
+
+function normalizeTargetName(value: string): string {
+  return normalizeRepoPath(value).replace(/^spec\/modules\//, "").replace(/\/module\.ya?ml$/, "");
 }
 
 function extractChangedPaths(patchText: string): string[] {

@@ -8,6 +8,7 @@ import type {
   AgentTaskRequest,
   HeadlessAgentOptions,
   HeadlessAgentResult,
+  McpServerConfig,
   ToolPolicy,
 } from "vos-agent/headless";
 import {
@@ -51,7 +52,8 @@ export async function runAgentWithPrompt(params: {
   courseMode?: boolean;
   toolPolicy?: ToolPolicy;
   allowedVosCommands?: readonly string[];
-  onEvent?: (event: Record<string, unknown>) => void;
+  extraMcpServers?: readonly McpServerConfig[];
+  onEvent?: (event: Record<string, unknown>) => void | Promise<void>;
   runner?: HeadlessAgentRunner;
   taskRunner?: HeadlessAgentTaskRunner;
 }): Promise<AgentRunResult> {
@@ -72,6 +74,7 @@ export async function runAgentWithPrompt(params: {
       courseMode: params.courseMode,
       toolPolicy: params.toolPolicy,
       allowedVosCommands: params.allowedVosCommands,
+      extraMcpServers: params.extraMcpServers,
       env: bootstrap.env,
       onEvent: async (event) => {
         if (event) {
@@ -100,6 +103,7 @@ export async function runAgentWithPrompt(params: {
       courseMode: params.courseMode,
       toolPolicy: params.toolPolicy,
       allowedVosCommands: params.allowedVosCommands,
+      extraMcpServers: params.extraMcpServers,
       env: bootstrap.env,
       onEvent: async (event) => {
         if (event) {

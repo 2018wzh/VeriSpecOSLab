@@ -487,4 +487,38 @@ describe("runSessionTurn", () => {
     expect(result.content).toBe("mcp consumed");
     expect(events).toContain("tool.result");
   });
+
+  test("loads extra MCP servers supplied by headless callers", async () => {
+    const serverPath = writeFixture(tmp, "extra-mcp.js", fakeMcpServerScript());
+    const chat = new CallbackChatClient((request, index) => {
+      if (index === 0) {
+        expect(request.tools.map((tool) => tool.function.name)).toContain("mcp__extra__echo");
+        return toolCallResponse([
+          {
+            name: "mcp__extra__echo",
+            args: { text: "hello" },
+            id: "extra-1",
+          },
+        ]);
+      }
+      expect(String(request.messages.at(-1)?.content)).toBe("mcp:hello");
+      return textResponse("extra mcp consumed");
+    });
+
+    const result = await runSessionTurn({
+      chat,
+      store,
+      workspaceRoot: tmp,
+      prompt: "use extra mcp",
+      model: TEST_MODEL,
+      extraMcpServers: [{
+        name: "extra",
+        command: process.execPath,
+        args: [serverPath],
+        cwd: tmp,
+      }],
+    });
+
+    expect(result.content).toBe("extra mcp consumed");
+  });
 });

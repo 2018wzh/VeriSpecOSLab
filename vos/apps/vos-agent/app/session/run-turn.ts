@@ -8,7 +8,7 @@ import {
   toAgentGuidanceRefs,
 } from "../context/agents.ts";
 import { createMcpToolProvider } from "../mcp/tools.ts";
-import { loadPluginManifests, pluginMcpServers } from "../plugins/manifest.ts";
+import { loadPluginManifests, pluginMcpServers, type McpServerConfig } from "../plugins/manifest.ts";
 import { createBuiltinToolRegistry } from "../tools/builtin.ts";
 import { TodoState } from "../tools/todo.ts";
 import type { SessionEvent, StoredThread } from "./types.ts";
@@ -30,6 +30,7 @@ export interface RunSessionTurnOptions {
   toolPolicy?: ToolPolicy;
   courseMode?: boolean;
   allowedVosCommands?: readonly string[];
+  extraMcpServers?: readonly McpServerConfig[];
   streamAssistant?: boolean;
   fixedSystemPrompt?: string;
   onEvent?: (event: SessionEvent) => void | Promise<void>;
@@ -116,7 +117,7 @@ export async function runSessionTurn(
 
   const pluginManifests = loadPluginManifests({ workspaceRoot: resolvedWorkspaceRoot });
   const mcpProvider = await createMcpToolProvider({
-    servers: pluginMcpServers(pluginManifests),
+    servers: [...pluginMcpServers(pluginManifests), ...(opts.extraMcpServers ?? [])],
   });
   try {
     const todos = new TodoState(thread.todos);

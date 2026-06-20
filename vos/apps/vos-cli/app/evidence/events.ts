@@ -8,6 +8,7 @@ export interface RunEvent {
     | "node_started"
     | "stdout_line"
     | "stderr_line"
+    | "progress"
     | "node_finished"
     | "run_finished"
     | "run_cancelled";
@@ -36,4 +37,3 @@ export function createRunEvent(
 export function eventToLine(event: RunEvent): string {
   return `${JSON.stringify(event)}\n`;
 }
-

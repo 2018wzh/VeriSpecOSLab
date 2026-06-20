@@ -32,9 +32,12 @@ export interface BaseCommandResult {
   message?: string;
 }
 
+export type ProgressMode = "auto" | "always" | "never";
+
 export interface GlobalOptions {
   projectRoot: string;
   json: boolean;
+  progress: ProgressMode;
   agentSession?: string;
   reportPath?: string;
   evidenceDir?: string;

@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import type { ToolPolicy } from "./tools/types.ts";
+import type { McpServerConfig } from "./plugins/manifest.ts";
 import { loadConfig } from "./config.ts";
 import { resolveActiveModelSettings } from "./resolve-model.ts";
 import { runSessionTurn, type RunSessionTurnOptions } from "./session/run-turn.ts";
@@ -30,6 +31,7 @@ export interface HeadlessAgentOptions {
   disabledTools?: readonly string[];
   courseMode?: boolean;
   allowedVosCommands?: readonly string[];
+  extraMcpServers?: readonly McpServerConfig[];
   toolPolicy?: ToolPolicy;
   env?: Record<string, string | undefined>;
   onEvent?: (event: SessionEvent) => void | Promise<void>;
@@ -60,6 +62,7 @@ export interface AgentTaskRequest {
   disabledTools?: readonly string[];
   courseMode?: boolean;
   allowedVosCommands?: readonly string[];
+  extraMcpServers?: readonly McpServerConfig[];
   toolPolicy?: ToolPolicy;
   env?: Record<string, string | undefined>;
   onEvent?: (event: SessionEvent) => void | Promise<void>;
@@ -98,6 +101,7 @@ export interface AgentHttpPackageServerResult {
 
 export type { Config, SessionEvent, ToolPolicy };
 export type { AgentTaskProfile, AgentTaskProfileInput };
+export type { McpServerConfig };
 
 export function resolveAgentTaskProfile(
   options: ResolveAgentTaskProfileOptions = {},
@@ -138,6 +142,7 @@ export async function runHeadlessAgentPrompt(
     maxIterations: options.maxIterations,
     courseMode: options.courseMode,
     allowedVosCommands: options.allowedVosCommands,
+    extraMcpServers: options.extraMcpServers,
     toolPolicy: options.toolPolicy,
     startDir: workspaceRoot,
     onEvent: async (event) => {
@@ -199,6 +204,7 @@ export async function runAgentTask(
     maxIterations: options.maxIterations,
     courseMode: options.courseMode ?? true,
     allowedVosCommands: resolveProfileVosCommands(profile, options.allowedVosCommands),
+    extraMcpServers: options.extraMcpServers,
     toolPolicy: composeToolPolicies(createProfileToolPolicy(profile), options.toolPolicy),
     startDir: workspaceRoot,
     fixedSystemPrompt: buildAgentTaskSystemPrompt(profile),

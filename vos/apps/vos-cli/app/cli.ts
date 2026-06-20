@@ -35,6 +35,7 @@ import type {
 
 const VALUE_FLAGS = new Set([
   "--project-root",
+  "--progress",
   "--agent-session",
   "--report",
   "--evidence-dir",
@@ -65,6 +66,7 @@ export function parseArgs(argv: string[]): ParsedInvocation {
   const global: GlobalOptions = {
     projectRoot: process.cwd(),
     json: false,
+    progress: "auto",
   };
 
   const commandTokens: string[] = [];
@@ -82,6 +84,15 @@ export function parseArgs(argv: string[]): ParsedInvocation {
     }
     if (arg === "--json") {
       global.json = true;
+      continue;
+    }
+    if (arg === "--progress") {
+      global.progress = parseProgressMode(resolveRequiredValue(input, i, arg));
+      i++;
+      continue;
+    }
+    if (arg.startsWith("--progress=")) {
+      global.progress = parseProgressMode(arg.slice("--progress=".length));
       continue;
     }
     if (arg === "--agent-session") {
@@ -112,6 +123,13 @@ export function parseArgs(argv: string[]): ParsedInvocation {
 
   const command = parseCommand(commandTokens, global);
   return { global, command };
+}
+
+function parseProgressMode(value: string): GlobalOptions["progress"] {
+  if (value === "auto" || value === "always" || value === "never") {
+    return value;
+  }
+  throw new Error("--progress must be one of: auto, always, never");
 }
 
 function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {

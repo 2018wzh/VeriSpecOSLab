@@ -16,11 +16,20 @@ describe("vos-cli agent command parsing", () => {
     ]);
 
     expect(parsed.global.projectRoot).toBe("examples/xv6-spec");
+    expect(parsed.global.progress).toBe("auto");
     expect(parsed.command).toEqual({
       kind: "agent_plan",
       task: "check allocator design",
       scope: "syscall",
     });
+  });
+
+  test("parses global progress modes", () => {
+    expect(parseArgs(["bun", "vos", "--progress", "never", "doctor"]).global.progress).toBe("never");
+    expect(parseArgs(["bun", "vos", "--progress=always", "doctor"]).global.progress).toBe("always");
+    expect(() => parseArgs(["bun", "vos", "--progress", "loud", "doctor"])).toThrow(
+      /--progress must be one of/,
+    );
   });
 
   test("parses full xv6 agent generate flow flags", () => {
