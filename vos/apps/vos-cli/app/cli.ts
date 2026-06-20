@@ -289,6 +289,8 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
     }
     let dryRun = false;
     let target: string | undefined;
+    let patchFile: string | undefined;
+    let keepWorktree = false;
     for (let i = 1; i < rest.length; i++) {
       const arg = rest[i];
       if (arg === "--dry-run") {
@@ -304,13 +306,26 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
         i++;
         continue;
       }
+      if (arg === "--patch-file") {
+        patchFile = resolveRequiredValue(rest, i, arg);
+        i++;
+        continue;
+      }
+      if (arg.startsWith("--patch-file=")) {
+        patchFile = arg.slice("--patch-file=".length);
+        continue;
+      }
+      if (arg === "--keep-worktree") {
+        keepWorktree = true;
+        continue;
+      }
       if (!arg.startsWith("-")) {
         target = arg;
         continue;
       }
       throw new Error(`unknown flag for verify: ${arg}`);
     }
-    return { kind: "verify", scope, target, dryRun } satisfies VerifyCommand;
+    return { kind: "verify", scope, target, dryRun, patchFile, keepWorktree } satisfies VerifyCommand;
   }
 
   if (command === "trace") {
@@ -650,6 +665,7 @@ function isVerifyScope(value: string): value is VerifyScope {
     "architecture",
     "composition",
     "goal",
+    "trace",
   ].includes(value);
 }
 

@@ -9,6 +9,7 @@ import type {
   AgentLogCommand,
   AgentPlanCommand,
   AgentServeCommand,
+  AgentValidateGeneratedCommand,
   ArchComposeCommand,
   ArchDeriveTestsCommand,
   ArchLintCommand,
@@ -54,6 +55,12 @@ import { runBuildCommand } from "./runtime/build.ts";
 import { runQemuCommand } from "./runtime/run.ts";
 import { runTestCommand } from "./runtime/test.ts";
 import { runVerifyCommand } from "./runtime/verify.ts";
+import {
+  buildTraceValidationInput,
+  ensureCleanGitWorktree,
+  runAgentTraceValidation,
+  type TraceValidationInput,
+} from "./runtime/trace-validation.ts";
 import { resolveToolchainManifestPath } from "./runtime/toolchain-manifest.ts";
 import { buildContextBundle, loadAgentAllowedPaths } from "./agent/context.ts";
 import {
@@ -72,6 +79,7 @@ import { parseDebugOutput, parsePatchProposal, parsePlanDraft } from "./agent/sc
 import { applyPatchText, readPatchFromStdin } from "./agent/apply-patch.ts";
 
 const COMMAND_VERSION = "0.1.0";
+const TRACE_VALIDATION_AGENT_ATTEMPTS = 3;
 
 interface CommandOutcome {
   status: CommandStatus;
@@ -143,7 +151,7 @@ async function main(): Promise<void> {
           finishedAt: new Date().toISOString(),
           message: error instanceof Error ? error.message : "unknown error",
         });
-        printResult({
+        const finalOutput = {
           ok: false,
           run_id: evidence.run_id,
           command: manifest.command,
@@ -156,7 +164,11 @@ async function main(): Promise<void> {
           details: {
             error: true,
           },
-        }, parsed.global.json);
+        };
+        if (parsed.global.reportPath) {
+          await writeFile(parsed.global.reportPath, `${JSON.stringify(finalOutput, null, 2)}\n`);
+        }
+        printResult(finalOutput, parsed.global.json);
         process.exitCode = isSuccessStatus(status) ? 0 : 1;
         return;
       }
@@ -366,7 +378,7 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
       return executeTest(command, evidence, projectRoot);
 
     case "verify":
-      return executeVerify(command, evidence, projectRoot);
+      return executeVerify(command, context, evidence);
 
     case "trace_syscall": {
       const result = await runQemuCommand({
@@ -502,6 +514,9 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
 
     case "agent_apply_patch":
       return executeAgentApplyPatch(command, projectRoot, evidence);
+
+    case "agent_validate_generated":
+      return executeAgentValidateGenerated(command, context, evidence);
 
     case "agent_debug":
       return executeAgentDebug(command, context, evidence);
@@ -707,7 +722,23 @@ async function executeTest(command: TestCommand, evidence: EvidenceWriter, proje
   };
 }
 
-async function executeVerify(command: VerifyCommand, evidence: EvidenceWriter, projectRoot: string): Promise<CommandOutcome> {
+async function executeVerify(
+  command: VerifyCommand,
+  context: ExecContext,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  const projectRoot = context.projectRoot;
+  if (command.scope === "trace") {
+    return executeTraceValidation({
+      context,
+      evidence,
+      target: command.target ?? (await currentStageForProject(projectRoot)),
+      patchFile: command.patchFile,
+      keepWorktree: command.keepWorktree ?? false,
+      requestedScope: "verify.trace",
+    });
+  }
+
   const result = await runVerifyCommand({
     projectRoot,
     evidence,
@@ -902,6 +933,106 @@ async function executeAgentApplyPatch(
   };
 }
 
+async function executeAgentValidateGenerated(
+  command: AgentValidateGeneratedCommand,
+  context: ExecContext,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  return executeTraceValidation({
+    context,
+    evidence,
+    target: command.target,
+    patchFile: command.patchFile,
+    keepWorktree: command.keepWorktree,
+    requestedScope: "agent.validate-generated",
+  });
+}
+
+async function executeTraceValidation(params: {
+  context: ExecContext;
+  evidence: EvidenceWriter;
+  target: string;
+  patchFile?: string;
+  keepWorktree: boolean;
+  requestedScope: string;
+}): Promise<CommandOutcome> {
+  const { context, evidence } = params;
+  const projectRoot = context.projectRoot;
+  await ensureCleanGitWorktree(projectRoot);
+  const recentEvidence = await collectRunManifestSummaries(projectRoot);
+  const traceInput = await buildTraceValidationInput({
+    projectRoot,
+    target: params.target,
+    recentEvidence,
+  });
+  const rawEvents: Array<Record<string, unknown>> = [];
+  let prompt = buildAgentTraceValidationPrompt(traceInput);
+  let lastAgentOutput = "";
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= TRACE_VALIDATION_AGENT_ATTEMPTS; attempt++) {
+    const agentResult = await runAgentWithPrompt({
+      projectRoot,
+      taskPrompt: prompt,
+      taskKind: "trace-validation",
+      requestedScope: params.requestedScope,
+      context: traceInput,
+      courseMode: true,
+      allowedVosCommands: await loadAgentAllowedCommands(projectRoot),
+      runner: context.agentRunner,
+    });
+    rawEvents.push(...agentResult.rawEvents);
+    lastAgentOutput = agentResult.resultText;
+    try {
+      const result = await runAgentTraceValidation({
+        projectRoot,
+        evidence,
+        target: params.target,
+        patchFile: params.patchFile,
+        keepWorktree: params.keepWorktree,
+        agentPlanText: agentResult.resultText,
+        recentEvidence,
+      });
+
+      if (result.status === "passed" || attempt >= TRACE_VALIDATION_AGENT_ATTEMPTS) {
+        return {
+          status: result.status,
+          details: {
+            target: params.target,
+            worktree: path.relative(projectRoot, result.worktreePath),
+            worktreeKept: result.worktreeKept,
+            plan: path.relative(projectRoot, result.planPath),
+            summary: path.relative(projectRoot, result.summaryPath),
+            caseCount: result.cases.length,
+            passedCount: result.cases.filter((item) => item.status === "ok").length,
+            failedCount: result.cases.filter((item) => item.status === "failed").length,
+            cases: result.cases,
+            agentAttempts: attempt,
+            raw_events: rawEvents,
+          },
+        };
+      }
+
+      prompt = buildAgentTraceValidationRepairPrompt({
+        input: traceInput,
+        previousOutput: agentResult.resultText,
+        errorMessage: traceValidationFailureSummary(result),
+        patchAlreadyBuilt: true,
+      });
+    } catch (error) {
+      lastError = error;
+      if (attempt >= TRACE_VALIDATION_AGENT_ATTEMPTS || !isTracePlanFeedbackError(error)) {
+        throw error;
+      }
+      prompt = buildAgentTraceValidationRepairPrompt({
+        input: traceInput,
+        previousOutput: lastAgentOutput,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  throw lastError instanceof Error ? lastError : new CliError("trace validation failed", "validation_failed");
+}
+
 async function executeAgentDebug(
   command: AgentDebugCommand,
   context: ExecContext,
@@ -1021,7 +1152,10 @@ function commandToArray(command: CliCommand): string[] {
       return [
         "verify",
         command.scope,
+        ...(command.dryRun ? ["--dry-run"] : []),
         ...(command.target ? ["--target", command.target] : []),
+        ...(command.patchFile ? ["--patch-file", command.patchFile] : []),
+        ...(command.keepWorktree ? ["--keep-worktree"] : []),
       ];
     case "trace_syscall":
       return [
@@ -1061,6 +1195,15 @@ function commandToArray(command: CliCommand): string[] {
         ...(command.patchFile ? ["--patch-file", command.patchFile] : []),
         ...(command.requireSpec ? [] : ["--no-require-spec"]),
         ...(command.runValidation ? ["--run-validation"] : []),
+      ];
+    case "agent_validate_generated":
+      return [
+        "agent",
+        "validate-generated",
+        "--target",
+        command.target,
+        ...(command.patchFile ? ["--patch-file", command.patchFile] : []),
+        ...(command.keepWorktree ? ["--keep-worktree"] : []),
       ];
     case "agent_debug":
       return command.logPath ? ["agent", "debug", "--log", command.logPath] : ["agent", "debug"];
@@ -1217,6 +1360,143 @@ async function collectRunManifestSummaries(projectRoot: string): Promise<Array<{
   return out;
 }
 
+function buildAgentTraceValidationPrompt(input: TraceValidationInput): string {
+  return [
+    "You are producing a VOS trace validation plan for an xv6-style project.",
+    "Return exactly one JSON object and nothing else.",
+    "Do not execute commands.",
+    "Do not modify spec files.",
+    "Use the validation input as the source of truth: target, public requirements, module test surfaces, coverage hints, project tree, toolchain, and recent evidence.",
+    "Before writing the final JSON, use available file-reading tools to inspect every source file you modify and any spec file that names the mapped requirement.",
+    "Choose a validation plan that is representative of every target-relevant module, not a hard-coded file or case.",
+    "Use coverageHints to select cases: when coverageHints has N modules, include at least min(N, 6) validation cases unless fewer modules are actually runnable from the current toolchain.",
+    "Prefer one high-signal QEMU case per coverageHints module. If one case naturally covers multiple modules, keep it, but explain the coverage through requirement_id, related_specs, and expected_trace_events in the JSON fields.",
+    "For broad targets such as full-syscall, prefer 4 to 6 focused cases covering distinct behavior families such as boot/process/syscall/filesystem/pipe or comparable modules present in coverageHints.",
+    "Map each case to a public requirement whose related specs or required tests are relevant to the covered module.",
+    "Select instrumentation locations from the inspected source and spec bindings. Do not assume a particular file such as kernel/main.c.",
+    "Coverage is measured by validation cases and mapped requirements, not by adding one instrumentation hunk per module.",
+    "Prefer a small shared instrumentation patch with stable central trace points that several cases can reuse, such as dispatch, exec, open, or lifecycle boundaries already present in the inspected code.",
+    "For broad targets, aim for at most 3 touched files and at most 4 hunks. If more instrumentation seems necessary, reduce instrumentation and keep the extra coverage in cases that reuse existing trace events.",
+    "Instrument only behavior that the selected case directly stimulates and observes. Do not add trace points for extra lifecycle paths just because they are listed in the public matrix.",
+    "For example, a case driven by `echo hi` may validate syscall dispatch or write behavior, but it should not also instrument fork/exit/wait unless the case explicitly runs a program whose visible output depends on those operations.",
+    "Every expected_trace_events entry must name an event that the instrumentation_patch explicitly emits and that the case stimulus directly reaches on a normal successful path.",
+    "Do not list an event in expected_trace_events merely because a different case or boot sequence may emit it.",
+    "For shell-driven cases, choose commands from user programs present in projectTree and make success_regex match literal output guaranteed by that command or by the boot shell prompt.",
+    "Avoid cases whose only visible success is an assumed filename, directory listing order, or command that may continue until timeout.",
+    "Touch the smallest set of source files needed to cover the selected modules; prefer one small hunk per file and avoid unrelated instrumentation.",
+    "Prefer stable trace points next to existing observable behavior for the requirement, such as boot banners, syscall dispatch, trap handling, process lifecycle, file system operations, pipe operations, or user program output.",
+    "Do not place trace printing inside hot per-character or per-byte output paths when the case success_regex depends on serial text; trace output must not break strings such as boot banners, shell prompts, echo output, or user command output.",
+    "Avoid instrumenting sys_write, filewrite, consolewrite, consputc, uartputc, printf, or printk loops unless the trace is guarded so it emits at most once for a case.",
+    "For shell-driven cases, send complete commands ending in newlines and choose success_regex values that remain robust when diagnostic trace lines appear elsewhere in the serial log.",
+    "Keep instrumentation side-effect free except for diagnostic trace output.",
+    "The JSON object must contain:",
+    "- instrumentation_patch: a git unified diff that applies with git apply",
+    "- trace_format: { \"prefix\": \"VOS_TRACE \" }",
+    "- cases: array of validation cases",
+    "Each case must contain:",
+    "- id: string",
+    "- requirement_id: string when mapped to a public requirement",
+    "- related_specs: string[]",
+    "- stdin or stimulus: string or string[] to send to QEMU stdin",
+    "- success_regex: string",
+    "- failure_regex: optional string",
+    "- expected_trace_events: string[] containing event names only, for example [\"boot_ok\"], not full trace lines",
+    "success_regex must validate non-trace serial output such as XV6_BOOT_OK, a shell prompt, or command output. Do not put VOS_TRACE in success_regex; expected_trace_events validates trace output separately.",
+    "Instrumentation may only touch kernel/, user/, mkfs/, Makefile, or .vos/toolchain.json.",
+    "Instrumentation must emit trace lines as: VOS_TRACE {\"event\":\"name\",...}.",
+    "Use existing kernel/user printing facilities already present in the inspected file, such as printk/printf, instead of adding new dependencies.",
+    "Do not weaken the build or run contract in .vos/toolchain.json. Only touch it when trace validation cannot run without a toolchain fix grounded in the current manifest.",
+    "Unified diff requirements:",
+    "- instrumentation_patch must be a git-style patch: every file section starts with `diff --git a/<path> b/<path>`.",
+    "- Every file diff must use exact current file paths and real surrounding context.",
+    "- Hunk headers must have correct old/new line numbers and line counts.",
+    "- For one inserted line with two unchanged context lines, use counts like `@@ -20,2 +20,3 @@`: old count 2, new count 3.",
+    "- For one inserted line with five unchanged context lines, use counts like `@@ -20,5 +20,6 @@`: old count 5, new count 6.",
+    "- Every added line inside a hunk must start with `+`; every context line must start with a single space.",
+    "- Do not invent index hashes; omit index lines if unsure.",
+    "- Do not include prose, markdown fences, or abbreviated hunks inside instrumentation_patch.",
+    "- The patch must pass `git apply --check` exactly, without recounting or repair.",
+    "If exact patch generation is uncertain, reduce instrumentation breadth first, but keep multiple runnable cases and preserve module coverage where possible.",
+    "Validation input:",
+    JSON.stringify(input, null, 2),
+  ].join("\n");
+}
+
+function buildAgentTraceValidationRepairPrompt(args: {
+  input: TraceValidationInput;
+  previousOutput: string;
+  errorMessage: string;
+  patchAlreadyBuilt?: boolean;
+}): string {
+  return [
+    buildAgentTraceValidationPrompt(args.input),
+    "",
+    "PREVIOUS OUTPUT FAILED MACHINE VALIDATION.",
+    "Return a corrected complete JSON object and nothing else.",
+    "Do not explain the failure in prose.",
+    "Use the same source-of-truth validation input, but fix every schema or patch issue reported below.",
+    args.patchAlreadyBuilt
+      ? "The previous instrumentation_patch already applied and the kernel build completed. Reuse the previous instrumentation_patch byte-for-byte unless a failed case proves that a required trace event is impossible with that patch."
+      : "",
+    args.patchAlreadyBuilt
+      ? "When repairing case failures after a successful build, prefer editing cases only: remove impossible expected_trace_events, replace brittle success_regex values, adjust stdin, or drop/replace a flaky case."
+      : "",
+    args.patchAlreadyBuilt
+      ? "Do not add new instrumentation hunks or new files in a repair response just to broaden coverage; first make the already-built plan pass with the strongest runnable subset."
+      : "",
+    args.patchAlreadyBuilt
+      ? "When trace_events_satisfied is false but success_matched is true, expected_trace_events is usually too broad for that case; narrow it to events directly emitted by the already-built patch on that case path."
+      : "",
+    args.patchAlreadyBuilt
+      ? "When trace_events_satisfied is true but success_matched is false, prefer fixing stdin timing assumptions, success_regex, or case selection instead of rewriting the patch."
+      : "",
+    "If the failure is a git patch error, regenerate the entire instrumentation_patch from exact current file contents.",
+    "If a validation case failed, update the instrumentation and cases so success_regex and expected_trace_events can both pass without trace output corrupting the observed serial text.",
+    "For every hunk, compute old/new line counts exactly:",
+    "- old count = context lines plus removed lines",
+    "- new count = context lines plus added lines",
+    "- a pure insertion with N context lines and M added lines uses old count N and new count N+M",
+    "Keep hunks small and avoid touching extra files just to preserve the prior plan.",
+    "Validation error:",
+    args.errorMessage,
+    "Previous output:",
+    args.previousOutput,
+  ].join("\n");
+}
+
+function traceValidationFailureSummary(result: {
+  status: CommandStatus;
+  cases: Array<{
+    id: string;
+    requirement_id?: string;
+    status: "ok" | "failed";
+    trace_count: number;
+    success_matched: boolean;
+    failure_matched: boolean;
+    serial_log: string;
+    trace_log: string;
+  }>;
+}): string {
+  return [
+    `trace validation finished with status ${result.status}`,
+    ...result.cases.map((item) => [
+      `case ${item.id}: ${item.status}`,
+      item.requirement_id ? `requirement=${item.requirement_id}` : undefined,
+      `success_matched=${item.success_matched}`,
+      `failure_matched=${item.failure_matched}`,
+      `trace_count=${item.trace_count}`,
+      `serial_log=${item.serial_log}`,
+      `trace_log=${item.trace_log}`,
+    ].filter(Boolean).join(", ")),
+  ].join("\n");
+}
+
+function isTracePlanFeedbackError(error: unknown): boolean {
+  if (error instanceof AgentOutputError) return true;
+  if (!(error instanceof CliError)) return false;
+  return error.status === "validation_failed" || error.status === "policy_blocked";
+}
+
 async function recordAICollaboration(params: {
   projectRoot: string;
   event: {
@@ -1287,6 +1567,7 @@ function printHelp(topic?: string): void {
     "  run qemu [--dry-run] [--timeout=<ms>]",
     "  test [--dry-run] [--suite=<name>]...",
     "  verify public|patch|full|invariant|fuzz|base|architecture|composition|goal [--target <value>]",
+    "  verify trace [--target <value>] [--patch-file <file>] [--keep-worktree]",
     "  trace syscall [--dry-run] [--timeout=<ms>]",
     "  debug explain-log [log-path]",
     "  report generate",
@@ -1296,6 +1577,7 @@ function printHelp(topic?: string): void {
     "  agent plan [--scope <scope>|--stage <stage>] [--task <task>]",
     "  agent generate [target] [--target <target>] [--apply] [--build] [--run]",
     "  agent apply-patch [--patch-file <file>] [--run-validation] [--no-require-spec]",
+    "  agent validate-generated --target <value> [--patch-file <file>] [--keep-worktree]",
     "  agent debug [--log <path>]",
     "  agent log [--append] [entry-path]",
   ];

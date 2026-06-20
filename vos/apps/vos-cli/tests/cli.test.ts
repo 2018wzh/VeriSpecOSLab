@@ -61,4 +61,54 @@ describe("vos-cli agent command parsing", () => {
       parseArgs(["bun", "vos", "agent", "generate", "--build"])
     ).toThrow(/--build` requires `--apply/);
   });
+
+  test("parses agent validate-generated with patch and retained worktree", () => {
+    const parsed = parseArgs([
+      "bun",
+      "vos",
+      "agent",
+      "validate-generated",
+      "--target",
+      "full-syscall",
+      "--patch-file",
+      "candidate.patch",
+      "--keep-worktree",
+    ]);
+
+    expect(parsed.command).toEqual({
+      kind: "agent_validate_generated",
+      target: "full-syscall",
+      patchFile: "candidate.patch",
+      keepWorktree: true,
+    });
+  });
+
+  test("rejects agent validate-generated without a target", () => {
+    expect(() =>
+      parseArgs(["bun", "vos", "agent", "validate-generated"])
+    ).toThrow(/requires --target/);
+  });
+
+  test("parses verify trace as the concise trace validation entrypoint", () => {
+    const parsed = parseArgs([
+      "bun",
+      "vos",
+      "verify",
+      "trace",
+      "--target",
+      "full-syscall",
+      "--patch-file",
+      "candidate.patch",
+      "--keep-worktree",
+    ]);
+
+    expect(parsed.command).toEqual({
+      kind: "verify",
+      scope: "trace",
+      target: "full-syscall",
+      dryRun: false,
+      patchFile: "candidate.patch",
+      keepWorktree: true,
+    });
+  });
 });

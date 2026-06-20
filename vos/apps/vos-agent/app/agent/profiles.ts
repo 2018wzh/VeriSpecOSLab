@@ -113,7 +113,7 @@ const PROFILE_CONFIGS: AgentTaskProfileConfig[] = [
   {
     promptId: "spec-validator.v1",
     mode: "deep",
-    taskKinds: ["validate", "review_patch", "audit_candidate"],
+    taskKinds: ["validate", "review_patch", "audit_candidate", "trace-validation"],
     toolProfile: "readonly-validation",
     skills: ["verification-diagnosis", "audit-review"],
     mcpServers: ["spec-index", "evidence-store"],

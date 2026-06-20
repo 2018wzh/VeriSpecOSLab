@@ -17,6 +17,10 @@ export interface ExecutorOptions {
   timeoutMs?: number;
   timeoutGraceMs?: number;
   stdin?: string;
+  stdinAfter?: {
+    pattern: string;
+    text: string;
+  };
   onStdoutLine?: (line: string) => void;
   onStderrLine?: (line: string) => void;
   stopWhen?: (output: { stdout: string; stderr: string }) => boolean;
@@ -38,10 +42,20 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
     const outChunks: string[] = [];
     const errChunks: string[] = [];
     let stoppedByCondition = false;
+    let delayedStdinWritten = false;
 
     const onData = (buffer: Buffer, target: string[]) => {
       const text = buffer.toString();
       target.push(text);
+      const output = {
+        stdout: outChunks.join(""),
+        stderr: errChunks.join(""),
+      };
+      if (!delayedStdinWritten && opts.stdinAfter && new RegExp(opts.stdinAfter.pattern).test(`${output.stdout}${output.stderr}`)) {
+        delayedStdinWritten = true;
+        proc.stdin?.write(opts.stdinAfter.text);
+        proc.stdin?.end();
+      }
       const lines = text.split(/\r?\n/);
       for (const line of lines) {
         if (line.length === 0) continue;
@@ -51,10 +65,7 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
           opts.onStderrLine?.(line);
         }
       }
-      if (!stoppedByCondition && opts.stopWhen?.({
-        stdout: outChunks.join(""),
-        stderr: errChunks.join(""),
-      })) {
+      if (!stoppedByCondition && opts.stopWhen?.(output)) {
         stoppedByCondition = true;
         proc.kill("SIGTERM");
       }
@@ -63,7 +74,7 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
     proc.stdout?.on("data", (chunk) => onData(chunk as Buffer, outChunks));
     proc.stderr?.on("data", (chunk) => onData(chunk as Buffer, errChunks));
 
-    if (opts.stdin !== undefined) {
+    if (opts.stdin !== undefined && !opts.stdinAfter) {
       proc.stdin?.write(opts.stdin);
       proc.stdin?.end();
     }

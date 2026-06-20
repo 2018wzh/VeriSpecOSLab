@@ -31,6 +31,14 @@ export async function runVerifyCommand(params: {
   dryRun: boolean;
 }): Promise<VerifyResult> {
   const scope = params.scope;
+  if (scope === "trace") {
+    return {
+      status: "not_implemented",
+      scope,
+      steps: [{ name: "trace-validation", status: "not_implemented" }],
+    };
+  }
+
   if (scope === "public") {
     const requiredChecks = await collectPublicChecks(params.projectRoot);
     if (requiredChecks.length === 0) {

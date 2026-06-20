@@ -49,7 +49,8 @@ export type VerifyScope =
   | "base"
   | "architecture"
   | "composition"
-  | "goal";
+  | "goal"
+  | "trace";
 
 export interface BaseCommand {
   kind: string;
@@ -134,6 +135,8 @@ export interface VerifyCommand extends BaseCommand {
   scope: VerifyScope;
   target?: string;
   dryRun: boolean;
+  patchFile?: string;
+  keepWorktree?: boolean;
 }
 
 export interface TraceSyscallCommand extends BaseCommand {
