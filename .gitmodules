@@ -1,0 +1,3 @@
+[submodule "examples/xv6-spec"]
+	path = examples/xv6-spec
+	url = https://github.com/2018wzh/xv6-spec.git
