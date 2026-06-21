@@ -30,7 +30,7 @@
 - 学生项目与仓库自动创建
 - `spec/` + `vos` 驱动的基础公开验证
 - QEMU boot 类基础 VeriSpecOSLab 验证
-- Agent Gateway 的基础权限与审计
+- `vos` 登录、policy snapshot 与本地 Agent 审计
 - 教师查看项目进度、日志和公开结果
 
 ### 2.2 依赖模块
@@ -40,14 +40,16 @@
 - Repo Provisioner
 - Pipeline Orchestrator 基础版
 - Artifact Store
-- Agent Gateway 基础版
+- authenticated `vos-cli` / `vos serve` 集成
+- Agent governance / audit 基础版
 
 ### 2.3 验收标准
 
 1. 教师可以发布一个 VeriSpecOSLab 实验。
 2. 学生加入后可自动获得仓库和工作区。
 3. 学生 push 后平台可运行 `vos` 基础验证并展示公开摘要。
-4. 平台可保存日志、串口输出和审计记录。
+4. Portal-bound repo 的本地 CLI 和 runner 执行都通过 Portal token / policy snapshot gate。
+5. 平台可保存日志、串口输出、policy snapshot ref 和 Agent 审计记录。
 
 ### 2.4 可延后项
 
@@ -112,7 +114,7 @@
 1. 领域模型与 Spec Service
 2. 项目供应与 Git 集成
 3. Pipeline 与 Artifact
-4. Agent Gateway 基础治理
+4. `vos` 身份、HTTP façade 与 Agent 审计基础治理
 5. Judge 与评分
 6. Analytics 与扩展适配器
 ```
@@ -122,6 +124,7 @@
 - 不能为了追求完整平台而推迟第一个可运行闭环。
 - 不能在没有审计的情况下先开放 Agent 自动执行。
 - 不能在没有规则快照的情况下上 Judge。
+- 不能让 Portal 直接实现 repo runtime 或 workspace Agent 执行。
 
 ## 7. VeriSpecOSLab 特化说明
 

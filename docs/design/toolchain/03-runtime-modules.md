@@ -40,8 +40,8 @@ vos/
 命名约定：
 
 - `packages/*` 放可复用 runtime、CLI、policy、evidence 和 agent 编排逻辑。
-- `apps/vos-agent` 放 LLM runner、TUI、OpenAI-compatible façade 与 Portal API 后端。
-- `apps/vos-web` 放 Portal 前端。
+- `apps/vos-agent` 放本地 LLM runner、TUI、headless API 和本地 OpenAI-compatible façade。
+- `apps/vos-web` / Portal 前端只做平台展示与控制面，不放 workspace runtime 逻辑。
 
 ## 2. 模块职责
 
@@ -50,19 +50,24 @@ vos/
 责任：
 
 - 解析 `vos` 子命令与参数
+- 提供 `vos login` / `logout` / `whoami` 的 Portal 身份入口
+- 提供 `vos serve` 的单项目 HTTP façade
 - 调用对应 runtime / agent-core 接口
+- 对本地 CLI 与 HTTP run 执行同一 auth / policy gate
 - 控制文本输出与 `--json` 输出
 - 为课程命令统一传递 `--project-root`、`--agent-session` 等上下文
 
 主要输入 / 输出：
 
-- 输入：CLI args
-- 输出：stdout/stderr、退出码、稳定 JSON
+- 输入：CLI args 或 HTTP command RPC
+- 输出：stdout/stderr、退出码、稳定 JSON、SSE progress events
 
 核心类型：
 
 - `CliCommand`
 - `OutputMode`
+- `VosHttpRun`
+- `AuthSession`
 
 ### `vos-core`
 
@@ -108,10 +113,11 @@ vos/
 
 - 执行命令白名单、路径白名单、可见性与阶段限制
 - 为 `vos agent` wrapper 决定哪些工具和上下文可以暴露给模型
+- 合并 Portal policy snapshot 与本地 `.vos/policy.yaml`，其中本地 policy 只能收窄权限
 
 主要输入 / 输出：
 
-- 输入：调用上下文、角色、路径、stage、visibility scope
+- 输入：调用上下文、Portal token 校验结果、角色、路径、stage、visibility scope
 - 输出：allow / deny verdict、policy snapshot
 
 核心接口：
@@ -185,6 +191,7 @@ vos/
 - 调用 `apps/vos-agent` 的 headless runner 或共享 runner API
 - 校验模型返回的结构化输出
 - 写入 `AICollaborationLog` 与 evidence
+- 通过 authenticated `vos-cli` / `vos serve` 路径执行 repo 工具
 
 主要输入 / 输出：
 
@@ -209,6 +216,7 @@ vos/
 - `vos-evidence` 不反向依赖 `vos-agent-session`
 - `vos-policy` 不依赖具体 adapter 实现
 - `apps/vos-agent` 可以复用 `vos-agent-session`，但不能绕过 `vos-policy` 和 `vos-evidence`
+- `apps/vos-agent` 不是 Portal 后端；Portal / platform API 是独立控制面
 
 推荐依赖图：
 
@@ -242,8 +250,8 @@ apps/vos-web
 - `vos-spec`：规格与语义检查
 - `vos-runtime` / `vos-adapter`：命令执行编排
 - `vos-evidence` / `vos-policy`：证据、审计与安全边界
-- `vos-agent-session` / `apps/vos-agent`：Agent identity resolution、capability packs 与 LLM runner
-- `apps/vos-web`：课程平台前端
+- `vos-agent-session` / `apps/vos-agent`：本地 Agent identity resolution、capability packs 与 LLM runner
+- `apps/vos-web`：课程平台前端，只消费平台 API 与 `vos` 结构化产物
 
 ## 相关文档
 

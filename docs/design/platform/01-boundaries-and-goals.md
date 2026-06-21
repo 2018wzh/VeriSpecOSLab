@@ -28,7 +28,7 @@
 - 课程、实验、项目、阶段、提交流转
 - 仓库和工作区的供应流程
 - 验证与评测的编排与证据归档
-- Agent 的平台级权限、上下文投影和审计
+- `vos` 身份、平台级权限投影、策略快照和审计
 - 教师/助教/学生/管理员的协作流程
 
 平台不定义以下真相：
@@ -36,7 +36,13 @@
 - 学生仓库中的本地 `spec/` 字段结构
 - `vos` 的命令内部执行模型
 - Agent Runtime 在单个 workspace 内部如何索引源码和运行工具
+- `vos-agent` 在本地 workspace 内如何执行模型、工具和 patch gate
 - 某类实验的全部私有测试细节
+
+平台是 control plane；`vos-cli` / `vos-agent` 是 repo/workspace runtime。
+平台可以签发身份、阶段和 policy snapshot，可以调度 sandbox runner，也可以
+归档 `vos` evidence；平台不得旁路实现 spec 解析、toolchain、QEMU、Agent
+工具执行或 patch gate。
 
 ## 2. 与现有文档的边界
 
@@ -44,7 +50,7 @@
 
 `spec/` 负责定义学生项目本地设计真相。平台只能：
 
-- 读取
+- 接收 `vos` 产出的结构化摘要和 evidence 引用
 - 投影
 - 派生验证计划
 - 绑定评分证据
@@ -55,7 +61,7 @@
 
 `toolchain/` 负责定义 `vos` 的消费、执行编排和证据采集真相。平台只能：
 
-- 调用 `vos`
+- 通过 authenticated `vos` CLI 或 `vos serve` HTTP API 调用 `vos`
 - 提供课程和项目级输入
 - 接收结构化输出
 - 存储和展示结果
@@ -64,14 +70,15 @@
 
 ### 2.3 `arch.md`
 
-`arch.md` 负责定义 Agent Runtime、DevBox 和 OpenAI-compatible 接入。平台文档只保留：
+`arch.md` 负责定义本地 Agent Runtime、DevBox 和 OpenAI-compatible 接入。平台文档只保留：
 
-- Agent Gateway 的平台接口
+- Agent governance / audit 的平台接口
 - 权限矩阵
 - 上下文投影规则
 - 审计要求
 
-具体 prompt、索引器、workspace tool adapter 仍由 `arch.md` 负责。
+具体 prompt、索引器、workspace tool adapter 由本地 `vos-agent` 与 `arch.md` 负责。
+云端不承载 Agent 工具执行，也不作为 workspace Agent Gateway。
 
 ### 2.4 `workflow/`
 
@@ -89,7 +96,7 @@
 2. 学生项目创建与仓库供应
 3. 阶段门禁与公开/私有规则投影
 4. Pipeline 编排、Evidence 归档与 Result 发布
-5. Agent 审计与权限治理
+5. `vos` 身份、Agent 审计与权限治理
 6. 评分、反馈、教学分析
 
 ## 4. VeriSpecOSLab 特化能力
@@ -128,6 +135,7 @@
 3. 允许 Agent 绕过 `spec`、测试、阶段门禁和审计要求。
 4. 把实验特化逻辑写死在公共核心模型中。
 5. 把课程规则写死到学生仓库。
+6. 让 Portal 直接解析 repo 语义或直接执行 workspace tools。
 
 ## 7. 失败模式与约束
 
@@ -138,6 +146,7 @@
 - 平台只能支持单课程单实验
 - Pipeline 成功但证据不可复现
 - Agent 可以调用未授权工具或读取越权上下文
+- Portal、Runner 和本地 CLI 使用不同 policy gate 导致权限漂移
 
 ## 8. 后续扩展点
 

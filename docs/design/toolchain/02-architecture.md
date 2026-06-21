@@ -22,19 +22,17 @@
 ## 1. 总体结构
 
 ```text
-IDE / Web / CLI Agent
+IDE / Web / CLI / local Agent
         |
         v
-Agent Identity Gateway
-        |
-        v
-Cloud Spec Service
-        |
-        v
-vos CLI
+Authenticated vos CLI / vos serve
         |
         v
 VOS Runtime
+        |
+        v
+Portal control plane
+  (identity / policy snapshot / audit)
 ```
 
 `VOS Runtime` 内部分为 5 层。
@@ -47,7 +45,7 @@ VOS Runtime
 
 - 本地 `spec/`
 - `spec/toolchain/`
-- 云端公开约束投影缓存
+- Portal policy snapshot 允许的公开约束投影缓存
 
 输出：
 
@@ -128,14 +126,15 @@ VOS Runtime
 - 按命令种类组织产物
 - 为调试和报告提供稳定索引
 
-### 2.5 Agent Gateway Layer
+### 2.5 Local Agent / Auth Gateway Layer
 
 输入：
 
 - `AgentSession`
 - `DiagnosticReport`
 - patch 文件
-- policy
+- Portal token 校验结果
+- policy snapshot
 
 输出：
 
@@ -148,6 +147,7 @@ VOS Runtime
 - 解析 AgentIdentity 与 CapabilityPack
 - 构造受控上下文和 policy snapshot
 - 拦截越权行为
+- 为本地 CLI 和 `vos serve` 执行统一 auth / policy gate
 
 ## 3. 主数据流
 
@@ -169,6 +169,7 @@ spec/
 - validation-first：关键 patch 必须触发最低验证集
 - machine-readable first：所有命令优先返回稳定 JSON
 - audit-always：每次执行都生成 manifest 与证据索引
+- auth-first：Portal-bound repo 的本地 CLI 与 HTTP run 必须先通过在线身份与 policy 校验
 
 ## 相关文档
 

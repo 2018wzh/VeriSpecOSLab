@@ -55,8 +55,9 @@ report publish
 - `commit_sha`，作为唯一复现锚点
 - 当前阶段
 - 项目绑定的规则快照
-- 学生仓库当前 `spec/` 摘要
-- `ToolchainSpec` 摘要
+- Portal 签发或校验的 `vos` policy snapshot
+- 由 `vos` 产出的学生仓库 `spec/` 摘要
+- 由 `vos` 产出的 `ToolchainSpec` 摘要
 - 触发类型
 
 Pipeline 不接受本地未提交文件、未跟踪文件或本地 `.vos/runs/` 作为复现
@@ -80,6 +81,10 @@ Base Tests
 - 本地 `spec/goals/`
 - 云端 `VerificationPolicy`
 - staff-only 风险扩展规则
+
+平台可以用上述信息生成规则快照和验证意图，但不直接解析 repo 语义或执行
+QEMU。repo 内的 spec/toolchain 消费、构建、运行和 evidence 生成必须由
+authenticated `vos-cli` 完成。
 
 派生失败回退：
 
@@ -113,8 +118,10 @@ POST /api/pipelines/{pipelineRunId}/cancel
 checkout commit_sha
   -> verify commit ledger
   -> load project snapshot
+  -> bind Portal user / project / stage / policy snapshot
   -> derive test matrix
   -> allocate runner
+  -> start vos serve or invoke authenticated vos
   -> execute vos build generate
   -> execute vos build
   -> execute vos verify
@@ -129,6 +136,7 @@ checkout commit_sha
 - 输入快照
 - `commit_sha`
 - ledger record ref
+- policy snapshot ref 与 auth verdict
 - 开始/结束时间
 - 退出状态
 - artifact 引用
@@ -204,10 +212,13 @@ VeriSpecOSLab 额外生成：
 
 ## 10. VeriSpecOSLab 特化说明
 
-平台通过 `vos` 与 OS 项目交互，至少调用：
+平台通过 sandbox runner 中的 authenticated `vos` 与 OS 项目交互。推荐由
+runner 启动单项目绑定的 `vos serve`，再通过命令 RPC 创建 run；也可以在
+同一 auth / policy gate 下直接调用 CLI。典型命令包括：
 
 ```text
 git checkout <commit_sha>
+vos serve --project-root . --portal-url <url> --project-id <project_id>
 vos build generate
 vos spec lint
 vos arch lint
@@ -216,7 +227,9 @@ vos run qemu
 vos verify public --stage <stage>
 ```
 
-平台不直接替代 `vos` 做本地解析或 QEMU 编排。
+平台不直接替代 `vos` 做本地解析、ToolchainSpec 消费、QEMU 编排、Agent
+工具执行或 patch gate。hidden / staff-only 规则只作为 policy snapshot 或
+runner 输入参与裁决，不进入学生 repo、本地学生 Agent 或 Portal 前端可见输出。
 
 ## 11. 后续扩展点
 

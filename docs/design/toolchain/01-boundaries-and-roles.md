@@ -69,6 +69,7 @@ ToolchainSpec (语义: 源文件、编译标志、链接脚本...)
 `vos` 不是任意 shell 包装器。它必须：
 
 - 暴露固定子命令，而不是任意命令转发
+- 对 Portal-bound repo 执行统一身份验证和 policy gate
 - 对路径、阶段、spec 绑定和可见性做检查
 - 把输出整理成稳定 JSON 与 evidence
 - 记录命令、参数、产物、日志、失败类型
@@ -81,13 +82,13 @@ ToolchainSpec (语义: 源文件、编译标志、链接脚本...)
 
 ## 3. 本地公开能力 vs 云端私有验证
 
-本地 `vos` 可以看到：
+本地 `vos` 是 repo runtime，可以看到：
 
 - 本地 `spec/`
 - 学生源代码
 - 公开测试与派生测试
-- 公开阶段约束投影
-- agent-only 约束摘要
+- Portal 签发或校验的公开阶段约束投影
+- Portal 签发或校验的 agent-only 约束摘要
 
 本地 `vos` 不可以看到：
 
@@ -96,7 +97,28 @@ ToolchainSpec (语义: 源文件、编译标志、链接脚本...)
 - anti-gaming 规则细节
 - staff-only grading policy
 
-平台可以通过 `verify full` 或云端专用接口执行完整验证，但其结果回流给学生时只能返回摘要与 verdict，不返回私有规则细节。
+平台可以通过 sandbox runner 注入 hidden / staff-only policy snapshot 执行完整
+验证，但 hidden tests、mutation plan 和 staff-only 细节不得写入学生 repo、本地
+学生 Agent 或学生可见 report。回流给学生的只能是摘要与 verdict。
+
+### 3.1 Portal-bound repo 身份规则
+
+当项目绑定了 Portal `project_id` 时，本地 CLI 与 `vos serve` 都必须执行相同
+的身份和 policy gate：
+
+- `vos login --portal-url` 从 Portal 获取 token；`vos logout` 清除本地 token；
+  `vos whoami` 显示当前身份、project binding 和 policy 状态。
+- token 存入用户级 VOS auth store；项目 `.vos/` 只能保存非敏感 portal URL、
+  project id 和 stage binding。
+- 除 `login` / `logout` / `whoami` / `help` 等认证入口外，Portal-bound repo
+  中的所有项目命令都必须在线校验 Portal token 和当前 policy snapshot。
+- 不支持离线缓存执行受控命令；网络不可用、token 无效或 policy snapshot
+  无法校验时，命令必须返回 `policy_blocked`。
+- 本地 `.vos/policy.yaml` 只能在 Portal policy 基础上进一步收窄权限，不能扩权。
+- 每次 run 的 manifest 必须记录 user、project、policy snapshot ref 和 auth verdict。
+
+未绑定 Portal project 的普通本地 repo 可以保留 local-only 使用模式，但其输出
+不得伪装成 Portal 审计过的 run。
 
 ## 4. Agent 辅助开发 vs 自动代写 OS
 
@@ -125,7 +147,7 @@ student:
 agent:
   可通过 vos 执行受控命令
   可读取本地 spec/
-  可读取云端 agent-only 约束摘要
+  可读取 Portal policy 允许的 agent-only 约束摘要
   不可删除测试和 invariant checker
   不可读取未授权云端内容
 
@@ -133,13 +155,14 @@ teacher:
   可配置课程规则、rubric、hidden tests、judge policy
 
 ci:
-  可执行完整验证
+  可在 sandbox runner 中通过 authenticated vos 执行完整验证
   可写入 evidence 和 judge result
 ```
 
 ## 6. Policy 模型
 
-`vos-policy` 负责执行命令白名单、路径白名单和可见性规则。示例：
+`vos-policy` 负责执行命令白名单、路径白名单和可见性规则。Portal-bound repo
+中，Portal policy snapshot 是权限上限，本地 policy 只能收窄。示例：
 
 ```yaml
 VosPolicy:

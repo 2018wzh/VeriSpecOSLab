@@ -3,9 +3,14 @@
 本设计文档旨在细化 VeriSpecOSLab 教学实验门户的实现细节，涵盖数据库、API、前端架构及评测业务流程。
 
 ## 1. 总体架构
-*   **Backend**: Bun / TypeScript (`apps/vos-agent`) + optional PostgreSQL / Redis adapters
+*   **Backend**: 独立 Portal API / platform backend + optional PostgreSQL / Redis adapters
 *   **Frontend**: React + TypeScript + Vite + Shadcn/UI + TailwindCSS
-*   **Integration**: 通过 Webhook 接收 Gitea 事件，通过 TypeScript `vos-core` / `vos-evidence` 解析证据。
+*   **Integration**: 通过 Webhook 接收 Git 事件，通过 sandbox runner 启动 `vos serve` 或受控 `vos` runtime，接收 `vos` 上传的结构化摘要、manifest、evidence、report 和 artifact 引用。
+
+Portal 是课程控制面，不是实验 repo runtime。它不直接执行 QEMU、不解析
+`ToolchainSpec`、不读取本地 `spec/` 语义、不调用 workspace tools。所有与
+实验 checkout 相关的 build/run/test/verify、Agent 执行、patch gate 和本地
+evidence 生成都由 `vos-cli` / `vos-agent` 在 runner 或本地 workspace 内完成。
 
 ---
 
@@ -119,6 +124,7 @@ CREATE TABLE scores (
 *   `POST /api/v1/auth/login`: 用户登录
 *   `POST /api/v1/auth/logout`: 用户登出
 *   `GET /api/v1/auth/me`: 获取当前用户信息
+*   `GET /api/v1/projects/{id}/vos-policy`: 获取当前用户、项目、阶段绑定的 `vos` policy snapshot
 
 ### 3.2 学生端接口
 *   `GET /api/v1/projects`: 获取当前学生的所有实验项目
@@ -150,7 +156,7 @@ CREATE TABLE scores (
 *   **评分摘要**: 实时显示当前已获得的自动评分与总分。
 
 ### 4.2 架构浏览器 (Architecture View)
-*   读取 `spec/architecture/*.yaml`，渲染架构树与不变量约定。
+*   读取 runner / `vos report generate` 产出的结构化架构摘要、public summary 和 evidence refs，渲染架构树与不变量约定。
 
 ### 4.3 证据大屏 (Evidence View)
 *   可视化展示测试用例结果、QEMU 串口日志、不变量验证证据。
@@ -164,9 +170,10 @@ CREATE TABLE scores (
 
 ## 5. 核心业务流程：证据采集闭环
 1.  **触发**: 学生执行 `git push`。
-2.  **验证**: Gitea Actions 运行 `vos verify`。
-3.  **上报**: Runner 上报 `report.json` 至后端。
-4.  **同步**: 后端更新流水线状态与证据表。
+2.  **绑定**: 平台为提交生成 project / stage / policy snapshot，并分配 sandbox runner。
+3.  **验证**: Runner checkout 提交后启动 `vos serve` 或运行 authenticated `vos` 命令。
+4.  **上报**: Runner 上报 `vos` 生成的 report、manifest、evidence 和 artifact 引用。
+5.  **同步**: 后端更新流水线状态与证据表。
 
 ---
 

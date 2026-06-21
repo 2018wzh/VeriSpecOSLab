@@ -31,6 +31,11 @@
 --agent-session <id>
 ```
 
+Portal-bound repo 中，除 `login` / `logout` / `whoami` / `help` 等认证入口外，
+所有项目命令在执行前都必须在线校验 Portal token 与 policy snapshot。HTTP
+server 模式和本地 CLI 复用同一 command parser、auth/policy gate、runtime
+和 evidence writer。
+
 所有命令都至少输出：
 
 - `ok`
@@ -38,6 +43,72 @@
 - `command`
 - `status`
 - `artifacts`
+
+Portal-bound run 的 manifest 还必须记录：
+
+- `user_id`
+- `project_id`
+- `policy_snapshot_ref`
+- `auth_verdict`
+
+## 1.5 Auth 与 HTTP Server 命令
+
+### `vos login`
+
+输入：
+
+- `--portal-url`
+- Portal 凭据或浏览器/device flow 返回的 token
+
+职责：
+
+- 从 Portal 获取用户 token
+- 将 token 写入用户级 VOS auth store
+- 不把 token 写入项目 `.vos/` 或提交包
+
+### `vos logout`
+
+职责：
+
+- 清除用户级 VOS auth store 中对应 Portal 的 token
+- 可选通知 Portal revoke token
+
+### `vos whoami`
+
+输出：
+
+- 当前 Portal URL
+- 当前 user / role 摘要
+- 当前 project binding
+- policy snapshot 状态
+
+### `vos serve`
+
+职责：
+
+- 启动单项目绑定的 HTTP façade，供 Portal / sandbox runner 调用
+- 复用本地 CLI 的 auth/policy gate、命令执行、progress、evidence
+- 不另写 build/run/verify 逻辑
+
+启动示例：
+
+```bash
+vos serve --project-root . --portal-url https://portal.example --project-id <project-id> --host 127.0.0.1 --port 8788
+```
+
+最小 HTTP API：
+
+```http
+POST /api/v1/vos/runs
+GET  /api/v1/vos/runs/{id}
+GET  /api/v1/vos/runs/{id}/events
+POST /api/v1/vos/runs/{id}/cancel
+```
+
+`POST /runs` 使用命令 RPC 形状，至少包含 `command`、`args`、`requested_by`
+和可选 `agent_session_id` / `reason`。`GET /events` 使用 SSE，并复用
+`RunEvent` / progress event 语义。`cancel` 必须写入 evidence，最终状态为
+`cancelled` 或 `timed_out`。
 
 ## 2. Spec 命令
 

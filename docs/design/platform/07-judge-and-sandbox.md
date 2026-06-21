@@ -55,6 +55,7 @@ DocumentationJudge
 - `frozen_commit_sha`，作为 Judge 唯一复现输入
 - 实验类型
 - 规则快照
+- Portal 校验的 `vos` policy snapshot
 - 可见性级别
 
 Judge 不接受未提交文件、未跟踪文件、本地工作区快照或本地 `.vos/runs/`
@@ -92,7 +93,7 @@ Judge Controller
   -> isolated worker
   -> VM / MicroVM
   -> container
-  -> tool runtime
+  -> authenticated vos runtime
   -> student program / student OS
 ```
 
@@ -110,6 +111,8 @@ Judge Controller
 fetch frozen repo
   -> checkout frozen_commit_sha
   -> verify commit ledger
+  -> bind Portal project / judge policy snapshot
+  -> start vos serve or invoke authenticated vos
   -> run vos build generate
   -> run vos build
   -> build kernel / userland / image from manifest
@@ -147,6 +150,12 @@ Judge 输入至少需要：
 - machine / ISA profile
 - boot chain profile
 - timeout 与 success oracle
+- policy snapshot ref 与 auth verdict
+
+Judge 不直接解析 `ToolchainSpec` 或拼接 QEMU 命令。所有 repo 内执行必须经
+authenticated `vos-cli` 裁决并生成 evidence；staff-only hidden 规则只能以
+runner 输入或 policy snapshot 形式参与验证，不能写入学生 repo 或学生可见
+report。
 
 ## 6. 成绩计算
 

@@ -18,7 +18,7 @@
 - `speclab-spec-service`
 - `speclab-pipeline-orchestrator`
 - `speclab-judge-controller`
-- `speclab-agent-gateway`
+- `speclab-agent-governance`
 
 ## 1. 容器级架构
 
@@ -36,14 +36,14 @@
    |          |        |
    v          v        v
 +------+  +--------+ +------------------+
-| Spec |  | Repo   | | Agent Gateway    |
-|Svc   |  |Prov    | | policy / audit   |
+| Spec |  | Repo   | | Agent Governance|
+|Svc   |  |Prov    | | policy / audit  |
 +--+---+  +---+----+ +---------+--------+
    |          |                |
    v          v                v
 +------+  +--------+   +---------------+
-| DB   |  | Git    |   | Workspace /   |
-| S3   |  | Server |   | Agent Runtime |
+| DB   |  | Git    |   | Policy /      |
+| S3   |  | Server |   | Audit Store   |
 +--+---+  +---+----+   +---------------+
    |          |
    +-----+----+
@@ -59,7 +59,8 @@
       v             v
 +-----------+  +----------------+
 | Runner     |  | Judge Ctrl     |
-| vos / QEMU |  | standard score |
+| vos serve  |  | standard score |
+| vos / QEMU |  |                |
 +-----+------+  +--------+-------+
       |                  |
       v                  v
@@ -86,8 +87,9 @@
 ### 2.3 Spec Service
 
 - 存储 `ExperimentSpec`、`StageGate`、`VerificationPolicy`、`EvaluationRubric`
-- 生成面向学生、Agent、教师的可见性投影
+- 生成面向学生、本地 Agent、教师和 Runner 的可见性投影
 - 为 Pipeline 和 Judge 派生验证计划输入
+- 为 authenticated `vos` 签发或校验 project / stage / policy snapshot
 
 ### 2.4 Repo Provisioner
 
@@ -99,7 +101,7 @@
 
 - 接收 webhook、手动触发和定时触发任务
 - 生成 `PipelinePlan`
-- 分发到 Runner 队列并聚合结果
+- 分发到 Runner 队列，通过 `vos serve` 或 authenticated `vos` 命令聚合结果
 
 ### 2.6 Judge Controller
 
@@ -112,11 +114,12 @@
 - 保存构建产物、日志、trace、报告、镜像、审计日志
 - 为 Portal、Judge、Analytics 提供只读访问
 
-### 2.8 Agent Gateway
+### 2.8 Agent Governance
 
-- 暴露 OpenAI-compatible 接口
-- 执行策略检查、上下文投影和工具授权
-- 写入审计日志并回填项目事件
+- 不承载 workspace Agent 执行
+- 管理 Agent 会话元数据、policy snapshot、risk flags 和 evidence refs
+- 接收本地 `vos-agent` / `vos-cli` 上报的审计事件并回填项目事件
+- 为本地 Agent 和 `vos` 提供只读投影与权限上限
 
 ### 2.9 Analytics
 
@@ -153,7 +156,8 @@ Portal -> Backend API -> Repo Provisioner
 ```text
 Git webhook -> Backend API -> Pipeline Orchestrator
   -> fetch project state and visible rules
-  -> Runner executes vos
+  -> Runner checkout commit and bind policy snapshot
+  -> Runner starts vos serve or runs authenticated vos
   -> Artifact Store persists outputs
   -> Backend API publishes public summary
 ```
@@ -164,19 +168,19 @@ Git webhook -> Backend API -> Pipeline Orchestrator
 Teacher or stage freeze -> Backend API
   -> Judge Controller
   -> isolated runner
+  -> authenticated vos / vos serve
   -> JudgeResult + EvidenceBundle
   -> Scorebook update
 ```
 
-### 4.4 Agent 交互
+### 4.4 Agent 审计同步
 
 ```text
-IDE / Portal -> Agent Gateway
-  -> load user / project / stage / projection
-  -> authorize tools
-  -> call workspace runtime
-  -> persist audit log
-  -> return response
+IDE / CLI -> local vos-agent
+  -> authenticated vos-cli gate
+  -> local tools / patch / verification
+  -> upload audit summary and evidence refs
+  -> Portal displays governance record
 ```
 
 ## 5. 状态流
@@ -195,7 +199,7 @@ IDE / Portal -> Agent Gateway
 
 - Repo 创建失败必须可重试且不能产生重复项目。
 - Pipeline 与 Judge 必须能关联到唯一的冻结输入和证据输出。
-- Agent Gateway 不得在无法确定项目/身份/阶段时回退到无审计模式。
+- 本地 Agent 或 `vos` 在无法确定项目/身份/阶段时不得回退到 Portal-audited 模式。
 - Artifact Store 不得成为主状态真相，只保存证据与只读产物。
 
 ## 7. VeriSpecOSLab 特化说明
@@ -207,7 +211,9 @@ VeriSpecOSLab 需要在 Runner/Judge 层增加：
 - 镜像与 boot chain 产物处理
 - OS trace 和 panic 分析接口
 
-公共后端与 Portal 不直接内嵌这些细节，而通过实验类型能力协商获得。
+公共后端与 Portal 不直接内嵌这些细节，也不直接解析 repo 语义；这些能力
+由 sandbox runner 中的 `vos-cli` / `vos-agent` 提供，并以结构化 evidence
+和 report 回传。
 
 ## 8. 后续扩展点
 

@@ -33,6 +33,9 @@
 
 - `vos init`
 - `vos doctor`
+- `vos login`
+- `vos logout`
+- `vos whoami`
 - `vos stage show`
 - `vos spec lint`
 - `vos spec normalize`
@@ -47,10 +50,11 @@
 - 命令返回稳定 JSON
 - 每次 run 生成 `manifest.json` 与 `events.jsonl`
 - 不依赖云端 projection 也能本地工作
+- Portal-bound repo 的项目命令进入统一 auth / policy gate
 
 非目标：
 
-- 不做完整 Agent Gateway
+- 不做云端 Agent Gateway 执行层
 - 不做私有验证联邦执行
 
 ## 2. Phase 2: Patch-aware verification
@@ -83,16 +87,18 @@
 - 不暴露 hidden tests 源码
 - 不把 patch impact 实现为自由脚本
 
-## 3. Phase 3: Agent gateway
+## 3. Phase 3: Local Agent Runtime And HTTP VOS
 
 范围：
 
 - `vos-agent`
 - `vos-policy`
-- cloud projection 集成
+- Portal policy snapshot 集成
+- `vos serve`
 
 覆盖命令：
 
+- `vos serve`
 - `vos agent serve`
 - `vos agent context`
 - `vos agent plan`
@@ -103,9 +109,11 @@
 
 完成定义：
 
-- Agent 只经由 `vos` 工作
+- Agent 只经由本地 `vos-agent` 和 authenticated `vos` 工作
+- `vos serve` 提供单项目命令 RPC、SSE events 和 cancel
 - patch 应用绑定 spec 与最小验证 DAG
-- 平台可通过统一 evidence 与协作日志回溯 Agent 行为
+- 平台可通过统一 evidence、policy snapshot ref 与协作日志回溯 Agent 行为
+- 云端平台不承载 workspace Agent 工具执行
 
 ## 4. 测试矩阵
 
@@ -116,6 +124,7 @@
 - commit-backed `SpecPatch` DAG 校验
 - adapter resolution
 - policy / path validation
+- Portal token / policy snapshot validation
 
 ### Integration
 
@@ -123,11 +132,13 @@
 - `vos run qemu` 的 success / panic / timeout
 - `vos test` 多 suite 执行与汇总
 - `vos verify patch` 只运行受影响验证
+- `vos serve` 创建 run、SSE 事件流与 cancel
 
 ### End-to-end
 
 - 从 `spec lint` 到 `verify public` 产生完整 evidence bundle
 - `agent apply-patch` 在路径越权、spec 缺失、验证失败时正确拒绝
+- Portal-bound repo 未登录或在线校验失败时拒绝本地项目命令
 
 ### Resilience
 

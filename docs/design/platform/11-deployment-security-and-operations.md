@@ -67,7 +67,7 @@ agent-gateway
 - 对象存储
 - Git 服务
 - Runner 资源池
-- Agent Gateway 依赖的模型网关
+- 本地 `vos-agent` 可使用的模型网关或 provider 配置
 
 ## 3. 安全控制点
 

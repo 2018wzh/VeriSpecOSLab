@@ -2,11 +2,12 @@
 
 ## 1. 设计目标
 
-本架构用于为 VeriSpecOSLab 以及其他 Spec 驱动实验项目提供统一的开发环境、Agent 接入层、验证测试平台与评分证据采集机制。
+本架构用于为 VeriSpecOSLab 以及其他 Spec 驱动实验项目提供统一的开发环境、
+本地 Agent Runtime、authenticated `vos` 运行时、验证测试平台与评分证据采集机制。
 
 核心目标包括：
 
-1. 支持学生在 VS Code、JetBrains、Cursor、Continue、Cline、Aider、Open WebUI、CodeGPT 等支持 OpenAI-compatible API 的 IDE 或工具中接入项目专用 Agent。
+1. 支持学生在 VS Code、JetBrains、Cursor、Continue、Cline、Aider、Open WebUI、CodeGPT 等支持 OpenAI-compatible API 的 IDE 或工具中接入本地项目专用 Agent。
 2. 将 AI 使用限制在规格、测试、构建、验证反馈和审计日志约束之下，避免学生直接让 AI 代写完整系统。
 3. 提供可复现、可测试、可评分的 DevBox 开发环境。
 4. 支持个性化目标验证，例如二进制兼容、性能优化、硬件移植、可验证性增强、安全隔离等。
@@ -22,18 +23,21 @@ Spec → Agent → Patch → Build → Test → Validate → Feedback → Spec /
 
 ## 2. 总体架构
 
-整体采用五层结构：
+整体采用 local-first 结构：
 
 ```text
 IDE / Editor / CLI
-    ↓ OpenAI-compatible API
-Agent Gateway
+    ↓ OpenAI-compatible API / CLI
+Local vos-agent
     ↓
-Cloud Spec Service
+Authenticated vos-cli / vos serve
     ↓
-Project Agent Runtime
+Project repo / spec / toolchain / evidence
     ↓
 DevBox / Toolchain / CI / QEMU / Test / Project Repo
+
+Portal / Platform Control Plane
+    ↔ identity / policy snapshot / audit / runner orchestration
 ```
 
 展开如下：
@@ -47,32 +51,22 @@ VS Code / JetBrains / Cursor / Continue / Cline / Aider
         |   model    = verispecoslab-agent
         v
 +--------------------------------+
-| OpenAI-Compatible Agent Gateway|
+| Local vos-agent                |
 | - /v1/models                   |
 | - /v1/chat/completions         |
 | - /v1/responses 可选           |
 | - streaming support            |
 | - tool call normalization      |
-| - audit and policy enforcement |
+| - local AgentIdentity routing  |
 +--------------------------------+
         |
         v
 +--------------------------------+
-| Cloud Spec Service             |
-| - course spec store            |
-| - hidden verification spec     |
-| - derived runtime spec         |
-| - role-based projection        |
-| - versioning and audit         |
-+--------------------------------+
-        |
-        v
-+--------------------------------+
-| VeriSpecOSLab Agent Runtime    |
-| - one project Agent runner     |
-| - AgentIdentity registry       |
-| - CapabilityPack registry      |
+| Authenticated vos-cli Runtime  |
+| - login/logout/whoami          |
+| - vos serve command RPC        |
 | - policy / evidence gates      |
+| - build/run/test/verify        |
 +--------------------------------+
         |
         v
@@ -86,9 +80,23 @@ VS Code / JetBrains / Cursor / Continue / Cline / Aider
 | - tests / benchmarks           |
 | - CI runner                    |
 +--------------------------------+
+
+        ↔
+
++--------------------------------+
+| Portal / Platform Control Plane|
+| - identity and policy snapshot |
+| - course / stage state         |
+| - hidden verification policy   |
+| - audit collection             |
+| - sandbox runner orchestration |
++--------------------------------+
 ```
 
-对外表现为标准 OpenAI-compatible API 服务；对内则是“项目仓库 + 云端 Spec Service + 本地工具链”协同工作的 Agent 系统。IDE 只需要配置 `base_url`、`api_key` 和 `model`，不需要理解项目内部工具链、云端 Spec 访问和测试矩阵生成细节。
+对 IDE 表现为本地 OpenAI-compatible API 服务；对 Portal / runner 表现为
+authenticated `vos` CLI 或 `vos serve` HTTP façade。云端平台是 control plane：
+它签发身份、project/stage binding 和 policy snapshot，调度 sandbox runner，
+归档 evidence 和审计记录，但不承载 workspace Agent 执行。
 
 ---
 
@@ -175,19 +183,15 @@ verispecoslab/
     trace_compare/
     report_generator/
 
-  agent/
-    gateway/
-    runtime/
-    prompts/
-    policies/
-    tools/
-
   ci/
     github-actions/
     gitlab-ci/
 ```
 
-学生仓库中只保留与项目设计直接相关的 `spec/`。课程规则、隐藏验证规则和平台派生 Spec 不进入学生仓库，而是保存在云端 Spec Service 中，由 Gateway 按权限投影给学生界面、Agent 和教师界面。
+学生仓库中只保留与项目设计直接相关的 `spec/`、源码、公开测试和本地
+`.vos/` runtime artifacts。课程规则、隐藏验证规则和平台派生 Spec 不进入
+学生仓库，而是保存在 Portal / Spec Service 中，由 authenticated `vos` 按
+policy snapshot 使用，并以结构化 evidence / report 回传。
 
 ### 3.3 DevBox 内置工具链
 
@@ -249,17 +253,22 @@ vos verify composition
 vos verify goal
 vos trace
 vos debug
+vos login --portal-url <url>
+vos whoami
+vos serve --project-root . --portal-url <url> --project-id <id>
 vos agent serve
 vos submit pack
 ```
 
-Agent 不直接猜测项目命令，而是通过 `vos` 调用标准工具链。
+Agent 不直接猜测项目命令，而是通过 authenticated `vos` 调用标准工具链。
 
 ---
 
-## 4. Agent Identity Gateway
+## 4. Local Agent Runtime
 
-Agent Gateway 是 IDE 与内部 Agent Runtime 之间的适配层。
+`vos-agent` 是 IDE 与项目 Agent Runtime 之间的本地适配层。它可以暴露
+OpenAI-compatible API，但工具执行、patch 应用和验证必须经过 authenticated
+`vos-cli` / `vos serve` gate。
 
 ### 4.1 对外接口
 
@@ -290,9 +299,9 @@ API Key: vos-local-token
 Model: verispecoslab-agent
 ```
 
-### 4.2 Gateway 职责
+### 4.2 本地 Agent 职责
 
-Agent Gateway 不只是模型转发器，而是项目感知控制层。
+本地 Agent 不只是模型转发器，而是项目感知协作者。
 
 职责包括：
 
@@ -301,8 +310,8 @@ Agent Gateway 不只是模型转发器，而是项目感知控制层。
 2. 识别当前项目、文件、选区、任务类型
 3. 解析 AgentIdentity、CapabilityPack、项目规范和 AI 使用策略
 4. 检索相关 specs / code / tests / logs
-5. 调用内部 Agent Runtime
-6. 根据权限调用工具
+5. 调用本地 Agent Runtime
+6. 通过 authenticated `vos` 根据权限调用工具
 7. 记录 AICollaborationLog
 8. 返回 OpenAI-compatible 响应
 9. 对核心修改执行 spec-first / test-first / validation-first 约束
@@ -801,7 +810,7 @@ vos spec lint
 vos arch lint
 ```
 
-推荐通过 Gateway 控制工具权限，避免任意执行破坏性命令。
+推荐通过 authenticated `vos` 控制工具权限，避免任意执行破坏性命令。
 
 ### 11.3 CLI Agent
 
@@ -822,7 +831,8 @@ vos agent arch review spec/architecture/seed.yaml
 ```text
 学生机器：
   DevContainer
-  Agent Gateway
+  local vos-agent
+  authenticated vos-cli / vos serve
   Local / Remote LLM provider
   QEMU
 ```
@@ -832,7 +842,7 @@ vos agent arch review spec/architecture/seed.yaml
 ```text
 低延迟
 方便调试
-学生可离线构建
+未绑定 Portal project 的本地 repo 可离线构建
 ```
 
 缺点：
@@ -842,16 +852,16 @@ vos agent arch review spec/architecture/seed.yaml
 本机资源要求高
 ```
 
-### 12.2 课程服务器模式
+### 12.2 课程服务器 / Runner 模式
 
 ```text
-学生 IDE
+Portal / Pipeline Orchestrator
   ↓
-课程 Agent Gateway
+Sandbox runner
   ↓
-每个学生一个 workspace container
+checkout commit + vos serve
   ↓
-统一 LLM provider
+authenticated vos build/run/verify
 ```
 
 优点：
@@ -860,7 +870,7 @@ vos agent arch review spec/architecture/seed.yaml
 统一权限
 统一日志
 统一评分
-统一模型
+统一 policy snapshot
 方便收集 AICollaborationLog
 ```
 
@@ -877,13 +887,13 @@ vos agent arch review spec/architecture/seed.yaml
 
 ```text
 本地：
-  IDE + DevContainer + QEMU
+  IDE + DevContainer + local vos-agent + authenticated vos-cli + QEMU
 
 远端：
-  Agent Gateway + 模型路由 + 日志系统
+  Portal control plane + policy snapshot + audit + runner orchestration
 
 本地工具执行：
-  由 vos agent local-runner 完成
+  由 vos-agent 调用 authenticated vos-cli / vos serve 完成
 ```
 
 ---
@@ -1200,17 +1210,19 @@ AICollaborationLog.md
 ```text
 MVP 目标：
   - 一个 DevContainer
-  - 一个 FastAPI / Node.js Gateway
-  - 兼容 /v1/chat/completions
+  - 一个本地 vos-agent OpenAI-compatible façade
+  - 一个 authenticated vos-cli runtime
+  - 一个 vos serve HTTP command façade
   - 支持 Continue / Cline / Cursor 接入
-  - 支持 7 个工具：
-      read_file
-      write_patch
-      run_build
-      run_test
-      run_spec_lint
-      run_arch_lint
-      derive_arch_tests
+  - 支持 Portal login/logout/whoami 与在线 policy 校验
+  - 支持受控 `vos` 命令：
+      spec lint
+      arch lint
+      build
+      run qemu
+      test
+      verify public
+      report generate
   - 支持统一项目 Agent runner
   - 支持 6 个 AgentIdentity：
       spec-author.v2
@@ -1222,45 +1234,32 @@ MVP 目标：
   - 自动记录 AICollaborationLog
 ```
 
-MVP 目录：
+MVP 模块：
 
 ```text
-agent/
-  gateway/
-    main.py
-    openai_compat.py
-    auth.py
-    router.py
+vos/apps/vos-cli
+  - login/logout/whoami
+  - serve command RPC + SSE + cancel
+  - auth / policy gate
+  - runtime / evidence
 
-  runtime/
-    identities/
-      agent_identity_registry.ts
-      capability_pack_registry.ts
-    tools/
-      fs.py
-      build.py
-      test.py
-      spec_lint.py
-      arch_lint.py
-      arch_test_deriver.py
-    memory/
-      project_index.py
-      spec_index.py
+vos/apps/vos-agent
+  - local LLM runner
+  - OpenAI-compatible façade
+  - AgentIdentity / CapabilityPack
+  - local context and tool routing through authenticated vos
 
-  prompts/
-    system.md
-    architecture_spec_assistant.md
-    spec_assistant.md
-    codegen.md
-    debug.md
+Portal / platform
+  - identity and policy snapshot
+  - audit and evidence ingestion
+  - runner orchestration
 ```
 
 推荐技术选型：
 
 ```text
-Gateway:
-  Python FastAPI
-  或 Node.js Hono / Express
+vos-cli / vos-agent:
+  Bun / TypeScript
 
 LLM 调用:
   LiteLLM 风格的 provider abstraction
@@ -1291,7 +1290,11 @@ IDE:
 
 ## 18. 总结
 
-VeriSpecOSLab Agent Gateway 是一个 OpenAI-compatible 的项目专用 AI 接入层。它向 IDE 暴露标准 OpenAI API，向内部连接规格库、源码、测试、QEMU、CI 和验证工具，使学生可以在任意兼容 IDE 中使用统一 Agent 完成规格编写、代码生成、测试生成、错误定位、验证反馈和 AI 协作记录。
+VeriSpecOSLab 使用本地 `vos-agent` 作为 OpenAI-compatible 的项目专用 AI
+接入层，使用 authenticated `vos-cli` / `vos serve` 作为 repo runtime 和
+权限 gate。Portal 是课程控制面：负责身份、policy snapshot、runner 调度、
+evidence 入库、审计和评分；它不承载 workspace Agent 执行，也不直接解析
+repo 语义。
 
 该架构的关键不是“接入大模型”，而是把大模型放入规格驱动和验证反馈闭环中：
 

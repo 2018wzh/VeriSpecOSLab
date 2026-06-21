@@ -18,7 +18,7 @@
 - Backend API
 - Spec Service
 - Pipeline Orchestrator
-- Agent Gateway
+- Agent governance / audit
 
 ## 1. 职责与边界
 
