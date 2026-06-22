@@ -29,6 +29,7 @@ export async function runVerifyCommand(params: {
   scope: string;
   target?: string;
   dryRun: boolean;
+  signal?: AbortSignal;
 }): Promise<VerifyResult> {
   const scope = params.scope;
   if (scope === "trace") {
@@ -78,11 +79,12 @@ export async function runVerifyCommand(params: {
       projectRoot: params.projectRoot,
       evidence: params.evidence,
       dryRun: params.dryRun,
+      signal: params.signal,
     });
     steps.push({ name: "build", status: buildResult.status });
-    if (buildResult.status === "failed") {
+    if (buildResult.status !== "ok") {
       return {
-        status: "failed",
+        status: buildResult.status,
         scope,
         steps,
         requiredChecks: requiredChecks.map((check) => ({ id: check.id, status: "failed", requiredArtifacts: check.required_artifacts })),
@@ -93,6 +95,7 @@ export async function runVerifyCommand(params: {
       projectRoot: params.projectRoot,
       evidence: params.evidence,
       dryRun: params.dryRun,
+      signal: params.signal,
     });
     steps.push({ name: "run", status: runResult.status });
 
@@ -120,10 +123,11 @@ export async function runVerifyCommand(params: {
         projectRoot: params.projectRoot,
         evidence: params.evidence,
         dryRun: params.dryRun,
+        signal: params.signal,
       });
       steps.push({ name: "build", status: result.status });
-      if (result.status === "failed") {
-        return { status: "failed", scope, steps };
+      if (result.status !== "ok") {
+        return { status: result.status, scope, steps };
       }
       continue;
     }
@@ -133,10 +137,11 @@ export async function runVerifyCommand(params: {
         projectRoot: params.projectRoot,
         evidence: params.evidence,
         dryRun: params.dryRun,
+        signal: params.signal,
       });
       steps.push({ name: "run", status: result.status });
-      if (result.status === "failed") {
-        return { status: "failed", scope, steps };
+      if (result.status !== "ok") {
+        return { status: result.status, scope, steps };
       }
       continue;
     }

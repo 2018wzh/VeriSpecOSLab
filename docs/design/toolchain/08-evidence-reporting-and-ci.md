@@ -67,7 +67,7 @@
 
 ## 3. Commit-Bound Reproducibility
 
-`vos` 的生成、构建和提交命令以 commit 为复现边界。
+`vos` 的受控项目命令以 commit 为复现边界。
 
 工作树干净定义为：
 
@@ -79,13 +79,17 @@ git status --porcelain --untracked-files=all
 
 命令边界：
 
-- `vos build generate` 执行前必须通过 clean tree gate。
-- `vos build` 执行前必须通过 clean tree gate，确保构建结果可由当前
-  `HEAD` 复现。
-- `vos submit pack` 执行前必须通过 clean tree gate，并且只打包当前
-  `HEAD` commit。
-- 写入型 generate 成功后由 VOS 自动创建 commit。
-- generate 无变更时不创建 commit，但必须记录 no-op run。
+- 除 `login` / `logout` / `whoami` / `help` / `init` /
+  `ledger record` 等入口外，所有受控项目命令执行前必须通过 clean tree
+  gate 和当前 `HEAD` ledger gate。
+- `vos build generate`、`vos build`、`vos verify`、`vos submit pack` 是
+  最重要的受控入口；其他 spec/arch/run/test/report/agent 命令也不得绕过
+  复现边界。
+- `vos submit pack` 只打包当前 `HEAD` commit。
+- 写入型 generate 成功后由 VOS 自动创建 commit，并写入
+  `.vos/commit-ledger.jsonl`。
+- generate 草案没有可提交变更时不得伪造成功 commit；命令应失败并保留
+  evidence，提示重新生成或人工记录。
 
 推荐 tracked ledger：
 
@@ -110,9 +114,13 @@ collaboration_intent:
 based_on_agent_output:
 ```
 
-VOS 自动 commit 时必须先写入 ledger，再将 ledger 变更纳入同一 commit。
-human commit 允许存在，但在下一次 `vos build generate`、`vos build` 或
-`vos submit pack` 前必须补齐 ledger 记录，否则 gate 拒绝。
+VOS 自动 commit 后必须为新 `HEAD` 写入 ledger 记录。ledger 不要求被它记录的
+同一个 commit 自包含，因为这会形成 Git hash 自引用；gate 读取当前工作树中的
+ledger，并忽略 ledger 文件自身造成的 dirty 状态。
+human commit 允许存在，但在下一次受控 VOS 项目命令前必须补齐 ledger 记录，
+否则 gate 拒绝。
+`vos init` 可为当前 HEAD 初始化 ledger；`vos ledger record --actor human
+--intent <text>` 可为人工提交补齐记录。
 
 ## 4. `vos report generate`
 

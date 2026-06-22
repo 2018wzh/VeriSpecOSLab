@@ -2,13 +2,15 @@
 
 ## 概述
 
-`ToolchainSpec` 定义了**工具无关的语义构建模式**，允许多个生成器（Makefile、xtask、CMake、Bazel 等）从同一份 spec 生成各自的构建配置。
+`ToolchainSpec` 定义了**工具无关的语义构建模式**，允许本地 Agent
+根据同一份 spec 起草 Makefile、xtask、CMake、Bazel 等构建配置，再由
+`vos-cli` 执行 deterministic gate 后物化。
 
 关键原则：
 - **语义优先**：spec 描述「做什么」，不描述「怎样做」
-- **生成器可选**：多个独立生成器可以解释同一份 spec
-- **幂等性**：同一份 spec 生成的结果应始终一致
-- **可追踪性**：生成的构建配置包含 spec 元数据，支持溯源
+- **Agent 可起草**：Agent 可以提出构建系统和 manifest 草案
+- **VOS 是 authority**：只有 `vos-cli` 可以裁决 path、manifest、spec hash、ledger 和 evidence
+- **可追踪性**：物化后的构建配置包含 spec 元数据，支持溯源
 
 ---
 
@@ -37,11 +39,11 @@ build:
         retry_on_failure: int   # 失败重试次数
 ```
 
-`allowed_output_path` 用于声明 agent 允许写入的本地构建系统文件路径。  
+`allowed_output_path` 用于声明 `vos build generate` 允许物化的本地构建系统文件路径。
 当前实现会用它同时约束：
 
 - toolchain codegen prompt 的允许输出路径
-- agent 落盘前的本地白名单校验
+- Agent draft 落盘前的本地白名单校验
 - `vos build` 读取 `.vos/toolchain.json` 时的 manifest 文件校验
 
 ### 1.2 编译阶段 (compile)

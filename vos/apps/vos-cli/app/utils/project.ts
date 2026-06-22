@@ -5,6 +5,7 @@ import { parseTopLevelYaml, extractTimelineStages, type TimelineStage } from "./
 
 export interface ProjectConfig {
   project_id?: string;
+  portal_url?: string;
   spec_root?: string;
   current_stage?: string;
   allowed_paths?: string[];
@@ -13,6 +14,7 @@ export interface ProjectConfig {
 export interface PolicyConfig {
   allowed_commands?: string[];
   allowed_paths?: string[];
+  denied_commands?: string[];
   visibility_scope?: "public" | "agent-only";
 }
 
@@ -47,6 +49,7 @@ export async function loadPolicyConfig(projectRoot: string): Promise<PolicyConfi
         "arch compose",
         "arch derive-tests",
         "build",
+        "build generate",
         "run qemu",
         "test",
         "verify public",
@@ -62,6 +65,7 @@ export async function loadPolicyConfig(projectRoot: string): Promise<PolicyConfi
         "debug explain-log",
         "report generate",
         "submit pack",
+        "ledger record",
         "agent context",
         "agent plan",
         "agent generate",
@@ -126,6 +130,7 @@ export async function ensureDefaultProjectConfig(projectRoot: string): Promise<v
       "  - arch compose",
       "  - arch derive-tests",
       "  - build",
+      "  - build generate",
       "  - run qemu",
       "  - test",
       "  - verify public",
@@ -141,6 +146,7 @@ export async function ensureDefaultProjectConfig(projectRoot: string): Promise<v
       "  - debug explain-log",
       "  - report generate",
       "  - submit pack",
+      "  - ledger record",
       "  - agent context",
       "  - agent plan",
       "  - agent generate",

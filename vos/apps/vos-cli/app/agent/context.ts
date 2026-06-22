@@ -5,6 +5,7 @@ import { CliError } from "../errors.ts";
 import { loadPolicyConfig, loadProjectConfig, loadTimeline } from "../utils/project.ts";
 import { collectStringListByKey, parseTopLevelYaml, type TimelineStage } from "../utils/yaml.ts";
 import { scanRecentEvidenceRefs } from "./helpers.ts";
+import type { EffectivePolicy } from "../types.ts";
 
 export interface ContextBundle {
   requested_scope: string;
@@ -18,6 +19,7 @@ export interface ContextBundle {
     effective_paths: number;
   };
   recommended_commands: string[];
+  allowed_commands?: string[];
   visibility_scope: "public" | "agent-only";
   spec_snippets: Array<{ kind: string; summary: string; path?: string }>;
   policy_flags: string[];
@@ -27,6 +29,7 @@ export interface ContextBundle {
 export async function buildContextBundle(params: {
   projectRoot: string;
   requestedScope?: string;
+  effectivePolicy?: EffectivePolicy;
 }): Promise<ContextBundle> {
   const projectFile = path.join(params.projectRoot, ".vos", "project.yaml");
   if (!existsSync(projectFile)) {
@@ -58,8 +61,8 @@ export async function buildContextBundle(params: {
 
   const currentStage = project.current_stage;
   const recommended = buildRecommendedCommands(currentStage, stages);
-  const policyPaths = policy.allowed_paths ?? ["src", "spec", "tests", ".vos"];
-  const allowedPaths = await loadAgentAllowedPaths(params.projectRoot);
+  const policyPaths = params.effectivePolicy?.allowedPaths ?? policy.allowed_paths ?? ["src", "spec", "tests", ".vos"];
+  const allowedPaths = params.effectivePolicy?.allowedPaths ?? await loadAgentAllowedPaths(params.projectRoot);
   const specBoundAllowedPathCount = allowedPaths
     .filter((entry) => !isPathCoveredByPolicy(entry, policyPaths))
     .length;
@@ -76,7 +79,8 @@ export async function buildContextBundle(params: {
       effective_paths: allowedPaths.length,
     },
     recommended_commands: recommended,
-    visibility_scope: policy.visibility_scope ?? "public",
+    allowed_commands: params.effectivePolicy?.allowedCommands,
+    visibility_scope: params.effectivePolicy?.visibilityScope ?? policy.visibility_scope ?? "public",
     spec_snippets: currentStage !== undefined
       ? [{ kind: "stage", summary: `current_stage:${currentStage}` }]
       : [],
@@ -84,7 +88,7 @@ export async function buildContextBundle(params: {
       `allowed_paths:${(policy.allowed_paths ?? []).length}`,
       `spec_bound_allowed_paths:${specBoundAllowedPathCount}`,
       `effective_allowed_paths:${allowedPaths.length}`,
-      `visibility:${policy.visibility_scope ?? "public"}`,
+      `visibility:${params.effectivePolicy?.visibilityScope ?? policy.visibility_scope ?? "public"}`,
     ],
     project_tree: projectTree,
   };

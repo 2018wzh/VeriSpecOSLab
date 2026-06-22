@@ -11,14 +11,19 @@ import type {
   ArchDeriveTestsCommand,
   ArchLintCommand,
   BuildCommand,
+  BuildGenerateCommand,
   CliCommand,
   DebugExplainLogCommand,
   DoctorCommand,
   GlobalOptions,
   InitCommand,
+  LoginCommand,
+  LedgerRecordCommand,
+  LogoutCommand,
   ParsedInvocation,
   ReportGenerateCommand,
   RunQemuCommand,
+  ServeCommand,
   StageShowCommand,
   SpecCheckConsistencyCommand,
   SpecLintCommand,
@@ -31,6 +36,7 @@ import type {
   TraceSyscallCommand,
   VerifyCommand,
   VerifyScope,
+  WhoamiCommand,
 } from "./types.ts";
 
 const VALUE_FLAGS = new Set([
@@ -51,6 +57,9 @@ const VALUE_FLAGS = new Set([
   "--entry",
   "--host",
   "--port",
+  "--portal-url",
+  "--project-id",
+  "--token",
   "--apply",
   "--build",
   "--run",
@@ -132,9 +141,146 @@ function parseProgressMode(value: string): GlobalOptions["progress"] {
   throw new Error("--progress must be one of: auto, always, never");
 }
 
+function parsePort(value: string): number {
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new Error("--port requires a valid TCP port");
+  }
+  return port;
+}
+
 function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
   const [command, ...rest] = tokens;
   void global;
+
+  if (command === "login") {
+    let portalUrl: string | undefined;
+    let token: string | undefined;
+    let tokenStdin = false;
+    for (let i = 0; i < rest.length; i++) {
+      const arg = rest[i];
+      if (arg === "--portal-url") {
+        portalUrl = resolveRequiredValue(rest, i, arg);
+        i++;
+        continue;
+      }
+      if (arg.startsWith("--portal-url=")) {
+        portalUrl = arg.slice("--portal-url=".length);
+        continue;
+      }
+      if (arg === "--token") {
+        token = resolveRequiredValue(rest, i, arg);
+        i++;
+        continue;
+      }
+      if (arg.startsWith("--token=")) {
+        token = arg.slice("--token=".length);
+        continue;
+      }
+      if (arg === "--token-stdin") {
+        tokenStdin = true;
+        continue;
+      }
+      throw new Error(`unknown flag for login: ${arg}`);
+    }
+    if (!portalUrl) {
+      throw new Error("login requires --portal-url");
+    }
+    if (token && tokenStdin) {
+      throw new Error("login accepts either --token or --token-stdin, not both");
+    }
+    return { kind: "login", portalUrl, token, tokenStdin } satisfies LoginCommand;
+  }
+
+  if (command === "logout") {
+    let portalUrl: string | undefined;
+    for (let i = 0; i < rest.length; i++) {
+      const arg = rest[i];
+      if (arg === "--portal-url") {
+        portalUrl = resolveRequiredValue(rest, i, arg);
+        i++;
+        continue;
+      }
+      if (arg.startsWith("--portal-url=")) {
+        portalUrl = arg.slice("--portal-url=".length);
+        continue;
+      }
+      throw new Error(`unknown flag for logout: ${arg}`);
+    }
+    return { kind: "logout", portalUrl } satisfies LogoutCommand;
+  }
+
+  if (command === "whoami") {
+    let portalUrl: string | undefined;
+    for (let i = 0; i < rest.length; i++) {
+      const arg = rest[i];
+      if (arg === "--portal-url") {
+        portalUrl = resolveRequiredValue(rest, i, arg);
+        i++;
+        continue;
+      }
+      if (arg.startsWith("--portal-url=")) {
+        portalUrl = arg.slice("--portal-url=".length);
+        continue;
+      }
+      throw new Error(`unknown flag for whoami: ${arg}`);
+    }
+    return { kind: "whoami", portalUrl } satisfies WhoamiCommand;
+  }
+
+  if (command === "serve") {
+    let portalUrl: string | undefined;
+    let projectId: string | undefined;
+    let host: string | undefined;
+    let port: number | undefined;
+    for (let i = 0; i < rest.length; i++) {
+      const arg = rest[i];
+      if (arg === "--portal-url") {
+        portalUrl = resolveRequiredValue(rest, i, arg);
+        i++;
+        continue;
+      }
+      if (arg.startsWith("--portal-url=")) {
+        portalUrl = arg.slice("--portal-url=".length);
+        continue;
+      }
+      if (arg === "--project-id") {
+        projectId = resolveRequiredValue(rest, i, arg);
+        i++;
+        continue;
+      }
+      if (arg.startsWith("--project-id=")) {
+        projectId = arg.slice("--project-id=".length);
+        continue;
+      }
+      if (arg === "--host") {
+        host = resolveRequiredValue(rest, i, arg);
+        i++;
+        continue;
+      }
+      if (arg.startsWith("--host=")) {
+        host = arg.slice("--host=".length);
+        continue;
+      }
+      if (arg === "--port") {
+        port = parsePort(resolveRequiredValue(rest, i, arg));
+        i++;
+        continue;
+      }
+      if (arg.startsWith("--port=")) {
+        port = parsePort(arg.slice("--port=".length));
+        continue;
+      }
+      throw new Error(`unknown flag for serve: ${arg}`);
+    }
+    if (!portalUrl) {
+      throw new Error("serve requires --portal-url");
+    }
+    if (!projectId) {
+      throw new Error("serve requires --project-id");
+    }
+    return { kind: "serve", portalUrl, projectId, host, port } satisfies ServeCommand;
+  }
 
   if (command === "init") {
     return { kind: "init" } satisfies InitCommand;
@@ -200,6 +346,23 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
   }
 
   if (command === "build") {
+    if (rest[0] === "generate") {
+      let agentSession: string | undefined;
+      for (let i = 1; i < rest.length; i++) {
+        const arg = rest[i];
+        if (arg === "--agent-session") {
+          agentSession = resolveRequiredValue(rest, i, arg);
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--agent-session=")) {
+          agentSession = arg.slice("--agent-session=".length);
+          continue;
+        }
+        throw new Error(`unknown flag for build generate: ${arg}`);
+      }
+      return { kind: "build_generate", agentSession: agentSession ?? global.agentSession } satisfies BuildGenerateCommand;
+    }
     let dryRun = false;
     let toolchainPath: string | undefined;
     for (let i = 0; i < rest.length; i++) {
@@ -220,6 +383,68 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       throw new Error(`unknown flag for build: ${arg}`);
     }
     return { kind: "build", dryRun, toolchainPath } satisfies BuildCommand;
+  }
+
+  if (command === "ledger") {
+    const second = rest[0];
+    if (second !== "record") {
+      throw new Error("only `ledger record` is supported");
+    }
+    let actor: "human" | "agent" | undefined;
+    let intent: string | undefined;
+    const specRefs: string[] = [];
+    const changedTargets: string[] = [];
+    for (let i = 1; i < rest.length; i++) {
+      const arg = rest[i];
+      if (arg === "--actor") {
+        const value = resolveRequiredValue(rest, i, arg);
+        if (value !== "human" && value !== "agent") {
+          throw new Error("--actor must be human or agent");
+        }
+        actor = value;
+        i++;
+        continue;
+      }
+      if (arg.startsWith("--actor=")) {
+        const value = arg.slice("--actor=".length);
+        if (value !== "human" && value !== "agent") {
+          throw new Error("--actor must be human or agent");
+        }
+        actor = value;
+        continue;
+      }
+      if (arg === "--intent") {
+        intent = resolveRequiredValue(rest, i, arg);
+        i++;
+        continue;
+      }
+      if (arg.startsWith("--intent=")) {
+        intent = arg.slice("--intent=".length);
+        continue;
+      }
+      if (arg === "--spec-ref") {
+        specRefs.push(resolveRequiredValue(rest, i, arg));
+        i++;
+        continue;
+      }
+      if (arg.startsWith("--spec-ref=")) {
+        specRefs.push(arg.slice("--spec-ref=".length));
+        continue;
+      }
+      if (arg === "--changed-target") {
+        changedTargets.push(resolveRequiredValue(rest, i, arg));
+        i++;
+        continue;
+      }
+      if (arg.startsWith("--changed-target=")) {
+        changedTargets.push(arg.slice("--changed-target=".length));
+        continue;
+      }
+      throw new Error(`unknown flag for ledger record: ${arg}`);
+    }
+    if (!actor) throw new Error("ledger record requires --actor");
+    if (!intent) throw new Error("ledger record requires --intent");
+    return { kind: "ledger_record", actor, intent, specRefs, changedTargets } satisfies LedgerRecordCommand;
   }
 
   if (command === "run") {

@@ -2,6 +2,108 @@ import { describe, expect, test } from "bun:test";
 import { parseArgs } from "../app/cli.ts";
 
 describe("vos-cli agent command parsing", () => {
+  test("parses portal auth commands", () => {
+    expect(parseArgs([
+      "bun",
+      "vos",
+      "login",
+      "--portal-url",
+      "https://portal.example",
+      "--token",
+      "tok_123",
+    ]).command).toEqual({
+      kind: "login",
+      portalUrl: "https://portal.example",
+      token: "tok_123",
+      tokenStdin: false,
+    });
+
+    expect(parseArgs([
+      "bun",
+      "vos",
+      "login",
+      "--portal-url=https://portal.example",
+      "--token-stdin",
+    ]).command).toEqual({
+      kind: "login",
+      portalUrl: "https://portal.example",
+      token: undefined,
+      tokenStdin: true,
+    });
+
+    expect(parseArgs(["bun", "vos", "logout", "--portal-url", "https://portal.example"]).command)
+      .toEqual({ kind: "logout", portalUrl: "https://portal.example" });
+    expect(parseArgs(["bun", "vos", "whoami"]).command).toEqual({ kind: "whoami", portalUrl: undefined });
+  });
+
+  test("parses single-project vos serve binding", () => {
+    const parsed = parseArgs([
+      "bun",
+      "vos",
+      "serve",
+      "--project-root",
+      ".",
+      "--portal-url",
+      "https://portal.example",
+      "--project-id",
+      "project-1",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8788",
+    ]);
+
+    expect(parsed.command).toEqual({
+      kind: "serve",
+      portalUrl: "https://portal.example",
+      projectId: "project-1",
+      host: "127.0.0.1",
+      port: 8788,
+    });
+  });
+
+  test("parses build generate and ledger record commands", () => {
+    expect(parseArgs([
+      "bun",
+      "vos",
+      "build",
+      "generate",
+      "--agent-session",
+      "agent-session-1",
+    ]).command).toEqual({
+      kind: "build_generate",
+      agentSession: "agent-session-1",
+    });
+
+    expect(parseArgs([
+      "bun",
+      "vos",
+      "ledger",
+      "record",
+      "--actor",
+      "human",
+      "--intent",
+      "document manual fix",
+      "--spec-ref",
+      "kernel/syscall.sys_write",
+      "--changed-target",
+      "kernel/syscall.c",
+    ]).command).toEqual({
+      kind: "ledger_record",
+      actor: "human",
+      intent: "document manual fix",
+      specRefs: ["kernel/syscall.sys_write"],
+      changedTargets: ["kernel/syscall.c"],
+    });
+  });
+
+  test("rejects incomplete vos serve binding", () => {
+    expect(() => parseArgs(["bun", "vos", "serve", "--portal-url", "https://portal.example"]))
+      .toThrow(/--project-id/);
+    expect(() => parseArgs(["bun", "vos", "serve", "--project-id", "project-1"]))
+      .toThrow(/--portal-url/);
+  });
+
   test("parses agent plan with project root and stage", () => {
     const parsed = parseArgs([
       "bun",

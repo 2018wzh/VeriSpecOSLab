@@ -6,6 +6,7 @@ import { EvidenceWriter } from "../evidence/index.ts";
 import { runCommand } from "./executor.ts";
 import { collectStringListByKey, parseTopLevelYaml } from "../utils/yaml.ts";
 import { resolveToolchainManifestPath } from "./toolchain-manifest.ts";
+import { withResourceLock } from "./locks.ts";
 
 export interface ToolchainCommand {
   name: string;
@@ -41,7 +42,7 @@ export interface BuildPlanStep {
 }
 
 interface BuildResult {
-  status: "ok" | "failed";
+  status: "ok" | "failed" | "timed_out";
   artifacts: string[];
   output: string;
   failedStep?: string;
@@ -52,6 +53,17 @@ export async function runBuildCommand(params: {
   evidence: EvidenceWriter;
   toolchainPath?: string;
   dryRun: boolean;
+  signal?: AbortSignal;
+}): Promise<BuildResult> {
+  return await withResourceLock(params.evidence, `build:${params.projectRoot}`, async () => runBuildCommandUnlocked(params));
+}
+
+async function runBuildCommandUnlocked(params: {
+  projectRoot: string;
+  evidence: EvidenceWriter;
+  toolchainPath?: string;
+  dryRun: boolean;
+  signal?: AbortSignal;
 }): Promise<BuildResult> {
   const toolchainFile = await resolveToolchainManifestPath({
     projectRoot: params.projectRoot,
@@ -95,6 +107,7 @@ export async function runBuildCommand(params: {
       command: [step.command, ...step.args],
       cwd: step.cwd,
       timeoutMs: step.timeoutMs,
+      signal: params.signal,
       onStdoutLine: (line) => {
         output += `${line}\n`;
       },
@@ -112,10 +125,11 @@ export async function runBuildCommand(params: {
     await params.evidence.markNodeFinished(nodeId, childResult.exitCode === 0 ? "ok" : "failed");
 
     if (childResult.exitCode !== 0) {
+      const cancelled = params.signal?.aborted;
       return {
-        status: "failed",
+        status: childResult.timedOut ? "timed_out" : cancelled ? "failed" : "failed",
         artifacts: [path.relative(params.projectRoot, logPath)],
-        output: output || "build command failed",
+        output: cancelled ? "cancelled" : output || "build command failed",
         failedStep: step.id,
       };
     }

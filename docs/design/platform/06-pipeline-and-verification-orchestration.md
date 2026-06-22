@@ -141,8 +141,10 @@ checkout commit_sha
 - 退出状态
 - artifact 引用
 
-`vos build generate`、`vos build` 和提交前检查都必须从 clean tree 开始。
-在平台 Runner 中，checkout 后的工作树也必须通过等价的 clean tree gate。
+除认证与初始化入口外，所有受控 VOS 项目命令都必须从 clean tree 和
+当前 `HEAD` ledger 记录开始。`vos build generate`、`vos build`、
+`vos verify` 和提交前检查是平台 Runner 的关键入口；checkout 后的工作树也
+必须通过等价的 clean tree gate。
 
 ## 6. 失败分类
 

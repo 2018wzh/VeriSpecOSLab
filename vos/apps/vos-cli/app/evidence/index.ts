@@ -4,6 +4,8 @@ import path from "node:path";
 import type { CommandStatus } from "../types.ts";
 import type { RunArtifact, EvidenceRef, RunManifest } from "./manifest.ts";
 import { createRunEvent, eventToLine, type RunEvent } from "./events.ts";
+import type { RunAuthContext } from "../types.ts";
+import { writeEvidenceIndex } from "../repro/ledger.ts";
 
 export interface EvidenceWriterOptions {
   projectRoot: string;
@@ -13,6 +15,14 @@ export interface EvidenceWriterOptions {
   gitRev?: string;
   specHash?: string;
   projectionVersion?: string;
+  parentSha?: string;
+  ledgerRef?: string;
+  inputFiles?: string[];
+  outputFiles?: string[];
+  testsRun?: string[];
+  auth?: RunAuthContext;
+  agentSessionId?: string;
+  onEvent?: (event: RunEvent) => void | Promise<void>;
 }
 
 export class EvidenceWriter {
@@ -29,6 +39,14 @@ export class EvidenceWriter {
   private gitRev?: string;
   private specHash?: string;
   private projectionVersion?: string;
+  private parentSha?: string;
+  private ledgerRef?: string;
+  private inputFiles: string[] = [];
+  private outputFiles: string[] = [];
+  private testsRun: string[] = [];
+  private auth?: RunAuthContext;
+  private agentSessionId?: string;
+  private onEvent?: (event: RunEvent) => void | Promise<void>;
   private artifacts: RunArtifact[] = [];
   private evidenceRefs: EvidenceRef[] = [];
   private started = false;
@@ -46,6 +64,14 @@ export class EvidenceWriter {
     this.gitRev = options.gitRev;
     this.specHash = options.specHash;
     this.projectionVersion = options.projectionVersion;
+    this.parentSha = options.parentSha;
+    this.ledgerRef = options.ledgerRef;
+    this.inputFiles = options.inputFiles ?? [];
+    this.outputFiles = options.outputFiles ?? [];
+    this.testsRun = options.testsRun ?? [];
+    this.auth = options.auth;
+    this.agentSessionId = options.agentSessionId;
+    this.onEvent = options.onEvent;
   }
 
   static async create(options: EvidenceWriterOptions): Promise<EvidenceWriter> {
@@ -66,15 +92,23 @@ export class EvidenceWriter {
     return this.artifactsRoot;
   }
 
+  get manifest_path(): string {
+    return this.manifestPath;
+  }
+
   async init(): Promise<void> {
     if (this.started) return;
     await mkdir(this.runDir, { recursive: true });
     await mkdir(this.artifactsRoot, { recursive: true });
-    appendFileSync(this.eventsPath, eventToLine(createRunEvent(this.runId, "run_started", {
+    await this.writeEvent(createRunEvent(this.runId, "run_started", {
       command: this.command,
       arguments: this.args,
       project_root: this.projectRoot,
-    })));
+      auth_verdict: this.auth?.verdict,
+      project_id: this.auth?.projectId,
+      policy_snapshot_ref: this.auth?.policySnapshot?.ref,
+      agent_session_id: this.agentSessionId,
+    }));
     await this.writeManifest({
       status: "partial",
       finishedAt: this.startAt,
@@ -88,7 +122,7 @@ export class EvidenceWriter {
       ts: new Date().toISOString(),
       ...event,
     } satisfies RunEvent;
-    appendFileSync(this.eventsPath, eventToLine(fullEvent));
+    await this.writeEvent(fullEvent);
   }
 
   addArtifact(kind: string, relativePath: string, summary?: string): string {
@@ -118,6 +152,28 @@ export class EvidenceWriter {
     this.evidenceRefs.push({ id, kind, path: pathValue });
   }
 
+  async setReproducibility(metadata: {
+    gitRev?: string;
+    parentSha?: string;
+    ledgerRef?: string;
+    specHash?: string;
+    inputFiles?: string[];
+    outputFiles?: string[];
+    testsRun?: string[];
+  }): Promise<void> {
+    this.gitRev = metadata.gitRev ?? this.gitRev;
+    this.parentSha = metadata.parentSha ?? this.parentSha;
+    this.ledgerRef = metadata.ledgerRef ?? this.ledgerRef;
+    this.specHash = metadata.specHash ?? this.specHash;
+    this.inputFiles = metadata.inputFiles ?? this.inputFiles;
+    this.outputFiles = metadata.outputFiles ?? this.outputFiles;
+    this.testsRun = metadata.testsRun ?? this.testsRun;
+    await this.writeManifest({
+      status: "partial",
+      finishedAt: this.startAt,
+    });
+  }
+
   async markNodeStarted(nodeId: string): Promise<void> {
     await this.appendEvent({ type: "node_started", node_id: nodeId, payload: { nodeId } });
   }
@@ -143,6 +199,15 @@ export class EvidenceWriter {
         status,
       },
     });
+    await writeEvidenceIndex({
+      projectRoot: this.projectRoot,
+      runId: this.runId,
+      command: this.command,
+      status,
+      manifestPath: this.manifestPath,
+      startedAt: this.startAt,
+      finishedAt,
+    });
     return manifest;
   }
 
@@ -156,20 +221,38 @@ export class EvidenceWriter {
       command: this.command,
       arguments: this.args,
       git_rev: this.gitRev,
+      parent_sha: this.parentSha,
       spec_hash: this.specHash,
       projection_version: this.projectionVersion,
+      ledger_ref: this.ledgerRef,
+      input_files: this.inputFiles,
+      output_files: this.outputFiles,
+      tests_run: this.testsRun,
       started_at: this.startAt,
       finished_at: payload.finishedAt,
       status: payload.status,
       artifacts: [...this.artifacts],
       evidence_refs: [...this.evidenceRefs],
       project_root: this.projectRoot,
+      user_id: this.auth?.user?.id,
+      user_role: this.auth?.user?.role,
+      project_id: this.auth?.projectId,
+      portal_url: this.auth?.portalUrl,
+      policy_snapshot_ref: this.auth?.policySnapshot?.ref,
+      auth_verdict: this.auth?.verdict,
+      auth_checked_at: this.auth?.checkedAt,
+      agent_session_id: this.agentSessionId,
     };
     if (payload.message) {
       (manifest as unknown as Record<string, unknown>).message = payload.message;
     }
     await Bun.write(this.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     return manifest;
+  }
+
+  private async writeEvent(event: RunEvent): Promise<void> {
+    appendFileSync(this.eventsPath, eventToLine(event));
+    await this.onEvent?.(event);
   }
 }
 

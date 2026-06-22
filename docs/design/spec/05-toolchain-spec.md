@@ -2,9 +2,9 @@
 
 ## 0. 核心理念：工具无关的语义规范
 
-`ToolchainSpec` 是学生项目的**工具无关的语义构建规范**，定义「做什么」而非「怎样做」。这允许多个生成器（Makefile、xtask、CMake、Bazel 等）从同一份 spec 生成各自的构建配置。
+`ToolchainSpec` 是学生项目的**工具无关的语义构建规范**，定义「做什么」而非「怎样做」。这允许本地 Agent 从同一份 spec 起草 Makefile、xtask、CMake、Bazel 等构建配置，再由 `vos-cli` 裁决是否物化。
 
-`VOS Runtime` 则是 `vos` 的规范消费、生成器调用、执行编排与证据采集体系。
+`VOS Runtime` 则是 `vos` 的规范消费、Agent draft 协调、deterministic gate、执行编排与证据采集体系。
 
 - `ToolchainSpec` 文档位于 `spec/toolchain/` 与本文件中。
 - `VOS Runtime` 文档位于 [`../toolchain/README.md`](../toolchain/README.md)。
@@ -13,15 +13,15 @@
 
 ```text
 ToolchainSpec (语义规范)
-  ↓ [生成器选择]
-生成器 (Makefile生成器 | Xtask生成器 | CMake生成器 | ...)
-  ↓ [代码生成]
-工具特定配置 (Makefile | task.rs | CMakeLists.txt | ...)
+  ↓ [本地 vos-agent 起草 ToolchainGenerationDraft]
+构建系统草案 (Makefile | task.rs | CMakeLists.txt | manifest | instructions)
+  ↓ [vos-cli deterministic gate]
+受控构建系统 + .vos/toolchain.json + ledger
   ↓ [VOS执行]
 构建输出 + 证据
 ```
 
-## 1. 角色定位：语义规范 → 多工具生成
+## 1. 角色定位：语义规范 → Agent draft → VOS gate
 
 VeriSpecOSLab 引入 `ToolchainSpec` 作为**单一的语义规范源**，而非绑定具体工具。
 
@@ -34,9 +34,9 @@ VeriSpecOSLab 引入 `ToolchainSpec` 作为**单一的语义规范源**，而非
 关键概念：
 
 1. **学生编写语义 spec**（描述源文件、编译标志、依赖关系）
-2. **VOS 选择和调用生成器**（Makefile、xtask、CMake 等）
-3. **生成器生成工具特定配置**（Makefile、task.rs、CMakeLists.txt 等）
-4. **VOS 执行生成的配置**并采集证据
+2. **VOS 调用本地 Agent 生成构建系统草案**（Makefile、xtask、CMake 等）
+3. **VOS 执行 deterministic gate**：校验路径、spec hash、manifest、ledger 与 dry-run
+4. **VOS 执行通过 gate 的配置**并采集证据
 
 它负责约束：
 
@@ -61,14 +61,15 @@ VeriSpecOSLab 引入 `ToolchainSpec` 作为**单一的语义规范源**，而非
 
 ## 2.1 工具无关规范的优势
 
-**单一 Spec，多生成器：**
+**单一 Spec，多工具草案：**
 - 学生只需维护一份 spec，无需同步多个 Makefile、CMakeLists.txt、task.rs
-- 不同生成器可用于不同场景（学习、优化、对比）
-- 易于添加新工具支持（无需修改 spec，只需新增生成器）
+- Agent 可以为不同场景起草不同工具链实现（学习、优化、对比）
+- 易于添加新工具支持（无需修改 spec，只需扩展 Agent profile 和 VOS gate）
 
 **语义 vs 语法：**
 - Spec 描述语义（源文件模式、编译标志语义、依赖关系）
-- 生成器负责语法翻译（映射到 Makefile 规则、CMake 命令等）
+- Agent 起草语法翻译（映射到 Makefile 规则、CMake 命令等）
+- VOS 负责最终 path/manifest/spec hash/ledger/evidence 裁决
 - 学生无需学习多种工具的语法
 
 ## 3. 推荐目录
@@ -184,9 +185,9 @@ vos build (工具无关的执行和证据采集)
 关键原则：
 
 - **Spec 是设计真相**，Makefile/CMake/etc 是实现细节
-- **多生成器**：从同一 spec 可生成多种工具链配置
+- **Agent-assisted authoring**：Agent 可以根据同一 spec 生成多种工具链配置草案
 - **输出路径受 spec 约束**：`build.allowed_output_path` 声明 `vos build generate` 允许物化哪些本地构建系统文件
-- **构建系统由 VOS 确定性生成**：Agent 修改 `ToolchainSpec`，`vos build generate` 物化本地构建系统和 `.vos/toolchain.json`，`vos build` 只执行登记的当前 manifest
+- **构建系统由 VOS 裁决后物化**：Agent 只生成草案；`vos build generate` 负责 path gate、manifest gate、spec hash、ledger 和 evidence，`vos build` 只执行登记的当前 manifest
 
 ### 9.1 `allowed_output_path`
 
@@ -204,7 +205,7 @@ build:
 
 当前实现中：
 
-- `vos build generate` 只能写入这份列表中的路径
+- `vos build generate` 只能写入这份列表中的路径，以及受控 `.vos/toolchain.json`
 - `.vos/toolchain.json` 里的 `files` 也必须属于这份列表
 - 若列表为空，`vos build generate` 会拒绝物化构建系统，`vos build` 也会拒绝执行
 

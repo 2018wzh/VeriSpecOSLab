@@ -59,6 +59,31 @@ export interface BaseCommand {
   kind: string;
 }
 
+export interface LoginCommand extends BaseCommand {
+  kind: "login";
+  portalUrl: string;
+  token?: string;
+  tokenStdin: boolean;
+}
+
+export interface LogoutCommand extends BaseCommand {
+  kind: "logout";
+  portalUrl?: string;
+}
+
+export interface WhoamiCommand extends BaseCommand {
+  kind: "whoami";
+  portalUrl?: string;
+}
+
+export interface ServeCommand extends BaseCommand {
+  kind: "serve";
+  portalUrl: string;
+  projectId: string;
+  host?: string;
+  port?: number;
+}
+
 export interface InitCommand extends BaseCommand {
   kind: "init";
 }
@@ -120,6 +145,11 @@ export interface BuildCommand extends BaseCommand {
   toolchainPath?: string;
 }
 
+export interface BuildGenerateCommand extends BaseCommand {
+  kind: "build_generate";
+  agentSession?: string;
+}
+
 export interface RunQemuCommand extends BaseCommand {
   kind: "run_qemu";
   dryRun: boolean;
@@ -159,6 +189,14 @@ export interface ReportGenerateCommand extends BaseCommand {
 
 export interface SubmitPackCommand extends BaseCommand {
   kind: "submit_pack";
+}
+
+export interface LedgerRecordCommand extends BaseCommand {
+  kind: "ledger_record";
+  actor: "human" | "agent";
+  intent: string;
+  specRefs: string[];
+  changedTargets: string[];
 }
 
 export interface AgentServeCommand extends BaseCommand {
@@ -213,6 +251,10 @@ export interface AgentLogCommand extends BaseCommand {
 }
 
 export type CliCommand =
+  | LoginCommand
+  | LogoutCommand
+  | WhoamiCommand
+  | ServeCommand
   | InitCommand
   | DoctorCommand
   | StageShowCommand
@@ -226,6 +268,7 @@ export type CliCommand =
   | ArchComposeCommand
   | ArchDeriveTestsCommand
   | BuildCommand
+  | BuildGenerateCommand
   | RunQemuCommand
   | TestCommand
   | VerifyCommand
@@ -233,6 +276,7 @@ export type CliCommand =
   | DebugExplainLogCommand
   | ReportGenerateCommand
   | SubmitPackCommand
+  | LedgerRecordCommand
   | AgentServeCommand
   | AgentContextCommand
   | AgentPlanCommand
@@ -246,4 +290,94 @@ export type CliCommand =
 export interface ParsedInvocation {
   global: GlobalOptions;
   command: CliCommand;
+}
+
+export type AuthVerdict = "allowed" | "denied" | "not_required";
+
+export interface PortalUserSummary {
+  id: string;
+  role?: string;
+  username?: string;
+  email?: string;
+}
+
+export interface PolicySnapshot {
+  ref: string;
+  projectId: string;
+  allowedCommands: string[];
+  allowedPaths: string[];
+  visibilityScope: "public" | "agent-only";
+}
+
+export interface EffectivePolicy {
+  source: "local" | "portal";
+  snapshotRef?: string;
+  allowedCommands: string[];
+  allowedPaths: string[];
+  visibilityScope: "public" | "agent-only";
+}
+
+export interface RunAuthContext {
+  verdict: AuthVerdict;
+  reason?: string;
+  portalUrl?: string;
+  projectId?: string;
+  user?: PortalUserSummary;
+  policySnapshot?: PolicySnapshot;
+  checkedAt?: string;
+}
+
+export interface ToolchainGenerationDraft {
+  files: Array<{ path: string; content: string }>;
+  manifest: Record<string, unknown>;
+  build_instructions: string;
+  spec_refs: string[];
+  changed_targets: string[];
+}
+
+export interface CommitLedgerEntry {
+  commit_sha: string;
+  parent_sha?: string;
+  actor: "human" | "agent";
+  agent_session_id?: string;
+  run_id?: string;
+  spec_refs: string[];
+  changed_targets: string[];
+  evidence_refs: EvidenceRef[];
+  created_at: string;
+  collaboration_intent: string;
+}
+
+export interface ReproducibilityVerdict {
+  ok: boolean;
+  reason?: "not_git_repo" | "dirty_worktree" | "ledger_missing" | "head_missing";
+  commitSha?: string;
+  parentSha?: string;
+  ledgerRef?: string;
+}
+
+export interface EvidenceIndex {
+  version: 1;
+  runs: Array<{
+    run_id: string;
+    command: string[];
+    status: CommandStatus;
+    manifest: string;
+    started_at: string;
+    finished_at: string;
+  }>;
+}
+
+export interface VosHttpRun {
+  id: string;
+  status: CommandStatus | "queued" | "running";
+  command: string[];
+  requestedBy: string;
+  reason?: string;
+  agentSessionId?: string;
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  result?: BaseCommandResult;
+  error?: string;
 }

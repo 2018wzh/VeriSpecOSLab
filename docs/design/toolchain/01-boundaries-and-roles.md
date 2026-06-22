@@ -28,26 +28,26 @@
 - `VOS Runtime`
   - 是 `vos` 的实现体系
   - 存放在 `docs/design/toolchain/` 中进行设计
-  - 决定”如何读取 spec、选择生成器、调用生成器生成工具特定配置、执行配置、采集证据”
+  - 决定”如何读取 spec、调用本地 Agent 生成草案、执行 deterministic gate、执行 manifest、采集证据”
 
 因此：
 
 ```text
 ToolchainSpec = 项目构建语义（工具无关）
-VOS Runtime   = 规范消费、生成器协调、执行编排器
+VOS Runtime   = 规范消费、Agent draft 协调、deterministic gate、执行编排器
 ```
 
-### 1.1 工具无关的生成器协调
+### 1.1 Agent-assisted 工具链物化
 
-VOS Runtime 的新职责是**生成器协调**：
+VOS Runtime 的新职责是**Agent-assisted authoring + deterministic gate**：
 
 ```
 ToolchainSpec (语义: 源文件、编译标志、链接脚本...)
     ↓ [vos-spec 解析与验证]
-    ↓ [生成器选择（自动或显式）]
-生成器 (Makefile生成器 | Xtask生成器 | CMake生成器 | ...)
-    ↓ [生成器调用]
-工具特定配置 (Makefile | task.rs | CMakeLists.txt)
+    ↓ [本地 vos-agent 生成 ToolchainGenerationDraft]
+构建系统草案 (Makefile | task.rs | CMakeLists.txt | manifest | instructions)
+    ↓ [vos deterministic gate: path/spec/manifest/ledger/evidence]
+受控构建系统 + .vos/toolchain.json
     ↓ [vos-runtime 执行]
 执行输出 + 工件
     ↓ [证据采集与映射]
@@ -56,13 +56,14 @@ ToolchainSpec (语义: 源文件、编译标志、链接脚本...)
 
 关键变化：
 
-- **过去**：vos runtime 直接解析 spec 中的命令字段，执行 gcc、ld 等
-- **现在**：vos runtime 调用生成器（Makefile gen、Xtask gen 等），生成器输出 Makefile/task.rs，vos 执行生成的配置
+- **过去**：vos runtime 直接解析 spec 中的命令字段，执行 gcc、ld 等。
+- **目标态**：`vos build generate` 调用本地 `vos-agent` 产出
+  `ToolchainGenerationDraft`，但只有 `vos-cli` 可以决定是否落盘、写
+  `.vos/toolchain.json`、写 ledger、创建 commit 和生成 evidence。
 
-生成器必须实现**生成器契约**：
-- 输入：语义 spec（源文件模式、编译标志、链接脚本等）
-- 输出：工具特定配置 + 元数据（来源、stage、所有阶段名等）
-- 性质：幂等性（相同输入 → 相同输出）
+Agent draft 不要求字节级确定性；VOS gate 必须对同一类草案给出确定的
+accept/reject 裁决。没有可用 Agent/provider 时，`vos build generate`
+明确失败，不使用模板兜底。
 
 ## 2. `vos` vs 任意 shell
 
@@ -118,7 +119,8 @@ ToolchainSpec (语义: 源文件、编译标志、链接脚本...)
 - 每次 run 的 manifest 必须记录 user、project、policy snapshot ref 和 auth verdict。
 
 未绑定 Portal project 的普通本地 repo 可以保留 local-only 使用模式，但其输出
-不得伪装成 Portal 审计过的 run。
+不得伪装成 Portal 审计过的 run。local-only 只表示不需要 Portal token；
+受控项目命令仍必须满足 git repo、clean tree 和当前 `HEAD` ledger gate。
 
 ## 4. Agent 辅助开发 vs 自动代写 OS
 
@@ -196,11 +198,11 @@ VosPolicy:
 
 ## 相关文档
 
-**Spec 与生成器（新）：**
+**Spec 与工具链物化：**
 - [../spec/05-toolchain-spec.md](../spec/05-toolchain-spec.md) - 工具无关的 ToolchainSpec
 - [../spec/05a-semantic-build-schema.md](../spec/05a-semantic-build-schema.md) - 语义构建字段定义
 - [../spec/05b-vos-toolchain-generation-contract.md](../spec/05b-vos-toolchain-generation-contract.md) - VOS 生成与执行契约
-- [../spec/05c-generator-reference.md](../spec/05c-generator-reference.md) - 生成器参考实现（Makefile、Xtask、CMake 示例）
+- [../spec/05c-generator-reference.md](../spec/05c-generator-reference.md) - Agent draft 示例（非权威生成器）
 
 **VOS Runtime 架构：**
 - [02-architecture.md](./02-architecture.md)

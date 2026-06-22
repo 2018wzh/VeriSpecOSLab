@@ -248,6 +248,23 @@ evidence：
 - build logs
 - artifact manifest
 
+`vos build` 只执行已登记的 `.vos/toolchain.json` 或显式 `--toolchain`
+manifest。缺少 manifest 时必须失败并提示先运行 `vos build generate`；
+不得隐式扫描 Makefile、CMake 或 xtask 作为 legacy fallback。
+
+### `vos build generate`
+
+内部执行链：
+
+```text
+load ToolchainSpec -> call local Agent for ToolchainGenerationDraft
+  -> VOS path/spec/manifest/ledger gate
+  -> write build files + .vos/toolchain.json
+  -> write ledger -> git commit -> evidence
+```
+
+Agent 只生成草案；`vos-cli` 是构建文件落盘、manifest、ledger 和 evidence 的最终裁决者。
+
 ### `vos run qemu`
 
 内部执行链：

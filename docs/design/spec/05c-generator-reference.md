@@ -1,8 +1,20 @@
-# 生成器参考实现与示例
+# Agent Draft 示例与工具链映射参考
 
 ## 概述
 
-本文档展示如何从同一份语义 spec 生成多种工具链格式（Makefile、Xtask、CMake），以及生成器需要实现的接口。
+本文档展示本地 Agent 可以如何根据同一份语义 spec 起草多种工具链格式
+（Makefile、Xtask、CMake）。这些内容是 draft 示例和映射参考，不是当前
+`vos-cli` 的独立生成器接口。
+
+当前 authority 是：
+
+- Agent 产出 `ToolchainGenerationDraft`
+- `vos-cli` 执行 path gate、manifest gate、spec hash gate、ledger gate 和 evidence gate
+- `vos build generate` 成功后才会物化构建文件、`.vos/toolchain.json` 并创建 commit
+
+因此本文中的 Makefile/Xtask/CMake 片段只能作为 Agent 草案参考；不得绕过
+`vos build generate` 或把裸 Makefile/CMakeLists/xtask 入口直接当成 `vos build`
+可执行 manifest。
 
 ---
 
@@ -127,7 +139,7 @@ validation:
 
 ---
 
-## 2. Makefile 生成器输出
+## 2. Makefile draft 输出
 
 ### 2.1 生成的 Makefile
 

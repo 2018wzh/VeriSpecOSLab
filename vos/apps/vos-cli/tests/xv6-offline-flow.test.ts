@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { EvidenceWriter } from "../app/evidence/index.ts";
 import { executeCommand } from "../app/main.ts";
@@ -159,49 +159,24 @@ describe("xv6-spec offline runtime flow", () => {
     expect(verify.requiredChecks).toBeUndefined();
   });
 
-  test("materializes toolchain manifest from generated build entrypoint", async () => {
+  test("build fails when toolchain manifest is missing instead of legacy auto-materializing", async () => {
     const projectRoot = makeXv6Fixture({ toolchainManifest: false });
     const evidence = await EvidenceWriter.create({
       projectRoot,
       evidenceDir: ".vos",
-      command: ["materialize-toolchain"],
+      command: ["missing-toolchain"],
       args: [],
     });
 
-    const build = await runBuildCommand({
+    await expect(runBuildCommand({
       projectRoot,
       evidence,
       dryRun: true,
-    });
-    const manifest = JSON.parse(readFileSync(join(projectRoot, ".vos", "toolchain.json"), "utf8"));
-    expect(build.status).toBe("ok");
-    expect(build.output).toContain("make all");
-    expect(manifest.generator).toEqual({
-      name: "vos-cli",
-      version: "default-toolchain-manifest",
-      source: "spec/toolchain/build.yaml",
-    });
-    expect(manifest.files).toEqual(["Makefile"]);
-    expect(manifest.build.artifacts).toContain("build/kernel.bin");
-
-    const run = await runQemuCommand({
-      projectRoot,
-      evidence,
-      dryRun: true,
-    });
-    expect(run.status).toBe("ok");
-    expect(run.output).toContain("-kernel build/kernel.bin");
-
-    const verify = await runVerifyCommand({
-      projectRoot,
-      evidence,
-      scope: "public",
-      dryRun: true,
-    });
-    expect(verify.status).toBe("ok");
+    })).rejects.toThrow(/toolchain manifest/);
+    expect(existsSync(join(projectRoot, ".vos", "toolchain.json"))).toBe(false);
   });
 
-  test("toolchain lint uses the same generated manifest fallback as build", async () => {
+  test("toolchain lint reports missing manifest without generating one", async () => {
     const projectRoot = makeXv6Fixture({ toolchainManifest: false });
     const evidence = await EvidenceWriter.create({
       projectRoot,
@@ -219,8 +194,8 @@ describe("xv6-spec offline runtime flow", () => {
     });
 
     expect(lint.status).toBe("passed");
-    expect(lint.details.manifestExists).toBe(true);
-    expect(lint.details.manifestPath).toBe(".vos/toolchain.json");
+    expect(lint.details.manifestExists).toBe(false);
+    expect(lint.details.manifestPath).toBeUndefined();
   });
 
   test("rejects manifest files that were not generated in the project root", async () => {

@@ -14,15 +14,22 @@ import type {
   ArchDeriveTestsCommand,
   ArchLintCommand,
   BaseCommandResult,
+  BuildGenerateCommand,
   BuildCommand,
   CliCommand,
   CommandStatus,
   DebugExplainLogCommand,
   DoctorCommand,
+  EffectivePolicy,
   InitCommand,
+  LoginCommand,
+  LedgerRecordCommand,
+  LogoutCommand,
   ReportGenerateCommand,
   RunQemuCommand,
   ParsedInvocation,
+  RunAuthContext,
+  ServeCommand,
   StageShowCommand,
   SpecCheckConsistencyCommand,
   SpecLintCommand,
@@ -33,7 +40,9 @@ import type {
   TestCommand,
   ToolchainLintCommand,
   TraceSyscallCommand,
+  ToolchainGenerationDraft,
   VerifyCommand,
+  WhoamiCommand,
 } from "./types.ts";
 import { CliError, AgentOutputError } from "./errors.ts";
 import { EvidenceWriter } from "./evidence/index.ts";
@@ -48,6 +57,7 @@ import {
 } from "./utils/project.ts";
 import { appendLogEntry, readLogEntries } from "./agent/helpers.ts";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { renderOutput } from "./output.ts";
@@ -85,6 +95,18 @@ import {
 } from "./agent/runner.ts";
 import { parseDebugOutput, parsePatchProposal, parsePlanDraft } from "./agent/schemas.ts";
 import { applyPatchText, readPatchFromStdin } from "./agent/apply-patch.ts";
+import { defaultPortalClient, type PortalClient } from "./auth/portal-client.ts";
+import { getToken, normalizePortalUrl, removeToken, saveToken, updateStoredUser } from "./auth/store.ts";
+import { assertCommandAllowed, mergeEffectivePolicy } from "./policy/effective-policy.ts";
+import type { RunEvent } from "./evidence/events.ts";
+import {
+  appendLedgerEntry,
+  assertReproducible,
+  currentHead,
+  ensureHeadLedgerEntry,
+  git,
+  parentSha,
+} from "./repro/ledger.ts";
 
 const COMMAND_VERSION = "0.1.0";
 const TRACE_VALIDATION_AGENT_ATTEMPTS = 3;
@@ -100,6 +122,22 @@ interface ExecContext {
   evidence: EvidenceWriter;
   agentRunner?: HeadlessAgentRunner;
   progress?: CommandProgress;
+  auth?: RunAuthContext;
+  effectivePolicy?: EffectivePolicy;
+  signal?: AbortSignal;
+  portalClient?: PortalClient;
+}
+
+export interface ExecuteCliOptions {
+  print?: boolean;
+  portalClient?: PortalClient;
+  agentRunner?: HeadlessAgentRunner;
+  serveBinding?: {
+    portalUrl: string;
+    projectId: string;
+  };
+  signal?: AbortSignal;
+  onEvent?: (event: RunEvent) => void | Promise<void>;
 }
 
 async function main(): Promise<void> {
@@ -110,92 +148,41 @@ async function main(): Promise<void> {
     }
 
     const parsed = parseArgs(process.argv);
-
     if (parsed.command.kind === "help") {
       printHelp(parsed.command.topic);
       return;
     }
-
-    const projectRoot = path.resolve(parsed.global.projectRoot);
-    await withProjectEnv(projectRoot, async () => {
-      await ensureDefaultProjectConfig(projectRoot);
-
-      const evidence = await EvidenceWriter.create({
+    if (parsed.command.kind === "serve") {
+      const projectRoot = path.resolve(parsed.global.projectRoot);
+      const { startVosHttpServer } = await import("./server/http.ts");
+      const server = startVosHttpServer({
         projectRoot,
-        evidenceDir: parsed.global.evidenceDir ?? ".vos",
-        command: commandToArray(parsed.command),
-        args: process.argv.slice(2),
+        portalUrl: parsed.command.portalUrl,
+        projectId: parsed.command.projectId,
+        host: parsed.command.host,
+        port: parsed.command.port,
       });
-      const progress = createCommandProgress({
-        mode: parsed.global.progress,
-        json: parsed.global.json,
+      console.log(`vos serve listening on ${server.url}`);
+      await new Promise<void>((resolve) => {
+        const stop = () => {
+          server.server.stop(true);
+          resolve();
+        };
+        process.once("SIGINT", stop);
+        process.once("SIGTERM", stop);
       });
-      progress.start(commandLabel(parsed.command), "starting");
+      return;
+    }
 
-      try {
-        progress.update({ stage: commandLabel(parsed.command), status: "running", message: "running" });
-        const outcome = await executeCommand(parsed.command, {
-          projectRoot,
-          global: parsed.global,
-          evidence,
-          progress,
-        });
-        const manifest = await evidence.finalize(outcome.status, {
-          message: typeof outcome.details.message === "string" ? outcome.details.message : undefined,
-        });
-
-        const finalOutput = {
-          ok: isSuccessStatus(outcome.status),
-          run_id: evidence.run_id,
-          command: manifest.command,
-          status: manifest.status,
-          artifacts: manifest.artifacts,
-          evidence_refs: manifest.evidence_refs,
-          started_at: manifest.started_at,
-          finished_at: manifest.finished_at,
-          message: (outcome.details.message as string | undefined) ?? "ok",
-          details: outcome.details,
-        };
-
-        if (parsed.global.reportPath) {
-          await writeFile(parsed.global.reportPath, `${JSON.stringify(finalOutput, null, 2)}\n`);
-        }
-
-        progress.finish(outcome.status, typeof outcome.details.message === "string" ? outcome.details.message : undefined);
-        printResult(finalOutput, parsed.global.json);
-      } catch (error) {
-        const status = classifyErrorStatus(error);
-        await evidence.finalize(status, {
-          message: error instanceof Error ? error.message : "unknown error",
-        });
-        const manifest = await evidence.writeManifest({
-          status,
-          finishedAt: new Date().toISOString(),
-          message: error instanceof Error ? error.message : "unknown error",
-        });
-        const finalOutput = {
-          ok: false,
-          run_id: evidence.run_id,
-          command: manifest.command,
-          status,
-          artifacts: manifest.artifacts,
-          evidence_refs: manifest.evidence_refs,
-          started_at: manifest.started_at,
-          finished_at: manifest.finished_at,
-          message: error instanceof Error ? error.message : "unknown error",
-          details: {
-            error: true,
-          },
-        };
-        if (parsed.global.reportPath) {
-          await writeFile(parsed.global.reportPath, `${JSON.stringify(finalOutput, null, 2)}\n`);
-        }
-        progress.finish(status, error instanceof Error ? error.message : "unknown error");
-        printResult(finalOutput, parsed.global.json);
-        process.exitCode = isSuccessStatus(status) ? 0 : 1;
-        return;
-      }
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    process.once("SIGINT", abort);
+    process.once("SIGTERM", abort);
+    const result = await executeCliInvocation(process.argv, {
+      print: true,
+      signal: controller.signal,
     });
+    process.exitCode = isSuccessStatus(result.status) ? 0 : 1;
   } catch (error) {
     if (error instanceof Error) {
       console.error(error.message);
@@ -206,13 +193,403 @@ async function main(): Promise<void> {
   }
 }
 
+export async function executeCliInvocation(
+  argv: string[],
+  options: ExecuteCliOptions = {},
+): Promise<BaseCommandResult> {
+  const parsed = parseArgs(argv);
+  if (parsed.command.kind === "help") {
+    throw new CliError("help output is not available through executeCliInvocation", "failed");
+  }
+  if (parsed.command.kind === "serve") {
+    throw new CliError("serve must be started through startVosHttpServer", "failed");
+  }
+
+  const projectRoot = path.resolve(parsed.global.projectRoot);
+  return await withProjectEnv(projectRoot, async () => {
+    await ensureDefaultProjectConfig(projectRoot);
+    const progress = createCommandProgress({
+      mode: parsed.global.progress,
+      json: parsed.global.json,
+    });
+    const command = commandToArray(parsed.command);
+    const auth = await resolveAuthContext({
+      projectRoot,
+      command: parsed.command,
+      commandArray: command,
+      serveBinding: options.serveBinding,
+      portalClient: options.portalClient ?? defaultPortalClient,
+    });
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: parsed.global.evidenceDir ?? ".vos",
+      command,
+      args: argv.slice(2),
+      auth: auth.auth,
+      agentSessionId: parsed.global.agentSession,
+      onEvent: options.onEvent,
+      gitRev: currentHead(projectRoot),
+      parentSha: parentSha(projectRoot),
+    });
+    progress.start(commandLabel(parsed.command), "starting");
+
+    try {
+      if (auth.blocked) {
+        throw new CliError(`policy_blocked: ${auth.auth.reason ?? "policy_blocked"}`, "policy_blocked", {
+          reason: auth.auth.reason,
+        });
+      }
+      const repro = await resolveReproducibilityContext(projectRoot, parsed.command);
+      const runMetadata = await collectRunMetadata(projectRoot, parsed.command);
+      await evidence.setReproducibility({
+        gitRev: repro.commitSha,
+        parentSha: repro.parentSha,
+        ledgerRef: repro.ledgerRef,
+        ...runMetadata,
+      });
+      progress.update({ stage: commandLabel(parsed.command), status: "running", message: "running" });
+      const outcome = await executeCommand(parsed.command, {
+        projectRoot,
+        global: parsed.global,
+        evidence,
+        progress,
+        auth: auth.auth,
+        effectivePolicy: auth.effectivePolicy,
+        signal: options.signal,
+        agentRunner: options.agentRunner,
+        portalClient: options.portalClient ?? defaultPortalClient,
+      });
+      if (options.signal?.aborted) {
+        throw new CliError("cancelled", "cancelled", { reason: "cancelled" });
+      }
+      const finalOutput = await finalizeRun({
+        parsed,
+        evidence,
+        outcome,
+        progress,
+      });
+      if (options.print ?? true) {
+        printResult(finalOutput as unknown as Record<string, unknown>, parsed.global.json);
+      }
+      return finalOutput;
+    } catch (error) {
+      const status = options.signal?.aborted ? "cancelled" : classifyErrorStatus(error);
+      const message = error instanceof Error ? error.message : "unknown error";
+      const manifest = await evidence.finalize(status, { message });
+      const finalOutput: BaseCommandResult = {
+        ok: false,
+        run_id: evidence.run_id,
+        command: manifest.command,
+        status,
+        artifacts: manifest.artifacts,
+        evidence_refs: manifest.evidence_refs,
+        started_at: manifest.started_at,
+        finished_at: manifest.finished_at,
+        message,
+        details: {
+          error: true,
+          ...(error instanceof CliError ? error.details ?? {} : {}),
+        },
+      };
+      if (parsed.global.reportPath) {
+        await writeFile(parsed.global.reportPath, `${JSON.stringify(finalOutput, null, 2)}\n`);
+      }
+      progress.finish(status, message);
+      if (options.print ?? true) {
+        printResult(finalOutput as unknown as Record<string, unknown>, parsed.global.json);
+      }
+      return finalOutput;
+    }
+  });
+}
+
+async function finalizeRun(params: {
+  parsed: ParsedInvocation;
+  evidence: EvidenceWriter;
+  outcome: CommandOutcome;
+  progress: CommandProgress;
+}): Promise<BaseCommandResult> {
+  const manifest = await params.evidence.finalize(params.outcome.status, {
+    message: typeof params.outcome.details.message === "string" ? params.outcome.details.message : undefined,
+  });
+  const finalOutput: BaseCommandResult = {
+    ok: isSuccessStatus(params.outcome.status),
+    run_id: params.evidence.run_id,
+    command: manifest.command,
+    status: manifest.status,
+    artifacts: manifest.artifacts,
+    evidence_refs: manifest.evidence_refs,
+    started_at: manifest.started_at,
+    finished_at: manifest.finished_at,
+    message: (params.outcome.details.message as string | undefined) ?? "ok",
+    details: params.outcome.details,
+  };
+  if (params.parsed.global.reportPath) {
+    await writeFile(params.parsed.global.reportPath, `${JSON.stringify(finalOutput, null, 2)}\n`);
+  }
+  params.progress.finish(params.outcome.status, typeof params.outcome.details.message === "string" ? params.outcome.details.message : undefined);
+  return finalOutput;
+}
+
+async function resolveAuthContext(params: {
+  projectRoot: string;
+  command: CliCommand;
+  commandArray: string[];
+  serveBinding?: { portalUrl: string; projectId: string };
+  portalClient: PortalClient;
+}): Promise<{
+  auth: RunAuthContext;
+  effectivePolicy: EffectivePolicy;
+  blocked: boolean;
+}> {
+  const localPolicy = await loadPolicyConfig(params.projectRoot);
+  const localOnlyPolicy = mergeEffectivePolicy({ local: localPolicy });
+  if (isAuthBypassCommand(params.command)) {
+    return {
+      auth: { verdict: "not_required", checkedAt: new Date().toISOString() },
+      effectivePolicy: localOnlyPolicy,
+      blocked: false,
+    };
+  }
+
+  const project = await loadProjectConfig(params.projectRoot);
+  const portalUrl = params.serveBinding?.portalUrl ?? project.portal_url;
+  const projectId = params.serveBinding?.projectId ?? project.project_id;
+  if (!portalUrl) {
+    return {
+      auth: { verdict: "not_required", checkedAt: new Date().toISOString(), projectId },
+      effectivePolicy: localOnlyPolicy,
+      blocked: false,
+    };
+  }
+  if (!projectId) {
+    return {
+      auth: {
+        verdict: "denied",
+        reason: "policy_unavailable",
+        portalUrl: normalizePortalUrl(portalUrl),
+        checkedAt: new Date().toISOString(),
+      },
+      effectivePolicy: localOnlyPolicy,
+      blocked: true,
+    };
+  }
+
+  const stored = await getToken(portalUrl);
+  if (!stored?.token) {
+    return {
+      auth: {
+        verdict: "denied",
+        reason: "not_logged_in",
+        portalUrl: normalizePortalUrl(portalUrl),
+        projectId,
+        checkedAt: new Date().toISOString(),
+      },
+      effectivePolicy: localOnlyPolicy,
+      blocked: true,
+    };
+  }
+
+  try {
+    const user = await params.portalClient.getMe(portalUrl, stored.token);
+    const policy = await params.portalClient.getProjectPolicy(portalUrl, projectId, stored.token);
+    await updateStoredUser(portalUrl, user);
+    const effectivePolicy = mergeEffectivePolicy({ portal: policy, local: localPolicy });
+    assertCommandAllowed(params.commandArray, effectivePolicy, localPolicy);
+    return {
+      auth: {
+        verdict: "allowed",
+        portalUrl: normalizePortalUrl(portalUrl),
+        projectId,
+        user,
+        policySnapshot: policy,
+        checkedAt: new Date().toISOString(),
+      },
+      effectivePolicy,
+      blocked: false,
+    };
+  } catch (error) {
+    const reason = error instanceof CliError && typeof error.details?.reason === "string"
+      ? error.details.reason
+      : error instanceof CliError && error.status === "policy_blocked"
+        ? "command_denied"
+        : "policy_unavailable";
+    return {
+      auth: {
+        verdict: "denied",
+        reason,
+        portalUrl: normalizePortalUrl(portalUrl),
+        projectId,
+        checkedAt: new Date().toISOString(),
+      },
+      effectivePolicy: localOnlyPolicy,
+      blocked: true,
+    };
+  }
+}
+
+function isAuthBypassCommand(command: CliCommand): boolean {
+  return command.kind === "login" ||
+    command.kind === "logout" ||
+    command.kind === "whoami" ||
+    command.kind === "init" ||
+    command.kind === "ledger_record" ||
+    command.kind === "help";
+}
+
+async function resolveReproducibilityContext(
+  projectRoot: string,
+  command: CliCommand,
+): Promise<{ commitSha?: string; parentSha?: string; ledgerRef?: string }> {
+  if (isReproBypassCommand(command)) {
+    return {
+      commitSha: currentHead(projectRoot),
+      parentSha: parentSha(projectRoot),
+    };
+  }
+  if (!isReproControlledCommand(command)) {
+    return {};
+  }
+  const verdict = await assertReproducible(projectRoot);
+  return {
+    commitSha: verdict.commitSha,
+    parentSha: verdict.parentSha,
+    ledgerRef: verdict.ledgerRef,
+  };
+}
+
+async function collectRunMetadata(projectRoot: string, command: CliCommand): Promise<{
+  specHash?: string;
+  inputFiles?: string[];
+  outputFiles?: string[];
+  testsRun?: string[];
+}> {
+  if (isAuthBypassCommand(command)) {
+    return {};
+  }
+  const specHash = await computeToolchainSpecHash(projectRoot);
+  const metadata: {
+    specHash?: string;
+    inputFiles?: string[];
+    outputFiles?: string[];
+    testsRun?: string[];
+  } = {
+    specHash,
+  };
+  const manifestPath = await resolveToolchainManifestPath({ projectRoot }).catch(() => undefined);
+  if (!manifestPath || !existsSync(manifestPath)) {
+    return metadata;
+  }
+  const raw = await readFile(manifestPath, "utf8").catch(() => undefined);
+  const manifest = raw ? safeJsonTryParse(raw) as Record<string, unknown> | undefined : undefined;
+  if (!manifest || typeof manifest !== "object") {
+    return metadata;
+  }
+  const files = collectStringArray(manifest.files);
+  metadata.inputFiles = [...new Set([".vos/toolchain.json", ...files])];
+  metadata.outputFiles = collectManifestOutputFiles(manifest);
+  metadata.testsRun = collectManifestTests(command, manifest);
+  metadata.specHash = typeof manifest.spec_hash === "string" && manifest.spec_hash.trim()
+    ? manifest.spec_hash.trim()
+    : metadata.specHash;
+  return metadata;
+}
+
+async function computeToolchainSpecHash(projectRoot: string): Promise<string | undefined> {
+  const specRoot = path.join(projectRoot, "spec", "toolchain");
+  if (!existsSync(specRoot)) return undefined;
+  const files = await listFiles(specRoot);
+  if (files.length === 0) return undefined;
+  const hash = createHash("sha256");
+  for (const file of files.sort()) {
+    const rel = path.relative(projectRoot, file).replace(/\\/g, "/");
+    hash.update(rel);
+    hash.update("\0");
+    hash.update(await readFile(file));
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
+
+async function listFiles(root: string): Promise<string[]> {
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  const files: string[] = [];
+  for (const entry of entries) {
+    const fullPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await listFiles(fullPath));
+    } else if (entry.isFile()) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+function collectStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+}
+
+function collectManifestOutputFiles(manifest: Record<string, unknown>): string[] {
+  const out = [
+    ...collectStringArray((manifest.build as { artifacts?: unknown } | undefined)?.artifacts),
+    ...collectStringArray(manifest.artifacts),
+  ];
+  return [...new Set(out)];
+}
+
+function collectManifestTests(command: CliCommand, manifest: Record<string, unknown>): string[] {
+  if (command.kind !== "test" && !(command.kind === "verify" && command.scope === "public")) {
+    return [];
+  }
+  if (command.kind === "test" && command.suites.length > 0) {
+    return [...command.suites];
+  }
+  const suites = (manifest.test as { suites?: unknown } | undefined)?.suites;
+  if (Array.isArray(suites)) {
+    return suites
+      .map((suite) => suite && typeof suite === "object" ? (suite as { name?: unknown }).name : undefined)
+      .filter((name): name is string => typeof name === "string");
+  }
+  return collectStringArray(manifest.tests);
+}
+
+function isReproBypassCommand(command: CliCommand): boolean {
+  return command.kind === "login" ||
+    command.kind === "logout" ||
+    command.kind === "whoami" ||
+    command.kind === "help" ||
+    command.kind === "init" ||
+    command.kind === "ledger_record";
+}
+
+function isReproControlledCommand(command: CliCommand): boolean {
+  return command.kind !== "doctor";
+}
+
 export async function executeCommand(command: CliCommand, context: ExecContext): Promise<CommandOutcome> {
   const { projectRoot, evidence } = context;
 
   switch (command.kind) {
+    case "login":
+      return executeLogin(command, context);
+
+    case "logout":
+      return executeLogout(command, projectRoot);
+
+    case "whoami":
+      return executeWhoami(command, projectRoot, context);
+
     case "init":
       await ensureDefaultProjectConfig(projectRoot);
-      return { status: "passed", details: { initialized: true } };
+      await ensureHeadLedgerEntry({
+        projectRoot,
+        actor: "human",
+        intent: "initialize VOS project ledger",
+        specRefs: [],
+        changedTargets: [".vos/project.yaml", ".vos/policy.yaml"],
+        runId: evidence.run_id,
+      });
+      return { status: "passed", details: { initialized: true, ledger: true } };
 
     case "doctor": {
       const checks = [
@@ -340,11 +717,11 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
         : command.inputFromStdin
           ? await readPatchFromStdin()
           : await readPatchFromStdin();
-      const policy = await loadPolicyConfig(projectRoot);
+      const allowedPaths = context.effectivePolicy?.allowedPaths ?? (await loadPolicyConfig(projectRoot)).allowed_paths ?? ["src", "spec", "tests", ".vos"];
       const result = await applyPatchText({
         projectRoot,
         patchText,
-        allowedPaths: policy.allowed_paths ?? ["src", "spec", "tests", ".vos"],
+        allowedPaths,
         requireSpec: true,
         runValidation: false,
       });
@@ -394,6 +771,9 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
     case "build":
       return executeBuild(command, context, evidence, projectRoot);
 
+    case "build_generate":
+      return executeBuildGenerate(command, context, evidence);
+
     case "run_qemu":
       return executeRunQemu(command, context, evidence, projectRoot);
 
@@ -410,6 +790,7 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
         evidence,
         dryRun: command.dryRun,
         timeoutMs: command.timeoutMs,
+        signal: context.signal,
       });
       return {
         status: result.status === "failed" ? "validation_failed" : result.status,
@@ -471,6 +852,9 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
       };
     }
 
+    case "ledger_record":
+      return executeLedgerRecord(command, projectRoot, evidence);
+
     case "agent_serve":
       return executeAgentServe(command, projectRoot, evidence);
 
@@ -478,6 +862,7 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
       const bundle = await buildContextBundle({
         projectRoot,
         requestedScope: command.scope,
+        effectivePolicy: context.effectivePolicy,
       });
       const contextArtifact = path.join(projectRoot, ".vos", "agent-context.json");
       await writeFile(contextArtifact, `${JSON.stringify(bundle, null, 2)}\n`);
@@ -491,7 +876,7 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
     case "agent_plan": {
       const requestedScope = command.scope ?? "agent.plan";
       updateProgress(context, { stage: "agent plan", status: "running", message: "building context" });
-      const bundle = await buildContextBundle({ projectRoot, requestedScope });
+      const bundle = await buildContextBundle({ projectRoot, requestedScope, effectivePolicy: context.effectivePolicy });
       const prompt = buildAgentPlanPrompt({
         bundle,
         requestedScope,
@@ -506,7 +891,7 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
         requestedScope,
         context: bundle,
         courseMode: true,
-        allowedVosCommands: await loadAgentAllowedCommands(projectRoot),
+        allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
         extraMcpServers: agentProgress.extraMcpServers,
         onEvent: agentProgress.onEvent,
         runner: context.agentRunner,
@@ -542,7 +927,7 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
       return executeAgentGenerate(command, context, evidence);
 
     case "agent_apply_patch":
-      return executeAgentApplyPatch(command, projectRoot, evidence);
+      return executeAgentApplyPatch(command, projectRoot, evidence, context.effectivePolicy);
 
     case "agent_validate_generated":
       return executeAgentValidateGenerated(command, context, evidence);
@@ -556,6 +941,230 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
     default:
       throw new CliError(`unsupported command: ${JSON.stringify(command)}`, "failed");
   }
+}
+
+async function executeLogin(command: LoginCommand, context: ExecContext): Promise<CommandOutcome> {
+  const token = command.token
+    ?? (command.tokenStdin ? (await Bun.stdin.text()).trim() : undefined)
+    ?? process.env.VOS_PORTAL_TOKEN;
+  if (!token) {
+    throw new CliError("login requires --token, --token-stdin, or VOS_PORTAL_TOKEN", "failed");
+  }
+  let user;
+  try {
+    user = await (context.portalClient ?? defaultPortalClient).getMe(command.portalUrl, token);
+  } catch (error) {
+    throw new CliError("policy_blocked: token_invalid", "policy_blocked", {
+      reason: "token_invalid",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  const entry = await saveToken({
+    portalUrl: command.portalUrl,
+    token,
+    user,
+  });
+  return {
+    status: "passed",
+    details: {
+      portal_url: entry.portalUrl,
+      user,
+      message: "logged in",
+    },
+  };
+}
+
+async function executeLogout(command: LogoutCommand, projectRoot: string): Promise<CommandOutcome> {
+  const project = await loadProjectConfig(projectRoot).catch(() => undefined);
+  const portalUrl = command.portalUrl ?? project?.portal_url;
+  if (!portalUrl) {
+    return {
+      status: "passed",
+      details: {
+        removed: false,
+        message: "no portal binding",
+      },
+    };
+  }
+  const removed = await removeToken(portalUrl);
+  return {
+    status: "passed",
+    details: {
+      portal_url: normalizePortalUrl(portalUrl),
+      removed,
+      message: removed ? "logged out" : "no token found",
+    },
+  };
+}
+
+async function executeWhoami(command: WhoamiCommand, projectRoot: string, context: ExecContext): Promise<CommandOutcome> {
+  const project = await loadProjectConfig(projectRoot).catch(() => undefined);
+  const portalUrl = command.portalUrl ?? project?.portal_url;
+  if (!portalUrl) {
+    return {
+      status: "passed",
+      details: {
+        portal_url: null,
+        project_id: project?.project_id,
+        authenticated: false,
+        policy_status: "local-only",
+        message: "local-only project",
+      },
+    };
+  }
+  const stored = await getToken(portalUrl);
+  if (!stored?.token) {
+    return {
+      status: "passed",
+      details: {
+        portal_url: normalizePortalUrl(portalUrl),
+        project_id: project?.project_id,
+        authenticated: false,
+        policy_status: "not_logged_in",
+        message: "not logged in",
+      },
+    };
+  }
+  try {
+    const user = await (context.portalClient ?? defaultPortalClient).getMe(portalUrl, stored.token);
+    await updateStoredUser(portalUrl, user);
+    let policySnapshotRef: string | undefined;
+    if (project?.project_id) {
+      const policy = await (context.portalClient ?? defaultPortalClient).getProjectPolicy(portalUrl, project.project_id, stored.token);
+      policySnapshotRef = policy.ref;
+    }
+    return {
+      status: "passed",
+      details: {
+        portal_url: normalizePortalUrl(portalUrl),
+        project_id: project?.project_id,
+        authenticated: true,
+        user,
+        policy_status: project?.project_id ? "online" : "no_project_binding",
+        policy_snapshot_ref: policySnapshotRef,
+        message: "online",
+      },
+    };
+  } catch (error) {
+    return {
+      status: "policy_blocked",
+      details: {
+        portal_url: normalizePortalUrl(portalUrl),
+        project_id: project?.project_id,
+        authenticated: false,
+        policy_status: "policy_unavailable",
+        message: error instanceof Error ? error.message : "policy unavailable",
+      },
+    };
+  }
+}
+
+async function executeLedgerRecord(
+  command: LedgerRecordCommand,
+  projectRoot: string,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  const commitSha = currentHead(projectRoot);
+  if (!commitSha) {
+    throw new CliError("ledger record requires a git HEAD", "policy_blocked", { reason: "head_missing" });
+  }
+  const entry = await appendLedgerEntry(projectRoot, {
+    commit_sha: commitSha,
+    parent_sha: parentSha(projectRoot),
+    actor: command.actor,
+    run_id: evidence.run_id,
+    spec_refs: command.specRefs,
+    changed_targets: command.changedTargets,
+    evidence_refs: [{ id: evidence.run_id, kind: "run", path: path.relative(projectRoot, evidence.manifest_path) }],
+    collaboration_intent: command.intent,
+  });
+  return {
+    status: "passed",
+    details: {
+      ledger: ".vos/commit-ledger.jsonl",
+      commit_sha: entry.commit_sha,
+      actor: entry.actor,
+    },
+  };
+}
+
+async function executeBuildGenerate(
+  command: BuildGenerateCommand,
+  context: ExecContext,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  const projectRoot = context.projectRoot;
+  const spec = await loadToolchainGenerationSpec(projectRoot);
+  const prompt = [
+    "Generate a VOS toolchain draft as JSON only.",
+    "Return { files, manifest, build_instructions, spec_refs, changed_targets }.",
+    "All file paths must be relative to the project root.",
+    JSON.stringify(spec, null, 2),
+  ].join("\n\n");
+  const agentResult = await runAgentWithPrompt({
+    projectRoot,
+    taskPrompt: prompt,
+    taskKind: "toolchain-generate",
+    requestedScope: "toolchain.generate",
+    context: spec,
+    courseMode: true,
+    runner: context.agentRunner,
+  });
+  const draft = normalizeToolchainDraft(parseAgentJson(agentResult.resultText, "build_generate"));
+  const specHash = hashString(JSON.stringify(spec));
+  validateToolchainDraft(draft, spec.allowedOutputPaths);
+
+  for (const file of draft.files) {
+    const target = path.join(projectRoot, file.path);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, file.content);
+  }
+
+  const manifest = {
+    ...draft.manifest,
+    spec_hash: specHash,
+    spec_path: "spec/toolchain/toolchain.yaml",
+    generator: {
+      ...((draft.manifest.generator && typeof draft.manifest.generator === "object") ? draft.manifest.generator as Record<string, unknown> : {}),
+      name: ((draft.manifest.generator as { name?: unknown } | undefined)?.name as string | undefined) ?? "vos-agent",
+      version: ((draft.manifest.generator as { version?: unknown } | undefined)?.version as string | undefined) ?? "toolchain-draft-v1",
+    },
+  };
+  const manifestPath = path.join(projectRoot, ".vos", "toolchain.json");
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  const instructionsPath = path.join(evidence.artifacts_root, "toolchain", "build-instructions.md");
+  await mkdir(path.dirname(instructionsPath), { recursive: true });
+  await writeFile(instructionsPath, `${draft.build_instructions.trim()}\n`);
+  evidence.addArtifactFromPath("toolchain", instructionsPath, "agent build instructions");
+
+  const changedTargets = [...new Set([...draft.changed_targets, ...draft.files.map((file) => file.path), ".vos/toolchain.json"])];
+  git(projectRoot, ["add", ...changedTargets]);
+  git(projectRoot, ["commit", "-m", "[vos][toolchain] Generate build system"]);
+  const commitSha = currentHead(projectRoot);
+  if (commitSha) {
+    await appendLedgerEntry(projectRoot, {
+      commit_sha: commitSha,
+      parent_sha: parentSha(projectRoot),
+      actor: "agent",
+      agent_session_id: command.agentSession ?? context.global.agentSession,
+      run_id: evidence.run_id,
+      spec_refs: draft.spec_refs,
+      changed_targets: changedTargets,
+      evidence_refs: [{ id: evidence.run_id, kind: "run", path: path.relative(projectRoot, evidence.manifest_path) }],
+      collaboration_intent: "toolchain-generate",
+    });
+  }
+
+  return {
+    status: "passed",
+    details: {
+      spec_hash: specHash,
+      changed_targets: changedTargets,
+      manifest: ".vos/toolchain.json",
+      message: "toolchain generated",
+    },
+  };
 }
 
 interface ToolchainLintResult {
@@ -704,6 +1313,7 @@ async function executeBuild(command: BuildCommand, context: ExecContext, evidenc
     evidence,
     toolchainPath: command.toolchainPath,
     dryRun: command.dryRun,
+    signal: context.signal,
   });
   return {
     status: result.status,
@@ -723,6 +1333,7 @@ async function executeRunQemu(command: RunQemuCommand, context: ExecContext, evi
     dryRun: command.dryRun,
     timeoutMs: command.timeoutMs,
     readyPattern: command.readyPattern,
+    signal: context.signal,
   });
   return {
     status: result.status,
@@ -742,6 +1353,7 @@ async function executeTest(command: TestCommand, context: ExecContext, evidence:
     evidence,
     suites: command.suites,
     dryRun: command.dryRun,
+    signal: context.signal,
   });
   return {
     status: result.status,
@@ -778,6 +1390,7 @@ async function executeVerify(
     scope: command.scope,
     target: command.target,
     dryRun: command.dryRun,
+    signal: context.signal,
   });
   return {
     status: result.status,
@@ -827,6 +1440,7 @@ async function executeAgentGenerate(
   const bundle = await buildContextBundle({
     projectRoot,
     requestedScope: "agent.generate",
+    effectivePolicy: context.effectivePolicy,
   });
   const task = command.task ?? command.target ?? bundle.current_stage;
   const taskPrompt = buildAgentGeneratePrompt({
@@ -844,7 +1458,7 @@ async function executeAgentGenerate(
     requestedScope: "agent.generate",
     context: bundle,
     courseMode: true,
-    allowedVosCommands: await loadAgentAllowedCommands(projectRoot),
+    allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
     extraMcpServers: agentProgress.extraMcpServers,
     onEvent: agentProgress.onEvent,
     runner: context.agentRunner,
@@ -862,7 +1476,7 @@ async function executeAgentGenerate(
   let applyStatus: "skipped" | "ok" | "failed" = "skipped";
   let applyOutput: string | undefined;
   let applyValidationSummary: unknown[] = [];
-  let runStatus: "skipped" | "ok" | "failed" = "skipped";
+  let runStatus: "skipped" | "ok" | "failed" | "timed_out" = "skipped";
   let runOutput: string | undefined;
   let resultStatus: CommandStatus = "passed";
   if (command.apply) {
@@ -871,7 +1485,7 @@ async function executeAgentGenerate(
       projectRoot,
       patchText: parsed.patch,
       specBindings: parsed.bound_clauses,
-      allowedPaths: await loadAgentAllowedPaths(projectRoot),
+        allowedPaths: context.effectivePolicy?.allowedPaths ?? await loadAgentAllowedPaths(projectRoot),
       requireSpec: true,
       runValidation: command.build || command.run,
       evidence,
@@ -913,11 +1527,12 @@ async function executeAgentGenerate(
         projectRoot,
         evidence,
         dryRun: false,
+        signal: context.signal,
       });
       runStatus = runResult.status;
       runOutput = runResult.output;
-      if (runResult.status === "failed") {
-        resultStatus = "failed";
+      if (runResult.status === "failed" || runResult.status === "timed_out") {
+        resultStatus = runResult.status;
       }
     }
   }
@@ -946,6 +1561,7 @@ async function executeAgentApplyPatch(
   command: AgentApplyPatchCommand,
   projectRoot: string,
   evidence: EvidenceWriter,
+  effectivePolicy?: EffectivePolicy,
 ): Promise<CommandOutcome> {
   const patchText = command.patchFile
     ? await readFile(path.resolve(projectRoot, command.patchFile), "utf8")
@@ -953,7 +1569,7 @@ async function executeAgentApplyPatch(
   const result = await applyPatchText({
     projectRoot,
     patchText,
-    allowedPaths: await loadAgentAllowedPaths(projectRoot),
+    allowedPaths: effectivePolicy?.allowedPaths ?? await loadAgentAllowedPaths(projectRoot),
     requireSpec: command.requireSpec,
     runValidation: command.runValidation,
     evidence,
@@ -1020,7 +1636,7 @@ async function executeTraceValidation(params: {
       requestedScope: params.requestedScope,
       context: traceInput,
       courseMode: true,
-      allowedVosCommands: await loadAgentAllowedCommands(projectRoot),
+        allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
       runner: context.agentRunner,
@@ -1102,7 +1718,7 @@ async function executeAgentDebug(
     taskKind: "debug",
     requestedScope: "agent.debug",
     courseMode: true,
-    allowedVosCommands: await loadAgentAllowedCommands(projectRoot),
+    allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
     extraMcpServers: agentProgress.extraMcpServers,
     onEvent: agentProgress.onEvent,
     runner: context.agentRunner,
@@ -1143,7 +1759,10 @@ async function executeAgentLog(
   };
 }
 
-async function loadAgentAllowedCommands(projectRoot: string): Promise<string[]> {
+async function loadAgentAllowedCommands(projectRoot: string, effectivePolicy?: EffectivePolicy): Promise<string[]> {
+  if (effectivePolicy) {
+    return effectivePolicy.allowedCommands.filter(isAllowedModelVosCommand);
+  }
   const policy = await loadPolicyConfig(projectRoot);
   return (policy.allowed_commands ?? []).filter(isAllowedModelVosCommand);
 }
@@ -1200,8 +1819,30 @@ function commandLabel(command: CliCommand): string {
   return commandToArray(command).join(" ");
 }
 
-function commandToArray(command: CliCommand): string[] {
+export function commandToArray(command: CliCommand): string[] {
   switch (command.kind) {
+    case "login":
+      return [
+        "login",
+        "--portal-url",
+        command.portalUrl,
+        ...(command.token ? ["--token", "<redacted>"] : []),
+        ...(command.tokenStdin ? ["--token-stdin"] : []),
+      ];
+    case "logout":
+      return ["logout", ...(command.portalUrl ? ["--portal-url", command.portalUrl] : [])];
+    case "whoami":
+      return ["whoami", ...(command.portalUrl ? ["--portal-url", command.portalUrl] : [])];
+    case "serve":
+      return [
+        "serve",
+        "--portal-url",
+        command.portalUrl,
+        "--project-id",
+        command.projectId,
+        ...(command.host ? ["--host", command.host] : []),
+        ...(command.port !== undefined ? ["--port", String(command.port)] : []),
+      ];
     case "build": {
       const commandParts = ["build"];
       if (command.dryRun) commandParts.push("--dry-run");
@@ -1210,6 +1851,12 @@ function commandToArray(command: CliCommand): string[] {
       }
       return commandParts;
     }
+    case "build_generate":
+      return [
+        "build",
+        "generate",
+        ...(command.agentSession ? ["--agent-session", command.agentSession] : []),
+      ];
     case "run_qemu":
       return [
         "run",
@@ -1315,6 +1962,17 @@ function commandToArray(command: CliCommand): string[] {
       return ["report", "generate"];
     case "submit_pack":
       return ["submit", "pack"];
+    case "ledger_record":
+      return [
+        "ledger",
+        "record",
+        "--actor",
+        command.actor,
+        "--intent",
+        command.intent,
+        ...command.specRefs.flatMap((ref) => ["--spec-ref", ref]),
+        ...command.changedTargets.flatMap((target) => ["--changed-target", target]),
+      ];
     case "init":
       return ["init"];
     case "doctor":
@@ -1630,6 +2288,117 @@ function contextSessionId(context: ExecContext): string {
   return `${sessionPrefix}-${path.basename(context.projectRoot)}-${context.evidence.run_id}`;
 }
 
+async function loadToolchainGenerationSpec(projectRoot: string): Promise<{
+  toolchainIndex: unknown;
+  buildSpec: unknown;
+  profileSpec?: unknown;
+  runSpec?: unknown;
+  allowedOutputPaths: string[];
+}> {
+  const toolchainPath = path.join(projectRoot, "spec", "toolchain", "toolchain.yaml");
+  const buildPath = path.join(projectRoot, "spec", "toolchain", "build.yaml");
+  if (!existsSync(toolchainPath) || !existsSync(buildPath)) {
+    throw new CliError("build generate requires spec/toolchain/toolchain.yaml and build.yaml", "failed");
+  }
+  const toolchainIndex = parseTopLevelYaml(await readFile(toolchainPath, "utf8"));
+  const buildSpec = parseTopLevelYaml(await readFile(buildPath, "utf8"));
+  const profilePath = path.join(projectRoot, "spec", "toolchain", "profile.yaml");
+  const runPath = path.join(projectRoot, "spec", "toolchain", "run.yaml");
+  return {
+    toolchainIndex,
+    buildSpec,
+    profileSpec: existsSync(profilePath) ? parseTopLevelYaml(await readFile(profilePath, "utf8")) : undefined,
+    runSpec: existsSync(runPath) ? parseTopLevelYaml(await readFile(runPath, "utf8")) : undefined,
+    allowedOutputPaths: collectStringListByKey(buildSpec, "allowed_output_path"),
+  };
+}
+
+function normalizeToolchainDraft(raw: unknown): ToolchainGenerationDraft {
+  if (!raw || typeof raw !== "object") {
+    throw new AgentOutputError("toolchain draft must be an object");
+  }
+  const obj = raw as Record<string, unknown>;
+  const files = Array.isArray(obj.files)
+    ? obj.files.map((file) => {
+        if (!file || typeof file !== "object") throw new AgentOutputError("toolchain draft file must be an object");
+        const item = file as Record<string, unknown>;
+        if (typeof item.path !== "string" || typeof item.content !== "string") {
+          throw new AgentOutputError("toolchain draft files require path and content");
+        }
+        return { path: normalizeProjectPath(item.path), content: item.content };
+      })
+    : undefined;
+  if (!files || files.length === 0) throw new AgentOutputError("toolchain draft requires files");
+  if (!obj.manifest || typeof obj.manifest !== "object" || Array.isArray(obj.manifest)) {
+    throw new AgentOutputError("toolchain draft requires manifest object");
+  }
+  if (typeof obj.build_instructions !== "string") {
+    throw new AgentOutputError("toolchain draft requires build_instructions");
+  }
+  return {
+    files,
+    manifest: obj.manifest as Record<string, unknown>,
+    build_instructions: obj.build_instructions,
+    spec_refs: stringArrayValue(obj.spec_refs),
+    changed_targets: stringArrayValue(obj.changed_targets),
+  };
+}
+
+function validateToolchainDraft(draft: ToolchainGenerationDraft, allowedOutputPaths: string[]): void {
+  if (allowedOutputPaths.length === 0) {
+    throw new CliError("policy_blocked: toolchain allowed_output_path is empty", "policy_blocked", {
+      reason: "path_denied",
+    });
+  }
+  const filePaths = draft.files.map((file) => normalizeProjectPath(file.path));
+  for (const filePath of filePaths) {
+    if (!isAllowedToolchainOutput(filePath, allowedOutputPaths)) {
+      throw new CliError(`policy_blocked: disallowed toolchain output ${filePath}`, "policy_blocked", {
+        reason: "path_denied",
+        path: filePath,
+      });
+    }
+  }
+  const manifestFiles = stringArrayValue((draft.manifest as { files?: unknown }).files);
+  if (manifestFiles.length === 0) {
+    throw new AgentOutputError("toolchain manifest requires files");
+  }
+  const fileSet = new Set(filePaths);
+  const missing = manifestFiles.map(normalizeProjectPath).filter((file) => !fileSet.has(file));
+  if (missing.length > 0) {
+    throw new AgentOutputError(`toolchain manifest references files not in draft: ${missing.join(", ")}`);
+  }
+  const build = draft.manifest.build as { commands?: unknown; artifacts?: unknown } | undefined;
+  if (!build || typeof build !== "object" || !Array.isArray(build.commands) || build.commands.length === 0) {
+    throw new AgentOutputError("toolchain manifest requires build.commands");
+  }
+  if (!("artifacts" in build)) {
+    throw new AgentOutputError("toolchain manifest requires build.artifacts");
+  }
+}
+
+function isAllowedToolchainOutput(candidate: string, allowedOutputPaths: string[]): boolean {
+  const normalized = normalizeProjectPath(candidate);
+  return allowedOutputPaths.some((allowed) => {
+    const prefix = normalizeProjectPath(allowed);
+    return normalized === prefix || normalized.startsWith(`${prefix}/`);
+  });
+}
+
+function normalizeProjectPath(value: string): string {
+  return path.normalize(value.trim()).replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function stringArrayValue(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item) => typeof item === "string").map((item) => item.trim()).filter(Boolean)
+    : [];
+}
+
+function hashString(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 function printResult(result: Record<string, unknown>, asJson: boolean): void {
   if (asJson) {
     console.log(JSON.stringify(result, null, 2));
@@ -1652,6 +2421,10 @@ function printHelp(topic?: string): void {
     "  --evidence-dir <path>",
     "",
     "Commands:",
+    "  login --portal-url <url> [--token <token>|--token-stdin]",
+    "  logout [--portal-url <url>]",
+    "  whoami [--portal-url <url>]",
+    "  serve --portal-url <url> --project-id <id> [--host <host>] [--port <port>]",
     "  init",
     "  doctor",
     "  stage show",
@@ -1665,6 +2438,7 @@ function printHelp(topic?: string): void {
     "  arch compose [path]",
     "  arch derive-tests [path]",
     "  build [--dry-run] [--toolchain <path>]",
+    "  build generate [--agent-session <id>]",
     "  run qemu [--dry-run] [--timeout=<ms>]",
     "  test [--dry-run] [--suite=<name>]...",
     "  verify public|patch|full|invariant|fuzz|base|architecture|composition|goal [--target <value>]",
@@ -1673,6 +2447,7 @@ function printHelp(topic?: string): void {
     "  debug explain-log [log-path]",
     "  report generate",
     "  submit pack",
+    "  ledger record --actor human|agent --intent <text> [--spec-ref <ref>]... [--changed-target <path>]...",
     "  agent serve [--host --port]",
     "  agent context [--scope <scope>]",
     "  agent plan [--scope <scope>|--stage <stage>] [--task <task>]",

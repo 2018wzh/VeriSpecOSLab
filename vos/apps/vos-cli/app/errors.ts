@@ -14,7 +14,7 @@ export class CliError extends Error {
 
 export class PolicyBlockedError extends CliError {
   constructor(message: string, details?: Record<string, unknown>) {
-    super(message, "failed", details);
+    super(message, "policy_blocked", details);
     this.name = "PolicyBlockedError";
   }
 }

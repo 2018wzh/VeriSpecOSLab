@@ -142,8 +142,9 @@ git status --porcelain --untracked-files=all
 平台不得接收未提交文件、未跟踪文件或本地 `.vos/runs/` 作为提交输入。
 
 Agent commit 和 human commit 都必须进入同一条 ledger 链。human commit 允许
-出现在两次 VOS 操作之间，但在下一次 `vos build generate`、`vos build` 或
-`vos submit pack` 前必须补齐协作记录，说明修改意图以及是否基于 Agent 输出。
+出现在两次 VOS 操作之间，但在下一次受控 VOS 项目命令前必须补齐协作记录，
+说明修改意图以及是否基于 Agent 输出。例外仅限 `login` / `logout` /
+`whoami` / `help` / `init` / `ledger record` 等认证与初始化入口。
 
 ### 6.2 冻结流程
 

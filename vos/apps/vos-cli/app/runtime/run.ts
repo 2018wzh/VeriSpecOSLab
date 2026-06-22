@@ -5,6 +5,7 @@ import { EvidenceWriter } from "../evidence/index.ts";
 import { runCommand } from "./executor.ts";
 import { isRecord, parseTopLevelYaml, stringArray } from "../utils/yaml.ts";
 import { resolveToolchainManifestPath } from "./toolchain-manifest.ts";
+import { withResourceLock } from "./locks.ts";
 
 interface RunManifest {
   run?: {
@@ -35,7 +36,7 @@ interface ParsedRunYaml {
 }
 
 export interface RunCommandResult {
-  status: "ok" | "failed";
+  status: "ok" | "failed" | "timed_out";
   output: string;
   readyDetected: boolean;
   serialPath?: string;
@@ -49,6 +50,18 @@ export async function runQemuCommand(params: {
   timeoutMs?: number;
   readyPattern?: string;
   dryRun: boolean;
+  signal?: AbortSignal;
+}): Promise<RunCommandResult> {
+  return await withResourceLock(params.evidence, "qemu:default", async () => runQemuCommandUnlocked(params));
+}
+
+async function runQemuCommandUnlocked(params: {
+  projectRoot: string;
+  evidence: EvidenceWriter;
+  timeoutMs?: number;
+  readyPattern?: string;
+  dryRun: boolean;
+  signal?: AbortSignal;
 }): Promise<RunCommandResult> {
   const toolchainFile = await resolveToolchainManifestPath({
     projectRoot: params.projectRoot,
@@ -102,6 +115,7 @@ export async function runQemuCommand(params: {
     cwd: params.projectRoot,
     timeoutMs: runSpec.timeoutMs,
     timeoutGraceMs: 500,
+    signal: params.signal,
     onStdoutLine: () => {},
     onStderrLine: () => {},
     stopWhen: ({ stdout, stderr }) => new RegExp(runSpec.successSignal).test(`${stdout}${stderr}`),
@@ -112,7 +126,7 @@ export async function runQemuCommand(params: {
   params.evidence.addArtifact("trace", path.relative(params.projectRoot, serialPath), "qemu serial log");
 
   const readyDetected = new RegExp(runSpec.successSignal).test(output);
-  const status = readyDetected ? "ok" : "failed";
+  const status = readyDetected ? "ok" : runResult.timedOut ? "timed_out" : "failed";
 
   const smokeResult = {
     status,

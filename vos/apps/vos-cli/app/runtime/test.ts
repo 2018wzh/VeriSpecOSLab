@@ -31,6 +31,7 @@ export async function runTestCommand(params: {
   evidence: EvidenceWriter;
   suites: string[];
   dryRun: boolean;
+  signal?: AbortSignal;
 }): Promise<TestResult> {
   const toolchainFile = await resolveToolchainManifestPath({
     projectRoot: params.projectRoot,
@@ -78,6 +79,7 @@ export async function runTestCommand(params: {
     const commandResult = await runCommand({
       command: [normalized.command, ...normalized.args],
       cwd: params.projectRoot,
+      signal: params.signal,
       onStdoutLine: () => {},
       onStderrLine: () => {},
     });

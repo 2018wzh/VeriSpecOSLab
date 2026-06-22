@@ -10,7 +10,7 @@ import { parseTopLevelYaml } from "../utils/yaml.ts";
 
 interface ValidationSummary {
   name: string;
-  status: "ok" | "failed";
+  status: "ok" | "failed" | "timed_out";
   details?: string;
 }
 

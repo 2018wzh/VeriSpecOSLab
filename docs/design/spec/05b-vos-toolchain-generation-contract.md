@@ -9,8 +9,10 @@
 spec/toolchain/toolchain.yaml
     ↓ [vos-spec 解析与验证]
 语义构建阶段 (BuildPhaseSemantics)
-    ↓ [vos build generate 物化本地构建系统]
-项目根构建系统文件 + .vos/toolchain.json
+    ↓ [本地 Agent 生成构建系统草案]
+ToolchainGenerationDraft
+    ↓ [vos deterministic gate]
+项目根构建系统文件 + .vos/toolchain.json + ledger
     ↓ [vos-runtime 执行]
 构建输出 + 工件
     ↓ [证据采集与映射]
@@ -109,9 +111,15 @@ $ vos build --toolchain=/path/to/toolchain.json
 
 ---
 
-## 2. 生成器契约
+## 2. Agent-assisted 生成契约
 
-所有生成器（无论输出何种格式）都必须实现以下契约：
+`vos build generate` v1 不内置纯确定性 Makefile/CMake/xtask 生成器。
+它调用本地 `vos-agent` 生成草案，但最终 authority 属于 `vos-cli`：
+
+- Agent 只能提出构建文件、manifest 和构建说明草案。
+- VOS 必须校验 `allowed_output_path`、`.vos/toolchain.json`、spec hash、clean tree、commit ledger 和 evidence。
+- Agent 草案未通过 gate 时不得落盘。
+- 无本地 Agent/provider 时命令明确失败，不使用模板兜底。
 
 ### 2.1 输入接口
 
@@ -134,19 +142,13 @@ Input:
 
 ```
 Output:
-  artifact: ToolchainArtifact
-    - content: string (Makefile, CMakeLists.txt, Rust code, etc)
-    - path: Path (must be listed in build.allowed_output_path)
-    - format: string (makefile, cmake, xtask, bazel, etc)
-    
-  metadata: GenerationMetadata {
-    spec_id: string
-    spec_stage: int
-    phases: [string]  # all phase names
-    generator: string  # "makefile-v1.0"
-    generated_at: ISO8601
-    source_spec: Path
-  }
+  files:
+    - path: Path       # must be listed in build.allowed_output_path
+      content: string  # Makefile, CMakeLists.txt, Rust code, etc
+  manifest: object     # candidate .vos/toolchain.json
+  build_instructions: string
+  spec_refs: [string]
+  changed_targets: [Path]
 ```
 
 ### 2.3 必需元数据
@@ -191,15 +193,15 @@ Output:
 
 ### 2.4 幂等性约束
 
-同一份 spec 在同一 stage 生成的工件内容必须**完全相同**（除去时间戳）：
+Agent 输出不要求字节级确定性；VOS gate 和最终 manifest 必须确定性裁决同一类草案：
 
 ```
-spec A @ stage N → generator X → output O1
-spec A @ stage N → generator X → output O2
-diff(O1, O2) == metadata changes only
+spec A @ stage N + draft O
+  -> same path/spec/manifest/ledger checks
+  -> same accept/reject semantics
 ```
 
-此约束用于验证生成的正确性。
+此约束用于保证灵活生成不会绕过 VOS 的执行和审计边界。
 
 ### 2.5 编译/链接语义完整性
 
@@ -303,16 +305,20 @@ evidence:
 
 ## 4. 错误处理与诊断
 
-### 4.1 生成失败
+### 4.1 Agent draft 或 VOS gate 失败
 
 ```
-if generator.generate(spec) fails:
-  error: "Makefile generation failed"
-  reason: "Unsupported field: phase.semantic.custom_linker_option"
+if local agent/provider is unavailable:
+  error: "toolchain generation requires a configured local vos-agent provider"
+  status: failed
+
+if agent draft fails VOS gate:
+  error: "toolchain draft rejected"
+  reason: "path outside build.allowed_output_path"
   remediation: |
-    - Check spec for typos
-    - Use phase.semantic.flags.extra for non-standard options
-    - Or use phase.type=custom with explicit command
+    - Check build.allowed_output_path
+    - Check draft manifest files and changed_targets
+    - Re-run vos build generate after fixing spec or Agent configuration
 ```
 
 ### 4.2 执行失败
@@ -348,50 +354,36 @@ if phase exceeds timeout:
 
 ---
 
-## 5. 生成器选择策略
+## 5. Agent draft 偏好与选择策略
 
-### 5.1 自动检测算法
+`vos build generate` v1 不暴露 `--generator`。工具选择是 Agent draft 的一部分，
+但必须受 `build.allowed_output_path` 约束。例如 spec 只允许写 `Makefile` 时，
+Agent 不能改写 `CMakeLists.txt` 或 `xtask/`。
 
-```
-if project has Cargo.toml:
-  prefer: xtask
-elif project has significant C/C++ codebase:
-  prefer: Makefile
-elif project has CMakeLists.txt:
-  prefer: CMake
-elif project has setup.py or pyproject.toml:
-  suggest: custom (Python-based build)
-else:
-  ask user
-```
-
-### 5.2 用户选择
-
-```bash
-$ vos build --generator=makefile     # 强制 Makefile
-$ vos build --generator=xtask        # 强制 xtask
-$ vos build --generator=cmake        # 强制 CMake
-$ vos build --generator=bazel        # 强制 Bazel
-$ vos build --generator=custom       # 使用 custom 类型 (phase 中定义 command)
-```
+未来如果需要显式偏好，可以在 ToolchainSpec 或 Agent profile 中表达为 hint，
+但 CLI 仍不把 hint 当成绕过 VOS gate 的 authority。
 
 ---
 
 ## 6. 与现有 Makefile/CMakeLists.txt 的集成
 
-### 6.1 增强现有配置
+### 6.1 登记现有配置
 
 如果项目已有手写的 Makefile：
 
 ```bash
-# 方式 1：使用现有 Makefile（不生成）
-$ vos build --toolchain=Makefile
+# 方式 1：手工创建或审阅 .vos/toolchain.json，使 files 指向 Makefile
+$ vos ledger record --actor human --intent "register existing Makefile" \
+  --spec-ref spec/toolchain/toolchain.yaml \
+  --changed-target Makefile \
+  --changed-target .vos/toolchain.json
 
-# 方式 2：从 spec 生成新 Makefile，对比差异
-$ vos build --dry-run --generator=makefile
-# 查看生成的 Makefile
-# 手动合并或替换
+# 方式 2：让 Agent 起草 manifest 和必要的构建文件变更
+$ vos build generate
 ```
+
+`vos build --toolchain` 只接受 manifest 文件；不得把裸 Makefile、
+`CMakeLists.txt` 或 xtask 入口当作 ToolchainSpec manifest。
 
 ### 6.2 迁移策略
 
@@ -399,43 +391,23 @@ $ vos build --dry-run --generator=makefile
 1. 将现有 Makefile 转换为 spec/toolchain/toolchain.yaml
    （逆向工程：从 Makefile 提取语义）
 
-2. 运行 vos build --dry-run 验证生成的 Makefile 与原始一致
+2. 创建或生成 .vos/toolchain.json，使 manifest 显式登记 Makefile、命令和 artifacts
 
-3. 切换到 vos build 管理构建
+3. 运行 vos init 或 vos ledger record 为当前 HEAD 建立 ledger entry
 
-4. 后续修改在 spec 中进行，由生成器自动应用到 Makefile
+4. 运行 vos build --dry-run 和 vos build，确认 manifest 执行路径可审计
+
+5. 后续修改通过 vos build generate 或人工 commit + vos ledger record 进入审计链
 ```
 
 ---
 
-## 7. 多生成器验证（高级）
+## 7. 多工具链对比（未来扩展）
 
-### 7.1 生成对比
-
-```bash
-$ vos build --stage 2 --generators=makefile,xtask,cmake
-```
-
-生成三份不同格式的构建配置，可用于：
-- 验证 spec 语义一致性（三个生成器应产生等价的构建行为）
-- 学习不同工具如何表达同一构建逻辑
-- 调试 spec 中的歧义字段
-
-### 7.2 证据对比
-
-```
-compare:
-  makefile_artifacts vs xtask_artifacts vs cmake_artifacts
-  
-  all should produce:
-    - 相同的目标文件
-    - 相同的链接输出
-    - 相同的运行行为
-  
-  if diverge:
-    ✗ spec 有歧义或生成器有 bug
-    需要修复 spec 或生成器
-```
+目标态允许同一 ToolchainSpec 物化为 Makefile、xtask、CMake 等不同构建系统，
+但 v1 不实现多生成器 CLI。任何对比都必须以多个受控 manifest/run 的 evidence
+为依据，而不是让 Portal、Agent 或 shell 绕过 `vos build generate` / `vos build`
+链路。
 
 ---
 
@@ -446,27 +418,26 @@ compare:
 $ vos init --template xv6
 $ cat spec/toolchain/toolchain.yaml
 
-# 查看会如何生成
-$ vos build --stage 2 --dry-run --generator=makefile
-# 输出: Generated Makefile at /tmp/vos_build_12345/Makefile
+# 物化构建系统
+$ vos build generate
+# 执行:
+#   - 调用本地 vos-agent 生成 ToolchainGenerationDraft
+#   - VOS 校验 allowed_output_path、manifest、spec hash、ledger
+#   - 写 Makefile/.vos/toolchain.json/instructions artifact
+#   - 写 ledger 并创建 [vos][toolchain] Generate build system commit
 
 # 实际构建
-$ vos build --stage 2 --generator=makefile
+$ vos build --stage 2
 # 执行:
-#   - Makefile 生成器解析 spec
-#   - 输出 Makefile
-#   - 运行: make build
+#   - 读取 .vos/toolchain.json
+#   - 验证 manifest files 和 clean HEAD ledger
+#   - 运行 manifest 中登记的 build command
 #   - 采集日志与工件
 #   - 返回证据束
 
 # 查看证据
 $ vos report build --stage 2
 # 输出构建日志、工件列表、每个阶段的耗时
-
-# 用 xtask 重新构建以对比
-$ vos build --stage 2 --generator=xtask
-$ cargo xtask build
-$ vos report build --compare makefile vs xtask
 ```
 
 ---

@@ -17,6 +17,7 @@ export interface ExecutorOptions {
   timeoutMs?: number;
   timeoutGraceMs?: number;
   stdin?: string;
+  signal?: AbortSignal;
   stdinAfter?: {
     pattern: string;
     text: string;
@@ -43,6 +44,7 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
     const errChunks: string[] = [];
     let stoppedByCondition = false;
     let delayedStdinWritten = false;
+    let settled = false;
 
     const onData = (buffer: Buffer, target: string[]) => {
       const text = buffer.toString();
@@ -86,6 +88,12 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
       proc.kill("SIGKILL");
     };
 
+    const abortProcess = () => {
+      if (settled) return;
+      proc.kill("SIGTERM");
+      graceTimer = setTimeout(killProcess, opts.timeoutGraceMs ?? 500);
+    };
+
     let graceTimer: ReturnType<typeof setTimeout> | undefined;
     const timer = opts.timeoutMs !== undefined
       ? setTimeout(() => {
@@ -98,15 +106,25 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
         }, opts.timeoutMs)
       : undefined;
 
+    if (opts.signal?.aborted) {
+      abortProcess();
+    } else {
+      opts.signal?.addEventListener("abort", abortProcess, { once: true });
+    }
+
     proc.on("error", (error) => {
+      settled = true;
       if (timer !== undefined) clearTimeout(timer);
       if (graceTimer !== undefined) clearTimeout(graceTimer);
+      opts.signal?.removeEventListener("abort", abortProcess);
       reject(error);
     });
 
     proc.on("close", (code, signal) => {
+      settled = true;
       if (timer !== undefined) clearTimeout(timer);
       if (graceTimer !== undefined) clearTimeout(graceTimer);
+      opts.signal?.removeEventListener("abort", abortProcess);
       const durationMs = Date.now() - start;
       resolve({
         command: opts.command,
