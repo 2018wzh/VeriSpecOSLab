@@ -1,6 +1,8 @@
-# Portal Implementation Blueprint: Frontend Architecture
+# Portal Implementation Blueprint: `vos-portal` Frontend Architecture
 
-本文件定义了前端 React 应用的组件结构、状态管理策略与 UI 交互规范，指导 Vibe Coding 生成视图代码。
+本文件定义 `vos-portal` 前端（当前原型实现为 `apps/vos-web`）的 React 应用组件结构、状态管理策略与 UI 交互规范。
+
+该文档用于指导视图代码生成与前端实现。
 
 ## 1. 技术栈约束
 *   **框架**: React 18 (Vite)

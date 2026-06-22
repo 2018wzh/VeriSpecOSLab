@@ -6,7 +6,7 @@
 vos-core
   -> platform-neutral course, stage, evidence, score, audit models
   -> pure workflow functions
-  -> shared JSON contracts for CLI, backend, and frontend
+  -> shared JSON contracts for CLI, backend, and `vos-portal` frontend
 
 vos-evidence
   -> RunManifest and events.jsonl persistence
@@ -22,7 +22,7 @@ apps/vos-agent
   -> demo in-memory store
   -> future storage adapter host
 
-apps/vos-web
+apps/vos-portal（prototype: vos-web）
   -> React/Vite app
   -> student dashboard
   -> architecture, evidence, audit, teacher, score views

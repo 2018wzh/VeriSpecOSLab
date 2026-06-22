@@ -9,7 +9,8 @@ production platform:
 
 - `vos/apps/vos-agent`: Bun backend that serves the OpenAI-compatible Agent
   Gateway and the Portal REST API with a demo in-memory store.
-- `vos/apps/vos-web`: React/Vite portal UI for student and teacher workflows.
+- `vos/apps/vos-web` (current `vos-portal` prototype): React/Vite portal UI for
+  student and teacher workflows.
 - Target shared packages such as `vos-core`, `vos-evidence`, `vos-policy`, and
   `vos-runtime` are described in `docs/design/toolchain/03-runtime-modules.md`
   and should be introduced as the course runtime matures.
@@ -26,7 +27,7 @@ cd vos
 bun run dev:agent
 ```
 
-Frontend:
+vos-portal (prototype frontend via `vos-web`):
 
 ```powershell
 cd vos
@@ -39,14 +40,15 @@ Demo credentials:
 - `teacher` / `teacher`
 - `ta` / `ta`
 
-The frontend proxies `/api` and `/v1` to `http://127.0.0.1:8787`. If the backend
-is not running, the UI shows an error state. Runtime mock/fallback data is not
+The `vos-portal` frontend proxies `/api` and `/v1` to `http://127.0.0.1:8787`. If
+the backend is not running, the UI shows an error state. Runtime mock/fallback
+data is not
 used; demo data is inserted by the backend seed path.
 
 Docker/PostgreSQL:
 
 ```powershell
-docker compose up postgres vos-agent vos-web
+docker compose up postgres vos-agent vos-web  # prototype service name
 ```
 
 The Compose path should use PostgreSQL adapters once the TypeScript storage

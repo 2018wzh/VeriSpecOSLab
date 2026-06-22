@@ -165,6 +165,6 @@ The v1 local/runner replay contract is implemented in the Bun workspace:
 - `packages/vos-kb` owns ingestion, sqlite-vec retrieval, chunk/citation metadata, object manifest import/export, and the `vos-kb` stdio MCP server.
 - `apps/vos-cli` owns `vos kb ...`, `vos agent ask`, schema validation, evidence artifacts, and `vos serve` runner endpoints.
 - `apps/vos-agent` owns the `knowledgebase.v1` profile and Portal demo APIs for KB sources, object manifests, Q&A threads, and audit ingestion.
-- `apps/vos-web` owns the Q&A prototype view and local object/source fixtures.
+- `apps/vos-web`（`vos-portal` prototype） owns the Q&A prototype view and local object/source fixtures.
 
 The v1 implementation intentionally does not include a real S3/OSS backend, OCR, or local embedding fallback. Those are adapters behind the same manifest and search contracts.

@@ -34,14 +34,14 @@ vos/
     vos-cli/
   apps/
     vos-agent/
-    vos-web/
+    vos-portal/（prototype: vos-web）
 ```
 
 命名约定：
 
 - `packages/*` 放可复用 runtime、CLI、policy、evidence 和 agent 编排逻辑。
 - `apps/vos-agent` 放本地 LLM runner、TUI、headless API 和本地 OpenAI-compatible façade。
-- `apps/vos-web` / Portal 前端只做平台展示与控制面，不放 workspace runtime 逻辑。
+- `apps/vos-portal`（当前原型为 `apps/vos-web`）/ Portal 前端只做平台展示与控制面，不放 workspace runtime 逻辑。
 
 ## 2. 模块职责
 
@@ -241,7 +241,7 @@ apps/vos-agent
   -> vos-agent-session
   -> vos-core
 
-apps/vos-web
+apps/vos-portal（当前原型实现为 vos-web）
   -> vos-core
 ```
 
@@ -251,7 +251,7 @@ apps/vos-web
 - `vos-runtime` / `vos-adapter`：命令执行编排
 - `vos-evidence` / `vos-policy`：证据、审计与安全边界
 - `vos-agent-session` / `apps/vos-agent`：本地 Agent identity resolution、capability packs 与 LLM runner
-- `apps/vos-web`：课程平台前端，只消费平台 API 与 `vos` 结构化产物
+- `apps/vos-portal`（当前原型实现为 `apps/vos-web`）：课程平台前端，只消费平台 API 与 `vos` 结构化产物
 
 ## 相关文档
 

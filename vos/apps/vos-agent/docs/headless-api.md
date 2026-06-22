@@ -5,11 +5,12 @@ VOS Agent has two headless surfaces:
 - A package API from `vos-agent/headless`, used by `vos-cli` and local
   TypeScript integrations.
 - A VOS-native HTTP API served by `vos-agent serve` or
-  `startAgentHttpServer(...)`, used by `vos-web` and local tools.
+  `startAgentHttpServer(...)`, used by the `vos-portal` frontend (prototype:
+  `vos-web`) and local tools.
 
 The public API deliberately does **not** expose VOS Role objects.
 Task-to-profile resolution is VOS-owned and may change without breaking
-frontend, CLI, or third-party callers. External callers pass task
+`vos-portal` frontend, CLI, or third-party callers. External callers pass task
 context and, when needed, an explicit task profile containing the
 capabilities the receiver needs:
 
@@ -335,9 +336,9 @@ GET /api/v1/agent/sessions/{sessionId}
 This returns title, timestamps, model/mode metadata, message count, and
 thread todos. It does not return the full transcript.
 
-## Frontend Usage
+## `vos-portal` Frontend Usage
 
-`vos-web` exposes typed helpers in
+`vos-portal` frontend (`vos-web` prototype) exposes typed helpers in
 [src/api/client.ts](../../vos-web/src/api/client.ts):
 
 ```ts

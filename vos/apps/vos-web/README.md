@@ -1,8 +1,9 @@
-# VOS Portal Web Prototype
+# VOS Portal Prototype (`vos-portal`)
 
-`vos-web` is a standalone front-end prototype demo for the VeriSpecOSLab
-teaching portal. It uses local fixtures and `localStorage`; it does not call
-`vos-agent`, a runner, a model provider, `/api`, or `/v1` at runtime.
+`vos-web` is the current prototype implementation of `vos-portal` and a
+standalone front-end demo for the VeriSpecOSLab teaching portal. It uses local
+fixtures and `localStorage`; it does not call `vos-agent`, a runner, a model
+provider, `/api`, or `/v1` at runtime.
 
 Demo accounts:
 

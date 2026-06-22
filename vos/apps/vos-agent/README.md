@@ -5,7 +5,8 @@ for VeriSpecOSLab. It can run interactively (`vos-agent`) or headlessly
 (`vos-agent -p "..."`), persists local threads, injects `AGENTS.md`
 guidance, tracks todos, and routes each model request to Anthropic's
 Messages API or an OpenAI-compatible endpoint. In server mode it also
-serves the VOS portal REST API consumed by `apps/vos-web`.
+serves the VOS portal REST API consumed by the `vos-portal` frontend (current
+prototype: `apps/vos-web`).
 
 In the course-runtime architecture, `vos-agent` is also the implementation
 surface behind `vos agent <subcommand>` wrappers. The CLI/runtime builds a

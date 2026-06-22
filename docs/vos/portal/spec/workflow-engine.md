@@ -32,7 +32,7 @@
         - 如果匹配到 `suite` 和 `case` 名。
         - 根据其 `weight` 计算当前项得分（e.g., pass = 100% weight, fail = 0）。
     3.  **分值聚合**：按 `rubric_id` 分组汇总得分，更新 `scores.auto_score`。
-    4.  **不变量约束检查**：如果 `kind = "invariant"` 且失败，立即在前端 Dashboard 标记“架构不一致警告”。
+4.  **不变量约束检查**：如果 `kind = "invariant"` 且失败，立即在 `vos-portal` dashboard 标记“架构不一致警告”。
 
 ---
 

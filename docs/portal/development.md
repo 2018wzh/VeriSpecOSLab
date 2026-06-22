@@ -18,19 +18,19 @@ bun test
 bun run typecheck
 ```
 
-## Frontend Checks
+## vos-portal Frontend Checks (prototype via vos-web)
 
 ```powershell
-cd vos/apps/vos-web
+cd vos/apps/vos-web  # prototype implementation path
 npm install
 npm run lint
 npm run build
 npm run dev
 ```
 
-The app does not use runtime mock data. It requires the backend API for login
-and page data; when the backend is absent it shows a real error state. Local
-sample data must be created through the backend demo seed path or a future
+The vos-portal app does not use runtime mock data. It requires the backend API
+for login and page data; when the backend is absent it shows a real error state.
+Local sample data must be created through the backend demo seed path or a future
 PostgreSQL seed adapter.
 
 ## Backend Runtime
@@ -68,7 +68,7 @@ TypeScript adapter rather than a separate Rust portal service. The adapter must:
 From the repository root:
 
 ```powershell
-docker compose up postgres vos-agent vos-web
+docker compose up postgres vos-agent vos-web  # prototype service name
 ```
 
 Docker Desktop or another compatible Docker engine must be running before this
@@ -78,7 +78,7 @@ The intended services are:
 
 - PostgreSQL on `127.0.0.1:5432`
 - Backend / Agent Gateway on `http://127.0.0.1:8787`
-- Frontend on `http://127.0.0.1:5173`
+- vos-portal frontend (prototype via vos-web) on `http://127.0.0.1:5173`
 
 Optional Gitea services are present behind the `integrations` profile:
 

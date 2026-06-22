@@ -1,10 +1,10 @@
 # VeriSpecOSLab Portal 详细设计文档 (v1.1)
 
-本设计文档旨在细化 VeriSpecOSLab 教学实验门户的实现细节，涵盖数据库、API、前端架构及评测业务流程。
+本设计文档旨在细化 VeriSpecOSLab 教学实验门户（即 `vos-portal`）的实现细节，涵盖数据库、API、前端架构及评测业务流程。
 
 ## 1. 总体架构
 *   **Backend**: 独立 Portal API / platform backend + optional PostgreSQL / Redis adapters
-*   **Frontend**: React + TypeScript + Vite + Shadcn/UI + TailwindCSS
+*   **Frontend** (`vos-portal`): React + TypeScript + Vite + Shadcn/UI + TailwindCSS
 *   **Integration**: 通过 Webhook 接收 Git 事件，通过 sandbox runner 启动 `vos serve` 或受控 `vos` runtime，接收 `vos` 上传的结构化摘要、manifest、evidence、report、KB source manifest 和 artifact/object 引用。
 
 Portal 是课程控制面，不是实验 repo runtime。它不直接执行 QEMU、不解析
@@ -183,7 +183,7 @@ CREATE TABLE scores (
 
 ---
 
-## 4. 前端视图设计 (UI/UX)
+## 4. `vos-portal` 前端视图设计 (UI/UX)
 
 ### 4.1 学生主页 (Dashboard)
 *   **状态概览**: 显示当前实验名称、当前阶段、最后一次提交的通过情况。

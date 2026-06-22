@@ -21,7 +21,7 @@
 - [ ] **Evidence 接收器**：提供 API 接收 CI 运行生成的 Evidence JSON，并关联到学生项目。
 - [ ] **实验进度管理**：支持定义 StageGate（如：Memory 阶段、Trap 阶段），记录学生当前状态。
 
-### 前端 (Vos-Web) - 基于 React + Shadcn/UI
+### 前端 (vos-portal) - 基于 React + Shadcn/UI（原型：Vos-Web）
 - [ ] **学生仪表盘 (Dashboard)**：
     - [ ] 显示当前实验阶段进度。
     - [ ] 展示最近一次 `vos verify` 的结果摘要。
@@ -41,7 +41,7 @@
     - [ ] 识别异常的大段代码生成请求。
     - [ ] 生成学生 AI 使用习惯的分析报告（如：Prompt 质量分析）。
 
-### 前端 (Vos-Web)
+### 前端 (vos-portal)（原型：Vos-Web）
 - [ ] **教师管理大屏**：
     - [ ] 班级整体进度热力图。
     - [ ] 异常项目告警（测试长期不通过或 AI 使用异常）。
