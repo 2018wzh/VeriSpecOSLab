@@ -8,6 +8,7 @@ import type {
   AgentGenerateCommand,
   AgentLogCommand,
   AgentPlanCommand,
+  AgentReviewSpecCommand,
   AgentServeCommand,
   AgentValidateGeneratedCommand,
   ArchComposeCommand,
@@ -107,6 +108,18 @@ import {
   git,
   parentSha,
 } from "./repro/ledger.ts";
+import {
+  buildNormalizedSpecBundle,
+  composeArchitecture,
+  deriveTestMatrix,
+  hasBlockingDiagnostics,
+  parseAgentSpecReview,
+  resolveSpecPatch,
+  selectPatchVerificationChecks,
+  type AgentSpecReview,
+  type NormalizedSpecBundle,
+  type SpecDiagnostic,
+} from "vos-spec";
 
 const COMMAND_VERSION = "0.1.0";
 const TRACE_VALIDATION_AGENT_ATTEMPTS = 3;
@@ -627,144 +640,185 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
     }
 
     case "spec_lint": {
-      const specPath = command.path
-        ? path.resolve(projectRoot, command.path)
-        : path.resolve(projectRoot, (await loadProjectConfig(projectRoot)).spec_root ?? "spec");
-      const files = await discoverSpecFiles(specPath);
-      const diagnostics: Array<{ file: string; error: string }> = [];
-      for (const file of files) {
-        const text = await readFile(file, "utf8");
-        try {
-          parseTopLevelYaml(text);
-        } catch {
-          diagnostics.push({ file: path.relative(projectRoot, file), error: "yaml parse error" });
-        }
-      }
+      const project = await loadProjectConfig(projectRoot);
+      const bundle = await buildNormalizedSpecBundle({
+        projectRoot,
+        specRoot: project.spec_root ?? "spec",
+        targetPath: command.path,
+      });
+      const bundlePath = await writeNormalizedBundle(projectRoot, bundle, evidence);
+      const agentReview = await runDefaultAgentSpecReview({
+        command: "spec lint",
+        target: command.path,
+        bundle,
+        context,
+        evidence,
+      });
       return {
-        status: diagnostics.length === 0 ? "passed" : "validation_failed",
+        status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
         details: {
-          file_count: files.length,
-          diagnostics,
-          path: path.relative(projectRoot, specPath),
+          diagnostics: bundle.diagnostics,
+          bundle_ref: path.relative(projectRoot, bundlePath),
+          agent_review: agentReview,
+          source_count: bundle.sources.length,
+          module_count: bundle.modules.length,
+          operation_count: bundle.operations.length,
         },
       };
     }
 
     case "spec_normalize": {
-      const specRoot = path.resolve(projectRoot, (await loadProjectConfig(projectRoot)).spec_root ?? "spec");
-      const files = await discoverSpecFiles(specRoot);
-      const cacheDir = path.join(projectRoot, ".vos", "cache", "normalized");
-      const cachePath = path.join(cacheDir, "bundle.json");
-      const manifest = {
-        generated_at: new Date().toISOString(),
-        files: files.map((file) => path.relative(projectRoot, file)),
-      };
-      await writeFile(cachePath, `${JSON.stringify(manifest, null, 2)}\n`);
-      evidence.addArtifact("spec", path.relative(projectRoot, cachePath), "normalized bundle");
+      const project = await loadProjectConfig(projectRoot);
+      const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+      const cachePath = await writeNormalizedBundle(projectRoot, bundle, evidence);
       return {
-        status: "passed",
+        status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
         details: {
-          spec_count: files.length,
+          diagnostics: bundle.diagnostics,
+          source_count: bundle.sources.length,
+          module_count: bundle.modules.length,
+          operation_count: bundle.operations.length,
           normalized_cache: path.relative(projectRoot, cachePath),
         },
       };
     }
 
     case "spec_check_consistency": {
-      const cachePath = path.join(projectRoot, ".vos", "cache", "normalized", "bundle.json");
-      if (!existsSync(cachePath)) {
-        return { status: "failed", details: { message: "run spec normalize first" } };
-      }
-      let cache: { files?: unknown[] };
-      try {
-        cache = JSON.parse(await readFile(cachePath, "utf8"));
-      } catch (error) {
-        return {
-          status: "failed",
-          details: {
-            message: "normalized cache is not valid JSON",
-            source: cachePath,
-            error: error instanceof Error ? error.message : String(error),
-          },
-        };
-      }
-      const sourceCount = Array.isArray(cache?.files) ? cache.files.length : 0;
+      const project = await loadProjectConfig(projectRoot);
+      const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+      const bundlePath = await writeNormalizedBundle(projectRoot, bundle, evidence);
       return {
-        status: "passed",
+        status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
         details: {
-          checked: sourceCount,
-          source: "normalized cache",
+          diagnostics: bundle.diagnostics,
+          checked: bundle.sources.length,
+          bundle_ref: path.relative(projectRoot, bundlePath),
         },
       };
     }
 
     case "spec_patch_lint": {
-      const patchPath = command.patchPath ?? null;
-      const patchText = patchPath
-        ? await readFile(path.resolve(projectRoot, patchPath), "utf8")
-        : await readPatchFromStdin();
-      const touched = extractPatchTouches(patchText);
+      if (!command.patchPath) {
+        return {
+          status: "validation_failed",
+          details: { message: "spec patch lint requires a SpecPatch YAML path or commit-ish" },
+        };
+      }
+      const project = await loadProjectConfig(projectRoot);
+      const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+      const { patch, impact } = await resolveSpecPatch({ projectRoot, specRoot: project.spec_root ?? "spec", ref: command.patchPath, bundle });
+      const agentReview = await runDefaultAgentSpecReview({
+        command: "spec patch lint",
+        target: command.patchPath,
+        bundle,
+        impact,
+        context,
+        evidence,
+      });
       return {
-        status: touched.length > 0 ? "passed" : "failed",
-        details: { touched, touched_count: touched.length },
+        status: hasBlockingDiagnostics([...bundle.diagnostics, ...impact.diagnostics]) ? "validation_failed" : "passed",
+        details: {
+          patch,
+          impact,
+          selected_checks: selectPatchVerificationChecks(impact),
+          agent_review: agentReview,
+        },
       };
     }
 
     case "spec_patch_apply": {
-      const patchPath = command.patchPath ?? null;
-      const patchText = patchPath
-        ? await readFile(path.resolve(projectRoot, patchPath), "utf8")
-        : command.inputFromStdin
-          ? await readPatchFromStdin()
-          : await readPatchFromStdin();
-      const allowedPaths = context.effectivePolicy?.allowedPaths ?? (await loadPolicyConfig(projectRoot)).allowed_paths ?? ["src", "spec", "tests", ".vos"];
-      const result = await applyPatchText({
-        projectRoot,
-        patchText,
-        allowedPaths,
-        requireSpec: true,
-        runValidation: false,
-      });
+      if (!command.patchPath) {
+        return {
+          status: "validation_failed",
+          details: { message: "spec patch apply requires a SpecPatch YAML path or commit-ish" },
+        };
+      }
+      const project = await loadProjectConfig(projectRoot);
+      const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+      const { patch, impact } = await resolveSpecPatch({ projectRoot, specRoot: project.spec_root ?? "spec", ref: command.patchPath, bundle });
+      if (hasBlockingDiagnostics([...bundle.diagnostics, ...impact.diagnostics])) {
+        return {
+          status: "validation_failed",
+          details: { patch, impact, selected_checks: selectPatchVerificationChecks(impact) },
+        };
+      }
+      const applyArtifact = path.join(evidence.artifacts_root, "patch", "impact.json");
+      await mkdir(path.dirname(applyArtifact), { recursive: true });
+      await writeFile(applyArtifact, `${JSON.stringify({ patch, impact }, null, 2)}\n`);
+      evidence.addArtifactFromPath("patch", applyArtifact, "SpecPatch impact report");
       return {
-        status: result.status,
-        details: result as unknown as Record<string, unknown>,
+        status: "passed",
+        details: {
+          patch,
+          impact,
+          selected_checks: selectPatchVerificationChecks(impact),
+          artifact: path.relative(projectRoot, applyArtifact),
+        },
       };
     }
 
     case "arch_lint": {
-      const architecturePath = command.path
-        ? path.resolve(projectRoot, command.path)
-        : path.resolve(projectRoot, "spec", "architecture");
-      const files = (await discoverSpecFiles(architecturePath)).map((file) => path.relative(projectRoot, file));
+      const project = await loadProjectConfig(projectRoot);
+      const bundle = await buildNormalizedSpecBundle({
+        projectRoot,
+        specRoot: project.spec_root ?? "spec",
+        targetPath: command.path,
+      });
+      const composition = composeArchitecture(bundle);
+      const agentReview = await runDefaultAgentSpecReview({
+        command: "arch lint",
+        target: command.path,
+        bundle,
+        context,
+        evidence,
+      });
+      const diagnostics = [...bundle.diagnostics, ...composition.conflicts];
       return {
-        status: files.length > 0 ? "passed" : "validation_failed",
-        details: { files, count: files.length },
+        status: hasBlockingDiagnostics(diagnostics) ? "validation_failed" : "passed",
+        details: {
+          diagnostics,
+          composition,
+          conflicts: composition.conflicts,
+          enabled_modules: composition.enabled_modules,
+          agent_review: agentReview,
+        },
       };
     }
 
     case "arch_compose": {
+      const project = await loadProjectConfig(projectRoot);
+      const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+      const composition = composeArchitecture(bundle, command.path);
       const composePath = path.join(projectRoot, ".vos", "cache", "composition.json");
-      const timeline = await loadTimeline(projectRoot);
-      await writeFile(
-        composePath,
-        `${JSON.stringify({ generated_at: new Date().toISOString(), timeline }, null, 2)}\n`,
-      );
+      await mkdir(path.dirname(composePath), { recursive: true });
+      await writeFile(composePath, `${JSON.stringify(composition, null, 2)}\n`);
       evidence.addArtifact("arch", path.relative(projectRoot, composePath), "architecture composition");
       return {
-        status: "passed",
-        details: { output: path.relative(projectRoot, composePath), stage_count: timeline.length },
+        status: hasBlockingDiagnostics([...bundle.diagnostics, ...composition.conflicts]) ? "validation_failed" : "passed",
+        details: {
+          composition,
+          conflicts: composition.conflicts,
+          enabled_modules: composition.enabled_modules,
+          output: path.relative(projectRoot, composePath),
+        },
       };
     }
 
     case "arch_derive_tests": {
+      const project = await loadProjectConfig(projectRoot);
+      const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+      const matrix = deriveTestMatrix(bundle, command.path);
       const derivedPath = path.join(projectRoot, ".vos", "cache", "derived-tests.json");
-      const timeline = await loadTimeline(projectRoot);
-      const tests = timeline.map((item) => ({ stage: item.stage, gate: item.validation_gate ?? [] }));
-      await writeFile(derivedPath, `${JSON.stringify({ tests }, null, 2)}\n`);
+      await mkdir(path.dirname(derivedPath), { recursive: true });
+      await writeFile(derivedPath, `${JSON.stringify(matrix, null, 2)}\n`);
       evidence.addArtifact("arch", path.relative(projectRoot, derivedPath), "derived tests");
       return {
-        status: "passed",
-        details: { derived_count: tests.length, output: path.relative(projectRoot, derivedPath) },
+        status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
+        details: {
+          matrix,
+          source_refs: bundle.sources.map((source) => source.path),
+          output: path.relative(projectRoot, derivedPath),
+        },
       };
     }
 
@@ -937,6 +991,9 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
 
     case "agent_log":
       return executeAgentLog(command, projectRoot, evidence);
+
+    case "agent_review_spec":
+      return executeAgentReviewSpec(command, context, evidence);
 
     default:
       throw new CliError(`unsupported command: ${JSON.stringify(command)}`, "failed");
@@ -1589,6 +1646,34 @@ async function executeAgentApplyPatch(
   };
 }
 
+async function executeAgentReviewSpec(
+  command: AgentReviewSpecCommand,
+  context: ExecContext,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  const project = await loadProjectConfig(context.projectRoot);
+  const bundle = await buildNormalizedSpecBundle({
+    projectRoot: context.projectRoot,
+    specRoot: project.spec_root ?? "spec",
+    targetPath: command.target,
+  });
+  const review = await runDefaultAgentSpecReview({
+    command: "agent review-spec",
+    target: command.target,
+    bundle,
+    context,
+    evidence,
+  });
+  return {
+    status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
+    details: {
+      target: command.target,
+      diagnostics: bundle.diagnostics,
+      agent_review: review,
+    },
+  };
+}
+
 async function executeAgentValidateGenerated(
   command: AgentValidateGeneratedCommand,
   context: ExecContext,
@@ -1757,6 +1842,104 @@ async function executeAgentLog(
       entries,
     },
   };
+}
+
+async function writeNormalizedBundle(
+  projectRoot: string,
+  bundle: NormalizedSpecBundle,
+  evidence: EvidenceWriter,
+): Promise<string> {
+  const cachePath = path.join(projectRoot, ".vos", "cache", "normalized", "bundle.json");
+  await mkdir(path.dirname(cachePath), { recursive: true });
+  await writeFile(cachePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  evidence.addArtifact("spec", path.relative(projectRoot, cachePath), "normalized spec bundle");
+  return cachePath;
+}
+
+async function runDefaultAgentSpecReview(params: {
+  command: string;
+  target?: string;
+  bundle: NormalizedSpecBundle;
+  impact?: unknown;
+  context: ExecContext;
+  evidence: EvidenceWriter;
+}): Promise<AgentSpecReview> {
+  const reviewInput = {
+    command: params.command,
+    target: params.target,
+    diagnostics: params.bundle.diagnostics,
+    counts: {
+      sources: params.bundle.sources.length,
+      modules: params.bundle.modules.length,
+      operations: params.bundle.operations.length,
+      public_requirements: params.bundle.verification.public_requirements.length,
+    },
+    architecture: {
+      stages: params.bundle.architecture.stages.map((stage) => stage.stage),
+    },
+    impact: params.impact,
+  };
+  const prompt = [
+    "Review this VOS spec result for design conflicts and tradeoffs.",
+    "Return JSON only with { findings: [{ severity, message, related_specs, suggested_actions }], summary }.",
+    "Severity must be one of info, warning, error, blocker.",
+    "Your findings are advisory and must be grounded in the provided diagnostics or spec refs.",
+    JSON.stringify(reviewInput, null, 2),
+  ].join("\n\n");
+
+  try {
+    const agentProgress = createAgentProgressParams(params.context, "agent spec review");
+    const response = await runAgentWithPrompt({
+      projectRoot: params.context.projectRoot,
+      taskPrompt: agentProgress.taskPrompt(prompt),
+      taskKind: "design_review",
+      requestedScope: "agent.review-spec",
+      context: reviewInput,
+      courseMode: true,
+      allowedVosCommands: await loadAgentAllowedCommands(params.context.projectRoot, params.context.effectivePolicy),
+      extraMcpServers: agentProgress.extraMcpServers,
+      onEvent: agentProgress.onEvent,
+      runner: params.context.agentRunner,
+    });
+    const review = parseAgentSpecReview(parseAgentJson(response.resultText, "agent_review_spec"), response.resultText);
+    await writeAgentReviewArtifact(params.context.projectRoot, params.evidence, review);
+    return review;
+  } catch (error) {
+    const review: AgentSpecReview = {
+      status: "unavailable",
+      findings: [{
+        severity: "warning",
+        message: `agent review unavailable: ${error instanceof Error ? error.message : String(error)}`,
+        related_specs: [],
+        suggested_actions: ["configure vos-agent model credentials or rerun `vos agent review-spec`"],
+      }],
+      summary: "agent review unavailable; deterministic spec checks still ran",
+    };
+    await writeAgentReviewArtifact(params.context.projectRoot, params.evidence, review);
+    return review;
+  }
+}
+
+async function writeAgentReviewArtifact(
+  projectRoot: string,
+  evidence: EvidenceWriter,
+  review: AgentSpecReview,
+): Promise<void> {
+  const artifact = path.join(evidence.artifacts_root, "agent", "spec-review.json");
+  await mkdir(path.dirname(artifact), { recursive: true });
+  await writeFile(artifact, `${JSON.stringify(review, null, 2)}\n`);
+  evidence.addArtifactFromPath("agent", artifact, "agent spec review");
+  if (review.status !== "ok") {
+    await evidence.appendEvent({
+      type: "progress",
+      visibility: "agent-only",
+      payload: {
+        kind: "agent_review",
+        status: review.status,
+        summary: review.summary,
+      },
+    });
+  }
 }
 
 async function loadAgentAllowedCommands(projectRoot: string, effectivePolicy?: EffectivePolicy): Promise<string[]> {
@@ -1957,6 +2140,12 @@ export function commandToArray(command: CliCommand): string[] {
         "log",
         ...(command.append ? ["--append"] : []),
         ...(command.inputPath ? [command.inputPath] : []),
+      ];
+    case "agent_review_spec":
+      return [
+        "agent",
+        "review-spec",
+        ...(command.target ? ["--target", command.target] : []),
       ];
     case "report_generate":
       return ["report", "generate"];
@@ -2432,8 +2621,8 @@ function printHelp(topic?: string): void {
     "  spec lint [path]",
     "  spec normalize",
     "  spec check-consistency",
-    "  spec patch lint [patch-file]",
-    "  spec patch apply [patch-file]",
+    "  spec patch lint <patch-yaml|commit-ish>",
+    "  spec patch apply <patch-yaml|commit-ish>",
     "  arch lint [path]",
     "  arch compose [path]",
     "  arch derive-tests [path]",
@@ -2454,6 +2643,7 @@ function printHelp(topic?: string): void {
     "  agent generate [target] [--target <target>] [--apply] [--build] [--run]",
     "  agent apply-patch [--patch-file <file>] [--run-validation] [--no-require-spec]",
     "  agent validate-generated --target <value> [--patch-file <file>] [--keep-worktree]",
+    "  agent review-spec [--target <path|stage|patch>]",
     "  agent debug [--log <path>]",
     "  agent log [--append] [entry-path]",
   ];

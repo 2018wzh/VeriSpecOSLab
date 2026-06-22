@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "workspaces": [
+    "packages/vos-spec",
     "apps/vos-agent",
     "apps/vos-cli",
     "apps/vos-web"
@@ -12,8 +13,8 @@
     "vos": "bun run apps/vos-cli/app/main.ts",
     "dev:agent": "cd apps/vos-agent && bun run app/main.ts serve --host 127.0.0.1 --port 8787",
     "dev:web": "cd apps/vos-web && bun run dev",
-    "typecheck": "cd apps/vos-cli && bun run typecheck && cd ../vos-agent && bun run typecheck && cd ../vos-web && bun run typecheck",
-    "test": "cd apps/vos-cli && bun test && cd ../vos-agent && bun test && cd ../vos-web && bun test",
+    "typecheck": "cd packages/vos-spec && bun run typecheck && cd ../../apps/vos-cli && bun run typecheck && cd ../vos-agent && bun run typecheck && cd ../vos-web && bun run typecheck",
+    "test": "cd packages/vos-spec && bun test && cd ../../apps/vos-cli && bun test && cd ../vos-agent && bun test && cd ../vos-web && bun test",
     "build": "cd apps/vos-cli && bun run build && cd ../vos-agent && bun run build && cd ../vos-web && bun run build"
   }
 }

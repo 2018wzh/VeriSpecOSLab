@@ -5,6 +5,7 @@ import type {
   AgentGenerateCommand,
   AgentLogCommand,
   AgentPlanCommand,
+  AgentReviewSpecCommand,
   AgentServeCommand,
   AgentValidateGeneratedCommand,
   ArchComposeCommand,
@@ -320,12 +321,17 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
     if (second === "patch") {
       const sub = rest[1];
       if (sub === "lint") {
+        if (rest[2] === "-") {
+          throw new Error("spec patch lint requires a SpecPatch YAML path or commit-ish; use `vos agent apply-patch` for unified diffs");
+        }
         return { kind: "spec_patch_lint", patchPath: rest[2] } satisfies SpecPatchLintCommand;
       }
       if (sub === "apply") {
         const patchPath = rest[2];
-        const hasStdin = rest.includes("-");
-        return { kind: "spec_patch_apply", patchPath: hasStdin ? undefined : patchPath, inputFromStdin: hasStdin } satisfies SpecPatchApplyCommand;
+        if (!patchPath || patchPath === "-") {
+          throw new Error("spec patch apply requires a SpecPatch YAML path or commit-ish; use `vos agent apply-patch` for unified diffs");
+        }
+        return { kind: "spec_patch_apply", patchPath } satisfies SpecPatchApplyCommand;
       }
     }
     throw new Error("unknown command: spec");
@@ -885,6 +891,30 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
         throw new Error(`unexpected positional value for agent log: ${arg}`);
       }
       return { kind: "agent_log", append, inputPath } satisfies AgentLogCommand;
+    }
+    if (second === "review-spec") {
+      let target: string | undefined;
+      for (let i = 1; i < rest.length; i++) {
+        const arg = rest[i];
+        if (arg === "--target") {
+          target = resolveRequiredValue(rest, i, arg);
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--target=")) {
+          target = arg.slice("--target=".length);
+          continue;
+        }
+        if (!arg.startsWith("-") && target === undefined) {
+          target = arg;
+          continue;
+        }
+        if (arg.startsWith("-")) {
+          throw new Error(`unknown flag for agent review-spec: ${arg}`);
+        }
+        throw new Error(`unexpected positional value for agent review-spec: ${arg}`);
+      }
+      return { kind: "agent_review_spec", target } satisfies AgentReviewSpecCommand;
     }
 
     throw new Error(`unknown agent subcommand: ${second}`);

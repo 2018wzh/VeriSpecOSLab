@@ -138,7 +138,7 @@ describe("xv6-spec offline runtime flow", () => {
       .toBe(true);
   });
 
-  test("verify patch does not require a public matrix", async () => {
+  test("verify patch requires a SpecPatch instead of falling back to public matrix", async () => {
     const projectRoot = makeXv6Fixture({ publicMatrix: false });
     const evidence = await EvidenceWriter.create({
       projectRoot,
@@ -154,9 +154,9 @@ describe("xv6-spec offline runtime flow", () => {
       dryRun: true,
     });
 
-    expect(verify.status).toBe("ok");
-    expect(verify.steps).toEqual([{ name: "build", status: "ok" }]);
-    expect(verify.requiredChecks).toBeUndefined();
+    expect(verify.status).toBe("validation_failed");
+    expect(verify.steps).toEqual([{ name: "resolve SpecPatch", status: "validation_failed" }]);
+    expect(verify.requiredChecks).toEqual([{ id: "spec-patch-required", status: "validation_failed" }]);
   });
 
   test("build fails when toolchain manifest is missing instead of legacy auto-materializing", async () => {

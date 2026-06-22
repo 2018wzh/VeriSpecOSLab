@@ -250,6 +250,11 @@ export interface AgentLogCommand extends BaseCommand {
   inputPath?: string;
 }
 
+export interface AgentReviewSpecCommand extends BaseCommand {
+  kind: "agent_review_spec";
+  target?: string;
+}
+
 export type CliCommand =
   | LoginCommand
   | LogoutCommand
@@ -285,6 +290,7 @@ export type CliCommand =
   | AgentValidateGeneratedCommand
   | AgentDebugCommand
   | AgentLogCommand
+  | AgentReviewSpecCommand
   | { kind: "help"; topic?: string };
 
 export interface ParsedInvocation {

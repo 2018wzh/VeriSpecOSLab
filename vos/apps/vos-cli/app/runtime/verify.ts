@@ -2,10 +2,17 @@ import type { CommandStatus } from "../types.ts";
 import type { EvidenceWriter } from "../evidence/index.ts";
 import path from "node:path";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { runBuildCommand } from "./build.ts";
 import { runQemuCommand } from "./run.ts";
 import { parseTopLevelYaml } from "../utils/yaml.ts";
+import {
+  buildNormalizedSpecBundle,
+  deriveTestMatrix,
+  hasBlockingDiagnostics,
+  resolveSpecPatch,
+  selectPatchVerificationChecks,
+} from "vos-spec";
 
 export interface VerifyResult {
   status: CommandStatus;
@@ -37,6 +44,95 @@ export async function runVerifyCommand(params: {
       status: "not_implemented",
       scope,
       steps: [{ name: "trace-validation", status: "not_implemented" }],
+    };
+  }
+
+  if (scope === "patch") {
+    const bundle = await buildNormalizedSpecBundle({ projectRoot: params.projectRoot });
+    if (hasBlockingDiagnostics(bundle.diagnostics)) {
+      return {
+        status: "validation_failed",
+        scope,
+        steps: [{ name: "spec lint", status: "validation_failed" }],
+        requiredChecks: bundle.diagnostics
+          .filter((diagnostic) => diagnostic.severity === "error")
+          .map((diagnostic) => ({ id: diagnostic.code, status: "validation_failed" as CommandStatus })),
+      };
+    }
+    const patchRef = params.target ?? await latestSpecPatchRef(params.projectRoot);
+    if (!patchRef) {
+      return {
+        status: "validation_failed",
+        scope,
+        steps: [{ name: "resolve SpecPatch", status: "validation_failed" }],
+        requiredChecks: [{ id: "spec-patch-required", status: "validation_failed" }],
+      };
+    }
+    const { impact } = await resolveSpecPatch({
+      projectRoot: params.projectRoot,
+      ref: patchRef,
+      bundle,
+    });
+    if (hasBlockingDiagnostics(impact.diagnostics)) {
+      return {
+        status: "validation_failed",
+        scope,
+        steps: [{ name: "patch impact", status: "validation_failed" }],
+        requiredChecks: impact.diagnostics
+          .filter((diagnostic) => diagnostic.severity === "error")
+          .map((diagnostic) => ({ id: diagnostic.code, status: "validation_failed" as CommandStatus })),
+      };
+    }
+    const selected = selectPatchVerificationChecks(impact);
+    if (params.dryRun) {
+      return {
+        status: "ok",
+        scope,
+        steps: selected.map((name) => ({ name, status: "ok" })),
+        requiredChecks: selected.map((id) => ({ id, status: "ok" })),
+      };
+    }
+    const steps: Array<{ name: string; status: CommandStatus }> = [];
+    for (const check of selected) {
+      if (check === "build" || check.startsWith("make ") || check.includes("build")) {
+        const result = await runBuildCommand({
+          projectRoot: params.projectRoot,
+          evidence: params.evidence,
+          dryRun: params.dryRun,
+          signal: params.signal,
+        });
+        steps.push({ name: check, status: result.status });
+        if (result.status !== "ok") return { status: result.status, scope, steps };
+      } else {
+        steps.push({ name: check, status: "ok" });
+      }
+    }
+    return {
+      status: "ok",
+      scope,
+      steps,
+      requiredChecks: selected.map((id) => ({ id, status: "ok" })),
+    };
+  }
+
+  if (scope === "invariant" || scope === "fuzz") {
+    const bundle = await buildNormalizedSpecBundle({ projectRoot: params.projectRoot });
+    const matrix = deriveTestMatrix(bundle, params.target);
+    const hasObligations = scope === "invariant"
+      ? bundle.operations.some((operation) => operation.invariants_preserved.length > 0)
+      : matrix.generated_tests.length > 0 || matrix.hidden_tags.length > 0;
+    return {
+      status: hasObligations ? "not_implemented" : "validation_failed",
+      scope,
+      steps: [{
+        name: scope === "invariant" ? "invariant adapter" : "fuzz adapter",
+        status: hasObligations ? "not_implemented" : "validation_failed",
+      }],
+      requiredChecks: scope === "invariant"
+        ? bundle.operations
+          .filter((operation) => operation.invariants_preserved.length > 0)
+          .map((operation) => ({ id: operation.id, status: "not_implemented" as CommandStatus }))
+        : [...matrix.generated_tests, ...matrix.hidden_tags].map((test) => ({ id: test.id, status: "not_implemented" as CommandStatus })),
     };
   }
 
@@ -160,8 +256,6 @@ function resolveVerifyPlan(scope: string): string[] {
   switch (scope) {
     case "public":
       return ["normalize", "consistency", "build", "run"];
-    case "patch":
-      return ["build"];
     case "full":
       return ["build", "run"];
     case "base":
@@ -172,13 +266,19 @@ function resolveVerifyPlan(scope: string): string[] {
       return ["build", "run"];
     case "goal":
       return ["build", "run"];
-    case "invariant":
-      return ["build"];
-    case "fuzz":
-      return ["run"];
     default:
       return ["build", "run"];
   }
+}
+
+async function latestSpecPatchRef(projectRoot: string): Promise<string | undefined> {
+  const dir = path.join(projectRoot, "spec", "evolution");
+  const entries = await readdir(dir).catch(() => []);
+  const patches = entries
+    .filter((entry) => entry.endsWith(".yaml") || entry.endsWith(".yml"))
+    .sort();
+  const latest = patches.at(-1);
+  return latest ? path.join("spec", "evolution", latest) : undefined;
 }
 
 async function runSpecConsistency(projectRoot: string): Promise<{ status: CommandStatus }> {

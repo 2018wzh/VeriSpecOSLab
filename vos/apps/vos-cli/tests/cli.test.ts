@@ -222,4 +222,13 @@ describe("vos-cli agent command parsing", () => {
       keepWorktree: true,
     });
   });
+
+  test("parses agent review-spec target and rejects spec patch stdin", () => {
+    expect(parseArgs(["bun", "vos", "agent", "review-spec", "--target", "memory"]).command).toEqual({
+      kind: "agent_review_spec",
+      target: "memory",
+    });
+    expect(() => parseArgs(["bun", "vos", "spec", "patch", "lint", "-"])).toThrow("SpecPatch YAML path or commit-ish");
+    expect(() => parseArgs(["bun", "vos", "spec", "patch", "apply", "-"])).toThrow("SpecPatch YAML path or commit-ish");
+  });
 });
