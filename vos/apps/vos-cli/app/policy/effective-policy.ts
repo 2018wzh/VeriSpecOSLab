@@ -102,6 +102,10 @@ function isPathCoveredByAny(candidate: string, allowed: readonly string[]): bool
   });
 }
 
-function stricterVisibility(left: "public" | "agent-only", right: "public" | "agent-only"): "public" | "agent-only" {
-  return left === "agent-only" || right === "agent-only" ? "agent-only" : "public";
+function stricterVisibility(
+  left: "public" | "agent-only" | "staff-only",
+  right: "public" | "agent-only" | "staff-only",
+): "public" | "agent-only" | "staff-only" {
+  const rank = { public: 0, "agent-only": 1, "staff-only": 2 };
+  return rank[left] >= rank[right] ? left : right;
 }

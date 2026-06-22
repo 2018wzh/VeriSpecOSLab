@@ -325,15 +325,21 @@ load commit-backed SpecPatch -> impact analysis -> select minimum required check
 内部执行链：
 
 ```text
-run public checks -> request platform-private checks -> merge summary verdict
+run public checks -> run generated/invariant/fuzz suites
+  -> optionally load external staff policy -> run staff-only suites
+  -> merge summary verdict
 ```
+
+`verify full` 的执行权在本地 authenticated `vos-cli`。平台可以触发该命令，
+但不替代 `vos-cli` 解析 spec、执行 suite 或归档 evidence。staff-only 输入必须
+来自 repo 外部 policy 文件或等价受控输入，学生 repo 只记录摘要和 evidence ref。
 
 ### `vos verify invariant`
 
 内部执行链：
 
 ```text
-resolve module invariant obligations -> run checker -> emit invariant report
+resolve module invariant obligations -> map to registered test suites -> emit invariant report
 ```
 
 ### `vos verify fuzz`
@@ -341,8 +347,21 @@ resolve module invariant obligations -> run checker -> emit invariant report
 内部执行链：
 
 ```text
-resolve fuzz target -> seed runtime -> run fuzz adapter -> archive crashes
+resolve generated/fuzz target -> map to registered test suites -> archive logs/crashes
 ```
+
+`verify invariant` 与 `verify fuzz` 复用 `.vos/toolchain.json` 中已有
+`test.suites`，并通过 `verify.invariant`、`verify.generated`、`verify.fuzz`
+映射 obligation 到 suite 名称；不引入独立 adapter 框架。
+
+`verify generated` 与 `verify fuzz` 还会生成 `verify-behavior` evidence：
+先产出 TestPlan JSON，再在临时 worktree 中应用行为测试 patch 并运行自动化
+stdin/stdout/exit/timeout oracle。patch 不写回学生 repo。
+
+Trace 不作为第四类 verify suite 映射，也不作为 verify runtime 字段。
+DebugAgent 消费 verify evidence，形成
+`obligation -> suite -> behavior case -> oracle -> observed output -> suspected failure`
+的教学解释；它不改变 verify 的 pass/fail 判定。
 
 ## 6. Trace / Debug 命令
 

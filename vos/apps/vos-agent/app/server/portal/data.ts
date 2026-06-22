@@ -22,7 +22,7 @@ import {
   sorted,
   summarize,
   unique,
-} from "./portal/utils.ts";
+} from "./utils.ts";
 
 export type UserRole = "admin" | "teacher" | "ta" | "student";
 export type PipelineStatus = "queued" | "running" | "passed" | "failed" | "cancelled" | "timed_out";

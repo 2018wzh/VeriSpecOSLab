@@ -14,6 +14,8 @@
       "dependencies": {
         "@anthropic-ai/sdk": "^0.100.1",
         "openai": "^6.16.0",
+        "vos-agent-session": "workspace:*",
+        "vos-core": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -29,8 +31,15 @@
       "dependencies": {
         "cli-progress": "^3.12.0",
         "ora": "^9.4.0",
+        "vos-adapter": "workspace:*",
         "vos-agent": "workspace:*",
+        "vos-agent-session": "workspace:*",
+        "vos-core": "workspace:*",
+        "vos-evidence": "workspace:*",
         "vos-kb": "workspace:*",
+        "vos-policy": "workspace:*",
+        "vos-runtime": "workspace:*",
+        "vos-server": "workspace:*",
         "vos-spec": "workspace:*",
         "yaml": "^2.9.0",
         "zod": "^4.4.3",
@@ -66,6 +75,50 @@
         "vite": "^7.2.7",
       },
     },
+    "packages/vos-adapter": {
+      "name": "vos-adapter",
+      "version": "0.1.0",
+      "dependencies": {
+        "vos-core": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.3",
+      },
+    },
+    "packages/vos-agent-session": {
+      "name": "vos-agent-session",
+      "version": "0.1.0",
+      "dependencies": {
+        "vos-core": "workspace:*",
+        "vos-evidence": "workspace:*",
+        "vos-policy": "workspace:*",
+        "vos-runtime": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.3",
+      },
+    },
+    "packages/vos-core": {
+      "name": "vos-core",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.3",
+      },
+    },
+    "packages/vos-evidence": {
+      "name": "vos-evidence",
+      "version": "0.1.0",
+      "dependencies": {
+        "vos-core": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.3",
+      },
+    },
     "packages/vos-kb": {
       "name": "vos-kb",
       "version": "0.1.0",
@@ -78,6 +131,39 @@
         "officeparser": "^7.2.1",
         "sqlite-vec": "^0.1.9",
         "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.3",
+      },
+    },
+    "packages/vos-policy": {
+      "name": "vos-policy",
+      "version": "0.1.0",
+      "dependencies": {
+        "vos-core": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.3",
+      },
+    },
+    "packages/vos-runtime": {
+      "name": "vos-runtime",
+      "version": "0.1.0",
+      "dependencies": {
+        "vos-core": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.3",
+      },
+    },
+    "packages/vos-server": {
+      "name": "vos-server",
+      "version": "0.1.0",
+      "dependencies": {
+        "vos-core": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -752,11 +838,25 @@
 
     "vite": ["vite@7.3.5", "", { "dependencies": { "esbuild": "^0.27.0", "fdir": "^6.5.0", "picomatch": "^4.0.3", "postcss": "^8.5.6", "rollup": "^4.43.0", "tinyglobby": "^0.2.15" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "jiti": ">=1.21.0", "less": "^4.0.0", "lightningcss": "^1.21.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "jiti", "less", "lightningcss", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-KuOaNhcnGFN2zIPGA7wRmzF+lJA1sea7rHq17aiJ++9lzY1WWG6Jpwqwe1KNbRVPIqHmr8GLYx7jbrQcN/7/ww=="],
 
+    "vos-adapter": ["vos-adapter@workspace:packages/vos-adapter"],
+
     "vos-agent": ["vos-agent@workspace:apps/vos-agent"],
+
+    "vos-agent-session": ["vos-agent-session@workspace:packages/vos-agent-session"],
 
     "vos-cli": ["vos-cli@workspace:apps/vos-cli"],
 
+    "vos-core": ["vos-core@workspace:packages/vos-core"],
+
+    "vos-evidence": ["vos-evidence@workspace:packages/vos-evidence"],
+
     "vos-kb": ["vos-kb@workspace:packages/vos-kb"],
+
+    "vos-policy": ["vos-policy@workspace:packages/vos-policy"],
+
+    "vos-runtime": ["vos-runtime@workspace:packages/vos-runtime"],
+
+    "vos-server": ["vos-server@workspace:packages/vos-server"],
 
     "vos-spec": ["vos-spec@workspace:packages/vos-spec"],
 

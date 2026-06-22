@@ -223,6 +223,27 @@ describe("vos-cli agent command parsing", () => {
     });
   });
 
+  test("parses verify full staff policy", () => {
+    const parsed = parseArgs([
+      "bun",
+      "vos",
+      "verify",
+      "full",
+      "--staff-policy",
+      "../staff/verify.json",
+    ]);
+
+    expect(parsed.command).toEqual({
+      kind: "verify",
+      scope: "full",
+      target: undefined,
+      dryRun: false,
+      patchFile: undefined,
+      keepWorktree: false,
+      staffPolicy: "../staff/verify.json",
+    });
+  });
+
   test("parses agent review-spec target and rejects spec patch stdin", () => {
     expect(parseArgs(["bun", "vos", "agent", "review-spec", "--target", "memory"]).command).toEqual({
       kind: "agent_review_spec",

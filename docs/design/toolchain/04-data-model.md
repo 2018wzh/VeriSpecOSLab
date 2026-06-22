@@ -136,6 +136,11 @@
 - `debug explain-log`
 - 平台审计
 
+`verify-behavior` 是 generated/fuzz 验证过程产生的行为测试 evidence
+artifact。它记录 TestPlan、临时 patch、case stdout/stderr 与 oracle result，
+用于 DebugAgent 解释失败路径；verify runtime 本身不输出 trace 字段，也不把
+trace 作为 suite 映射。
+
 ## 5. `DiagnosticReport`
 
 用途：

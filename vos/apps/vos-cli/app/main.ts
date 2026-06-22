@@ -82,7 +82,7 @@ import {
 import { runBuildCommand } from "./runtime/build.ts";
 import { runQemuCommand } from "./runtime/run.ts";
 import { runTestCommand } from "./runtime/test.ts";
-import { runVerifyCommand } from "./runtime/verify.ts";
+import { runVerifyCommand, type BehaviorTestRunner } from "./runtime/verify.ts";
 import {
   buildTraceValidationInput,
   ensureCleanGitWorktree,
@@ -181,7 +181,7 @@ async function main(): Promise<void> {
             },
             portalClient: commandContext.portalClient as PortalClient | undefined,
             signal: commandContext.signal,
-            onEvent: commandContext.onEvent,
+            onEvent: commandContext.onEvent as ((event: import("./evidence/events.ts").RunEvent) => void | Promise<void>) | undefined,
           });
           return {
             run_id: result.run_id,
@@ -1620,6 +1620,9 @@ export async function executeVerify(
     scope: command.scope,
     target: command.target,
     dryRun: command.dryRun,
+    staffPolicy: command.staffPolicy,
+    visibilityScope: context.effectivePolicy?.visibilityScope,
+    behaviorTestRunner: createVerifyBehaviorTestRunner(context, projectRoot),
     signal: context.signal,
   });
   return {
@@ -1629,6 +1632,24 @@ export async function executeVerify(
       scopeTarget: command.target,
       steps: result.steps,
     },
+  };
+}
+
+function createVerifyBehaviorTestRunner(context: ExecContext, projectRoot: string): BehaviorTestRunner {
+  return async (request) => {
+    const agentProgress = createAgentProgressParams(context, `verify ${request.phase} behavior`);
+    const result = await runAgentWithPrompt({
+      projectRoot,
+      taskPrompt: agentProgress.taskPrompt(request.prompt),
+      taskKind: "validate",
+      requestedScope: `verify.${request.phase}.behavior.${request.kind}`,
+      courseMode: true,
+      allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      extraMcpServers: agentProgress.extraMcpServers,
+      onEvent: agentProgress.onEvent,
+      runner: context.agentRunner,
+    });
+    return result.resultText;
   };
 }
 
@@ -1935,52 +1956,6 @@ export async function executeAgentAsk(
     },
   };
 }
-
-export {
-  executeLogin,
-  executeLogout,
-  executeWhoami,
-  executeInit,
-  executeDoctor,
-  executeStageShow,
-  executeToolchainLint,
-  executeSpecLint,
-  executeSpecNormalize,
-  executeSpecCheckConsistency,
-  executeSpecPatchLint,
-  executeSpecPatchApply,
-  executeArchLint,
-  executeArchCompose,
-  executeArchDeriveTests,
-  executeBuild,
-  executeBuildGenerate,
-  executeRunQemu,
-  executeTest,
-  executeVerify,
-  executeTraceSyscall,
-  executeDebugExplainLog,
-  executeReportGenerate,
-  executeSubmitPack,
-  executeLedgerRecord,
-  executeKbAdd,
-  executeKbList,
-  executeKbSearch,
-  executeKbRemove,
-  executeKbClear,
-  executeKbExportManifest,
-  executeKbImportManifest,
-  executeAgentServe,
-  executeAgentContext,
-  executeAgentPlan,
-  executeAgentGenerate,
-  executeAgentApplyPatch,
-  executeAgentValidateGenerated,
-  executeAgentDebug,
-  executeAgentLog,
-  executeAgentReviewSpec,
-  executeAgentAsk,
-  executeTraceValidation,
-};
 
 export async function executeAgentValidateGenerated(
   command: AgentValidateGeneratedCommand,
@@ -2969,7 +2944,7 @@ function printHelp(topic?: string): void {
     "  build generate [--agent-session <id>]",
     "  run qemu [--dry-run] [--timeout=<ms>]",
     "  test [--dry-run] [--suite=<name>]...",
-    "  verify public|patch|full|invariant|fuzz|base|architecture|composition|goal [--target <value>]",
+    "  verify public|patch|full|invariant|fuzz|base|architecture|composition|goal [--target <value>] [--staff-policy <path>]",
     "  verify trace [--target <value>] [--patch-file <file>] [--keep-worktree]",
     "  trace syscall [--dry-run] [--timeout=<ms>]",
     "  debug explain-log [log-path]",

@@ -1,6 +1,6 @@
 import type { CommandStatus, RunEvent } from "vos-core";
 
-export type VisibilityScope = "public" | "agent-only";
+export type VisibilityScope = "public" | "agent-only" | "staff-only";
 export type PathScope = VisibilityScope;
 
 export interface AssertionPolicy {
@@ -24,7 +24,7 @@ export interface PolicyDecision {
   visibility?: VisibilityScope;
 }
 
-export interface PolicyDecisionEvent extends RunEvent {
+export interface PolicyDecisionEvent extends Omit<RunEvent, "type"> {
   type: "policy_allowed" | "policy_denied";
   status: CommandStatus;
 }
@@ -58,10 +58,15 @@ export function mergeEffectivePolicy(local: AssertionPolicy, portal?: AssertionP
       ? allowedCommands
       : [...portal.allowedCommands],
     allowedPaths,
-    visibilityScope: portal.visibilityScope === "agent-only" ? "agent-only" : local.visibilityScope,
+    visibilityScope: stricterVisibility(portal.visibilityScope, local.visibilityScope),
     deniedCommands: [...new Set([...local.deniedCommands, ...portal.deniedCommands])],
     snapshotRef: portal.snapshotRef,
   };
+}
+
+function stricterVisibility(left: VisibilityScope, right: VisibilityScope): VisibilityScope {
+  const rank = { public: 0, "agent-only": 1, "staff-only": 2 };
+  return rank[left] >= rank[right] ? left : right;
 }
 
 export function defaultPolicy(): AssertionPolicy {

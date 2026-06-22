@@ -15,7 +15,7 @@ export interface PolicyConfig {
   allowed_commands?: string[];
   allowed_paths?: string[];
   denied_commands?: string[];
-  visibility_scope?: "public" | "agent-only";
+  visibility_scope?: "public" | "agent-only" | "staff-only";
 }
 
 export interface StageShowResult {

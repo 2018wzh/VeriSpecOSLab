@@ -170,6 +170,7 @@ export interface VerifyCommand extends BaseCommand {
   dryRun: boolean;
   patchFile?: string;
   keepWorktree?: boolean;
+  staffPolicy?: string;
 }
 
 export interface TraceSyscallCommand extends BaseCommand {
@@ -364,7 +365,7 @@ export interface PolicySnapshot {
   projectId: string;
   allowedCommands: string[];
   allowedPaths: string[];
-  visibilityScope: "public" | "agent-only";
+  visibilityScope: "public" | "agent-only" | "staff-only";
 }
 
 export interface EffectivePolicy {
@@ -372,7 +373,7 @@ export interface EffectivePolicy {
   snapshotRef?: string;
   allowedCommands: string[];
   allowedPaths: string[];
-  visibilityScope: "public" | "agent-only";
+  visibilityScope: "public" | "agent-only" | "staff-only";
 }
 
 export interface RunAuthContext {

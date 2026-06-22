@@ -20,7 +20,7 @@ export interface ContextBundle {
   };
   recommended_commands: string[];
   allowed_commands?: string[];
-  visibility_scope: "public" | "agent-only";
+  visibility_scope: "public" | "agent-only" | "staff-only";
   spec_snippets: Array<{ kind: string; summary: string; path?: string }>;
   policy_flags: string[];
   project_tree: string[];

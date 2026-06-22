@@ -552,6 +552,7 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
     let target: string | undefined;
     let patchFile: string | undefined;
     let keepWorktree = false;
+    let staffPolicy: string | undefined;
     for (let i = 1; i < rest.length; i++) {
       const arg = rest[i];
       if (arg === "--dry-run") {
@@ -580,13 +581,22 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
         keepWorktree = true;
         continue;
       }
+      if (arg === "--staff-policy") {
+        staffPolicy = resolveRequiredValue(rest, i, arg);
+        i++;
+        continue;
+      }
+      if (arg.startsWith("--staff-policy=")) {
+        staffPolicy = arg.slice("--staff-policy=".length);
+        continue;
+      }
       if (!arg.startsWith("-")) {
         target = arg;
         continue;
       }
       throw new Error(`unknown flag for verify: ${arg}`);
     }
-    return { kind: "verify", scope, target, dryRun, patchFile, keepWorktree } satisfies VerifyCommand;
+    return { kind: "verify", scope, target, dryRun, patchFile, keepWorktree, staffPolicy } satisfies VerifyCommand;
   }
 
   if (command === "trace") {

@@ -116,10 +116,12 @@ function normalizePolicySnapshot(raw: unknown): PolicySnapshot | undefined {
     projectId,
     allowedCommands: stringArray(obj.allowed_commands) ?? stringArray(obj.allowedCommands) ?? [],
     allowedPaths: stringArray(obj.allowed_paths) ?? stringArray(obj.allowedPaths) ?? [],
-    visibilityScope: obj.visibility_scope === "agent-only" || obj.visibilityScope === "agent-only"
-      ? "agent-only"
-      : "public",
+    visibilityScope: normalizeVisibilityScope(obj.visibility_scope ?? obj.visibilityScope),
   };
+}
+
+function normalizeVisibilityScope(value: unknown): "public" | "agent-only" | "staff-only" {
+  return value === "staff-only" || value === "agent-only" ? value : "public";
 }
 
 function stringValue(value: unknown): string | undefined {

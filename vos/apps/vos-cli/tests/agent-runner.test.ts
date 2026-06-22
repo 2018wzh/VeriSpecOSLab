@@ -5,6 +5,12 @@ import {
   buildAgentEnv,
   runAgentWithPrompt,
 } from "../app/agent/runner.ts";
+import {
+  buildAgentBehaviorTestPatchPrompt,
+  buildAgentBehaviorTestPlanPrompt,
+  buildAgentDebugPrompt,
+  buildAgentGeneratePrompt,
+} from "../app/agent/prompt.ts";
 import { buildContextBundle, loadAgentAllowedPaths } from "../app/agent/context.ts";
 import { executeCommand } from "../app/main.ts";
 import { EvidenceWriter } from "../app/evidence/index.ts";
@@ -190,6 +196,67 @@ describe("vos-cli package agent runner", () => {
     expect(result.env.OPENAI_API_KEY).toBe("xv6-key");
     expect(result.env.OPENAI_BASE_URL).toBe("https://api.deepseek.com/v1");
     expect(result.env.SMART_MODEL).toBe("deepseek-v4-pro");
+  });
+
+  test("agent generate prompt requires verify suites and mappings for build/run", () => {
+    const prompt = buildAgentGeneratePrompt({
+      bundle: {
+        resolved_specs: ["spec/verification/public-matrix.yaml"],
+        recent_evidence: [],
+        allowed_paths: ["Makefile", ".vos/toolchain.json", "kernel", "user"],
+        policy_flags: ["visibility:public"],
+        project_tree: ["spec/verification/public-matrix.yaml", "spec/modules/kernel/memory/tests.yaml"],
+      },
+      task: "generate xv6 memory stage",
+      buildRequested: true,
+      runRequested: true,
+    });
+
+    expect(prompt).toContain("VERIFY CONTRACT");
+    expect(prompt).toContain(".vos/toolchain.json.test.suites");
+    expect(prompt).toContain("verify.full");
+    expect(prompt).toContain("verify.invariant");
+    expect(prompt).toContain("verify.fuzz");
+    expect(prompt).toContain("XV6_BOOT_OK");
+    expect(prompt).toContain("staff-visible external mapping");
+  });
+
+  test("agent debug prompt explains verify behavior evidence", () => {
+    const prompt = buildAgentDebugPrompt({
+      logText: "failed fuzz with artifacts/verify-behavior/fuzz-cases/case-1/result.json",
+      logRef: ".vos/runs/run-1/artifacts/verify-behavior/fuzz-cases/case-1/result.json",
+    });
+
+    expect(prompt).toContain("VERIFY DEBUG CONTRACT");
+    expect(prompt).toContain("verify-behavior");
+    expect(prompt).toContain("obligation -> suite -> behavior case -> oracle -> observed output -> suspected failure");
+    expect(prompt).not.toContain("verify-trace");
+  });
+
+  test("behavior test prompts split planning from patch generation", () => {
+    const planPrompt = buildAgentBehaviorTestPlanPrompt({
+      scope: "fuzz",
+      phase: "fuzz",
+      obligations: ["kalloc_race"],
+      suites: ["grind"],
+      projectTree: ["user/grind.c", "kernel/kalloc.c"],
+    });
+    const patchPrompt = buildAgentBehaviorTestPatchPrompt({
+      scope: "fuzz",
+      phase: "fuzz",
+      testPlan: { cases: [{ id: "race", obligation_id: "kalloc_race" }] },
+      projectTree: ["user/grind.c", "kernel/kalloc.c"],
+    });
+
+    expect(planPrompt).toContain("TestPlan JSON");
+    expect(planPrompt).toContain("generated/fuzz obligations");
+    expect(planPrompt).toContain("user-space behavior");
+    expect(planPrompt).toContain("stdin");
+    expect(planPrompt).toContain("stdout/exit/timeout oracle");
+    expect(planPrompt).not.toContain("patch must");
+    expect(patchPrompt).toContain("validated TestPlan");
+    expect(patchPrompt).toContain("git apply --check");
+    expect(patchPrompt).toContain("Do not modify spec/");
   });
 
   test("parses TOML config with section tables and inline comments", () => {

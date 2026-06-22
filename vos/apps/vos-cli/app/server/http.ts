@@ -43,19 +43,9 @@ async function importObjectManifest(projectRoot: string, manifest: unknown): Pro
   await importKbManifest(projectRoot, manifest, { embedder: createKbEmbedder(projectRoot) });
 }
 
-async function executeCommandByCliInvocation(context: {
-  runId: string;
-  commandArgs: string[];
-  requestedBy: string;
-  reason?: string;
-  agentSessionId?: string;
-  projectRoot: string;
-  portalUrl: string;
-  projectId: string;
-  portalClient?: PortalClient;
-  signal?: AbortSignal;
-  onEvent?: (event: import("vos-core").RunEvent) => void | Promise<void>;
-}): Promise<import("vos-server").VosCommandResult> {
+async function executeCommandByCliInvocation(context: import("vos-server").VosCommandExecutionContext): Promise<import("vos-server").VosCommandResult> {
+  const portalClient = context.portalClient as PortalClient | undefined;
+  const onEvent = context.onEvent as ((event: import("../evidence/events.ts").RunEvent) => void | Promise<void>) | undefined;
   const { executeCliInvocation } = await import("../main.ts");
   const result = await executeCliInvocation(["bun", "vos", "--project-root", context.projectRoot, "--json", ...(context.agentSessionId ? ["--agent-session", context.agentSessionId] : []), ...context.commandArgs], {
     print: false,
@@ -63,9 +53,9 @@ async function executeCommandByCliInvocation(context: {
       portalUrl: context.portalUrl,
       projectId: context.projectId,
     },
-    portalClient: context.portalClient,
+    portalClient,
     signal: context.signal,
-    onEvent: context.onEvent,
+    onEvent,
   });
   return {
     run_id: result.run_id,

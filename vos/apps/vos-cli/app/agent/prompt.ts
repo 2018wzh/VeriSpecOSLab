@@ -124,7 +124,7 @@ export function buildAgentDebugPrompt(args: {
   logText: string;
   logRef: string;
 }): string {
-  return formatPrompt(
+  const prompt = formatPrompt(
     buildPromptEnvelope({
       taskKind: "debug",
       requestedScope: "agent.debug",
@@ -137,6 +137,59 @@ export function buildAgentDebugPrompt(args: {
       task: args.logText,
     }),
   );
+  return `${prompt}\n\nVERIFY DEBUG CONTRACT\n- If evidence_refs or task text mention verify-behavior artifacts, explain the generated behavior evidence.\n- Explain failures as obligation -> suite -> behavior case -> oracle -> observed output -> suspected failure.\n- Treat behavior artifacts as explanatory evidence; do not redefine verify pass/fail status.\n`;
+}
+
+export function buildAgentBehaviorTestPlanPrompt(args: {
+  scope: string;
+  phase: "generated" | "fuzz";
+  obligations: string[];
+  suites: string[];
+  projectTree: string[];
+}): string {
+  return [
+    "You are producing a VOS verify behavior TestPlan JSON.",
+    "Return exactly one JSON object and nothing else.",
+    "Do not execute commands.",
+    "Do not generate a patch in this response.",
+    "Cover generated/fuzz obligations with user-space behavior whenever possible.",
+    "Prefer automated stdin, stdout/exit/timeout oracle, and concrete user program behavior.",
+    "The JSON object must contain cases[].",
+    "Each case must contain id, obligation_id, purpose, carrier, stimulus.stdin, and oracle.",
+    "The oracle should use success_regex, optional failure_regex, and timeout_ms.",
+    `scope: ${args.scope}`,
+    `phase: ${args.phase}`,
+    "obligations:",
+    JSON.stringify(args.obligations, null, 2),
+    "mapped suites:",
+    JSON.stringify(args.suites, null, 2),
+    "project_tree:",
+    JSON.stringify(args.projectTree, null, 2),
+  ].join("\n");
+}
+
+export function buildAgentBehaviorTestPatchPrompt(args: {
+  scope: string;
+  phase: "generated" | "fuzz";
+  testPlan: unknown;
+  projectTree: string[];
+}): string {
+  return [
+    "You are producing a VOS verify behavior patch JSON from a validated TestPlan.",
+    "Return exactly one JSON object and nothing else.",
+    "Only consume the validated TestPlan below; do not invent unrelated tests.",
+    "The JSON object must contain patch, suites, and cases.",
+    "patch must be a git-style unified diff that passes git apply --check, or an empty string when no patch is needed.",
+    "Do not modify spec/, .git/, .vos/runs/, or .vos/worktrees/.",
+    "Suites may be temporary worktree commands and must not require writing back to the student repo manifest.",
+    "Each case must contain id, obligation_id, suite, stdin, success_regex, optional failure_regex, and timeout_ms.",
+    `scope: ${args.scope}`,
+    `phase: ${args.phase}`,
+    "validated TestPlan:",
+    JSON.stringify(args.testPlan, null, 2),
+    "project_tree:",
+    JSON.stringify(args.projectTree, null, 2),
+  ].join("\n");
 }
 
 export function buildAgentGeneratePrompt(args: {
@@ -207,8 +260,24 @@ export function buildAgentGeneratePrompt(args: {
         : "The resulting code must compile with the project toolchain specification.",
     ].join("\n")
     : "";
+  const verifyContract = args.buildRequested || args.runRequested
+    ? [
+      "VERIFY CONTRACT:",
+      "A buildable or runnable patch must also be verifiable by vos-cli.",
+      "If you create or replace .vos/toolchain.json, include .vos/toolchain.json.test.suites with runnable suite names.",
+      "Include verify.full, verify.invariant, verify.fuzz, and verify.generated mappings in .vos/toolchain.json when the relevant spec obligations exist.",
+      "Every verify mapping value must name an existing test.suites entry; do not invent suite names without adding the suite command.",
+      "Public matrix required_tests may be covered by same-name test.suites or explicit verify mappings.",
+      "Generated tests, invariant obligations, and fuzz/hidden tags from operation specs must have suite coverage or be listed in self_reported_risks.",
+      "For xv6-spec, cover boot banner, allocator, trap/syscall, usertests, and grind-style fuzz/regression entrypoints when those stages are in scope.",
+      "Do not include hidden/staff-only test source in the patch; staff-only checks should use a staff-visible external mapping, not repo-visible hidden content.",
+      args.runRequested
+        ? "For --run, QEMU must emit XV6_BOOT_OK and the verify suites must still be runnable after the boot path succeeds."
+        : "For --build, the generated test suites must be runnable after the build completes.",
+    ].join("\n")
+    : "";
 
-  return `${basePrompt}\n\n${strictCodegenContract}\n\n${contextReviewContract}${buildRunContract ? `\n\n${buildRunContract}` : ""}`;
+  return `${basePrompt}\n\n${strictCodegenContract}\n\n${contextReviewContract}${buildRunContract ? `\n\n${buildRunContract}` : ""}${verifyContract ? `\n\n${verifyContract}` : ""}`;
 }
 
 function toPromptProfileEnvelope(profile: AgentTaskProfile): PromptProfileEnvelope {

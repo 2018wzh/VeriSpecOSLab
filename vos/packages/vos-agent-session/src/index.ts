@@ -17,7 +17,7 @@ export interface ContextBundle {
     effective_paths: number;
   };
   recommended_commands: string[];
-  visibility_scope: "public" | "agent-only";
+  visibility_scope: "public" | "agent-only" | "staff-only";
   spec_snippets: Array<{ kind: string; summary: string; path?: string }>;
   policy_flags: string[];
   project_tree: string[];
@@ -28,7 +28,7 @@ export interface AgentSession {
   agent_identity_id: string;
   role_prompt_id: string;
   capability_pack_id: string;
-  visibility_scope: "public" | "agent-only";
+  visibility_scope: "public" | "agent-only" | "staff-only";
   required_evidence?: Array<{ id: string; kind: string; path: string }>;
   required_stage?: StageId;
   created_at: string;
@@ -283,17 +283,6 @@ export function createRunTask(taskKind: string): AgentTaskRecord {
     notes: [],
   };
 }
-
-export type {
-  AgentSession,
-  AgentTaskContext,
-  AgentTaskRecord,
-  AgentRunnerClient,
-  AgentSessionResolver,
-  CapabilityPack,
-  ContextAssembler,
-  PatchGate,
-};
 
 export interface ContextRecord {
   session: AgentSession;

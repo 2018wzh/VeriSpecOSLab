@@ -1,4 +1,4 @@
-import { CliCommand } from "./types.ts";
+import type { CliCommand } from "./types.ts";
 import { CliError } from "./errors.ts";
 import * as handlers from "./commands/index.ts";
 import type { CommandOutcome, ExecContext } from "./bootstrap.ts";
@@ -32,25 +32,25 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
       return handlers.executeSpecLint(command, projectRoot, context, evidence);
 
     case "spec_normalize":
-      return handlers.executeSpecNormalize(command, projectRoot, evidence);
+      return handlers.executeSpecNormalize(command, projectRoot, context, evidence);
 
     case "spec_check_consistency":
-      return handlers.executeSpecCheckConsistency(command, projectRoot, evidence);
+      return handlers.executeSpecCheckConsistency(command, projectRoot, context, evidence);
 
     case "spec_patch_lint":
-      return handlers.executeSpecPatchLint(command, projectRoot, evidence);
+      return handlers.executeSpecPatchLint(command, projectRoot, context, evidence);
 
     case "spec_patch_apply":
-      return handlers.executeSpecPatchApply(command, projectRoot, evidence);
+      return handlers.executeSpecPatchApply(command, projectRoot, context, evidence);
 
     case "arch_lint":
       return handlers.executeArchLint(command, projectRoot, context, evidence);
 
     case "arch_compose":
-      return handlers.executeArchCompose(command, projectRoot, evidence);
+      return handlers.executeArchCompose(command, projectRoot, context, evidence);
 
     case "arch_derive_tests":
-      return handlers.executeArchDeriveTests(command, projectRoot, evidence);
+      return handlers.executeArchDeriveTests(command, projectRoot, context, evidence);
 
     case "build":
       return handlers.executeBuild(command, context, evidence, projectRoot);
