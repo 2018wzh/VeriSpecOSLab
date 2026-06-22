@@ -49,6 +49,7 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
 
   test("init records current HEAD and allows build with generated manifest", async () => {
     const projectRoot = makeGitProject({ manifest: true });
+    writeFileSync(join(projectRoot, ".gitignore"), "build/\n");
 
     const init = await executeCliInvocation([
       "bun",
@@ -60,6 +61,17 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
     ], { print: false });
     expect(init.status).toBe("passed");
     expect(readFileSync(join(projectRoot, ".vos", "commit-ledger.jsonl"), "utf8")).toContain("\"actor\":\"human\"");
+    expect(readFileSync(join(projectRoot, ".gitignore"), "utf8")).toBe("build/\n.vos/\n");
+
+    await executeCliInvocation([
+      "bun",
+      "vos",
+      "--project-root",
+      projectRoot,
+      "--json",
+      "init",
+    ], { print: false });
+    expect(readFileSync(join(projectRoot, ".gitignore"), "utf8")).toBe("build/\n.vos/\n");
 
     const build = await executeCliInvocation([
       "bun",

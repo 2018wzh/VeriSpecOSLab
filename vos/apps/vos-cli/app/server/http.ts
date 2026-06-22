@@ -5,6 +5,8 @@ import type { BaseCommandResult, CommandStatus, VosHttpRun } from "../types.ts";
 import type { RunEvent } from "../evidence/events.ts";
 import { executeCliInvocation } from "../main.ts";
 import type { PortalClient } from "../auth/portal-client.ts";
+import { createKbEmbedder } from "../kb/embedding.ts";
+import { importKbManifest } from "vos-kb";
 
 export interface VosHttpServerOptions {
   projectRoot: string;
@@ -52,6 +54,40 @@ export function createVosHttpHandler(options: VosHttpServerOptions): (req: Reque
     try {
       if (req.method === "POST" && url.pathname === "/api/v1/vos/runs") {
         return await createRun(req, {
+          runs,
+          projectRoot,
+          portalUrl: options.portalUrl,
+          projectId: options.projectId,
+          portalClient: options.portalClient,
+        });
+      }
+      if (req.method === "POST" && url.pathname === "/api/v1/vos/qa") {
+        const body = await req.json().catch(() => undefined) as {
+          question?: unknown;
+          stage?: unknown;
+          object_manifest?: unknown;
+          requested_by?: unknown;
+        } | undefined;
+        if (!body || typeof body.question !== "string" || !body.question.trim()) {
+          return json({ error: "question is required" }, 400);
+        }
+        if (body.object_manifest) {
+          await importKbManifest(projectRoot, body.object_manifest, { embedder: createKbEmbedder(projectRoot) });
+        }
+        return await createRun(new Request(req.url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            command: [
+              "agent",
+              "ask",
+              ...(typeof body.stage === "string" && body.stage.trim() ? ["--stage", body.stage.trim()] : []),
+              body.question.trim(),
+            ],
+            requested_by: typeof body.requested_by === "string" ? body.requested_by : "portal-qa",
+            reason: "knowledgebase_qa",
+          }),
+        }), {
           runs,
           projectRoot,
           portalUrl: options.portalUrl,

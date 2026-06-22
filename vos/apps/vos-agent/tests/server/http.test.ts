@@ -91,6 +91,26 @@ describe("vos-agent HTTP server", () => {
       headers: { Authorization: `Bearer ${login.token}` },
     }) as { stages: Array<{ stage: { key: string }; passed: boolean }> };
     expect(progress.stages.map((item) => item.stage.key)).toContain("memory-management");
+
+    const kbSources = await fetchJson("/api/v1/projects/project-demo-student/kb-sources", {
+      headers: { Authorization: `Bearer ${login.token}` },
+    }) as Array<{ id: string; object_ref_id: string }>;
+    expect(kbSources.map((source) => source.id)).toContain("kb-memory-manual");
+
+    const manifest = await fetchJson("/api/v1/projects/project-demo-student/objects/manifest", {
+      headers: { Authorization: `Bearer ${login.token}` },
+    }) as { version: number; objects: Array<{ uri: string }>; sources: Array<{ id: string }> };
+    expect(manifest.version).toBe(1);
+    expect(manifest.objects.every((object) => object.uri.startsWith("s3://vos-demo/"))).toBe(true);
+    expect(manifest.sources.map((source) => source.id)).toContain("kb-memory-manual");
+
+    const thread = await fetchJson("/api/v1/projects/project-demo-student/qa-threads", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${login.token}` },
+      body: { question: "How do I design allocator invariants?" },
+    }) as { messages: Array<{ role: string; object_refs: string[] }> };
+    expect(thread.messages.at(-1)?.role).toBe("assistant");
+    expect(thread.messages.at(-1)?.object_refs.length).toBeGreaterThan(0);
   });
 
   test("runs a non-streaming OpenAI-compatible chat completion", async () => {

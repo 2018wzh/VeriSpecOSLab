@@ -231,4 +231,48 @@ describe("vos-cli agent command parsing", () => {
     expect(() => parseArgs(["bun", "vos", "spec", "patch", "lint", "-"])).toThrow("SpecPatch YAML path or commit-ish");
     expect(() => parseArgs(["bun", "vos", "spec", "patch", "apply", "-"])).toThrow("SpecPatch YAML path or commit-ish");
   });
+
+  test("parses knowledgebase ask and CRUD commands", () => {
+    expect(parseArgs(["bun", "vos", "agent", "ask", "--stage", "memory", "How should I design kalloc?"]).command)
+      .toEqual({
+        kind: "agent_ask",
+        question: "How should I design kalloc?",
+        scope: "memory",
+      });
+
+    expect(parseArgs([
+      "bun",
+      "vos",
+      "kb",
+      "add",
+      "docs/manual.md",
+      "--source-kind",
+      "course",
+      "--stage",
+      "memory",
+      "--title",
+      "Memory Manual",
+      "--recursive",
+      "--manifest",
+      "kb-manifest.json",
+    ]).command)
+      .toEqual({
+        kind: "kb_add",
+        source: "docs/manual.md",
+        sourceKind: "course",
+        stage: "memory",
+        title: "Memory Manual",
+        recursive: true,
+        manifestPath: "kb-manifest.json",
+      });
+    expect(parseArgs(["bun", "vos", "kb", "search", "allocator invariant"]).command)
+      .toEqual({ kind: "kb_search", query: "allocator invariant" });
+    expect(parseArgs(["bun", "vos", "kb", "list"]).command).toEqual({ kind: "kb_list" });
+    expect(parseArgs(["bun", "vos", "kb", "remove", "kb-123"]).command).toEqual({ kind: "kb_remove", id: "kb-123" });
+    expect(parseArgs(["bun", "vos", "kb", "clear"]).command).toEqual({ kind: "kb_clear" });
+    expect(parseArgs(["bun", "vos", "kb", "export-manifest", "--out", "manifest.json"]).command)
+      .toEqual({ kind: "kb_export_manifest", outPath: "manifest.json" });
+    expect(parseArgs(["bun", "vos", "kb", "import-manifest", "manifest.json"]).command)
+      .toEqual({ kind: "kb_import_manifest", manifestPath: "manifest.json" });
+  });
 });

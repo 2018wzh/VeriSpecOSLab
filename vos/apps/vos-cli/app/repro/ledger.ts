@@ -155,7 +155,8 @@ async function findLedgerEntry(projectRoot: string, commitSha: string): Promise<
 function isIgnoredRuntimeArtifact(file: string): boolean {
   return file.startsWith(".vos/runs/") ||
     file.startsWith(".vos/index/") ||
-    file === ".vos/commit-ledger.jsonl";
+    file === ".vos/commit-ledger.jsonl" ||
+    file === ".gitignore";
 }
 
 function gitMaybe(projectRoot: string, args: string[]): { ok: true; stdout: string; stderr: string } | { ok: false; stdout: string; stderr: string } {

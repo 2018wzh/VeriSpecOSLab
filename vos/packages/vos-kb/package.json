@@ -1,0 +1,30 @@
+{
+  "name": "vos-kb",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./mcp": "./src/mcp.ts"
+  },
+  "bin": {
+    "vos-kb": "./src/mcp.ts"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "mime": "^4.1.0",
+    "officeparser": "^7.2.1",
+    "sqlite-vec": "^0.1.9",
+    "zod": "^4.4.3"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  }
+}

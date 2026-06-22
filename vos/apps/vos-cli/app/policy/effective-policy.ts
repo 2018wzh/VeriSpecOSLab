@@ -72,6 +72,7 @@ export function matchCommandIntent(command: readonly string[]): string {
   if (command[0] === "debug" && command[1] === "explain-log") return "debug explain-log";
   if (command[0] === "report" && command[1] === "generate") return "report generate";
   if (command[0] === "submit" && command[1] === "pack") return "submit pack";
+  if (command[0] === "kb" && command[1]) return `kb ${command[1]}`;
   if (command[0] === "agent" && command[1]) return `agent ${command[1]}`;
   return command[0] ?? "";
 }

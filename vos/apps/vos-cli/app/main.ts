@@ -11,6 +11,7 @@ import type {
   AgentReviewSpecCommand,
   AgentServeCommand,
   AgentValidateGeneratedCommand,
+  AgentAskCommand,
   ArchComposeCommand,
   ArchDeriveTestsCommand,
   ArchLintCommand,
@@ -26,6 +27,12 @@ import type {
   LoginCommand,
   LedgerRecordCommand,
   LogoutCommand,
+  KbAddCommand,
+  KbClearCommand,
+  KbExportManifestCommand,
+  KbImportManifestCommand,
+  KbRemoveCommand,
+  KbSearchCommand,
   ReportGenerateCommand,
   RunQemuCommand,
   ParsedInvocation,
@@ -94,8 +101,9 @@ import {
   startAgentServer,
   type HeadlessAgentRunner,
 } from "./agent/runner.ts";
-import { parseDebugOutput, parsePatchProposal, parsePlanDraft } from "./agent/schemas.ts";
+import { parseDebugOutput, parseKnowledgebaseAnswer, parsePatchProposal, parsePlanDraft } from "./agent/schemas.ts";
 import { applyPatchText, readPatchFromStdin } from "./agent/apply-patch.ts";
+import { createKbEmbedder, kbEmbeddingEnv } from "./kb/embedding.ts";
 import { defaultPortalClient, type PortalClient } from "./auth/portal-client.ts";
 import { getToken, normalizePortalUrl, removeToken, saveToken, updateStoredUser } from "./auth/store.ts";
 import { assertCommandAllowed, mergeEffectivePolicy } from "./policy/effective-policy.ts";
@@ -120,6 +128,15 @@ import {
   type NormalizedSpecBundle,
   type SpecDiagnostic,
 } from "vos-spec";
+import {
+  addKbSource,
+  clearKbSources,
+  exportKbManifest,
+  importKbManifest,
+  listKbSources,
+  removeKbSource,
+  searchKb,
+} from "vos-kb";
 
 const COMMAND_VERSION = "0.1.0";
 const TRACE_VALIDATION_AGENT_ATTEMPTS = 3;
@@ -599,7 +616,7 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
         actor: "human",
         intent: "initialize VOS project ledger",
         specRefs: [],
-        changedTargets: [".vos/project.yaml", ".vos/policy.yaml"],
+        changedTargets: [".vos/project.yaml", ".vos/policy.yaml", ".gitignore"],
         runId: evidence.run_id,
       });
       return { status: "passed", details: { initialized: true, ledger: true } };
@@ -909,6 +926,27 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
     case "ledger_record":
       return executeLedgerRecord(command, projectRoot, evidence);
 
+    case "kb_add":
+      return executeKbAdd(command, projectRoot, evidence);
+
+    case "kb_list":
+      return executeKbList(projectRoot);
+
+    case "kb_search":
+      return executeKbSearch(command, projectRoot);
+
+    case "kb_remove":
+      return executeKbRemove(command, projectRoot);
+
+    case "kb_clear":
+      return executeKbClear(projectRoot);
+
+    case "kb_export_manifest":
+      return executeKbExportManifest(command, projectRoot, evidence);
+
+    case "kb_import_manifest":
+      return executeKbImportManifest(command, projectRoot, evidence);
+
     case "agent_serve":
       return executeAgentServe(command, projectRoot, evidence);
 
@@ -994,6 +1032,9 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
 
     case "agent_review_spec":
       return executeAgentReviewSpec(command, context, evidence);
+
+    case "agent_ask":
+      return executeAgentAsk(command, context, evidence);
 
     default:
       throw new CliError(`unsupported command: ${JSON.stringify(command)}`, "failed");
@@ -1145,6 +1186,121 @@ async function executeLedgerRecord(
   };
 }
 
+async function executeKbAdd(
+  command: KbAddCommand,
+  projectRoot: string,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  const source = await addKbSource(projectRoot, {
+    source: command.source,
+    sourceKind: command.sourceKind,
+    stage: command.stage,
+    title: command.title,
+    recursive: command.recursive,
+  }, { embedder: createKbEmbedder(projectRoot) });
+  const artifact = path.join(projectRoot, ".vos", "kb", "last-add.json");
+  await mkdir(path.dirname(artifact), { recursive: true });
+  await writeFile(artifact, `${JSON.stringify(source, null, 2)}\n`);
+  evidence.addArtifact("kb", path.relative(projectRoot, artifact), "kb source added");
+  if (command.manifestPath) {
+    const manifest = await exportKbManifest(projectRoot);
+    const manifestPath = path.resolve(projectRoot, command.manifestPath);
+    await mkdir(path.dirname(manifestPath), { recursive: true });
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    evidence.addArtifact("kb", path.relative(projectRoot, manifestPath), "kb object manifest");
+  }
+  return {
+    status: "passed",
+    details: {
+      source,
+      object_ref: source.object_ref,
+      message: "kb source added",
+    },
+  };
+}
+
+async function executeKbList(projectRoot: string): Promise<CommandOutcome> {
+  const sources = await listKbSources(projectRoot);
+  return {
+    status: "passed",
+    details: {
+      count: sources.length,
+      sources,
+    },
+  };
+}
+
+async function executeKbSearch(command: KbSearchCommand, projectRoot: string): Promise<CommandOutcome> {
+  const hits = await searchKb(projectRoot, command.query, { embedder: createKbEmbedder(projectRoot) });
+  return {
+    status: "passed",
+    details: {
+      query: command.query,
+      hits,
+    },
+  };
+}
+
+async function executeKbRemove(command: KbRemoveCommand, projectRoot: string): Promise<CommandOutcome> {
+  const removed = await removeKbSource(projectRoot, command.id);
+  return {
+    status: removed ? "passed" : "validation_failed",
+    details: {
+      id: command.id,
+      removed,
+      message: removed ? "kb source removed" : "kb source not found",
+    },
+  };
+}
+
+async function executeKbClear(projectRoot: string): Promise<CommandOutcome> {
+  await clearKbSources(projectRoot);
+  return {
+    status: "passed",
+    details: {
+      cleared: true,
+      message: "kb sources cleared",
+    },
+  };
+}
+
+async function executeKbExportManifest(
+  command: KbExportManifestCommand,
+  projectRoot: string,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  const manifest = await exportKbManifest(projectRoot);
+  const outPath = path.resolve(projectRoot, command.outPath ?? path.join(".vos", "kb", "manifests", "object-manifest.json"));
+  await mkdir(path.dirname(outPath), { recursive: true });
+  await writeFile(outPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  evidence.addArtifact("kb", path.relative(projectRoot, outPath), "kb object manifest");
+  return {
+    status: "passed",
+    details: {
+      path: path.relative(projectRoot, outPath),
+      manifest,
+    },
+  };
+}
+
+async function executeKbImportManifest(
+  command: KbImportManifestCommand,
+  projectRoot: string,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  const manifestPath = path.resolve(projectRoot, command.manifestPath);
+  const manifest = await importKbManifest(projectRoot, JSON.parse(await readFile(manifestPath, "utf8")), { embedder: createKbEmbedder(projectRoot) });
+  evidence.addArtifact("kb", path.relative(projectRoot, manifestPath), "kb object manifest imported");
+  return {
+    status: "passed",
+    details: {
+      manifest,
+      source_count: manifest.sources.length,
+      object_count: manifest.objects.length,
+    },
+  };
+}
+
 async function executeBuildGenerate(
   command: BuildGenerateCommand,
   context: ExecContext,
@@ -1196,7 +1352,9 @@ async function executeBuildGenerate(
   evidence.addArtifactFromPath("toolchain", instructionsPath, "agent build instructions");
 
   const changedTargets = [...new Set([...draft.changed_targets, ...draft.files.map((file) => file.path), ".vos/toolchain.json"])];
-  git(projectRoot, ["add", ...changedTargets]);
+  git(projectRoot, ["add", ...changedTargets.filter((target) => !target.startsWith(".vos/"))]);
+  const ignoredVosTargets = changedTargets.filter((target) => target.startsWith(".vos/"));
+  if (ignoredVosTargets.length > 0) git(projectRoot, ["add", "-f", ...ignoredVosTargets]);
   git(projectRoot, ["commit", "-m", "[vos][toolchain] Generate build system"]);
   const commitSha = currentHead(projectRoot);
   if (commitSha) {
@@ -1674,6 +1832,95 @@ async function executeAgentReviewSpec(
   };
 }
 
+async function executeAgentAsk(
+  command: AgentAskCommand,
+  context: ExecContext,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  const projectRoot = context.projectRoot;
+  const requestedScope = command.scope ?? await currentStageForProject(projectRoot).catch(() => "agent.ask");
+  updateProgress(context, { stage: "agent ask", status: "running", message: "building context" });
+  const bundle = await buildContextBundle({
+    projectRoot,
+    requestedScope,
+    effectivePolicy: context.effectivePolicy,
+  });
+  const embedder = createKbEmbedder(projectRoot);
+  const kbHits = await searchKb(projectRoot, command.question, { limit: 5, embedder });
+  const kbManifest = await exportKbManifest(projectRoot);
+  const prompt = [
+    "Answer this VOS lab design question as knowledgebase.v1.",
+    "Return JSON only with { answer, stage_key, design_goal_alignment, citations, suggested_next_steps, allowed_snippets }.",
+    "Use current stage/spec context, public evidence, and KB citations.",
+    "Small illustrative snippets are allowed; do not return a full patch or full module.",
+    JSON.stringify({
+      question: command.question,
+      requested_scope: requestedScope,
+      context: bundle,
+      kb_hits: kbHits,
+      object_manifest: kbManifest,
+    }, null, 2),
+  ].join("\n\n");
+  updateProgress(context, { stage: "agent ask", status: "running", message: "waiting for agent" });
+  const agentProgress = createAgentProgressParams(context, "agent ask");
+  const response = await runAgentWithPrompt({
+    projectRoot,
+    taskPrompt: agentProgress.taskPrompt(prompt),
+    taskKind: "knowledgebase_qa",
+    requestedScope,
+    context: { bundle, kb_hits: kbHits },
+    courseMode: true,
+    allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+    extraMcpServers: [
+      ...agentProgress.extraMcpServers,
+      {
+        name: "vos-kb",
+        command: process.execPath,
+        args: [path.resolve(import.meta.dir, "../../../packages/vos-kb/src/mcp.ts")],
+        cwd: projectRoot,
+        env: { VOS_PROJECT_ROOT: projectRoot, ...kbEmbeddingEnv(projectRoot) },
+      },
+    ],
+    onEvent: agentProgress.onEvent,
+    runner: context.agentRunner,
+  });
+  let parsed: ReturnType<typeof parseKnowledgebaseAnswer>;
+  try {
+    parsed = parseKnowledgebaseAnswer(parseJsonFromText(response.resultText));
+  } catch (error) {
+    throw new AgentOutputError(`knowledgebase answer does not match knowledgebase_answer.v1: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const artifact = path.join(projectRoot, ".vos", "agent-ask.json");
+  await writeFile(artifact, `${JSON.stringify({ question: command.question, answer: parsed, kb_hits: kbHits, object_manifest: kbManifest }, null, 2)}\n`);
+  evidence.addArtifact("agent", path.relative(projectRoot, artifact), "knowledgebase answer");
+  const logPath = await recordAICollaboration({
+    projectRoot,
+    event: {
+      session_id: contextSessionId(context),
+      task_kind: "knowledgebase_qa",
+      agent_profile: resolvePromptProfileEnvelope("knowledgebase_qa"),
+      related_specs: bundle.resolved_specs,
+      allowed_paths: bundle.allowed_paths,
+      output_kind: "knowledgebase_answer",
+      result: "accepted",
+      created_at: new Date().toISOString(),
+      evidence_ref: path.relative(projectRoot, artifact),
+    },
+  });
+  evidence.addArtifact("agent", path.relative(projectRoot, logPath), "agent ask log");
+  return {
+    status: "passed",
+    details: {
+      question: command.question,
+      scope: requestedScope,
+      answer: parsed,
+      kb_hits: kbHits,
+      object_manifest: kbManifest,
+      raw_events: response.rawEvents,
+    },
+  };
+}
+
 async function executeAgentValidateGenerated(
   command: AgentValidateGeneratedCommand,
   context: ExecContext,
@@ -2147,6 +2394,37 @@ export function commandToArray(command: CliCommand): string[] {
         "review-spec",
         ...(command.target ? ["--target", command.target] : []),
       ];
+    case "agent_ask":
+      return [
+        "agent",
+        "ask",
+        ...(command.scope ? ["--stage", command.scope] : []),
+        command.question,
+      ];
+    case "kb_add":
+      return [
+        "kb",
+        "add",
+        command.source,
+        "--source-kind",
+        command.sourceKind,
+        ...(command.stage ? ["--stage", command.stage] : []),
+        ...(command.title ? ["--title", command.title] : []),
+        ...(command.recursive ? ["--recursive"] : []),
+        ...(command.manifestPath ? ["--manifest", command.manifestPath] : []),
+      ];
+    case "kb_list":
+      return ["kb", "list"];
+    case "kb_search":
+      return ["kb", "search", command.query];
+    case "kb_remove":
+      return ["kb", "remove", command.id];
+    case "kb_clear":
+      return ["kb", "clear"];
+    case "kb_export_manifest":
+      return ["kb", "export-manifest", ...(command.outPath ? ["--out", command.outPath] : [])];
+    case "kb_import_manifest":
+      return ["kb", "import-manifest", command.manifestPath];
     case "report_generate":
       return ["report", "generate"];
     case "submit_pack":
@@ -2637,9 +2915,17 @@ function printHelp(topic?: string): void {
     "  report generate",
     "  submit pack",
     "  ledger record --actor human|agent --intent <text> [--spec-ref <ref>]... [--changed-target <path>]...",
+    "  kb add <path-or-url> [--source-kind course|project|external] [--stage <stage>] [--title <title>] [--recursive] [--manifest <path>]",
+    "  kb list",
+    "  kb search <query>",
+    "  kb remove <source-id>",
+    "  kb clear",
+    "  kb export-manifest [--out <path>]",
+    "  kb import-manifest <path>",
     "  agent serve [--host --port]",
     "  agent context [--scope <scope>]",
     "  agent plan [--scope <scope>|--stage <stage>] [--task <task>]",
+    "  agent ask [--stage <stage>] <question>",
     "  agent generate [target] [--target <target>] [--apply] [--build] [--run]",
     "  agent apply-patch [--patch-file <file>] [--run-validation] [--no-require-spec]",
     "  agent validate-generated --target <value> [--patch-file <file>] [--keep-worktree]",

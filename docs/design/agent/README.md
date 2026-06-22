@@ -47,6 +47,12 @@ capabilities from the selected pack, but they cannot add capabilities.
 | `reviewer.v2` | Review patches, evidence, risk flags, and audit records. | Read patch/spec/evidence, no implementation writes. |
 | `reporter.v2` | Produce reports and evidence maps. | Read evidence/spec/report inputs, write report targets only. |
 | `toolchain-author.v2` | Maintain build/run/debug semantics. | Write `spec/toolchain/**`, run `vos build generate` and `vos build`. |
+| `knowledgebase.v1` | Help students make stage-bounded design decisions from course/project/reference knowledge. | Read course KB, public specs/evidence/code, approved web snapshots, no workspace writes. |
+
+`knowledgebase.v1` is specified in
+[`knowledgebase-agent-v1.md`](./knowledgebase-agent-v1.md). It replaces the
+older prototype `knowledgebase-agent.v1` profile and is entered through
+`vos agent ask`.
 
 ## Session Envelope
 
@@ -182,6 +188,7 @@ Every Agent session records:
 - policy snapshot
 - advertised tools and commands
 - loaded skills and MCP servers
+- KB source ids and object refs used by `knowledgebase.v1`
 - changed targets or generated reports
 - validation and evidence refs
 - clean tree gate status

@@ -33,6 +33,7 @@ import {
   type ChatMessage,
   type DemoRun,
   type EvidenceRecord,
+  type ObjectRef,
   type ProjectOverview,
   type QueryBundle,
   type RunLogLine,
@@ -58,7 +59,7 @@ const legacyTargets: Record<string, string> = {
   "/evidence": "/runs",
   "/audit": "/runs",
   "/agent-qa": "/runs",
-  "/chat": "/labs",
+  "/chat": "/qa",
   "/teacher": "/labs/experiment-xv6-spec",
   "/ta": "/runs",
   "/scores": "/grades",
@@ -209,6 +210,7 @@ function AuthedApp() {
       <Routes>
         <Route path="/labs" element={<LabsPage bundle={bundle} />} />
         <Route path="/labs/:labId" element={<LabDetailPage bundle={bundle} user={currentUser} />} />
+        <Route path="/qa" element={<QaPage bundle={bundle} user={currentUser} onMutate={refresh} />} />
         <Route path="/runs" element={<RunsPage bundle={bundle} user={currentUser} />} />
         <Route path="/runs/:runId" element={<RunDetailPage bundle={bundle} user={currentUser} onMutate={refresh} />} />
         <Route path="/grades" element={<GradesPage bundle={bundle} user={currentUser} onToast={refresh} />} />
@@ -249,6 +251,7 @@ function Shell({
 }) {
   const nav = [
     { to: "/labs", label: "Labs", icon: <BookOpen size={18} /> },
+    { to: "/qa", label: "Q&A", icon: <MessageSquare size={18} /> },
     { to: "/runs", label: "Runs", icon: <PlayCircle size={18} /> },
     { to: "/grades", label: "Grades", icon: <GraduationCap size={18} /> },
   ];
@@ -291,6 +294,64 @@ function Shell({
         <main>{children}</main>
       </div>
     </div>
+  );
+}
+
+function QaPage({ bundle, user, onMutate }: { bundle: QueryBundle; user: User; onMutate: (text?: string) => void }) {
+  const [draft, setDraft] = useState("");
+  const projectId = bundle.activeProject?.project.id;
+  const messages = bundle.chatThread?.messages ?? [];
+
+  function send() {
+    if (!projectId || !draft.trim()) return;
+    portal.sendChat(user, projectId, draft.trim());
+    setDraft("");
+    onMutate("KnowledgeBaseAgent Q&A saved locally with object refs.");
+  }
+
+  return (
+    <Page title="Q&A" subtitle="Stage-bound design help backed by course, project, and reference objects.">
+      <div className="two-column">
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>{bundle.activeProject?.current_stage.name ?? "Current stage"}</h2>
+              <p>{bundle.activeProject?.project.id ?? "No project selected"}</p>
+            </div>
+            <StatusPill status="knowledgebase.v1" />
+          </div>
+          <div className="assistant-messages inline">
+            {messages.map((message) => (
+              <AssistantMessage key={message.id} message={message} evidence={bundle.evidence} objects={bundle.objects} />
+            ))}
+          </div>
+          <form
+            className="assistant-composer"
+            onSubmit={(event) => {
+              event.preventDefault();
+              send();
+            }}
+          >
+            <textarea value={draft} placeholder="Ask a design question for the current stage" onChange={(event) => setDraft(event.target.value)} />
+            <button className="primary-button" type="submit" disabled={!draft.trim()}><Send size={16} />Send</button>
+          </form>
+        </section>
+        <section className="panel">
+          <h2>Object-backed sources</h2>
+          <div className="artifact-list">
+            {bundle.objects.map((object) => (
+              <div className="artifact-row" key={object.id}>
+                <FileText size={16} />
+                <div>
+                  <strong>{object.label}</strong>
+                  <span>{object.content_type} · {object.uri}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+    </Page>
   );
 }
 
@@ -800,7 +861,9 @@ function AssistantDrawer({
           <span>Mode: read-only mock</span>
         </div>
         <div className="assistant-messages">
-          {messages.slice(-6).map((message) => <AssistantMessage key={message.id} message={message} evidence={bundle.evidence} />)}
+          {messages.slice(-6).map((message) => (
+            <AssistantMessage key={message.id} message={message} evidence={bundle.evidence} objects={bundle.objects} />
+          ))}
         </div>
         <form
           className="assistant-composer"
@@ -817,13 +880,15 @@ function AssistantDrawer({
   );
 }
 
-function AssistantMessage({ message, evidence }: { message: ChatMessage; evidence: EvidenceRecord[] }) {
+function AssistantMessage({ message, evidence, objects }: { message: ChatMessage; evidence: EvidenceRecord[]; objects: ObjectRef[] }) {
   const refs = evidence.filter((item) => message.evidence_refs.includes(item.id));
+  const objectRefs = objects.filter((item) => message.object_refs.includes(item.id));
   return (
     <div className={`assistant-message ${message.role}`}>
       <strong>{message.role}</strong>
       <p>{message.content}</p>
       {refs.length ? <small>{refs.map((item) => `${item.suite}/${item.case_name}`).join(", ")}</small> : null}
+      {objectRefs.length ? <small>{objectRefs.map((item) => item.label).join(", ")}</small> : null}
     </div>
   );
 }

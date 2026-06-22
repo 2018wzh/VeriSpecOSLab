@@ -255,6 +255,50 @@ export interface AgentReviewSpecCommand extends BaseCommand {
   target?: string;
 }
 
+export interface AgentAskCommand extends BaseCommand {
+  kind: "agent_ask";
+  question: string;
+  scope?: string;
+}
+
+export interface KbAddCommand extends BaseCommand {
+  kind: "kb_add";
+  source: string;
+  sourceKind: "course" | "project" | "external";
+  stage?: string;
+  title?: string;
+  recursive?: boolean;
+  manifestPath?: string;
+}
+
+export interface KbListCommand extends BaseCommand {
+  kind: "kb_list";
+}
+
+export interface KbSearchCommand extends BaseCommand {
+  kind: "kb_search";
+  query: string;
+}
+
+export interface KbRemoveCommand extends BaseCommand {
+  kind: "kb_remove";
+  id: string;
+}
+
+export interface KbClearCommand extends BaseCommand {
+  kind: "kb_clear";
+}
+
+export interface KbExportManifestCommand extends BaseCommand {
+  kind: "kb_export_manifest";
+  outPath?: string;
+}
+
+export interface KbImportManifestCommand extends BaseCommand {
+  kind: "kb_import_manifest";
+  manifestPath: string;
+}
+
 export type CliCommand =
   | LoginCommand
   | LogoutCommand
@@ -291,6 +335,14 @@ export type CliCommand =
   | AgentDebugCommand
   | AgentLogCommand
   | AgentReviewSpecCommand
+  | AgentAskCommand
+  | KbAddCommand
+  | KbListCommand
+  | KbSearchCommand
+  | KbRemoveCommand
+  | KbClearCommand
+  | KbExportManifestCommand
+  | KbImportManifestCommand
   | { kind: "help"; topic?: string };
 
 export interface ParsedInvocation {

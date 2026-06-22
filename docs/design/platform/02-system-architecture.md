@@ -111,8 +111,9 @@
 
 ### 2.7 Artifact Store
 
-- 保存构建产物、日志、trace、报告、镜像、审计日志
+- 保存构建产物、日志、trace、报告、镜像、审计日志、KB source snapshot 和 web reference snapshot
 - 为 Portal、Judge、Analytics 提供只读访问
+- 为云端 runner replay 提供 object manifest；runner 恢复到 `.vos/kb/` 后再运行 `vos`
 
 ### 2.8 Agent Governance
 
@@ -183,6 +184,19 @@ IDE / CLI -> local vos-agent
   -> Portal displays governance record
 ```
 
+### 4.5 学生设计问答
+
+```text
+Portal Q&A or CLI -> vos agent ask
+  -> knowledgebase.v1 reads vos-kb / public spec / public evidence
+  -> optional web search snapshot stored as object ref
+  -> answer + citations + audit summary
+  -> Portal stores thread and object refs
+```
+
+Portal 不直接执行 workspace tools。云端场景由 runner checkout commit、拉取
+object manifest、恢复 `.vos/kb/`，再运行 authenticated `vos agent ask`。
+
 ## 5. 状态流
 
 平台需要统一管理以下状态流：
@@ -200,7 +214,7 @@ IDE / CLI -> local vos-agent
 - Repo 创建失败必须可重试且不能产生重复项目。
 - Pipeline 与 Judge 必须能关联到唯一的冻结输入和证据输出。
 - 本地 Agent 或 `vos` 在无法确定项目/身份/阶段时不得回退到 Portal-audited 模式。
-- Artifact Store 不得成为主状态真相，只保存证据与只读产物。
+- Artifact Store 不得成为主状态真相，只保存证据、KB snapshot、web snapshot、runner replay manifest 与只读产物。
 
 ## 7. VeriSpecOSLab 特化说明
 

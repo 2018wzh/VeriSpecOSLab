@@ -3,6 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildAgentEnv } from "../app/agent/runner.ts";
+import { buildKbEmbeddingConfig } from "../app/kb/embedding.ts";
 import { readProjectEnv, withProjectEnv } from "../app/utils/dotenv.ts";
 
 const tmpRoots: string[] = [];
@@ -79,6 +80,63 @@ describe(".env loading", () => {
         process.env.CLI_ENV_TEST = previous;
       }
     }
+  });
+
+  test("builds KB embedding config from dedicated section before agent fallback", () => {
+    const projectRoot = makeProject();
+    mkdirSync(join(projectRoot, ".vos"), { recursive: true });
+    writeFileSync(join(projectRoot, ".vos", "config.toml"), [
+      "[agent]",
+      "provider = \"deepseek\"",
+      "model = \"deepseek-chat\"",
+      "base_url = \"https://api.deepseek.com/v1\"",
+      "",
+      "[agent.auth]",
+      "env = \"DEEPSEEK_API_KEY\"",
+      "",
+      "[kb.embedding]",
+      "provider = \"openai-compatible\"",
+      "model = \"text-embedding-3-small\"",
+      "base_url = \"https://embed.example/v1\"",
+      "",
+      "[kb.embedding.auth]",
+      "env = \"EMBEDDING_API_KEY\"",
+      "",
+    ].join("\n"));
+    writeFileSync(join(projectRoot, ".env"), "DEEPSEEK_API_KEY=agent-key\nEMBEDDING_API_KEY=embed-key\n");
+
+    expect(buildKbEmbeddingConfig(projectRoot, {} as NodeJS.ProcessEnv)).toEqual({
+      baseUrl: "https://embed.example/v1",
+      model: "text-embedding-3-small",
+      apiKey: "embed-key",
+    });
+  });
+
+  test("falls back to OpenAI-compatible agent config for KB embeddings", () => {
+    const projectRoot = makeProject();
+    mkdirSync(join(projectRoot, ".vos"), { recursive: true });
+    writeFileSync(join(projectRoot, ".vos", "config.toml"), [
+      "[agent]",
+      "provider = \"deepseek\"",
+      "model = \"deepseek-chat\"",
+      "base_url = \"https://api.deepseek.com/v1\"",
+      "",
+      "[agent.auth]",
+      "env = \"DEEPSEEK_API_KEY\"",
+      "",
+    ].join("\n"));
+    writeFileSync(join(projectRoot, ".env"), "DEEPSEEK_API_KEY=agent-key\n");
+
+    expect(buildKbEmbeddingConfig(projectRoot, {} as NodeJS.ProcessEnv)).toEqual({
+      baseUrl: "https://api.deepseek.com/v1",
+      model: "text-embedding-3-small",
+      apiKey: "agent-key",
+    });
+  });
+
+  test("rejects missing KB embedding provider config", () => {
+    const projectRoot = makeProject();
+    expect(() => buildKbEmbeddingConfig(projectRoot, {} as NodeJS.ProcessEnv)).toThrow(/kb embedding/i);
   });
 });
 

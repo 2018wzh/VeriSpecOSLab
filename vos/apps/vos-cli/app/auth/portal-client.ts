@@ -5,6 +5,9 @@ import { normalizePortalUrl } from "./store.ts";
 export interface PortalClient {
   getMe(portalUrl: string, token: string): Promise<PortalUserSummary>;
   getProjectPolicy(portalUrl: string, projectId: string, token: string): Promise<PolicySnapshot>;
+  getProjectObjectManifest?(portalUrl: string, projectId: string, token: string): Promise<unknown>;
+  reportKbManifest?(portalUrl: string, projectId: string, token: string, manifest: unknown): Promise<void>;
+  reportAgentAudit?(portalUrl: string, projectId: string, token: string, audit: unknown): Promise<void>;
 }
 
 export class HttpPortalClient implements PortalClient {
@@ -47,6 +50,32 @@ export class HttpPortalClient implements PortalClient {
       });
     }
     return policy;
+  }
+
+  async getProjectObjectManifest(portalUrl: string, projectId: string, token: string): Promise<unknown> {
+    const response = await fetch(`${normalizePortalUrl(portalUrl)}/api/v1/projects/${encodeURIComponent(projectId)}/objects/manifest`, {
+      headers: authHeaders(token),
+    });
+    if (!response.ok) throw portalError(response.status, "objects_unavailable");
+    return await response.json();
+  }
+
+  async reportKbManifest(portalUrl: string, projectId: string, token: string, manifest: unknown): Promise<void> {
+    const response = await fetch(`${normalizePortalUrl(portalUrl)}/api/v1/internal/objects`, {
+      method: "POST",
+      headers: { ...authHeaders(token), "content-type": "application/json" },
+      body: JSON.stringify({ project_id: projectId, ...(typeof manifest === "object" && manifest ? manifest as Record<string, unknown> : {}) }),
+    });
+    if (!response.ok) throw portalError(response.status, "objects_report_failed");
+  }
+
+  async reportAgentAudit(portalUrl: string, projectId: string, token: string, audit: unknown): Promise<void> {
+    const response = await fetch(`${normalizePortalUrl(portalUrl)}/api/v1/internal/agent-audit`, {
+      method: "POST",
+      headers: { ...authHeaders(token), "content-type": "application/json" },
+      body: JSON.stringify({ project_id: projectId, audit }),
+    });
+    if (!response.ok) throw portalError(response.status, "agent_audit_report_failed");
   }
 }
 

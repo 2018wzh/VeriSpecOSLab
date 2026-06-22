@@ -16,7 +16,8 @@ type OutputSchemaId =
   | "spec_compiler_output.v1"
   | "validator_feedback.v1"
   | "debug_output.v1"
-  | "reference_payload.v1";
+  | "reference_payload.v1"
+  | "knowledgebase_answer.v1";
 
 type VisibilityScope =
   | "student-public"
@@ -133,13 +134,13 @@ const PROFILE_CONFIGS: AgentTaskProfileConfig[] = [
     visibilityScope: "agent-public",
   },
   {
-    promptId: "knowledgebase-agent.v1",
+    promptId: "knowledgebase.v1",
     mode: "smart",
-    taskKinds: ["reference_lookup", "explain_concept", "compare_design"],
+    taskKinds: ["knowledgebase_qa", "reference_lookup", "explain_concept", "compare_design"],
     toolProfile: "readonly-reference",
     skills: ["reference-policy", "teaching-explanation"],
-    mcpServers: ["course-kb", "spec-index"],
-    outputSchema: "reference_payload.v1",
+    mcpServers: ["vos-kb", "course-kb", "spec-index"],
+    outputSchema: "knowledgebase_answer.v1",
     visibilityScope: "student-public",
   },
 ];
@@ -150,7 +151,7 @@ const TOOL_PROFILE_TOOLS: Record<ToolProfile, readonly string[]> = {
   "readonly-codegen": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task"],
   "readonly-validation": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task"],
   "readonly-debug": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task"],
-  "readonly-reference": ["Read", "Glob", "Grep", "TodoRead", "Task"],
+  "readonly-reference": ["Read", "Glob", "Grep", "TodoRead", "Task", "WebSearch", "WebFetch", "mcp__vos-kb__kb_search", "mcp__vos-kb__kb_lookup", "mcp__vos-kb__kb_list_sources"],
 };
 
 const TOOL_PROFILE_VOS_COMMANDS: Record<ToolProfile, readonly string[]> = {

@@ -8,6 +8,7 @@ import type {
   AgentReviewSpecCommand,
   AgentServeCommand,
   AgentValidateGeneratedCommand,
+  AgentAskCommand,
   ArchComposeCommand,
   ArchDeriveTestsCommand,
   ArchLintCommand,
@@ -21,6 +22,13 @@ import type {
   LoginCommand,
   LedgerRecordCommand,
   LogoutCommand,
+  KbAddCommand,
+  KbClearCommand,
+  KbExportManifestCommand,
+  KbImportManifestCommand,
+  KbListCommand,
+  KbRemoveCommand,
+  KbSearchCommand,
   ParsedInvocation,
   ReportGenerateCommand,
   RunQemuCommand,
@@ -68,6 +76,10 @@ const VALUE_FLAGS = new Set([
   "--run-validation",
   "--patch-file",
   "--keep-worktree",
+  "--source-kind",
+  "--title",
+  "--manifest",
+  "--out",
 ]);
 
 export function parseArgs(argv: string[]): ParsedInvocation {
@@ -634,6 +646,99 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
     return { kind: "submit_pack" } satisfies SubmitPackCommand;
   }
 
+  if (command === "kb") {
+    const second = rest[0];
+    if (second === "add") {
+      const source = rest[1];
+      let sourceKind: KbAddCommand["sourceKind"] = "project";
+      let stage: string | undefined;
+      let title: string | undefined;
+      let manifestPath: string | undefined;
+      let recursive = false;
+      if (!source || source.startsWith("-")) throw new Error("kb add requires <path-or-url>");
+      for (let i = 2; i < rest.length; i++) {
+        const arg = rest[i];
+        if (arg === "--source-kind") {
+          sourceKind = parseKbSourceKind(resolveRequiredValue(rest, i, arg));
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--source-kind=")) {
+          sourceKind = parseKbSourceKind(arg.slice("--source-kind=".length));
+          continue;
+        }
+        if (arg === "--stage") {
+          stage = resolveRequiredValue(rest, i, arg);
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--stage=")) {
+          stage = arg.slice("--stage=".length);
+          continue;
+        }
+        if (arg === "--title") {
+          title = resolveRequiredValue(rest, i, arg);
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--title=")) {
+          title = arg.slice("--title=".length);
+          continue;
+        }
+        if (arg === "--manifest") {
+          manifestPath = resolveRequiredValue(rest, i, arg);
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--manifest=")) {
+          manifestPath = arg.slice("--manifest=".length);
+          continue;
+        }
+        if (arg === "--recursive") {
+          recursive = true;
+          continue;
+        }
+        throw new Error(`unknown flag for kb add: ${arg}`);
+      }
+      return { kind: "kb_add", source, sourceKind, stage, title, recursive, manifestPath } satisfies KbAddCommand;
+    }
+    if (second === "list") return { kind: "kb_list" } satisfies KbListCommand;
+    if (second === "search") {
+      const query = rest.slice(1).join(" ").trim();
+      if (!query) throw new Error("kb search requires <query>");
+      return { kind: "kb_search", query } satisfies KbSearchCommand;
+    }
+    if (second === "remove") {
+      const id = rest[1];
+      if (!id || id.startsWith("-")) throw new Error("kb remove requires <source-id>");
+      return { kind: "kb_remove", id } satisfies KbRemoveCommand;
+    }
+    if (second === "clear") return { kind: "kb_clear" } satisfies KbClearCommand;
+    if (second === "export-manifest") {
+      let outPath: string | undefined;
+      for (let i = 1; i < rest.length; i++) {
+        const arg = rest[i];
+        if (arg === "--out") {
+          outPath = resolveRequiredValue(rest, i, arg);
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--out=")) {
+          outPath = arg.slice("--out=".length);
+          continue;
+        }
+        throw new Error(`unknown flag for kb export-manifest: ${arg}`);
+      }
+      return { kind: "kb_export_manifest", outPath } satisfies KbExportManifestCommand;
+    }
+    if (second === "import-manifest") {
+      const manifestPath = rest[1];
+      if (!manifestPath || manifestPath.startsWith("-")) throw new Error("kb import-manifest requires <path>");
+      return { kind: "kb_import_manifest", manifestPath } satisfies KbImportManifestCommand;
+    }
+    throw new Error(`unknown kb subcommand: ${second}`);
+  }
+
   if (command === "agent") {
     const second = rest[0];
     if (second === "serve") {
@@ -916,6 +1021,31 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       }
       return { kind: "agent_review_spec", target } satisfies AgentReviewSpecCommand;
     }
+    if (second === "ask") {
+      let question: string | undefined;
+      const scope = parseOptionalStringValue(rest, "--scope") ?? parseOptionalStringValue(rest, "--stage");
+      for (let i = 1; i < rest.length; i++) {
+        const arg = rest[i];
+        if (arg === "--scope" || arg === "--stage") {
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--scope=") || arg.startsWith("--stage=")) continue;
+        if (arg === "--task") {
+          question = resolveRequiredValue(rest, i, arg);
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--task=")) {
+          question = arg.slice("--task=".length);
+          continue;
+        }
+        if (arg.startsWith("--")) throw new Error(`unknown flag for agent ask: ${arg}`);
+        question = [question, arg].filter(Boolean).join(" ");
+      }
+      if (!question?.trim()) throw new Error("agent ask requires a question");
+      return { kind: "agent_ask", question: question.trim(), scope } satisfies AgentAskCommand;
+    }
 
     throw new Error(`unknown agent subcommand: ${second}`);
   }
@@ -940,6 +1070,11 @@ function isVerifyScope(value: string): value is VerifyScope {
     "goal",
     "trace",
   ].includes(value);
+}
+
+function parseKbSourceKind(value: string): KbAddCommand["sourceKind"] {
+  if (value === "course" || value === "project" || value === "external") return value;
+  throw new Error("--source-kind must be one of: course, project, external");
 }
 
 function parseOptionalStringValue(args: string[], flag: string): string | undefined {

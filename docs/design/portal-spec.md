@@ -5,12 +5,14 @@
 ## 1. 总体架构
 *   **Backend**: 独立 Portal API / platform backend + optional PostgreSQL / Redis adapters
 *   **Frontend**: React + TypeScript + Vite + Shadcn/UI + TailwindCSS
-*   **Integration**: 通过 Webhook 接收 Git 事件，通过 sandbox runner 启动 `vos serve` 或受控 `vos` runtime，接收 `vos` 上传的结构化摘要、manifest、evidence、report 和 artifact 引用。
+*   **Integration**: 通过 Webhook 接收 Git 事件，通过 sandbox runner 启动 `vos serve` 或受控 `vos` runtime，接收 `vos` 上传的结构化摘要、manifest、evidence、report、KB source manifest 和 artifact/object 引用。
 
 Portal 是课程控制面，不是实验 repo runtime。它不直接执行 QEMU、不解析
 `ToolchainSpec`、不读取本地 `spec/` 语义、不调用 workspace tools。所有与
 实验 checkout 相关的 build/run/test/verify、Agent 执行、patch gate 和本地
 evidence 生成都由 `vos-cli` / `vos-agent` 在 runner 或本地 workspace 内完成。
+Portal 可提供 Q&A 页面，但只作为 `vos agent ask` 的 runner/控制面入口和
+thread/object/audit 存储，不直接承载 workspace Agent 工具执行。
 
 ---
 
@@ -87,6 +89,31 @@ CREATE TABLE evidence (
 );
 ```
 
+### 2.4.1 对象存储与知识库引用
+```sql
+CREATE TABLE object_refs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID REFERENCES student_projects(id),
+    uri TEXT NOT NULL, -- s3://bucket/key 或等价对象存储 URI
+    sha256 TEXT NOT NULL,
+    content_type TEXT,
+    size_bytes BIGINT,
+    visibility TEXT NOT NULL DEFAULT 'student',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE kb_sources (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID REFERENCES student_projects(id),
+    source_kind TEXT NOT NULL, -- course, project, external
+    title TEXT NOT NULL,
+    object_ref_id UUID REFERENCES object_refs(id),
+    source_url TEXT,
+    stage_scope TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
 ### 2.5 评测与评分 (Judging & Scoring)
 ```sql
 -- 评分准则表
@@ -131,6 +158,11 @@ CREATE TABLE scores (
 *   `GET /api/v1/projects/{id}`: 获取项目详情（含进度、评分摘要）
 *   `GET /api/v1/projects/{id}/pipelines`: 获取项目流水线历史
 *   `GET /api/v1/projects/{id}/evidence`: 获取指定流水线的详细证据
+*   `GET /api/v1/projects/{id}/qa-threads`: 获取 stage 绑定问答线程
+*   `POST /api/v1/projects/{id}/qa-threads`: 创建或追加问答；后端调度 runner 内 `vos agent ask`
+*   `GET /api/v1/projects/{id}/kb-sources`: 获取学生可见 KB source refs
+*   `GET /api/v1/projects/{id}/objects/manifest`: 获取 runner replay 所需 object manifest
+*   `POST /api/v1/projects/{id}/objects/presign`: 为课程材料、web snapshot 或学生本地 KB 附件创建对象上传地址
 
 ### 3.3 教师端接口
 *   `GET /api/v1/teacher/courses`: 获取管理的课程
@@ -146,6 +178,8 @@ CREATE TABLE scores (
 ### 3.5 系统集成接口 (Internal/Webhook)
 *   `POST /api/v1/webhooks/gitea`: 接收 Gitea 的 Push 事件，触发后端同步
 *   `POST /api/v1/internal/evidence`: 供 CI Runner 调用，上报证据 JSON
+*   `POST /api/v1/internal/objects`: 供 Runner 上报 object manifest / KB source manifest
+*   `POST /api/v1/internal/agent-audit`: 供 Runner 上报 `knowledgebase.v1` 等 Agent 审计摘要
 
 ---
 
@@ -161,7 +195,13 @@ CREATE TABLE scores (
 ### 4.3 证据大屏 (Evidence View)
 *   可视化展示测试用例结果、QEMU 串口日志、不变量验证证据。
 
-### 4.4 评测仪表盘 (Evaluation Dashboard - Teacher)
+### 4.4 问答页面 (Q&A View)
+*   以当前 project/stage 为默认上下文，提供学生设计问答。
+*   显示 `knowledgebase.v1` 回答、citation、source/object refs 和建议 next steps。
+*   支持把问答 turn 标记为设计证据，关联到 DesignSubmission 或 stage review。
+*   显示对象存储中的课程手册、web snapshot、项目 KB source 清单。
+
+### 4.5 评测仪表盘 (Evaluation Dashboard - Teacher)
 *   **成绩分布**: 全班成绩分布直方图。
 *   **异常监控**: 标记“证据缺失”、“性能突变”或“AI 协作异常”的项目。
 *   **批量打分**: 支持对满足特定证据条件的学生进行批量评分。
@@ -175,6 +215,14 @@ CREATE TABLE scores (
 4.  **上报**: Runner 上报 `vos` 生成的 report、manifest、evidence 和 artifact 引用。
 5.  **同步**: 后端更新流水线状态与证据表。
 
+Runner 复现 Q&A 时，Portal 下发 object manifest；runner 在 checkout 后恢复到
+`.vos/kb/`，再运行 `vos agent ask`。Portal 只保存对象引用和审计摘要。
+
+v1 的对象存储是本地 S3-shape backend：manifest 保持 `s3://...` URI、
+sha256、content type、size、visibility，并在本地测试/runner replay 中携带可校验
+content snapshot。真实 S3/OSS 后端只替换上传、下载和 presign adapter，不改变
+`object_refs`、`kb_sources` 或 runner manifest 形状。
+
 ---
 
 ## 6. 核心业务流程：自动评测闭环
@@ -187,5 +235,5 @@ CREATE TABLE scores (
 
 ## 7. 后续扩展点 (待细化)
 *   **WebSocket 实时通知**: 实时推送 CI 进度与评分变化。
-*   **OSS 日志存储**: 大容量 Log 文件的托管。
+*   **OSS / S3-compatible 对象存储**: 大容量 Log、KB source、web snapshot、report 与 runner replay manifest 的托管。
 *   **RBAC 细粒度权限**: 区分助教与教师权限。

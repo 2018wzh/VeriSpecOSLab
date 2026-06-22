@@ -512,6 +512,125 @@ describe("vos-cli package agent runner", () => {
     expect(applyArtifactText).toContain("\"status\":\"ok\"");
     expect(readFileSync(join(projectRoot, "Makefile"), "utf8")).toContain("@echo syscall");
   });
+
+  test("agent ask injects vos-kb MCP and validates knowledgebase answers", async () => {
+    const projectRoot = makeProject();
+    mkdirSync(join(projectRoot, "spec"), { recursive: true });
+    writeFileSync(join(projectRoot, "manual.md"), "allocator ownership invariant\n");
+    const embeddingServer = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        const body = await request.json() as { input: string[] };
+        return Response.json({
+          data: body.input.map((text) => ({
+            embedding: [
+              text.toLowerCase().includes("allocator") ? 1 : 0,
+              text.toLowerCase().includes("ownership") ? 1 : 0,
+              0,
+            ],
+          })),
+        });
+      },
+    });
+    writeFileSync(join(projectRoot, ".vos", "config.toml"), [
+      "[kb.embedding]",
+      "provider = \"openai-compatible\"",
+      "model = \"fake\"",
+      `base_url = "http://127.0.0.1:${embeddingServer.port}"`,
+      "",
+      "[kb.embedding.auth]",
+      "env = \"EMBEDDING_API_KEY\"",
+      "",
+    ].join("\n"));
+    writeFileSync(join(projectRoot, ".env"), "EMBEDDING_API_KEY=test-key\n");
+    writeFileSync(join(projectRoot, ".vos", "project.yaml"), [
+      "project_id: runner-test",
+      "spec_root: spec",
+      "current_stage: memory",
+      "",
+    ].join("\n"));
+    writeFileSync(join(projectRoot, ".vos", "policy.yaml"), [
+      "allowed_paths:",
+      "  - spec",
+      "  - .vos",
+      "  - manual.md",
+      "allowed_commands:",
+      "  - agent ask",
+      "",
+    ].join("\n"));
+    const addEvidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["kb", "add"],
+      args: ["kb", "add"],
+    });
+    await executeCommand({
+      kind: "kb_add",
+      source: "manual.md",
+      sourceKind: "course",
+      stage: "memory",
+    }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence: addEvidence,
+    });
+
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["agent", "ask"],
+      args: ["agent", "ask"],
+    });
+    let captured: HeadlessAgentOptions | undefined;
+    const runner = async (options: HeadlessAgentOptions) => {
+      captured = options;
+      return {
+        content: JSON.stringify({
+          answer: "Keep page ownership explicit.",
+          stage_key: "memory",
+          design_goal_alignment: ["allocator invariant"],
+          citations: [{ source_id: "kb-any", title: "Memory Manual" }],
+          suggested_next_steps: ["run vos verify public --stage memory"],
+          allowed_snippets: [],
+        }),
+        events: [],
+      };
+    };
+
+    const result = await executeCommand({
+      kind: "agent_ask",
+      question: "How should I design allocator ownership?",
+      scope: "memory",
+    }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence,
+      agentRunner: runner,
+    });
+
+    expect(result.status).toBe("passed");
+    expect(captured?.extraMcpServers?.map((server) => server.name)).toContain("vos-kb");
+    expect(result.details.answer).toMatchObject({ answer: "Keep page ownership explicit." });
+
+    const badEvidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["agent", "ask"],
+      args: ["agent", "ask"],
+    });
+    const badRunner = async () => ({ content: JSON.stringify({ answer: "missing arrays" }), events: [] });
+    await expect(executeCommand({
+      kind: "agent_ask",
+      question: "bad schema?",
+      scope: "memory",
+    }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence: badEvidence,
+      agentRunner: badRunner,
+    })).rejects.toThrow(/knowledgebase_answer\.v1/);
+    await embeddingServer.stop(true);
+  });
 });
 
 function makeProject(): string {

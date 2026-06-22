@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export interface PlanDraft {
   task: string;
   related_specs: string[];
@@ -24,6 +26,20 @@ export interface DebugOutput {
   related_specs: string[];
   suggested_next_commands: string[];
   suggested_next_agent_task?: string;
+}
+
+export interface KnowledgebaseAnswer {
+  answer: string;
+  stage_key?: string;
+  design_goal_alignment: string[];
+  citations: Array<{
+    source_id: string;
+    title: string;
+    object_ref?: string;
+    chunk_id?: string;
+  }>;
+  suggested_next_steps: string[];
+  allowed_snippets: string[];
 }
 
 export interface AICollaborationLog {
@@ -137,4 +153,22 @@ export function parseDebugOutput(value: unknown): DebugOutput {
       ? value.suggested_next_agent_task
       : undefined,
   };
+}
+
+const knowledgebaseAnswerSchema = z.object({
+  answer: z.string(),
+  stage_key: z.string().optional(),
+  design_goal_alignment: z.array(z.string()),
+  citations: z.array(z.object({
+    source_id: z.string(),
+    title: z.string(),
+    object_ref: z.string().optional(),
+    chunk_id: z.string().optional(),
+  })),
+  suggested_next_steps: z.array(z.string()),
+  allowed_snippets: z.array(z.string()),
+});
+
+export function parseKnowledgebaseAnswer(value: unknown): KnowledgebaseAnswer {
+  return knowledgebaseAnswerSchema.parse(value);
 }

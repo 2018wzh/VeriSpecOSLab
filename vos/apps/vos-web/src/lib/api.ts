@@ -313,6 +313,7 @@ export interface ChatMessage {
   content: string;
   created_at: string;
   evidence_refs: string[];
+  object_refs: string[];
 }
 
 export interface ChatThread {
@@ -321,7 +322,28 @@ export interface ChatThread {
   stage_key: string;
   title: string;
   messages: ChatMessage[];
+  object_refs: string[];
   updated_at: string;
+}
+
+export interface ObjectRef {
+  id: string;
+  project_id: string;
+  uri: string;
+  sha256: string;
+  content_type: string;
+  size: number;
+  visibility: RunEventVisibility;
+  label: string;
+}
+
+export interface KbSource {
+  id: string;
+  project_id: string;
+  source_kind: "course" | "project" | "external";
+  title: string;
+  object_ref_id: string;
+  stage_scope?: string;
 }
 
 export interface DemoAction {
@@ -350,6 +372,8 @@ export interface DemoState {
   runs: DemoRun[];
   qa_notes: QaNote[];
   chat_threads: ChatThread[];
+  objects: ObjectRef[];
+  kb_sources: KbSource[];
   actions: DemoAction[];
 }
 
@@ -370,6 +394,7 @@ export interface QueryBundle {
   runs: DemoRun[];
   chatThread?: ChatThread;
   qaNotes: QaNote[];
+  objects: ObjectRef[];
 }
 
 export interface StorageLike {
@@ -491,6 +516,25 @@ export function createDemoPortal(storage: StorageLike = browserStorage) {
         runs,
         chatThread: activeProjectId ? chatThreadFor(state, activeProjectId) : undefined,
         qaNotes: isStaff(user) ? [...state.qa_notes] : [],
+        objects: activeProjectId ? objectsFor(state, user, activeProjectId) : [],
+      };
+    },
+    kbSources(user: User, projectId: string): KbSource[] {
+      const state = load();
+      const project = state.projects.find((item) => item.id === projectId);
+      if (!canSeeProject(user, project)) throw new DemoPortalError("forbidden", "Project is not visible to this role");
+      return state.kb_sources.filter((source) => source.project_id === projectId);
+    },
+    objectManifest(user: User, projectId: string): { version: 1; objects: ObjectRef[]; sources: KbSource[] } {
+      const state = load();
+      const project = state.projects.find((item) => item.id === projectId);
+      if (!canSeeProject(user, project)) throw new DemoPortalError("forbidden", "Project is not visible to this role");
+      const sources = state.kb_sources.filter((source) => source.project_id === projectId);
+      const objectIds = new Set(sources.map((source) => source.object_ref_id));
+      return {
+        version: 1,
+        objects: objectsFor(state, user, projectId).filter((object) => objectIds.has(object.id)),
+        sources,
       };
     },
     selectProject(user: User, projectId: string): void {
@@ -627,6 +671,8 @@ export function createDemoPortal(storage: StorageLike = browserStorage) {
         const thread = ensureChatThread(state, project, stage?.key ?? "current");
         const evidence = evidenceFor(state, user, project.id);
         const failing = evidence.find((item) => item.result !== "pass");
+        const objects = objectsFor(state, user, project.id);
+        const objectRefs = objects.slice(0, 2).map((object) => object.id);
         const created = nowIso();
         thread.messages.push({
           id: makeId("msg"),
@@ -634,6 +680,7 @@ export function createDemoPortal(storage: StorageLike = browserStorage) {
           content,
           created_at: created,
           evidence_refs: [],
+          object_refs: [],
         });
         thread.messages.push({
           id: makeId("msg"),
@@ -641,7 +688,9 @@ export function createDemoPortal(storage: StorageLike = browserStorage) {
           content: studentAssistantReply(content, stage, failing),
           created_at: addSecondsIso(18),
           evidence_refs: failing ? [failing.id] : [],
+          object_refs: objectRefs,
         });
+        thread.object_refs = unique([...thread.object_refs, ...objectRefs]);
         thread.updated_at = addSecondsIso(18);
         state.audits.unshift({
           id: makeId("audit"),
@@ -649,10 +698,10 @@ export function createDemoPortal(storage: StorageLike = browserStorage) {
           user_id: user.id,
           project_id: project.id,
           model: "local-readonly-demo",
-          task_kind: "student_chat",
+          task_kind: "knowledgebase_qa",
           prompt_summary: summarize(content),
-          response_summary: "Read-only student guidance generated from current stage and public evidence fixtures.",
-          risk_flags: ["readonly_demo"],
+          response_summary: "Read-only KnowledgeBaseAgent guidance generated from current stage, public evidence, and object-backed KB fixtures.",
+          risk_flags: ["readonly_demo", "object_refs"],
           risk_level: "low",
           created_at: thread.updated_at,
         });
@@ -875,7 +924,7 @@ function createSeedState(): DemoState {
     }),
   ];
   const audits: AgentAuditRecord[] = [
-    audit("audit-demo-memory", "run-demo-memory-debug", "user-student", "project-demo-student", "student_chat", "Explain memory allocator failure", "Suggested spec-first allocator invariant check.", ["readonly_demo"], "low", addMinutes(base, -29)),
+    audit("audit-demo-memory", "run-demo-memory-debug", "user-student", "project-demo-student", "knowledgebase_qa", "Explain memory allocator failure", "Suggested spec-first allocator invariant check.", ["readonly_demo"], "low", addMinutes(base, -29)),
     audit("audit-risk-resource", "run-risk-resource-audit", "user-risk", "project-risk-review", "failure_triage", "Debug resource failure", "Escalated because broad patch was suggested before verification.", ["large_patch_proposal"], "high", addMinutes(base, -18)),
   ];
   const chat_threads: ChatThread[] = [
@@ -886,9 +935,10 @@ function createSeedState(): DemoState {
       title: "Memory stage helper",
       updated_at: addMinutes(base, -10),
       messages: [
-        { id: "msg-seed-1", role: "system", content: "Standalone demo chat. No backend, model, runner, or file write is executed.", created_at: addMinutes(base, -12), evidence_refs: [] },
-        { id: "msg-seed-2", role: "assistant", content: "For Memory Management, start by aligning the allocator invariant in the ModuleSpec, then rerun `vos verify public --stage memory-management`.", created_at: addMinutes(base, -10), evidence_refs: ["ev-memory-alloc"] },
+        { id: "msg-seed-1", role: "system", content: "Standalone demo chat. No backend, model, runner, or file write is executed.", created_at: addMinutes(base, -12), evidence_refs: [], object_refs: [] },
+        { id: "msg-seed-2", role: "assistant", content: "For Memory Management, start by aligning the allocator invariant in the ModuleSpec, then rerun `vos verify public --stage memory-management`.", created_at: addMinutes(base, -10), evidence_refs: ["ev-memory-alloc"], object_refs: ["obj-memory-manual"] },
       ],
+      object_refs: ["obj-memory-manual"],
     },
   ];
   return {
@@ -906,6 +956,18 @@ function createSeedState(): DemoState {
     runs,
     qa_notes: [{ id: "note-risk-1", run_id: "run-risk-resource-audit", author_user_id: "user-ta", body: "Demo note: use this row to show escalation without exposing hidden test bodies.", created_at: addMinutes(base, -12) }],
     chat_threads,
+    objects: [
+      objectRef("obj-memory-manual", "project-demo-student", "course/memory-manual.md", "Memory lab manual", 4096),
+      objectRef("obj-memory-spec", "project-demo-student", "spec/memory-stage.yaml", "Memory stage spec snapshot", 2048),
+      objectRef("obj-trap-manual", "project-memory-track", "course/trap-manual.md", "Trap lab manual", 3072),
+      objectRef("obj-resource-ref", "project-risk-review", "external/fd-lifetime.md", "FD lifetime reference snapshot", 1536),
+    ],
+    kb_sources: [
+      kbSource("kb-memory-manual", "project-demo-student", "course", "Memory lab manual", "obj-memory-manual", "memory-management"),
+      kbSource("kb-memory-spec", "project-demo-student", "project", "Memory stage spec snapshot", "obj-memory-spec", "memory-management"),
+      kbSource("kb-trap-manual", "project-memory-track", "course", "Trap lab manual", "obj-trap-manual", "trap-privilege"),
+      kbSource("kb-resource-ref", "project-risk-review", "external", "FD lifetime reference snapshot", "obj-resource-ref", "syscall-surface"),
+    ],
     actions: [],
   };
 }
@@ -929,6 +991,8 @@ function mergeSeed(value: Partial<DemoState>): DemoState {
     runs: value.runs ?? seed.runs,
     qa_notes: value.qa_notes ?? seed.qa_notes,
     chat_threads: value.chat_threads ?? seed.chat_threads,
+    objects: value.objects ?? seed.objects,
+    kb_sources: value.kb_sources ?? seed.kb_sources,
     actions: value.actions ?? seed.actions,
   };
 }
@@ -1033,6 +1097,12 @@ function chatThreadFor(state: DemoState, projectId: string): ChatThread | undefi
   return state.chat_threads.find((thread) => thread.project_id === projectId);
 }
 
+function objectsFor(state: DemoState, user: User, projectId: string): ObjectRef[] {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!canSeeProject(user, project)) return [];
+  return state.objects.filter((object) => object.project_id === projectId && (isStaff(user) || object.visibility === "student"));
+}
+
 function ensureChatThread(state: DemoState, project: Project, stageKey: string): ChatThread {
   const existing = chatThreadFor(state, project.id);
   if (existing) return existing;
@@ -1047,7 +1117,9 @@ function ensureChatThread(state: DemoState, project: Project, stageKey: string):
       content: "Standalone demo chat. No backend, model, runner, or file write is executed.",
       created_at: nowIso(),
       evidence_refs: [],
+      object_refs: [],
     }],
+    object_refs: [],
     updated_at: nowIso(),
   };
   state.chat_threads.push(thread);
@@ -1221,6 +1293,37 @@ function evidenceRecord(
     metrics,
     log_segment: log,
     artifact_uri: `demo://evidence/${idValue}.json`,
+  };
+}
+
+function objectRef(idValue: string, projectId: string, key: string, label: string, size: number): ObjectRef {
+  return {
+    id: idValue,
+    project_id: projectId,
+    uri: `s3://vos-demo/${key}`,
+    sha256: `${idValue.replace(/[^a-z0-9]/g, "")}`.padEnd(64, "0").slice(0, 64),
+    content_type: key.endsWith(".md") ? "text/markdown" : "application/yaml",
+    size,
+    visibility: "student",
+    label,
+  };
+}
+
+function kbSource(
+  idValue: string,
+  projectId: string,
+  sourceKind: KbSource["source_kind"],
+  title: string,
+  objectRefId: string,
+  stageScope: string,
+): KbSource {
+  return {
+    id: idValue,
+    project_id: projectId,
+    source_kind: sourceKind,
+    title,
+    object_ref_id: objectRefId,
+    stage_scope: stageScope,
   };
 }
 

@@ -172,6 +172,44 @@ export interface DesignSubmission {
   feedback?: string;
 }
 
+export interface ObjectRef {
+  id: string;
+  project_id: string;
+  uri: string;
+  sha256: string;
+  content_type: string;
+  size: number;
+  visibility: "student" | "staff";
+  label: string;
+}
+
+export interface KbSource {
+  id: string;
+  project_id: string;
+  source_kind: "course" | "project" | "external";
+  title: string;
+  object_ref_id: string;
+  source_url?: string;
+  stage_scope?: string;
+}
+
+export interface QaMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  created_at: string;
+  object_refs: string[];
+}
+
+export interface QaThread {
+  id: string;
+  project_id: string;
+  stage_scope: string;
+  messages: QaMessage[];
+  object_refs: string[];
+  updated_at: string;
+}
+
 export interface TeacherProjectRow {
   project: Project;
   student: User;
@@ -194,6 +232,9 @@ interface PortalData {
   rubrics: EvaluationRubric[];
   scores: ScoreItem[];
   audits: AgentAuditRecord[];
+  objects: ObjectRef[];
+  kbSources: KbSource[];
+  qaThreads: QaThread[];
 }
 
 export class PortalApiError extends Error {
@@ -403,6 +444,110 @@ export class PortalStore {
       this.data.audits.filter((audit) => audit.project_id === projectId),
       (audit) => audit.created_at,
     ).reverse();
+  }
+
+  kbSourcesFor(actor: User, projectId: string): KbSource[] {
+    const project = this.requireProject(projectId);
+    requireProjectAccess(actor, project);
+    return this.data.kbSources.filter((source) => source.project_id === projectId);
+  }
+
+  objectManifestFor(actor: User, projectId: string): { version: 1; objects: ObjectRef[]; sources: KbSource[] } {
+    const project = this.requireProject(projectId);
+    requireProjectAccess(actor, project);
+    const sources = this.kbSourcesFor(actor, projectId);
+    const sourceObjectIds = new Set(sources.map((source) => source.object_ref_id));
+    return {
+      version: 1,
+      objects: this.data.objects.filter((object) =>
+        object.project_id === projectId &&
+        sourceObjectIds.has(object.id) &&
+        (isStaff(actor) || object.visibility === "student")
+      ),
+      sources,
+    };
+  }
+
+  recordObjectManifest(actor: User, projectId: string, body: JsonObject): { ok: true; objects: number; sources: number } {
+    requireStaff(actor);
+    this.requireProject(projectId);
+    const objects = Array.isArray(body.objects) ? body.objects : [];
+    const sources = Array.isArray(body.sources) ? body.sources : [];
+    for (const item of objects) {
+      const object = asObject(item);
+      if (!object) continue;
+      const idValue = requiredString(object, "id");
+      this.data.objects = this.data.objects.filter((existing) => existing.id !== idValue);
+      this.data.objects.push({
+        id: idValue,
+        project_id: projectId,
+        uri: requiredString(object, "uri"),
+        sha256: requiredString(object, "sha256"),
+        content_type: optionalString(object, "content_type") ?? "text/plain",
+        size: numberValue(object, "size", 0),
+        visibility: optionalString(object, "visibility") === "staff" ? "staff" : "student",
+        label: optionalString(object, "label") ?? idValue,
+      });
+    }
+    for (const item of sources) {
+      const source = asObject(item);
+      if (!source) continue;
+      const idValue = requiredString(source, "id");
+      this.data.kbSources = this.data.kbSources.filter((existing) => existing.id !== idValue);
+      this.data.kbSources.push({
+        id: idValue,
+        project_id: projectId,
+        source_kind: sourceKind(optionalString(source, "source_kind")),
+        title: requiredString(source, "title"),
+        object_ref_id: requiredString(source, "object_ref_id"),
+        source_url: optionalString(source, "source_url"),
+        stage_scope: optionalString(source, "stage_scope"),
+      });
+    }
+    return { ok: true, objects: objects.length, sources: sources.length };
+  }
+
+  appendQaThread(actor: User, projectId: string, body: JsonObject): QaThread {
+    const project = this.requireProject(projectId);
+    requireProjectAccess(actor, project);
+    const stage = this.requireStage(project.current_stage_id);
+    const question = requiredString(body, "question");
+    const manifest = this.objectManifestFor(actor, projectId);
+    const objectRefs = manifest.objects.slice(0, 2).map((object) => object.id);
+    let thread = this.data.qaThreads.find((item) => item.project_id === projectId && item.stage_scope === stage.key);
+    if (!thread) {
+      thread = {
+        id: id("qa"),
+        project_id: projectId,
+        stage_scope: stage.key,
+        messages: [],
+        object_refs: [],
+        updated_at: new Date().toISOString(),
+      };
+      this.data.qaThreads.push(thread);
+    }
+    const created = new Date().toISOString();
+    thread.messages.push({ id: id("msg"), role: "user", content: question, created_at: created, object_refs: [] });
+    thread.messages.push({
+      id: id("msg"),
+      role: "assistant",
+      content: `For ${stage.name}, connect the design to the stage invariant and cite the KB source before implementing.`,
+      created_at: created,
+      object_refs: objectRefs,
+    });
+    thread.object_refs = unique([...thread.object_refs, ...objectRefs]);
+    thread.updated_at = created;
+    this.recordAgentAudit({
+      projectId,
+      sessionId: thread.id,
+      userId: actor.id,
+      model: "local-readonly-demo",
+      taskKind: "knowledgebase_qa",
+      prompt: question,
+      response: thread.messages.at(-1)?.content,
+      riskFlags: ["readonly_demo", "object_refs"],
+    });
+    return thread;
   }
 
   teacherRows(actor: User, experimentId: string): TeacherProjectRow[] {
@@ -1050,6 +1195,24 @@ export function createSeededPortalStore(): PortalStore {
     risk_level: "high",
     created_at: now,
   };
+  const memoryObject: ObjectRef = {
+    id: "obj-memory-manual",
+    project_id: project.id,
+    uri: "s3://vos-demo/course/memory-manual.md",
+    sha256: "sha-memory-manual",
+    content_type: "text/markdown",
+    size: 4096,
+    visibility: "student",
+    label: "Memory lab manual",
+  };
+  const memoryKbSource: KbSource = {
+    id: "kb-memory-manual",
+    project_id: project.id,
+    source_kind: "course",
+    title: "Memory lab manual",
+    object_ref_id: memoryObject.id,
+    stage_scope: "memory-management",
+  };
 
   const tokens = new Map<string, string>([
     ["demo-teacher", teacher.id],
@@ -1069,6 +1232,9 @@ export function createSeededPortalStore(): PortalStore {
     rubrics: [rubric, architectureRubric, memoryRubric, aiRubric],
     scores: [score, architectureScore, memoryScore, aiScore],
     audits: [audit, riskAudit],
+    objects: [memoryObject],
+    kbSources: [memoryKbSource],
+    qaThreads: [],
   });
 }
 
@@ -1153,6 +1319,33 @@ export async function handlePortalApiRequest(
     }
     if (parts[2] === "projects" && parts[4] === "agent-audit" && request.method === "GET") {
       return portalJson(store.auditsFor(actor(), parts[3]));
+    }
+    if (parts[2] === "projects" && parts[4] === "kb-sources" && request.method === "GET") {
+      return portalJson(store.kbSourcesFor(actor(), parts[3]));
+    }
+    if (parts[2] === "projects" && parts[4] === "objects" && parts[5] === "manifest" && request.method === "GET") {
+      return portalJson(store.objectManifestFor(actor(), parts[3]));
+    }
+    if (parts[2] === "projects" && parts[4] === "qa-threads" && request.method === "POST") {
+      return portalJson(store.appendQaThread(actor(), parts[3], await body()), 201);
+    }
+    if (parts[2] === "internal" && parts[3] === "objects" && request.method === "POST") {
+      const input = await body();
+      return portalJson(store.recordObjectManifest(actor(), requiredString(input, "project_id"), input), 201);
+    }
+    if (parts[2] === "internal" && parts[3] === "agent-audit" && request.method === "POST") {
+      const input = await body();
+      const audit = asObject(input.audit) ?? input;
+      return portalJson(store.recordAgentAudit({
+        projectId: requiredString(input, "project_id"),
+        sessionId: optionalString(audit, "session_id") ?? id("session"),
+        userId: optionalString(audit, "user_id") ?? actor().id,
+        model: optionalString(audit, "model") ?? "vos-agent",
+        taskKind: optionalString(audit, "task_kind") ?? "knowledgebase_qa",
+        prompt: optionalString(audit, "prompt_summary") ?? "",
+        response: optionalString(audit, "response_summary"),
+        riskFlags: stringArray(audit.risk_flags),
+      }), 201);
     }
     if (parts[2] === "teacher" && parts[3] === "experiments" && parts[5] === "students" && request.method === "GET") {
       return portalJson({ rows: store.teacherRows(actor(), parts[4]) });
@@ -1247,6 +1440,10 @@ function isStaff(user: User): boolean {
   return user.role === "admin" || user.role === "teacher" || user.role === "ta";
 }
 
+function sourceKind(value: string | undefined): KbSource["source_kind"] {
+  return value === "course" || value === "external" ? value : "project";
+}
+
 function publicUser(user: UserRecord): User {
   const { password: _password, ...rest } = user;
   return rest;
@@ -1314,6 +1511,10 @@ function optionalNumber(body: JsonObject, key: string): number | undefined {
 
 function numberValue(body: JsonObject, key: string, fallback: number): number {
   return optionalNumber(body, key) ?? fallback;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 function asObject(value: unknown): JsonObject | undefined {

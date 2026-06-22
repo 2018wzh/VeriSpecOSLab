@@ -63,11 +63,19 @@ Default public profiles are resolved from `taskKind`:
 | `plan`, `design_review`, `spec_revision` | `spec-assistant.v1`      | `deep`  | `os-spec-authoring`                        | `spec-index`, `course-kb`      | `spec_revision_draft.v1`  |
 | `codegen`, `skeleton_generation`         | `spec-compiler.v1`       | `deep`  | `operation-codegen`                        | `spec-index`                   | `spec_compiler_output.v1` |
 | `debug`, `explain_log`, `failure_triage` | `debug-agent.v1`         | `smart` | `verification-diagnosis`                   | `evidence-store`, `spec-index` | `debug_output.v1`         |
-| `reference_lookup`, `explain_concept`    | `knowledgebase-agent.v1` | `smart` | `reference-policy`, `teaching-explanation` | `course-kb`, `spec-index`      | `reference_payload.v1`    |
+| `knowledgebase_qa`, `reference_lookup`   | `knowledgebase.v1`       | `smart` | `reference-policy`, `teaching-explanation` | `vos-kb`, `course-kb`, `spec-index` | `knowledgebase_answer.v1` |
 | `validate`, `review_patch`               | `spec-validator.v1`      | `deep`  | `verification-diagnosis`, `audit-review`   | `spec-index`, `evidence-store` | `validator_feedback.v1`   |
 
 Callers can override public profile fields with `agentProfile` /
 `agent_profile`. Overrides do not expose or mutate the internal role.
+
+For `knowledgebase_qa`, `vos-cli` injects a local `vos-kb` stdio MCP server via
+`extraMcpServers`. `vos-cli` resolves the project OpenAI-compatible embedding
+config and passes only the needed base URL/model/token to that process. The
+server reads the project `.vos/kb/` registry and sqlite-vec index, exposes
+`kb_search`, `kb_lookup`, `kb_list_sources`, `kb_add_source`,
+`kb_remove_source`, and `kb_clear`, and keeps Portal as a control plane rather
+than a workspace tool runtime.
 
 ## Package API
 
@@ -106,10 +114,10 @@ You can apply an override:
 const profile = resolveAgentTaskProfile({
   taskKind: "explain_concept",
   agentProfile: {
-    promptId: "teaching-help.v1",
+    promptId: "knowledgebase.v1",
     skills: ["teaching-explanation", "reference-policy"],
-    mcpServers: ["course-kb"],
-    outputSchema: "reference_payload.v1",
+    mcpServers: ["vos-kb", "course-kb"],
+    outputSchema: "knowledgebase_answer.v1",
   },
 });
 ```

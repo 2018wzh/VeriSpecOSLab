@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parseTopLevelYaml, extractTimelineStages, type TimelineStage } from "./yaml.ts";
@@ -66,8 +66,16 @@ export async function loadPolicyConfig(projectRoot: string): Promise<PolicyConfi
         "report generate",
         "submit pack",
         "ledger record",
+        "kb add",
+        "kb list",
+        "kb search",
+        "kb remove",
+        "kb clear",
+        "kb export-manifest",
+        "kb import-manifest",
         "agent context",
         "agent plan",
+        "agent ask",
         "agent generate",
         "agent apply-patch",
         "agent log",
@@ -147,8 +155,16 @@ export async function ensureDefaultProjectConfig(projectRoot: string): Promise<v
       "  - report generate",
       "  - submit pack",
       "  - ledger record",
+      "  - kb add",
+      "  - kb list",
+      "  - kb search",
+      "  - kb remove",
+      "  - kb clear",
+      "  - kb export-manifest",
+      "  - kb import-manifest",
       "  - agent context",
       "  - agent plan",
+      "  - agent ask",
       "  - agent generate",
       "  - agent apply-patch",
       "  - agent log",
@@ -169,4 +185,13 @@ export async function ensureDefaultProjectConfig(projectRoot: string): Promise<v
   const reportDir = path.join(vosDir, "runs");
   mkdirSync(cacheDir, { recursive: true });
   mkdirSync(reportDir, { recursive: true });
+  ensureVosGitignore(projectRoot);
+}
+
+function ensureVosGitignore(projectRoot: string): void {
+  const gitignorePath = path.join(projectRoot, ".gitignore");
+  const existing = existsSync(gitignorePath) ? readFileSync(gitignorePath, "utf8") : "";
+  if (existing.split(/\r?\n/).map((line) => line.trim()).includes(".vos/")) return;
+  const prefix = existing && !existing.endsWith("\n") ? `${existing}\n` : existing;
+  writeFileSync(gitignorePath, `${prefix}.vos/\n`);
 }

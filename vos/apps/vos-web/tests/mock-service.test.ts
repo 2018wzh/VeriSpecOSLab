@@ -57,7 +57,23 @@ describe("vos-web demo portal service", () => {
     expect(thread.messages.at(-1)?.role).toBe("assistant");
     expect(thread.messages.at(-1)?.content).toContain("I only recommend it; I do not run it");
     expect(after).toHaveLength(before + 1);
-    expect(after[0]).toMatchObject({ task_kind: "student_chat", risk_level: "low" });
+    expect(after[0]).toMatchObject({ task_kind: "knowledgebase_qa", risk_level: "low" });
+  });
+
+  test("knowledgebase Q&A stores source refs in object storage fixtures", () => {
+    const portal = createDemoPortal(createMemoryStorage());
+    const student = portal.login("student", "student");
+    const thread = portal.sendChat(student, "project-demo-student", "How should I design allocator invariants?");
+    const bundle = portal.bundle(student, "project-demo-student");
+
+    expect(thread.object_refs.length).toBeGreaterThan(0);
+    expect(bundle.objects.every((object) => object.uri.startsWith("s3://vos-demo/"))).toBe(true);
+    expect(portal.kbSources(student, "project-demo-student").map((source) => source.id)).toContain("kb-memory-manual");
+    const manifest = portal.objectManifest(student, "project-demo-student");
+    expect(manifest.version).toBe(1);
+    expect(manifest.sources.map((source) => source.id)).toContain("kb-memory-manual");
+    expect(bundle.chatThread?.messages.at(-1)?.object_refs).toEqual(thread.object_refs);
+    expect(bundle.audits[0]).toMatchObject({ task_kind: "knowledgebase_qa", risk_level: "low" });
   });
 
   test("seeded runs include full platform chain logs for submission detail", () => {

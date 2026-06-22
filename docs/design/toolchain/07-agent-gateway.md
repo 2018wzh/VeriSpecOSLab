@@ -4,7 +4,7 @@
 
 - 本地 `agent` 子系统如何在不暴露自由 shell 的前提下工作
 - Agent 可以看到什么、提交什么、被如何校验
-- `agent context / plan / generate / apply-patch / serve / log` 各自负责什么
+- `agent context / plan / generate / apply-patch / ask / serve / log` 各自负责什么
 
 上游依赖文档：
 
@@ -27,6 +27,7 @@
 - 所有 Agent 行为都必须进入 evidence 与协作日志
 - Agent 会话由 `AgentIdentity` 选择唯一 `role_prompt_id` 和唯一 `capability_pack_id`；policy、stage gate、验证 DAG 和 evidence 由确定性 runtime 裁决
 - 云端平台只提供身份、policy snapshot、审计归档和 runner orchestration，不承载 workspace Agent 工具执行
+- 学生设计问答通过 `knowledgebase.v1` 和本地 `vos-kb` 投影完成，Portal 只保存 thread、对象引用和审计摘要
 
 ## 1.5 身份与能力包
 
@@ -181,8 +182,30 @@
 - `evidence_ref`
 - `result`
 
+## 7. `vos agent ask`
+
+职责：
+
+- 为学生提供当前实验/stage/spec 绑定的交互式设计问答
+- 调用 `knowledgebase.v1`，读取 `vos-kb`、公开 spec/evidence/code 摘要和允许的 web snapshot
+- 输出可作为设计证据的结构化回答、citation 和 next steps
+
+输入：
+
+- question
+- `--stage` / `--scope`
+- 当前 project policy 与 stage gate
+
+约束：
+
+- 不写 workspace
+- 不返回完整 patch 或完整模块实现
+- 小代码片段只能用于解释设计点，不能替代学生实现
+- 每次回答记录 KB source ids、object refs、web refs、risk flags 和 evidence refs
+
 ## 相关文档
 
 - [08-evidence-reporting-and-ci.md](./08-evidence-reporting-and-ci.md)
 - [09-roadmap-and-acceptance.md](./09-roadmap-and-acceptance.md)
 - [../agent/README.md](../agent/README.md)
+- [../agent/knowledgebase-agent-v1.md](../agent/knowledgebase-agent-v1.md)
