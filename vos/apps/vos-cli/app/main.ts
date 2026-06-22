@@ -54,8 +54,10 @@ import type {
 } from "./types.ts";
 import { CliError, AgentOutputError } from "./errors.ts";
 import { EvidenceWriter } from "./evidence/index.ts";
+import type { CommandOutcome, ExecContext, ExecuteCliOptions } from "./bootstrap.ts";
 import { collectStringListByKey, parseTopLevelYaml } from "./utils/yaml.ts";
 import { withProjectEnv } from "./utils/dotenv.ts";
+import { executeCommand } from "./dispatch.ts";
 import {
   ensureDefaultProjectConfig,
   loadPolicyConfig,
@@ -104,6 +106,7 @@ import {
 import { parseDebugOutput, parseKnowledgebaseAnswer, parsePatchProposal, parsePlanDraft } from "./agent/schemas.ts";
 import { applyPatchText, readPatchFromStdin } from "./agent/apply-patch.ts";
 import { createKbEmbedder, kbEmbeddingEnv } from "./kb/embedding.ts";
+import { type VosCommandExecutionContext, startVosHttpServer } from "vos-server";
 import { defaultPortalClient, type PortalClient } from "./auth/portal-client.ts";
 import { getToken, normalizePortalUrl, removeToken, saveToken, updateStoredUser } from "./auth/store.ts";
 import { assertCommandAllowed, mergeEffectivePolicy } from "./policy/effective-policy.ts";
@@ -141,35 +144,6 @@ import {
 const COMMAND_VERSION = "0.1.0";
 const TRACE_VALIDATION_AGENT_ATTEMPTS = 3;
 
-interface CommandOutcome {
-  status: CommandStatus;
-  details: Record<string, unknown>;
-}
-
-interface ExecContext {
-  projectRoot: string;
-  global: ParsedInvocation["global"];
-  evidence: EvidenceWriter;
-  agentRunner?: HeadlessAgentRunner;
-  progress?: CommandProgress;
-  auth?: RunAuthContext;
-  effectivePolicy?: EffectivePolicy;
-  signal?: AbortSignal;
-  portalClient?: PortalClient;
-}
-
-export interface ExecuteCliOptions {
-  print?: boolean;
-  portalClient?: PortalClient;
-  agentRunner?: HeadlessAgentRunner;
-  serveBinding?: {
-    portalUrl: string;
-    projectId: string;
-  };
-  signal?: AbortSignal;
-  onEvent?: (event: RunEvent) => void | Promise<void>;
-}
-
 async function main(): Promise<void> {
   try {
     if (process.argv[2] === "internal" && process.argv[3] === "progress-mcp") {
@@ -184,13 +158,46 @@ async function main(): Promise<void> {
     }
     if (parsed.command.kind === "serve") {
       const projectRoot = path.resolve(parsed.global.projectRoot);
-      const { startVosHttpServer } = await import("./server/http.ts");
       const server = startVosHttpServer({
         projectRoot,
         portalUrl: parsed.command.portalUrl,
         projectId: parsed.command.projectId,
         host: parsed.command.host,
         port: parsed.command.port,
+        executeCommand: async (commandContext: VosCommandExecutionContext) => {
+          const result = await executeCliInvocation([
+            "bun",
+            "vos",
+            "--project-root",
+            commandContext.projectRoot,
+            "--json",
+            ...(commandContext.agentSessionId ? ["--agent-session", commandContext.agentSessionId] : []),
+            ...commandContext.commandArgs,
+          ], {
+            print: false,
+            serveBinding: {
+              portalUrl: commandContext.portalUrl,
+              projectId: commandContext.projectId,
+            },
+            portalClient: commandContext.portalClient as PortalClient | undefined,
+            signal: commandContext.signal,
+            onEvent: commandContext.onEvent,
+          });
+          return {
+            run_id: result.run_id,
+            status: result.status,
+            command: result.command,
+            started_at: result.started_at,
+            finished_at: result.finished_at,
+            artifacts: result.artifacts,
+            evidence_refs: result.evidence_refs,
+            message: result.message,
+          };
+        },
+        importObjectManifest: async (importProjectRoot, objectManifest) => {
+          if (!objectManifest) return;
+          await importKbManifest(importProjectRoot, objectManifest, { embedder: createKbEmbedder(importProjectRoot) });
+        },
       });
       console.log(`vos serve listening on ${server.url}`);
       await new Promise<void>((resolve) => {
@@ -596,452 +603,460 @@ function isReproControlledCommand(command: CliCommand): boolean {
   return command.kind !== "doctor";
 }
 
-export async function executeCommand(command: CliCommand, context: ExecContext): Promise<CommandOutcome> {
-  const { projectRoot, evidence } = context;
-
-  switch (command.kind) {
-    case "login":
-      return executeLogin(command, context);
-
-    case "logout":
-      return executeLogout(command, projectRoot);
-
-    case "whoami":
-      return executeWhoami(command, projectRoot, context);
-
-    case "init":
-      await ensureDefaultProjectConfig(projectRoot);
-      await ensureHeadLedgerEntry({
-        projectRoot,
-        actor: "human",
-        intent: "initialize VOS project ledger",
-        specRefs: [],
-        changedTargets: [".vos/project.yaml", ".vos/policy.yaml", ".gitignore"],
-        runId: evidence.run_id,
-      });
-      return { status: "passed", details: { initialized: true, ledger: true } };
-
-    case "doctor": {
-      const checks = [
-        { name: "bun", ok: typeof Bun !== "undefined" },
-        { name: "git", ok: commandExists("git") },
-        { name: "node", ok: commandExists("node") },
-      ];
-      const missing = checks.filter((check) => !check.ok).map((check) => check.name);
-      return {
-        status: missing.length === 0 ? "passed" : "failed",
-        details: {
-          checks,
-          missing,
-          message: missing.length === 0 ? "environment ok" : "missing tools",
-        },
-      };
-    }
-
-    case "stage_show": {
-      const timeline = await loadTimeline(projectRoot);
-      const current = await currentStageForProject(projectRoot);
-      return {
-        status: "passed",
-        details: {
-          current_stage: current,
-          stages: timeline,
-          fallback: timeline.length === 0 ? "boot" : "timeline",
-        },
-      };
-    }
-
-    case "toolchain_lint": {
-      const lint = await runToolchainLint(projectRoot);
-      return { status: lint.status, details: lint as unknown as Record<string, unknown> };
-    }
-
-    case "spec_lint": {
-      const project = await loadProjectConfig(projectRoot);
-      const bundle = await buildNormalizedSpecBundle({
-        projectRoot,
-        specRoot: project.spec_root ?? "spec",
-        targetPath: command.path,
-      });
-      const bundlePath = await writeNormalizedBundle(projectRoot, bundle, evidence);
-      const agentReview = await runDefaultAgentSpecReview({
-        command: "spec lint",
-        target: command.path,
-        bundle,
-        context,
-        evidence,
-      });
-      return {
-        status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
-        details: {
-          diagnostics: bundle.diagnostics,
-          bundle_ref: path.relative(projectRoot, bundlePath),
-          agent_review: agentReview,
-          source_count: bundle.sources.length,
-          module_count: bundle.modules.length,
-          operation_count: bundle.operations.length,
-        },
-      };
-    }
-
-    case "spec_normalize": {
-      const project = await loadProjectConfig(projectRoot);
-      const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
-      const cachePath = await writeNormalizedBundle(projectRoot, bundle, evidence);
-      return {
-        status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
-        details: {
-          diagnostics: bundle.diagnostics,
-          source_count: bundle.sources.length,
-          module_count: bundle.modules.length,
-          operation_count: bundle.operations.length,
-          normalized_cache: path.relative(projectRoot, cachePath),
-        },
-      };
-    }
-
-    case "spec_check_consistency": {
-      const project = await loadProjectConfig(projectRoot);
-      const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
-      const bundlePath = await writeNormalizedBundle(projectRoot, bundle, evidence);
-      return {
-        status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
-        details: {
-          diagnostics: bundle.diagnostics,
-          checked: bundle.sources.length,
-          bundle_ref: path.relative(projectRoot, bundlePath),
-        },
-      };
-    }
-
-    case "spec_patch_lint": {
-      if (!command.patchPath) {
-        return {
-          status: "validation_failed",
-          details: { message: "spec patch lint requires a SpecPatch YAML path or commit-ish" },
-        };
-      }
-      const project = await loadProjectConfig(projectRoot);
-      const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
-      const { patch, impact } = await resolveSpecPatch({ projectRoot, specRoot: project.spec_root ?? "spec", ref: command.patchPath, bundle });
-      const agentReview = await runDefaultAgentSpecReview({
-        command: "spec patch lint",
-        target: command.patchPath,
-        bundle,
-        impact,
-        context,
-        evidence,
-      });
-      return {
-        status: hasBlockingDiagnostics([...bundle.diagnostics, ...impact.diagnostics]) ? "validation_failed" : "passed",
-        details: {
-          patch,
-          impact,
-          selected_checks: selectPatchVerificationChecks(impact),
-          agent_review: agentReview,
-        },
-      };
-    }
-
-    case "spec_patch_apply": {
-      if (!command.patchPath) {
-        return {
-          status: "validation_failed",
-          details: { message: "spec patch apply requires a SpecPatch YAML path or commit-ish" },
-        };
-      }
-      const project = await loadProjectConfig(projectRoot);
-      const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
-      const { patch, impact } = await resolveSpecPatch({ projectRoot, specRoot: project.spec_root ?? "spec", ref: command.patchPath, bundle });
-      if (hasBlockingDiagnostics([...bundle.diagnostics, ...impact.diagnostics])) {
-        return {
-          status: "validation_failed",
-          details: { patch, impact, selected_checks: selectPatchVerificationChecks(impact) },
-        };
-      }
-      const applyArtifact = path.join(evidence.artifacts_root, "patch", "impact.json");
-      await mkdir(path.dirname(applyArtifact), { recursive: true });
-      await writeFile(applyArtifact, `${JSON.stringify({ patch, impact }, null, 2)}\n`);
-      evidence.addArtifactFromPath("patch", applyArtifact, "SpecPatch impact report");
-      return {
-        status: "passed",
-        details: {
-          patch,
-          impact,
-          selected_checks: selectPatchVerificationChecks(impact),
-          artifact: path.relative(projectRoot, applyArtifact),
-        },
-      };
-    }
-
-    case "arch_lint": {
-      const project = await loadProjectConfig(projectRoot);
-      const bundle = await buildNormalizedSpecBundle({
-        projectRoot,
-        specRoot: project.spec_root ?? "spec",
-        targetPath: command.path,
-      });
-      const composition = composeArchitecture(bundle);
-      const agentReview = await runDefaultAgentSpecReview({
-        command: "arch lint",
-        target: command.path,
-        bundle,
-        context,
-        evidence,
-      });
-      const diagnostics = [...bundle.diagnostics, ...composition.conflicts];
-      return {
-        status: hasBlockingDiagnostics(diagnostics) ? "validation_failed" : "passed",
-        details: {
-          diagnostics,
-          composition,
-          conflicts: composition.conflicts,
-          enabled_modules: composition.enabled_modules,
-          agent_review: agentReview,
-        },
-      };
-    }
-
-    case "arch_compose": {
-      const project = await loadProjectConfig(projectRoot);
-      const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
-      const composition = composeArchitecture(bundle, command.path);
-      const composePath = path.join(projectRoot, ".vos", "cache", "composition.json");
-      await mkdir(path.dirname(composePath), { recursive: true });
-      await writeFile(composePath, `${JSON.stringify(composition, null, 2)}\n`);
-      evidence.addArtifact("arch", path.relative(projectRoot, composePath), "architecture composition");
-      return {
-        status: hasBlockingDiagnostics([...bundle.diagnostics, ...composition.conflicts]) ? "validation_failed" : "passed",
-        details: {
-          composition,
-          conflicts: composition.conflicts,
-          enabled_modules: composition.enabled_modules,
-          output: path.relative(projectRoot, composePath),
-        },
-      };
-    }
-
-    case "arch_derive_tests": {
-      const project = await loadProjectConfig(projectRoot);
-      const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
-      const matrix = deriveTestMatrix(bundle, command.path);
-      const derivedPath = path.join(projectRoot, ".vos", "cache", "derived-tests.json");
-      await mkdir(path.dirname(derivedPath), { recursive: true });
-      await writeFile(derivedPath, `${JSON.stringify(matrix, null, 2)}\n`);
-      evidence.addArtifact("arch", path.relative(projectRoot, derivedPath), "derived tests");
-      return {
-        status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
-        details: {
-          matrix,
-          source_refs: bundle.sources.map((source) => source.path),
-          output: path.relative(projectRoot, derivedPath),
-        },
-      };
-    }
-
-    case "build":
-      return executeBuild(command, context, evidence, projectRoot);
-
-    case "build_generate":
-      return executeBuildGenerate(command, context, evidence);
-
-    case "run_qemu":
-      return executeRunQemu(command, context, evidence, projectRoot);
-
-    case "test":
-      return executeTest(command, context, evidence, projectRoot);
-
-    case "verify":
-      return executeVerify(command, context, evidence);
-
-    case "trace_syscall": {
-      updateProgress(context, { stage: "trace syscall", status: "running", message: "running qemu" });
-      const result = await runQemuCommand({
-        projectRoot,
-        evidence,
-        dryRun: command.dryRun,
-        timeoutMs: command.timeoutMs,
-        signal: context.signal,
-      });
-      return {
-        status: result.status === "failed" ? "validation_failed" : result.status,
-        details: {
-          readyDetected: result.readyDetected,
-          traceFile: result.serialPath,
-          output: result.output,
-          durationMs: result.durationMs,
-        },
-      };
-    }
-
-    case "debug_explain_log": {
-      const logPath = command.logPath ?? (await findLatestLogPath(projectRoot));
-      if (!logPath) {
-        return { status: "failed", details: { message: "no log path found" } };
-      }
-      const text = await readFile(logPath, "utf8");
-      const lines = text.split(/\r?\n/);
-      const errors = lines.filter((line) => /error|fail|panic|assert|segfault/i.test(line));
-      return {
-        status: errors.length === 0 ? "passed" : "validation_failed",
-        details: {
-          logPath,
-          related_specs: inferSpecsFromLog(text),
-          suggested_next_commands: ["build", "verify public", "agent plan"],
-          summary: `${errors.length} suspect issue lines`,
-        },
-      };
-    }
-
-    case "report_generate": {
-      const runs = await collectRunManifestSummaries(projectRoot);
-      const reportPath = path.join(projectRoot, ".vos", "report", "report.json");
-      await writeFile(reportPath, `${JSON.stringify({ generated_at: new Date().toISOString(), runs }, null, 2)}\n`);
-      evidence.addArtifact("report", path.relative(projectRoot, reportPath), "report generate");
-      return {
-        status: "passed",
-        details: {
-          run_count: runs.length,
-          report: path.relative(projectRoot, reportPath),
-        },
-      };
-    }
-
-    case "submit_pack": {
-      const reportPath = path.join(projectRoot, ".vos", "submit", "pack.json");
-      const runs = await collectRunManifestSummaries(projectRoot);
-      const pack = {
-        generated_at: new Date().toISOString(),
-        command_root: projectRoot,
-        evidence_runs: runs,
-      };
-      await writeFile(reportPath, `${JSON.stringify(pack, null, 2)}\n`);
-      evidence.addArtifact("submit", path.relative(projectRoot, reportPath), "submission payload");
-      return {
-        status: "passed",
-        details: { pack_path: path.relative(projectRoot, reportPath), run_count: runs.length },
-      };
-    }
-
-    case "ledger_record":
-      return executeLedgerRecord(command, projectRoot, evidence);
-
-    case "kb_add":
-      return executeKbAdd(command, projectRoot, evidence);
-
-    case "kb_list":
-      return executeKbList(projectRoot);
-
-    case "kb_search":
-      return executeKbSearch(command, projectRoot);
-
-    case "kb_remove":
-      return executeKbRemove(command, projectRoot);
-
-    case "kb_clear":
-      return executeKbClear(projectRoot);
-
-    case "kb_export_manifest":
-      return executeKbExportManifest(command, projectRoot, evidence);
-
-    case "kb_import_manifest":
-      return executeKbImportManifest(command, projectRoot, evidence);
-
-    case "agent_serve":
-      return executeAgentServe(command, projectRoot, evidence);
-
-    case "agent_context": {
-      const bundle = await buildContextBundle({
-        projectRoot,
-        requestedScope: command.scope,
-        effectivePolicy: context.effectivePolicy,
-      });
-      const contextArtifact = path.join(projectRoot, ".vos", "agent-context.json");
-      await writeFile(contextArtifact, `${JSON.stringify(bundle, null, 2)}\n`);
-      evidence.addArtifact("agent", path.relative(projectRoot, contextArtifact), "context bundle");
-      return {
-        status: "passed",
-        details: bundle as unknown as Record<string, unknown>,
-      };
-    }
-
-    case "agent_plan": {
-      const requestedScope = command.scope ?? "agent.plan";
-      updateProgress(context, { stage: "agent plan", status: "running", message: "building context" });
-      const bundle = await buildContextBundle({ projectRoot, requestedScope, effectivePolicy: context.effectivePolicy });
-      const prompt = buildAgentPlanPrompt({
-        bundle,
-        requestedScope,
-        task: command.task,
-      });
-      updateProgress(context, { stage: "agent plan", status: "running", message: "waiting for agent" });
-      const agentProgress = createAgentProgressParams(context, "agent plan");
-      const agentResult = await runAgentWithPrompt({
-        projectRoot,
-        taskPrompt: agentProgress.taskPrompt(prompt),
-        taskKind: "plan",
-        requestedScope,
-        context: bundle,
-        courseMode: true,
-        allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
-        extraMcpServers: agentProgress.extraMcpServers,
-        onEvent: agentProgress.onEvent,
-        runner: context.agentRunner,
-      });
-      const parsed = parsePlanDraft(
-        parseAgentJson(agentResult.resultText, "agent_plan"),
-      );
-      const logPath = await recordAICollaboration({
-        projectRoot,
-        event: {
-          session_id: contextSessionId(context),
-          task_kind: "plan",
-          agent_profile: resolvePromptProfileEnvelope("plan"),
-          related_specs: parsed.related_specs,
-          allowed_paths: bundle.allowed_paths,
-          output_kind: "plan",
-          result: "accepted",
-          created_at: new Date().toISOString(),
-        },
-      });
-      evidence.addArtifact("agent", path.relative(projectRoot, logPath), "agent plan log");
-      return {
-        status: "passed",
-        details: {
-          plan: parsed,
-          raw_events: agentResult.rawEvents,
-          log: logPath,
-        },
-      };
-    }
-
-    case "agent_generate":
-      return executeAgentGenerate(command, context, evidence);
-
-    case "agent_apply_patch":
-      return executeAgentApplyPatch(command, projectRoot, evidence, context.effectivePolicy);
-
-    case "agent_validate_generated":
-      return executeAgentValidateGenerated(command, context, evidence);
-
-    case "agent_debug":
-      return executeAgentDebug(command, context, evidence);
-
-    case "agent_log":
-      return executeAgentLog(command, projectRoot, evidence);
-
-    case "agent_review_spec":
-      return executeAgentReviewSpec(command, context, evidence);
-
-    case "agent_ask":
-      return executeAgentAsk(command, context, evidence);
-
-    default:
-      throw new CliError(`unsupported command: ${JSON.stringify(command)}`, "failed");
-  }
+export async function executeInit(
+  _command: InitCommand,
+  context: ExecContext,
+): Promise<CommandOutcome> {
+  const projectRoot = context.projectRoot;
+  const evidence = context.evidence;
+  await ensureDefaultProjectConfig(projectRoot);
+  await ensureHeadLedgerEntry({
+    projectRoot,
+    actor: "human",
+    intent: "initialize VOS project ledger",
+    specRefs: [],
+    changedTargets: [".vos/project.yaml", ".vos/policy.yaml", ".gitignore"],
+    runId: evidence.run_id,
+  });
+  return { status: "passed", details: { initialized: true, ledger: true } };
 }
 
-async function executeLogin(command: LoginCommand, context: ExecContext): Promise<CommandOutcome> {
+export async function executeDoctor(
+  _command: DoctorCommand,
+): Promise<CommandOutcome> {
+  const checks = [
+    { name: "bun", ok: typeof Bun !== "undefined" },
+    { name: "git", ok: commandExists("git") },
+    { name: "node", ok: commandExists("node") },
+  ];
+  const missing = checks.filter((check) => !check.ok).map((check) => check.name);
+  return {
+    status: missing.length === 0 ? "passed" : "failed",
+    details: {
+      checks,
+      missing,
+      message: missing.length === 0 ? "environment ok" : "missing tools",
+    },
+  };
+}
+
+export async function executeStageShow(
+  _command: StageShowCommand,
+  projectRoot: string,
+): Promise<CommandOutcome> {
+  const timeline = await loadTimeline(projectRoot);
+  const current = await currentStageForProject(projectRoot);
+  return {
+    status: "passed",
+    details: {
+      current_stage: current,
+      stages: timeline,
+      fallback: timeline.length === 0 ? "boot" : "timeline",
+    },
+  };
+}
+
+export async function executeToolchainLint(
+  _command: ToolchainLintCommand,
+  projectRoot: string,
+): Promise<CommandOutcome> {
+  const lint = await runToolchainLint(projectRoot);
+  return { status: lint.status, details: lint as unknown as Record<string, unknown> };
+}
+
+export async function executeSpecLint(
+  command: SpecLintCommand,
+  projectRoot: string,
+  context: ExecContext,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  const project = await loadProjectConfig(projectRoot);
+  const bundle = await buildNormalizedSpecBundle({
+    projectRoot,
+    specRoot: project.spec_root ?? "spec",
+    targetPath: command.path,
+  });
+  const bundlePath = await writeNormalizedBundle(projectRoot, bundle, evidence);
+  const agentReview = await runDefaultAgentSpecReview({
+    command: "spec lint",
+    target: command.path,
+    bundle,
+    context,
+    evidence,
+  });
+  return {
+    status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
+    details: {
+      diagnostics: bundle.diagnostics,
+      bundle_ref: path.relative(projectRoot, bundlePath),
+      agent_review: agentReview,
+      source_count: bundle.sources.length,
+      module_count: bundle.modules.length,
+      operation_count: bundle.operations.length,
+    },
+  };
+}
+
+export async function executeSpecNormalize(
+  _command: SpecNormalizeCommand,
+  projectRoot: string,
+  _context: ExecContext,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  const project = await loadProjectConfig(projectRoot);
+  const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+  const cachePath = await writeNormalizedBundle(projectRoot, bundle, evidence);
+  return {
+    status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
+    details: {
+      diagnostics: bundle.diagnostics,
+      source_count: bundle.sources.length,
+      module_count: bundle.modules.length,
+      operation_count: bundle.operations.length,
+      normalized_cache: path.relative(projectRoot, cachePath),
+    },
+  };
+}
+
+export async function executeSpecCheckConsistency(
+  _command: SpecCheckConsistencyCommand,
+  projectRoot: string,
+  _context: ExecContext,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  const project = await loadProjectConfig(projectRoot);
+  const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+  const bundlePath = await writeNormalizedBundle(projectRoot, bundle, evidence);
+  return {
+    status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
+    details: {
+      diagnostics: bundle.diagnostics,
+      checked: bundle.sources.length,
+      bundle_ref: path.relative(projectRoot, bundlePath),
+    },
+  };
+}
+
+export async function executeSpecPatchLint(
+  command: SpecPatchLintCommand,
+  projectRoot: string,
+  context: ExecContext,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  if (!command.patchPath) {
+    return {
+      status: "validation_failed",
+      details: { message: "spec patch lint requires a SpecPatch YAML path or commit-ish" },
+    };
+  }
+  const project = await loadProjectConfig(projectRoot);
+  const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+  const { patch, impact } = await resolveSpecPatch({
+    projectRoot,
+    specRoot: project.spec_root ?? "spec",
+    ref: command.patchPath,
+    bundle,
+  });
+  const agentReview = await runDefaultAgentSpecReview({
+    command: "spec patch lint",
+    target: command.patchPath,
+    bundle,
+    impact,
+    context,
+    evidence,
+  });
+  return {
+    status: hasBlockingDiagnostics([...bundle.diagnostics, ...impact.diagnostics]) ? "validation_failed" : "passed",
+    details: {
+      patch,
+      impact,
+      selected_checks: selectPatchVerificationChecks(impact),
+      agent_review: agentReview,
+    },
+  };
+}
+
+export async function executeSpecPatchApply(
+  command: SpecPatchApplyCommand,
+  projectRoot: string,
+  _context: ExecContext,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  if (!command.patchPath) {
+    return {
+      status: "validation_failed",
+      details: { message: "spec patch apply requires a SpecPatch YAML path or commit-ish" },
+    };
+  }
+  const project = await loadProjectConfig(projectRoot);
+  const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+  const { patch, impact } = await resolveSpecPatch({
+    projectRoot,
+    specRoot: project.spec_root ?? "spec",
+    ref: command.patchPath,
+    bundle,
+  });
+  if (hasBlockingDiagnostics([...bundle.diagnostics, ...impact.diagnostics])) {
+    return {
+      status: "validation_failed",
+      details: { patch, impact, selected_checks: selectPatchVerificationChecks(impact) },
+    };
+  }
+  const applyArtifact = path.join(evidence.artifacts_root, "patch", "impact.json");
+  await mkdir(path.dirname(applyArtifact), { recursive: true });
+  await writeFile(applyArtifact, `${JSON.stringify({ patch, impact }, null, 2)}\n`);
+  evidence.addArtifactFromPath("patch", applyArtifact, "SpecPatch impact report");
+  return {
+    status: "passed",
+    details: {
+      patch,
+      impact,
+      selected_checks: selectPatchVerificationChecks(impact),
+      artifact: path.relative(projectRoot, applyArtifact),
+    },
+  };
+}
+
+export async function executeArchLint(
+  command: ArchLintCommand,
+  projectRoot: string,
+  context: ExecContext,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  const project = await loadProjectConfig(projectRoot);
+  const bundle = await buildNormalizedSpecBundle({
+    projectRoot,
+    specRoot: project.spec_root ?? "spec",
+    targetPath: command.path,
+  });
+  const composition = composeArchitecture(bundle);
+  const agentReview = await runDefaultAgentSpecReview({
+    command: "arch lint",
+    target: command.path,
+    bundle,
+    context,
+    evidence,
+  });
+  const diagnostics = [...bundle.diagnostics, ...composition.conflicts];
+  return {
+    status: hasBlockingDiagnostics(diagnostics) ? "validation_failed" : "passed",
+    details: {
+      diagnostics,
+      composition,
+      conflicts: composition.conflicts,
+      enabled_modules: composition.enabled_modules,
+      agent_review: agentReview,
+    },
+  };
+}
+
+export async function executeArchCompose(
+  command: ArchComposeCommand,
+  projectRoot: string,
+  _context: ExecContext,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  const project = await loadProjectConfig(projectRoot);
+  const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+  const composition = composeArchitecture(bundle, command.path);
+  const composePath = path.join(projectRoot, ".vos", "cache", "composition.json");
+  await mkdir(path.dirname(composePath), { recursive: true });
+  await writeFile(composePath, `${JSON.stringify(composition, null, 2)}\n`);
+  evidence.addArtifact("arch", path.relative(projectRoot, composePath), "architecture composition");
+  return {
+    status: hasBlockingDiagnostics([...bundle.diagnostics, ...composition.conflicts]) ? "validation_failed" : "passed",
+    details: {
+      composition,
+      conflicts: composition.conflicts,
+      enabled_modules: composition.enabled_modules,
+      output: path.relative(projectRoot, composePath),
+    },
+  };
+}
+
+export async function executeArchDeriveTests(
+  command: ArchDeriveTestsCommand,
+  projectRoot: string,
+  _context: ExecContext,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  const project = await loadProjectConfig(projectRoot);
+  const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+  const matrix = deriveTestMatrix(bundle, command.path);
+  const derivedPath = path.join(projectRoot, ".vos", "cache", "derived-tests.json");
+  await mkdir(path.dirname(derivedPath), { recursive: true });
+  await writeFile(derivedPath, `${JSON.stringify(matrix, null, 2)}\n`);
+  evidence.addArtifact("arch", path.relative(projectRoot, derivedPath), "derived tests");
+  return {
+    status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
+    details: {
+      matrix,
+      source_refs: bundle.sources.map((source) => source.path),
+      output: path.relative(projectRoot, derivedPath),
+    },
+  };
+}
+
+export async function executeTraceSyscall(
+  command: TraceSyscallCommand,
+  context: ExecContext,
+  evidence: EvidenceWriter,
+  projectRoot: string,
+): Promise<CommandOutcome> {
+  updateProgress(context, { stage: "trace syscall", status: "running", message: "running qemu" });
+  const result = await runQemuCommand({
+    projectRoot,
+    evidence,
+    dryRun: command.dryRun,
+    timeoutMs: command.timeoutMs,
+    signal: context.signal,
+  });
+  return {
+    status: result.status === "failed" ? "validation_failed" : result.status,
+    details: {
+      readyDetected: result.readyDetected,
+      traceFile: result.serialPath,
+      output: result.output,
+      durationMs: result.durationMs,
+    },
+  };
+}
+
+export async function executeDebugExplainLog(
+  command: DebugExplainLogCommand,
+  projectRoot: string,
+): Promise<CommandOutcome> {
+  const logPath = command.logPath ?? (await findLatestLogPath(projectRoot));
+  if (!logPath) {
+    return { status: "failed", details: { message: "no log path found" } };
+  }
+  const text = await readFile(logPath, "utf8");
+  const lines = text.split(/\r?\n/);
+  const errors = lines.filter((line) => /error|fail|panic|assert|segfault/i.test(line));
+  return {
+    status: errors.length === 0 ? "passed" : "validation_failed",
+    details: {
+      logPath,
+      related_specs: inferSpecsFromLog(text),
+      suggested_next_commands: ["build", "verify public", "agent plan"],
+      summary: `${errors.length} suspect issue lines`,
+    },
+  };
+}
+
+export async function executeReportGenerate(
+  _command: ReportGenerateCommand,
+  projectRoot: string,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  const runs = await collectRunManifestSummaries(projectRoot);
+  const reportPath = path.join(projectRoot, ".vos", "report", "report.json");
+  await writeFile(reportPath, `${JSON.stringify({ generated_at: new Date().toISOString(), runs }, null, 2)}\n`);
+  evidence.addArtifact("report", path.relative(projectRoot, reportPath), "report generate");
+  return {
+    status: "passed",
+    details: {
+      run_count: runs.length,
+      report: path.relative(projectRoot, reportPath),
+    },
+  };
+}
+
+export async function executeSubmitPack(
+  _command: SubmitPackCommand,
+  projectRoot: string,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  const reportPath = path.join(projectRoot, ".vos", "submit", "pack.json");
+  const runs = await collectRunManifestSummaries(projectRoot);
+  const pack = {
+    generated_at: new Date().toISOString(),
+    command_root: projectRoot,
+    evidence_runs: runs,
+  };
+  await writeFile(reportPath, `${JSON.stringify(pack, null, 2)}\n`);
+  evidence.addArtifact("submit", path.relative(projectRoot, reportPath), "submission payload");
+  return {
+    status: "passed",
+    details: { pack_path: path.relative(projectRoot, reportPath), run_count: runs.length },
+  };
+}
+
+export async function executeAgentContext(
+  command: AgentContextCommand,
+  projectRoot: string,
+  context: ExecContext,
+): Promise<CommandOutcome> {
+  const bundle = await buildContextBundle({
+    projectRoot,
+    requestedScope: command.scope,
+    effectivePolicy: context.effectivePolicy,
+  });
+  const contextArtifact = path.join(projectRoot, ".vos", "agent-context.json");
+  await writeFile(contextArtifact, `${JSON.stringify(bundle, null, 2)}\n`);
+  context.evidence.addArtifact("agent", path.relative(projectRoot, contextArtifact), "context bundle");
+  return {
+    status: "passed",
+    details: bundle as unknown as Record<string, unknown>,
+  };
+}
+
+export async function executeAgentPlan(
+  command: AgentPlanCommand,
+  context: ExecContext,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  const requestedScope = command.scope ?? "agent.plan";
+  const projectRoot = context.projectRoot;
+  updateProgress(context, { stage: "agent plan", status: "running", message: "building context" });
+  const bundle = await buildContextBundle({ projectRoot, requestedScope, effectivePolicy: context.effectivePolicy });
+  const prompt = buildAgentPlanPrompt({
+    bundle,
+    requestedScope,
+    task: command.task,
+  });
+  updateProgress(context, { stage: "agent plan", status: "running", message: "waiting for agent" });
+  const agentProgress = createAgentProgressParams(context, "agent plan");
+  const agentResult = await runAgentWithPrompt({
+    projectRoot,
+    taskPrompt: agentProgress.taskPrompt(prompt),
+    taskKind: "plan",
+    requestedScope,
+    context: bundle,
+    courseMode: true,
+    allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+    extraMcpServers: agentProgress.extraMcpServers,
+    onEvent: agentProgress.onEvent,
+    runner: context.agentRunner,
+  });
+  const parsed = parsePlanDraft(
+    parseAgentJson(agentResult.resultText, "agent_plan"),
+  );
+  const logPath = await recordAICollaboration({
+    projectRoot,
+    event: {
+      session_id: contextSessionId(context),
+      task_kind: "plan",
+      agent_profile: resolvePromptProfileEnvelope("plan"),
+      related_specs: parsed.related_specs,
+      allowed_paths: bundle.allowed_paths,
+      output_kind: "plan",
+      result: "accepted",
+      created_at: new Date().toISOString(),
+    },
+  });
+  evidence.addArtifact("agent", path.relative(projectRoot, logPath), "agent plan log");
+  return {
+    status: "passed",
+    details: {
+      plan: parsed,
+      raw_events: agentResult.rawEvents,
+      log: logPath,
+    },
+  };
+}
+
+export async function executeLogin(command: LoginCommand, context: ExecContext): Promise<CommandOutcome> {
   const token = command.token
     ?? (command.tokenStdin ? (await Bun.stdin.text()).trim() : undefined)
     ?? process.env.VOS_PORTAL_TOKEN;
@@ -1072,7 +1087,7 @@ async function executeLogin(command: LoginCommand, context: ExecContext): Promis
   };
 }
 
-async function executeLogout(command: LogoutCommand, projectRoot: string): Promise<CommandOutcome> {
+export async function executeLogout(command: LogoutCommand, projectRoot: string): Promise<CommandOutcome> {
   const project = await loadProjectConfig(projectRoot).catch(() => undefined);
   const portalUrl = command.portalUrl ?? project?.portal_url;
   if (!portalUrl) {
@@ -1095,7 +1110,7 @@ async function executeLogout(command: LogoutCommand, projectRoot: string): Promi
   };
 }
 
-async function executeWhoami(command: WhoamiCommand, projectRoot: string, context: ExecContext): Promise<CommandOutcome> {
+export async function executeWhoami(command: WhoamiCommand, projectRoot: string, context: ExecContext): Promise<CommandOutcome> {
   const project = await loadProjectConfig(projectRoot).catch(() => undefined);
   const portalUrl = command.portalUrl ?? project?.portal_url;
   if (!portalUrl) {
@@ -1157,7 +1172,7 @@ async function executeWhoami(command: WhoamiCommand, projectRoot: string, contex
   }
 }
 
-async function executeLedgerRecord(
+export async function executeLedgerRecord(
   command: LedgerRecordCommand,
   projectRoot: string,
   evidence: EvidenceWriter,
@@ -1186,7 +1201,7 @@ async function executeLedgerRecord(
   };
 }
 
-async function executeKbAdd(
+export async function executeKbAdd(
   command: KbAddCommand,
   projectRoot: string,
   evidence: EvidenceWriter,
@@ -1219,7 +1234,7 @@ async function executeKbAdd(
   };
 }
 
-async function executeKbList(projectRoot: string): Promise<CommandOutcome> {
+export async function executeKbList(projectRoot: string): Promise<CommandOutcome> {
   const sources = await listKbSources(projectRoot);
   return {
     status: "passed",
@@ -1230,7 +1245,7 @@ async function executeKbList(projectRoot: string): Promise<CommandOutcome> {
   };
 }
 
-async function executeKbSearch(command: KbSearchCommand, projectRoot: string): Promise<CommandOutcome> {
+export async function executeKbSearch(command: KbSearchCommand, projectRoot: string): Promise<CommandOutcome> {
   const hits = await searchKb(projectRoot, command.query, { embedder: createKbEmbedder(projectRoot) });
   return {
     status: "passed",
@@ -1241,7 +1256,7 @@ async function executeKbSearch(command: KbSearchCommand, projectRoot: string): P
   };
 }
 
-async function executeKbRemove(command: KbRemoveCommand, projectRoot: string): Promise<CommandOutcome> {
+export async function executeKbRemove(command: KbRemoveCommand, projectRoot: string): Promise<CommandOutcome> {
   const removed = await removeKbSource(projectRoot, command.id);
   return {
     status: removed ? "passed" : "validation_failed",
@@ -1253,7 +1268,7 @@ async function executeKbRemove(command: KbRemoveCommand, projectRoot: string): P
   };
 }
 
-async function executeKbClear(projectRoot: string): Promise<CommandOutcome> {
+export async function executeKbClear(projectRoot: string): Promise<CommandOutcome> {
   await clearKbSources(projectRoot);
   return {
     status: "passed",
@@ -1264,7 +1279,7 @@ async function executeKbClear(projectRoot: string): Promise<CommandOutcome> {
   };
 }
 
-async function executeKbExportManifest(
+export async function executeKbExportManifest(
   command: KbExportManifestCommand,
   projectRoot: string,
   evidence: EvidenceWriter,
@@ -1283,7 +1298,7 @@ async function executeKbExportManifest(
   };
 }
 
-async function executeKbImportManifest(
+export async function executeKbImportManifest(
   command: KbImportManifestCommand,
   projectRoot: string,
   evidence: EvidenceWriter,
@@ -1301,7 +1316,7 @@ async function executeKbImportManifest(
   };
 }
 
-async function executeBuildGenerate(
+export async function executeBuildGenerate(
   command: BuildGenerateCommand,
   context: ExecContext,
   evidence: EvidenceWriter,
@@ -1521,7 +1536,7 @@ function isSuccessStatus(status: CommandStatus): boolean {
   return status === "passed" || status === "ok" || status === "planned";
 }
 
-async function executeBuild(command: BuildCommand, context: ExecContext, evidence: EvidenceWriter, projectRoot: string): Promise<CommandOutcome> {
+export async function executeBuild(command: BuildCommand, context: ExecContext, evidence: EvidenceWriter, projectRoot: string): Promise<CommandOutcome> {
   updateProgress(context, { stage: "build", status: "running", message: command.dryRun ? "planning build" : "running build" });
   const result = await runBuildCommand({
     projectRoot,
@@ -1540,7 +1555,7 @@ async function executeBuild(command: BuildCommand, context: ExecContext, evidenc
   };
 }
 
-async function executeRunQemu(command: RunQemuCommand, context: ExecContext, evidence: EvidenceWriter, projectRoot: string): Promise<CommandOutcome> {
+export async function executeRunQemu(command: RunQemuCommand, context: ExecContext, evidence: EvidenceWriter, projectRoot: string): Promise<CommandOutcome> {
   updateProgress(context, { stage: "run qemu", status: "running", message: command.dryRun ? "planning run" : "running qemu" });
   const result = await runQemuCommand({
     projectRoot,
@@ -1561,7 +1576,7 @@ async function executeRunQemu(command: RunQemuCommand, context: ExecContext, evi
   };
 }
 
-async function executeTest(command: TestCommand, context: ExecContext, evidence: EvidenceWriter, projectRoot: string): Promise<CommandOutcome> {
+export async function executeTest(command: TestCommand, context: ExecContext, evidence: EvidenceWriter, projectRoot: string): Promise<CommandOutcome> {
   updateProgress(context, { stage: "test", status: "running", message: command.dryRun ? "planning tests" : "running tests" });
   const result = await runTestCommand({
     projectRoot,
@@ -1581,7 +1596,7 @@ async function executeTest(command: TestCommand, context: ExecContext, evidence:
   };
 }
 
-async function executeVerify(
+export async function executeVerify(
   command: VerifyCommand,
   context: ExecContext,
   evidence: EvidenceWriter,
@@ -1617,7 +1632,7 @@ async function executeVerify(
   };
 }
 
-async function executeAgentServe(command: AgentServeCommand, projectRoot: string, evidence: EvidenceWriter): Promise<CommandOutcome> {
+export async function executeAgentServe(command: AgentServeCommand, projectRoot: string, evidence: EvidenceWriter): Promise<CommandOutcome> {
   const server = startAgentServer({
     projectRoot,
     host: command.host,
@@ -1638,7 +1653,7 @@ async function executeAgentServe(command: AgentServeCommand, projectRoot: string
   };
 }
 
-async function executeAgentGenerate(
+export async function executeAgentGenerate(
   command: AgentGenerateCommand,
   context: ExecContext,
   evidence: EvidenceWriter,
@@ -1772,7 +1787,7 @@ async function executeAgentGenerate(
   };
 }
 
-async function executeAgentApplyPatch(
+export async function executeAgentApplyPatch(
   command: AgentApplyPatchCommand,
   projectRoot: string,
   evidence: EvidenceWriter,
@@ -1804,7 +1819,7 @@ async function executeAgentApplyPatch(
   };
 }
 
-async function executeAgentReviewSpec(
+export async function executeAgentReviewSpec(
   command: AgentReviewSpecCommand,
   context: ExecContext,
   evidence: EvidenceWriter,
@@ -1832,7 +1847,7 @@ async function executeAgentReviewSpec(
   };
 }
 
-async function executeAgentAsk(
+export async function executeAgentAsk(
   command: AgentAskCommand,
   context: ExecContext,
   evidence: EvidenceWriter,
@@ -1921,7 +1936,53 @@ async function executeAgentAsk(
   };
 }
 
-async function executeAgentValidateGenerated(
+export {
+  executeLogin,
+  executeLogout,
+  executeWhoami,
+  executeInit,
+  executeDoctor,
+  executeStageShow,
+  executeToolchainLint,
+  executeSpecLint,
+  executeSpecNormalize,
+  executeSpecCheckConsistency,
+  executeSpecPatchLint,
+  executeSpecPatchApply,
+  executeArchLint,
+  executeArchCompose,
+  executeArchDeriveTests,
+  executeBuild,
+  executeBuildGenerate,
+  executeRunQemu,
+  executeTest,
+  executeVerify,
+  executeTraceSyscall,
+  executeDebugExplainLog,
+  executeReportGenerate,
+  executeSubmitPack,
+  executeLedgerRecord,
+  executeKbAdd,
+  executeKbList,
+  executeKbSearch,
+  executeKbRemove,
+  executeKbClear,
+  executeKbExportManifest,
+  executeKbImportManifest,
+  executeAgentServe,
+  executeAgentContext,
+  executeAgentPlan,
+  executeAgentGenerate,
+  executeAgentApplyPatch,
+  executeAgentValidateGenerated,
+  executeAgentDebug,
+  executeAgentLog,
+  executeAgentReviewSpec,
+  executeAgentAsk,
+  executeTraceValidation,
+};
+
+export async function executeAgentValidateGenerated(
   command: AgentValidateGeneratedCommand,
   context: ExecContext,
   evidence: EvidenceWriter,
@@ -2026,7 +2087,7 @@ async function executeTraceValidation(params: {
   throw lastError instanceof Error ? lastError : new CliError("trace validation failed", "validation_failed");
 }
 
-async function executeAgentDebug(
+export async function executeAgentDebug(
   command: AgentDebugCommand,
   context: ExecContext,
   evidence: EvidenceWriter,
@@ -2065,7 +2126,7 @@ async function executeAgentDebug(
   };
 }
 
-async function executeAgentLog(
+export async function executeAgentLog(
   command: AgentLogCommand,
   projectRoot: string,
   evidence: EvidenceWriter,
@@ -2955,6 +3016,10 @@ function extractPatchTouches(patchText: string): string[] {
   }
   return [...changed];
 }
+
+export { executeCommand };
+export { startAgentServer } from "./agent/runner.ts";
+export type { CommandOutcome, ExecContext, ExecuteCliOptions } from "./bootstrap.ts";
 
 if (import.meta.main) {
   main();

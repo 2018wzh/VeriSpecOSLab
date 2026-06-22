@@ -31,7 +31,7 @@ vos/
     vos-runtime/
     vos-adapter/
     vos-agent-session/
-    vos-cli/
+    vos-server/
   apps/
     vos-agent/
     vos-portal/（prototype: vos-web）
@@ -39,9 +39,28 @@ vos/
 
 命名约定：
 
-- `packages/*` 放可复用 runtime、CLI、policy、evidence 和 agent 编排逻辑。
+- `packages/*` 放可复用 runtime、CLI、policy、evidence、agent-session、server façade 和其他共享逻辑。
 - `apps/vos-agent` 放本地 LLM runner、TUI、headless API 和本地 OpenAI-compatible façade。
 - `apps/vos-portal`（当前原型为 `apps/vos-web`）/ Portal 前端只做平台展示与控制面，不放 workspace runtime 逻辑。
+
+### `vos-server`
+
+责任：
+
+- 提供 `vos serve` 的 HTTP 入口：作业执行、SSE 订阅、manifest/events 查询与 QA 回调
+- 统一 CLI command execution context，转发到 `vos-cli` 调度层
+- 保持与 `vos-agent` / portal 预期一致的 request/response 契约
+
+主要输入 / 输出：
+
+- 输入：`commandId`、HTTP 参数、token 与请求体
+- 输出：命令结果、SSE stream、run 信息
+
+核心类型：
+
+- `VosHttpRun`
+- `VosCommandExecutionContext`
+- `VosCommandResult`
 
 ## 2. 模块职责
 
@@ -51,7 +70,7 @@ vos/
 
 - 解析 `vos` 子命令与参数
 - 提供 `vos login` / `logout` / `whoami` 的 Portal 身份入口
-- 提供 `vos serve` 的单项目 HTTP façade
+- 提供 `vos serve` 命令入口，委托 HTTP façade 到 `vos-server`
 - 调用对应 runtime / agent-core 接口
 - 对本地 CLI 与 HTTP run 执行同一 auth / policy gate
 - 控制文本输出与 `--json` 输出
@@ -229,6 +248,7 @@ vos-cli
   -> vos-runtime
   -> vos-adapter
   -> vos-agent-session
+  -> vos-server
 
 vos-agent-session
   -> vos-core
@@ -236,6 +256,11 @@ vos-agent-session
   -> vos-policy
   -> vos-evidence
   -> vos-runtime
+
+vos-server
+  -> vos-core
+  -> vos-policy
+  -> vos-evidence
 
 apps/vos-agent
   -> vos-agent-session
@@ -250,6 +275,7 @@ apps/vos-portal（当前原型实现为 vos-web）
 - `vos-spec`：规格与语义检查
 - `vos-runtime` / `vos-adapter`：命令执行编排
 - `vos-evidence` / `vos-policy`：证据、审计与安全边界
+- `vos-server`：`vos serve` HTTP façade、run 生命周期与 SSE/查询转发
 - `vos-agent-session` / `apps/vos-agent`：本地 Agent identity resolution、capability packs 与 LLM runner
 - `apps/vos-portal`（当前原型实现为 `apps/vos-web`）：课程平台前端，只消费平台 API 与 `vos` 结构化产物
 

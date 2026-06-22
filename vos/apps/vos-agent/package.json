@@ -19,7 +19,9 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",
-    "openai": "^6.16.0"
+    "openai": "^6.16.0",
+    "vos-agent-session": "workspace:*",
+    "vos-core": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",
