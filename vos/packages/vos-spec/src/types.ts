@@ -81,6 +81,7 @@ export interface NormalizedSpecBundle {
     decisions: Array<{ id: string; path: string }>;
   };
   composition: Array<{ id: string; title?: string; path: string; affected_modules: string[]; tests: string[] }>;
+  patch_records: SpecPatchRecord[];
   goals: Array<{ goal_id: string; category?: string; path: string; evidence_required: string[] }>;
   toolchain_profiles: Array<{ path: string; id?: string; includes: string[] }>;
   verification: {

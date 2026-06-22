@@ -159,6 +159,115 @@ describe("xv6-spec offline runtime flow", () => {
     expect(verify.requiredChecks).toEqual([{ id: "spec-patch-required", status: "validation_failed" }]);
   });
 
+  test("verify patch runs build and exact test suites from SpecPatch impact", async () => {
+    const { projectRoot, patchRef } = await makePatchVerifyFixture();
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["verify-patch"],
+      args: [],
+    });
+
+    const verify = await runVerifyCommand({
+      projectRoot,
+      evidence,
+      scope: "patch",
+      target: patchRef,
+      dryRun: false,
+    });
+
+    expect(verify.status).toBe("ok");
+    expect(readFileSync(join(projectRoot, "build.log"), "utf8").trim()).toBe("build");
+    expect(readFileSync(join(projectRoot, "test.log"), "utf8").trim().split("\n").sort()).toEqual([
+      "build_kernel",
+      "kalloc_alignment",
+    ]);
+  });
+
+  test("verify patch fails unknown checks and treats test build_kernel as a test", async () => {
+    const freeform = await makePatchVerifyFixture({ freeformCheck: true });
+    let evidence = await EvidenceWriter.create({
+      projectRoot: freeform.projectRoot,
+      evidenceDir: ".vos",
+      command: ["verify-patch-freeform"],
+      args: [],
+    });
+
+    let verify = await runVerifyCommand({
+      projectRoot: freeform.projectRoot,
+      evidence,
+      scope: "patch",
+      target: freeform.patchRef,
+      dryRun: false,
+    });
+
+    expect(verify.status).toBe("validation_failed");
+    expect(verify.steps).toEqual([{ name: "manual inspect", status: "validation_failed" }]);
+
+    const buildKernel = await makePatchVerifyFixture({ onlyBuildKernelTest: true });
+    evidence = await EvidenceWriter.create({
+      projectRoot: buildKernel.projectRoot,
+      evidenceDir: ".vos",
+      command: ["verify-patch-build-kernel"],
+      args: [],
+    });
+
+    verify = await runVerifyCommand({
+      projectRoot: buildKernel.projectRoot,
+      evidence,
+      scope: "patch",
+      target: buildKernel.patchRef,
+      dryRun: false,
+    });
+
+    expect(verify.status).toBe("ok");
+    expect(existsSync(join(buildKernel.projectRoot, "build.log"))).toBe(false);
+    expect(readFileSync(join(buildKernel.projectRoot, "test.log"), "utf8").trim()).toBe("build_kernel");
+  });
+
+  test("verify patch uses derived module and operation impact when metadata is incomplete", async () => {
+    const { projectRoot, patchRef } = await makePatchVerifyFixture({ omitImpactMetadata: true });
+    let evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["verify-patch-derived-dry-run"],
+      args: [],
+    });
+
+    let verify = await runVerifyCommand({
+      projectRoot,
+      evidence,
+      scope: "patch",
+      target: patchRef,
+      dryRun: true,
+    });
+
+    expect(verify.status).toBe("ok");
+    expect(verify.requiredChecks?.map((check) => check.id)).toContain("test kalloc_alignment");
+
+    evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["verify-patch-derived-run"],
+      args: [],
+    });
+
+    verify = await runVerifyCommand({
+      projectRoot,
+      evidence,
+      scope: "patch",
+      target: patchRef,
+      dryRun: false,
+    });
+
+    expect(verify.status).toBe("ok");
+    expect(readFileSync(join(projectRoot, "build.log"), "utf8").trim()).toBe("build");
+    expect(readFileSync(join(projectRoot, "test.log"), "utf8").trim().split("\n").sort()).toEqual([
+      "build_kernel",
+      "kalloc_alignment",
+    ]);
+  });
+
   test("build fails when toolchain manifest is missing instead of legacy auto-materializing", async () => {
     const projectRoot = makeXv6Fixture({ toolchainManifest: false });
     const evidence = await EvidenceWriter.create({
@@ -351,6 +460,158 @@ function makeXv6Fixture(options: {
   }
 
   return root;
+}
+
+async function makePatchVerifyFixture(options: {
+  freeformCheck?: boolean;
+  onlyBuildKernelTest?: boolean;
+  omitImpactMetadata?: boolean;
+} = {}): Promise<{ projectRoot: string; patchRef: string }> {
+  const root = join("/tmp", `vos-cli-patch-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  tmpRoots.push(root);
+  mkdirSync(join(root, ".vos"), { recursive: true });
+  mkdirSync(join(root, "spec", "architecture"), { recursive: true });
+  mkdirSync(join(root, "spec", "modules", "kernel", "memory", "ops"), { recursive: true });
+  mkdirSync(join(root, "spec", "toolchain"), { recursive: true });
+  mkdirSync(join(root, "spec", "evolution"), { recursive: true });
+
+  writeFileSync(join(root, ".vos", "project.yaml"), "project_id: patch-test\nspec_root: spec\ncurrent_stage: memory\n");
+  writeFileSync(join(root, "Makefile"), "all:\n\ttrue\n");
+  writeFileSync(join(root, "spec", "architecture", "timeline.yaml"), [
+    "timeline:",
+    "  - stage: memory",
+    "    enabled_modules: [kernel/memory]",
+    "    validation_gate: []",
+    "",
+  ].join("\n"));
+  writeFileSync(join(root, "spec", "modules", "kernel", "memory", "module.yaml"), [
+    "id: kernel/memory",
+    "module: kernel/memory",
+    "stage: memory",
+    "purpose: allocator",
+    "related_slices: []",
+    "related_adrs: []",
+    "owned_state: [freelist]",
+    "exported_interfaces: [kalloc]",
+    "imported_interfaces: []",
+    "module_invariants: [aligned]",
+    "error_model: [returns null]",
+    "resource_lifetime_rules: [free after alloc]",
+    "security_boundary: [kernel only]",
+    "test_surfaces: [allocator]",
+    "",
+  ].join("\n"));
+  writePatchVerifyOperation(root, { publicTests: ["kalloc_alignment"], followupChecks: [] });
+  writeFileSync(join(root, "spec", "toolchain", "build.yaml"), [
+    "build:",
+    "  allowed_output_path:",
+    "    - Makefile",
+    "",
+  ].join("\n"));
+  writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify({
+    files: ["Makefile"],
+    build: {
+      commands: [{ name: "build", command: ["sh", "-c", "mkdir -p build; echo kernel > build/kernel.bin; echo build >> build.log"] }],
+      artifacts: ["build/kernel.bin"],
+    },
+    test: {
+      suites: [
+        { name: "build_kernel", command: ["sh", "-c", "echo build_kernel >> test.log"] },
+        { name: "kalloc_alignment", command: ["sh", "-c", "echo kalloc_alignment >> test.log"] },
+      ],
+    },
+  }, null, 2));
+
+  git(root, ["init"]);
+  git(root, ["config", "user.email", "test@example.com"]);
+  git(root, ["config", "user.name", "Test User"]);
+  git(root, ["add", "."]);
+  git(root, ["commit", "-m", "base"]);
+
+  writePatchVerifyOperation(root, {
+    publicTests: options.onlyBuildKernelTest ? ["build_kernel"] : ["kalloc_alignment"],
+    followupChecks: options.freeformCheck ? ["manual inspect"] : options.onlyBuildKernelTest ? [] : ["build"],
+  });
+  if (options.omitImpactMetadata) {
+    writeFileSync(join(root, "spec", "modules", "kernel", "memory", "module.yaml"), [
+      "id: kernel/memory",
+      "module: kernel/memory",
+      "stage: memory",
+      "purpose: allocator v2",
+      "related_slices: []",
+      "related_adrs: []",
+      "owned_state: [freelist]",
+      "exported_interfaces: [kalloc]",
+      "imported_interfaces: []",
+      "module_invariants: [aligned]",
+      "error_model: [returns null]",
+      "resource_lifetime_rules: [free after alloc]",
+      "security_boundary: [kernel only]",
+      "test_surfaces: [allocator]",
+      "",
+    ].join("\n"));
+  }
+  writeFileSync(join(root, "spec", "evolution", "patch-001.yaml"), [
+    "id: patch-001",
+    "stage: memory",
+    "title: Patch 001",
+    "reason: test",
+    "kind: operation_change",
+    "affected_specs:",
+    "  - spec/evolution/patch-001.yaml",
+    ...(options.omitImpactMetadata ? ["  - spec/modules/kernel/memory/module.yaml"] : []),
+    "  - spec/modules/kernel/memory/ops/kalloc.yaml",
+    `affected_modules: [${options.omitImpactMetadata ? "" : "kernel/memory"}]`,
+    `affected_operations: [${options.omitImpactMetadata ? "" : "kernel/memory.kalloc"}]`,
+    "before: {}",
+    "after: {}",
+    "risks: []",
+    "required_regressions: [build_kernel]",
+    "",
+  ].join("\n"));
+  git(root, ["add", "."]);
+  git(root, ["commit", "-m", "patch\n\nSpec-Patch-ID: patch-001"]);
+  return { projectRoot: root, patchRef: git(root, ["rev-parse", "HEAD"]).trim() };
+}
+
+function writePatchVerifyOperation(root: string, options: { publicTests: string[]; followupChecks: string[] }): void {
+  writeFileSync(join(root, "spec", "modules", "kernel", "memory", "ops", "kalloc.yaml"), [
+    "id: kernel/memory.kalloc",
+    "stage: memory",
+    "module: kernel/memory",
+    "operation: kalloc",
+    "purpose: allocate page",
+    "depends_on:",
+    "  requires_modules: [kernel/memory]",
+    "  requires_ops: []",
+    "guarantee:",
+    "  returns: [page]",
+    "preconditions: [initialized]",
+    "postconditions: [aligned]",
+    "invariants_preserved: [freelist]",
+    "failure_semantics: [null on exhaustion]",
+    "test_obligations:",
+    `  public: [${options.publicTests.join(", ")}]`,
+    "  generated: []",
+    "  hidden_tags: []",
+    "codegen:",
+    "  targets:",
+    "    - kind: symbol",
+    "      path: kernel/kalloc.c",
+    "      symbols: [kalloc]",
+    "      owner: kernel/memory",
+    "      mode: modify",
+    `  required_followup_checks: [${options.followupChecks.join(", ")}]`,
+    "",
+  ].join("\n"));
+}
+
+function git(cwd: string, args: string[]): string {
+  const proc = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  if (proc.exitCode !== 0) {
+    throw new Error(proc.stderr.toString());
+  }
+  return proc.stdout.toString();
 }
 
 function makeAgentGeneratePatch(): string {

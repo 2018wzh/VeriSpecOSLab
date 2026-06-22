@@ -249,6 +249,7 @@ export async function buildNormalizedSpecBundle(params: {
       decisions: decisions.sort(byId),
     },
     composition: compositions.sort(byId),
+    patch_records: patchRecords.sort(byId),
     goals: goals.sort((a, b) => a.goal_id.localeCompare(b.goal_id)),
     toolchain_profiles: toolchainProfiles.sort(byPath),
     verification: {
@@ -355,10 +356,14 @@ export async function resolveSpecPatch(params: {
   const bundle = params.bundle ?? await buildNormalizedSpecBundle({ projectRoot, specRoot: params.specRoot });
   const patch = await loadSpecPatchRecord(projectRoot, params.ref, bundle);
   const changedFiles = await changedFilesForPatch(projectRoot, patch, params.ref);
-  const diagnostics = validatePatchRecord(bundle, patch, changedFiles);
+  const derivedImpact = derivePatchImpact(bundle, patch, changedFiles);
+  const diagnostics = [
+    ...validatePatchRecord(bundle, patch, changedFiles),
+    ...derivedImpact.diagnostics,
+  ];
   const relatedOps = bundle.operations.filter((operation) =>
-    patch.affected_operations.includes(operation.id) ||
-    patch.affected_modules.some((module) => moduleMatches(operation.module, module)) ||
+    derivedImpact.affected_operations.includes(operation.id) ||
+    derivedImpact.affected_modules.some((module) => moduleMatches(operation.module, module)) ||
     patch.affected_specs.includes(operation.path)
   );
   const selectedTests = unique([
@@ -379,8 +384,8 @@ export async function resolveSpecPatch(params: {
       parent_sha: patch.parent_sha,
       affected_specs: patch.affected_specs,
       affected_code_paths: changedFiles.filter((file) => !file.startsWith("spec/")),
-      affected_modules: patch.affected_modules,
-      affected_operations: patch.affected_operations,
+      affected_modules: derivedImpact.affected_modules,
+      affected_operations: derivedImpact.affected_operations,
       required_checks: requiredChecks,
       selected_tests: selectedTests,
       requires_cloud_projection_refresh: patch.kind === "architecture_change" || patch.kind === "toolchain_change",
@@ -484,25 +489,93 @@ function validatePatchRecord(bundle: NormalizedSpecBundle, patch: SpecPatchRecor
     }
   }
   const changedSpecs = changedFiles.filter((file) => isSpecYamlPath(file));
-  const unlisted = changedSpecs.filter((file) => file !== patch.path && !patch.affected_specs.includes(file));
+  const unlisted = changedSpecs.filter((file) => !patch.affected_specs.includes(file));
   for (const file of unlisted) {
     diagnostics.push(errorDiagnostic("patch.diff_unlisted_spec", `commit changes spec file not listed in affected_specs: ${file}`, patch.path, file));
   }
-  diagnostics.push(...validatePatchDag(bundle));
+  if (changedFiles.length > 0) {
+    const changedSpecSet = new Set(changedSpecs);
+    const stale = patch.affected_specs.filter((file) => !changedSpecSet.has(file));
+    for (const file of stale) {
+      diagnostics.push(errorDiagnostic("patch.diff_stale_spec", `affected spec is not changed by commit diff: ${file}`, patch.path, file));
+    }
+  }
+  diagnostics.push(...validatePatchDag(bundle.patch_records));
   return diagnostics;
 }
 
-function validatePatchDag(bundle: NormalizedSpecBundle): SpecDiagnostic[] {
+function validatePatchDag(patches: SpecPatchRecord[]): SpecDiagnostic[] {
   const diagnostics: SpecDiagnostic[] = [];
-  const patches = bundle.sources.filter((source) => source.kind === "spec_patch");
   const graph = new Graph({ directed: true });
-  for (const patch of patches) graph.setNode(patch.path);
-  // Current spec format has commit parent edges, not patch parent ids. Detect duplicate paths and leave
-  // room for future explicit patch dependencies without inventing an unstated field.
+  diagnostics.push(...duplicates(patches.map((patch) => ({ id: patch.id, path: patch.path })), "patch.duplicate_id"));
+
+  const commits = new Map<string, SpecPatchRecord>();
+  const duplicateCommits = new Set<string>();
+  for (const patch of patches) {
+    if (!patch.commit_sha) continue;
+    const first = commits.get(patch.commit_sha);
+    if (first) {
+      duplicateCommits.add(patch.commit_sha);
+      diagnostics.push(errorDiagnostic("patch.commit_duplicate", `duplicate commit_sha ${patch.commit_sha}; first seen at ${first.path}`, patch.path, patch.id));
+    } else {
+      commits.set(patch.commit_sha, patch);
+      graph.setNode(patch.commit_sha);
+    }
+  }
+
+  for (const patch of patches) {
+    if (!patch.commit_sha || duplicateCommits.has(patch.commit_sha)) continue;
+    if (!patch.parent_sha || patch.parent_sha === "null") continue;
+    if (!commits.has(patch.parent_sha)) {
+      diagnostics.push(errorDiagnostic("patch.parent_missing", `parent_sha does not reference a known SpecPatch commit: ${patch.parent_sha}`, patch.path, patch.id));
+      continue;
+    }
+    graph.setEdge(patch.parent_sha, patch.commit_sha);
+  }
+
   if (!alg.isAcyclic(graph)) {
     diagnostics.push(errorDiagnostic("patch.dag_cycle", "SpecPatch DAG contains a cycle"));
   }
   return diagnostics;
+}
+
+function derivePatchImpact(bundle: NormalizedSpecBundle, patch: SpecPatchRecord, changedFiles: string[]): {
+  affected_modules: string[];
+  affected_operations: string[];
+  diagnostics: SpecDiagnostic[];
+} {
+  const modules = new Set(patch.affected_modules);
+  const operations = new Set(patch.affected_operations);
+  const diagnostics: SpecDiagnostic[] = [];
+
+  for (const file of changedFiles.filter((item) => isSpecYamlPath(item))) {
+    const modulePath = file.match(/^spec\/modules\/(.+)\/module\.ya?ml$/i);
+    if (modulePath) {
+      modules.add(modulePath[1]);
+      if (!patch.affected_modules.includes(modulePath[1])) {
+        diagnostics.push(warningDiagnostic("patch.impact_unlisted_module", `changed module spec not listed in affected_modules: ${modulePath[1]}`, patch.path, modulePath[1]));
+      }
+      continue;
+    }
+
+    const operation = bundle.operations.find((item) => item.path === file);
+    if (operation) {
+      modules.add(operation.module);
+      operations.add(operation.id);
+      if (!patch.affected_modules.some((module) => moduleMatches(operation.module, module))) {
+        diagnostics.push(warningDiagnostic("patch.impact_unlisted_module", `changed operation spec module not listed in affected_modules: ${operation.module}`, patch.path, operation.module));
+      }
+      if (!patch.affected_operations.includes(operation.id)) {
+        diagnostics.push(warningDiagnostic("patch.impact_unlisted_operation", `changed operation spec not listed in affected_operations: ${operation.id}`, patch.path, operation.id));
+      }
+    }
+  }
+
+  return {
+    affected_modules: unique([...modules]),
+    affected_operations: unique([...operations]),
+    diagnostics,
+  };
 }
 
 function runSemanticChecks(args: {
@@ -563,6 +636,7 @@ function runSemanticChecks(args: {
     }
   }
   diagnostics.push(...validateCompositionRefs(args.compositions, args.modules));
+  diagnostics.push(...validatePatchDag(args.patchRecords));
   for (const requirement of args.publicRequirements) {
     if (requirement.related_specs.length === 0 && requirement.required_tests.length === 0) {
       diagnostics.push(errorDiagnostic("verification.requirement_unbound", `public requirement ${requirement.id} has no related specs or required tests`, undefined, requirement.id));
@@ -630,6 +704,10 @@ function parseCommitTrailers(message: string): Record<string, string> {
     if (match) out[match[1]] = match[2].trim();
   }
   return out;
+}
+
+function warningDiagnostic(code: string, message: string, pathValue?: string, ref?: string): SpecDiagnostic {
+  return { severity: "warning", code, message, path: pathValue, ref };
 }
 
 async function revParse(projectRoot: string, ref: string): Promise<string> {

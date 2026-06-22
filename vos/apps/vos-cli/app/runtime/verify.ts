@@ -5,9 +5,11 @@ import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { runBuildCommand } from "./build.ts";
 import { runQemuCommand } from "./run.ts";
+import { runTestCommand } from "./test.ts";
 import { parseTopLevelYaml } from "../utils/yaml.ts";
 import {
   buildNormalizedSpecBundle,
+  composeArchitecture,
   deriveTestMatrix,
   hasBlockingDiagnostics,
   resolveSpecPatch,
@@ -68,7 +70,7 @@ export async function runVerifyCommand(params: {
         requiredChecks: [{ id: "spec-patch-required", status: "validation_failed" }],
       };
     }
-    const { impact } = await resolveSpecPatch({
+    const { patch, impact } = await resolveSpecPatch({
       projectRoot: params.projectRoot,
       ref: patchRef,
       bundle,
@@ -84,6 +86,24 @@ export async function runVerifyCommand(params: {
       };
     }
     const selected = selectPatchVerificationChecks(impact);
+    const unknownCheck = selected.find((check) =>
+      check !== "spec lint" &&
+      check !== "arch lint" &&
+      check !== "build" &&
+      !check.startsWith("make ") &&
+      !check.startsWith("test ")
+    );
+    if (unknownCheck) {
+      return {
+        status: "validation_failed",
+        scope,
+        steps: [{ name: unknownCheck, status: "validation_failed" }],
+        requiredChecks: selected.map((id) => ({
+          id,
+          status: id === unknownCheck ? "validation_failed" : "planned",
+        })),
+      };
+    }
     if (params.dryRun) {
       return {
         status: "ok",
@@ -94,7 +114,14 @@ export async function runVerifyCommand(params: {
     }
     const steps: Array<{ name: string; status: CommandStatus }> = [];
     for (const check of selected) {
-      if (check === "build" || check.startsWith("make ") || check.includes("build")) {
+      if (check === "spec lint") {
+        steps.push({ name: check, status: "ok" });
+      } else if (check === "arch lint") {
+        const composition = composeArchitecture(bundle, patch.stage);
+        const status: CommandStatus = hasBlockingDiagnostics(composition.conflicts) ? "validation_failed" : "ok";
+        steps.push({ name: check, status });
+        if (status !== "ok") return { status, scope, steps };
+      } else if (check === "build" || check.startsWith("make ")) {
         const result = await runBuildCommand({
           projectRoot: params.projectRoot,
           evidence: params.evidence,
@@ -103,8 +130,19 @@ export async function runVerifyCommand(params: {
         });
         steps.push({ name: check, status: result.status });
         if (result.status !== "ok") return { status: result.status, scope, steps };
+      } else if (check.startsWith("test ")) {
+        const result = await runTestCommand({
+          projectRoot: params.projectRoot,
+          evidence: params.evidence,
+          suites: [check.slice("test ".length)],
+          dryRun: false,
+          signal: params.signal,
+        });
+        steps.push({ name: check, status: result.status });
+        if (result.status !== "ok") return { status: result.status, scope, steps };
       } else {
-        steps.push({ name: check, status: "ok" });
+        steps.push({ name: check, status: "validation_failed" });
+        return { status: "validation_failed", scope, steps };
       }
     }
     return {
