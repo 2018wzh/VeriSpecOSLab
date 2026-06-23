@@ -473,6 +473,10 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
     let dryRun = false;
     let timeoutMs: number | undefined;
     let readyPattern: string | undefined;
+    let profileId: string | undefined;
+    let caseId: string | undefined;
+    let listProfiles = false;
+    let listCases = false;
     for (let i = 1; i < rest.length; i++) {
       const arg = rest[i];
       if (arg === "--dry-run") {
@@ -497,6 +501,32 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
         readyPattern = arg.slice("--ready-pattern=".length);
         continue;
       }
+      if (arg === "--profile") {
+        profileId = resolveRequiredValue(rest, i, arg);
+        i++;
+        continue;
+      }
+      if (arg.startsWith("--profile=")) {
+        profileId = arg.slice("--profile=".length);
+        continue;
+      }
+      if (arg === "--case") {
+        caseId = resolveRequiredValue(rest, i, arg);
+        i++;
+        continue;
+      }
+      if (arg.startsWith("--case=")) {
+        caseId = arg.slice("--case=".length);
+        continue;
+      }
+      if (arg === "--list-profiles") {
+        listProfiles = true;
+        continue;
+      }
+      if (arg === "--list-cases") {
+        listCases = true;
+        continue;
+      }
       if (arg.startsWith("-")) {
         throw new Error(`unknown flag for run qemu: ${arg}`);
       }
@@ -510,6 +540,10 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       dryRun,
       timeoutMs,
       readyPattern,
+      profileId,
+      caseId,
+      listProfiles,
+      listCases,
     } satisfies RunQemuCommand;
   }
 

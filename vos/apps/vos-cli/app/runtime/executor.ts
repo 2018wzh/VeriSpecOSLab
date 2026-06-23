@@ -1,4 +1,7 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { closeSync, constants, existsSync, mkdtempSync, openSync, rmSync, writeSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 export interface ExecutorResult {
   command: string[];
@@ -32,10 +35,26 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
   const cwd = opts.cwd;
 
   return new Promise((resolve, reject) => {
+    let stdinFifo: { dir: string; path: string; readyPath: string; fd: number } | undefined;
+    const needsStdin = opts.stdin !== undefined || opts.stdinAfter !== undefined;
+    try {
+      if (needsStdin) {
+        stdinFifo = createStdinFifo();
+      }
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    const command = stdinFifo
+      ? ["sh", "-c", "exec 3< \"$VOS_STDIN_FIFO\"; : > \"$VOS_STDIN_READY\"; exec \"$@\" <&3", "vos-stdin", ...opts.command]
+      : opts.command;
+    const env = stdinFifo
+      ? { ...process.env, ...opts.env, VOS_STDIN_FIFO: stdinFifo.path, VOS_STDIN_READY: stdinFifo.readyPath }
+      : opts.env ? { ...process.env, ...opts.env } : process.env;
     let timedOut = false;
-    const proc = spawn(opts.command[0], opts.command.slice(1), {
+    const proc = spawn(command[0], command.slice(1), {
       cwd,
-      env: opts.env ? { ...process.env, ...opts.env } : process.env,
+      env,
       stdio: ["pipe", "pipe", "pipe"],
       shell: false,
     });
@@ -43,8 +62,36 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
     const outChunks: string[] = [];
     const errChunks: string[] = [];
     let stoppedByCondition = false;
-    let delayedStdinWritten = false;
+    let delayedStdinWritten = opts.stdinAfter === undefined;
     let settled = false;
+
+    const cleanupStdinFifo = () => {
+      if (!stdinFifo) return;
+      try {
+        closeSync(stdinFifo.fd);
+      } catch {
+        // already closed
+      }
+      rmSync(stdinFifo.dir, { recursive: true, force: true });
+      stdinFifo = undefined;
+    };
+
+    const writeChildStdin = (text: string) => {
+      if (stdinFifo) {
+        if (!existsSync(stdinFifo.readyPath)) {
+          setTimeout(() => {
+            if (!settled) writeChildStdin(text);
+          }, 1);
+          return;
+        }
+        writeSync(stdinFifo.fd, text);
+        cleanupStdinFifo();
+      } else {
+        proc.stdin?.write(text, () => {
+          proc.stdin?.end();
+        });
+      }
+    };
 
     const onData = (buffer: Buffer, target: string[]) => {
       const text = buffer.toString();
@@ -55,9 +102,7 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
       };
       if (!delayedStdinWritten && opts.stdinAfter && new RegExp(opts.stdinAfter.pattern).test(`${output.stdout}${output.stderr}`)) {
         delayedStdinWritten = true;
-        proc.stdin?.write(opts.stdinAfter.text, () => {
-          proc.stdin?.end();
-        });
+        writeChildStdin(opts.stdinAfter.text);
       }
       const lines = text.split(/\r?\n/);
       for (const line of lines) {
@@ -77,10 +122,10 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
     proc.stdout?.on("data", (chunk) => onData(chunk as Buffer, outChunks));
     proc.stderr?.on("data", (chunk) => onData(chunk as Buffer, errChunks));
 
-    if (opts.stdinAfter) {
-      proc.stdin?.write("");
-    } else if (opts.stdin !== undefined) {
-      proc.stdin?.write(opts.stdin);
+    proc.stdin?.on("error", () => {});
+    if (opts.stdin !== undefined) {
+      writeChildStdin(opts.stdin);
+    } else if (!opts.stdinAfter) {
       proc.stdin?.end();
     }
 
@@ -116,6 +161,7 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
       settled = true;
       if (timer !== undefined) clearTimeout(timer);
       if (graceTimer !== undefined) clearTimeout(graceTimer);
+      cleanupStdinFifo();
       opts.signal?.removeEventListener("abort", abortProcess);
       reject(error);
     });
@@ -124,6 +170,7 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
       settled = true;
       if (timer !== undefined) clearTimeout(timer);
       if (graceTimer !== undefined) clearTimeout(graceTimer);
+      cleanupStdinFifo();
       opts.signal?.removeEventListener("abort", abortProcess);
       const durationMs = Date.now() - start;
       resolve({
@@ -137,4 +184,21 @@ export async function runCommand(opts: ExecutorOptions): Promise<ExecutorResult>
       });
     });
   });
+}
+
+function createStdinFifo(): { dir: string; path: string; readyPath: string; fd: number } {
+  const dir = mkdtempSync(path.join(tmpdir(), "vos-stdin-"));
+  const fifoPath = path.join(dir, "stdin");
+  const readyPath = path.join(dir, "ready");
+  const result = spawnSync("mkfifo", [fifoPath]);
+  if (result.status !== 0) {
+    rmSync(dir, { recursive: true, force: true });
+    throw new Error(`failed to create stdin FIFO: ${result.stderr.toString().trim()}`);
+  }
+  return {
+    dir,
+    path: fifoPath,
+    readyPath,
+    fd: openSync(fifoPath, constants.O_RDWR | constants.O_NONBLOCK),
+  };
 }

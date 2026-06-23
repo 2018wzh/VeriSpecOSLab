@@ -5,7 +5,7 @@ import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { runBuildCommand } from "./build.ts";
-import { runQemuCommand } from "./run.ts";
+import { runQemuCommand } from "./qemu.ts";
 import { runTestCommand } from "./test.ts";
 import { runCommand } from "./executor.ts";
 import { parseTopLevelYaml } from "../utils/yaml.ts";

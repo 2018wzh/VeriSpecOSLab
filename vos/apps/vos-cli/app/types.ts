@@ -154,6 +154,10 @@ export interface RunQemuCommand extends BaseCommand {
   dryRun: boolean;
   timeoutMs?: number;
   readyPattern?: string;
+  profileId?: string;
+  caseId?: string;
+  listProfiles?: boolean;
+  listCases?: boolean;
 }
 
 export interface TestCommand extends BaseCommand {

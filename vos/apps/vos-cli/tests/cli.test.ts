@@ -244,6 +244,30 @@ describe("vos-cli agent command parsing", () => {
     });
   });
 
+  test("parses qemu profile and case runner flags", () => {
+    expect(parseArgs([
+      "bun",
+      "vos",
+      "run",
+      "qemu",
+      "--profile",
+      "syscall",
+      "--case",
+      "write-smoke",
+      "--list-profiles",
+      "--list-cases",
+    ]).command).toEqual({
+      kind: "run_qemu",
+      dryRun: false,
+      timeoutMs: undefined,
+      readyPattern: undefined,
+      profileId: "syscall",
+      caseId: "write-smoke",
+      listProfiles: true,
+      listCases: true,
+    });
+  });
+
   test("parses agent review-spec target and rejects spec patch stdin", () => {
     expect(parseArgs(["bun", "vos", "agent", "review-spec", "--target", "memory"]).command).toEqual({
       kind: "agent_review_spec",

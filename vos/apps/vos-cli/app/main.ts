@@ -80,7 +80,7 @@ import {
   progressUpdateFromAgentEvent,
 } from "./progress/agent.ts";
 import { runBuildCommand } from "./runtime/build.ts";
-import { runQemuCommand } from "./runtime/run.ts";
+import { runQemuCommand } from "./runtime/qemu.ts";
 import { runTestCommand } from "./runtime/test.ts";
 import { runVerifyCommand, type BehaviorTestRunner } from "./runtime/verify.ts";
 import {
@@ -1563,14 +1563,24 @@ export async function executeRunQemu(command: RunQemuCommand, context: ExecConte
     dryRun: command.dryRun,
     timeoutMs: command.timeoutMs,
     readyPattern: command.readyPattern,
+    profileId: command.profileId,
+    caseId: command.caseId,
+    listProfiles: command.listProfiles,
+    listCases: command.listCases,
     signal: context.signal,
   });
   return {
     status: result.status,
     details: {
+      profileId: result.profileId,
+      caseId: result.caseId,
+      profiles: result.profiles,
+      cases: result.cases,
       readyDetected: result.readyDetected,
       durationMs: result.durationMs,
       serialPath: result.serialPath,
+      stderrPath: result.stderrPath,
+      resultPath: result.resultPath,
       output: result.output,
     },
   };

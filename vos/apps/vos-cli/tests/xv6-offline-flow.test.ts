@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { EvidenceWriter } from "../app/evidence/index.ts";
 import { executeCommand } from "../app/main.ts";
 import { runBuildCommand } from "../app/runtime/build.ts";
-import { runQemuCommand } from "../app/runtime/run.ts";
+import { parseQmpMessages, runQemuCommand } from "../app/runtime/qemu.ts";
 import { runVerifyCommand } from "../app/runtime/verify.ts";
 import type { HeadlessAgentOptions } from "vos-agent/headless";
 
@@ -103,6 +103,124 @@ describe("xv6-spec offline runtime flow", () => {
     expect(run.status).toBe("ok");
     expect(run.readyDetected).toBe(true);
     expect(run.output).toContain("XV6_BOOT_OK");
+  });
+
+  test("runs selected qemu profile case with stdin oracle and required artifacts", async () => {
+    const projectRoot = makeXv6Fixture();
+    const fakeQemu = join(projectRoot, "fake-case-qemu.sh");
+    mkdirSync(join(projectRoot, "build"), { recursive: true });
+    writeFileSync(join(projectRoot, "build", "kernel.bin"), "fake kernel\n");
+    writeFileSync(fakeQemu, [
+      "#!/usr/bin/env sh",
+      "printf 'READY\\n'",
+      "IFS= read -r line",
+      "printf 'got:%s\\n' \"$line\"",
+      "mkdir -p build",
+      "printf done > build/case.ok",
+      "",
+    ].join("\n"));
+    chmodSync(fakeQemu, 0o755);
+    writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify({
+      files: ["Makefile"],
+      build: { commands: ["make all"], artifacts: ["build/kernel.bin"] },
+      run: {
+        profiles: [{
+          id: "syscall",
+          command: fakeQemu,
+          args: [],
+          artifacts: ["build/kernel.bin"],
+          timeout_ms: 1000,
+          serial: true,
+        }],
+        cases: [{
+          id: "write-smoke",
+          profile: "syscall",
+          stdin_after: { pattern: "READY", text: "hello\n" },
+          success_regex: "got:hello",
+          failure_regex: "panic",
+          exit_code: 0,
+          required_artifacts: ["build/case.ok"],
+        }],
+      },
+    }, null, 2));
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["profile-case"],
+      args: [],
+    });
+
+    const run = await runQemuCommand({
+      projectRoot,
+      evidence,
+      profileId: "syscall",
+      caseId: "write-smoke",
+      dryRun: false,
+    });
+
+    expect(run.status).toBe("ok");
+    expect(run.profileId).toBe("syscall");
+    expect(run.caseId).toBe("write-smoke");
+    expect(run.readyDetected).toBe(true);
+    const result = JSON.parse(readFileSync(join(projectRoot, ".vos", "runs", evidence.run_id, "artifacts", "run", "write-smoke", "result.json"), "utf8"));
+    expect(result.oracle.success_matched).toBe(true);
+    expect(result.oracle.required_artifacts_present).toBe(true);
+  });
+
+  test("parses QMP greeting responses and events", () => {
+    const messages = parseQmpMessages([
+      JSON.stringify({ QMP: { version: { qemu: { major: 9, minor: 0, micro: 0 } }, capabilities: [] } }),
+      JSON.stringify({ return: {} }),
+      JSON.stringify({ event: "SHUTDOWN", timestamp: { seconds: 1, microseconds: 2 }, data: { guest: true } }),
+      "",
+    ].join("\r\n"));
+
+    expect(messages[0].QMP).toBeTruthy();
+    expect(messages.map((message) => message.event).filter(Boolean)).toEqual(["SHUTDOWN"]);
+  });
+
+  test("writes adapter contract when qemu profile enables QMP HMP and GDB", async () => {
+    const projectRoot = makeXv6Fixture();
+    const fakeQemu = join(projectRoot, "fake-qmp-qemu.sh");
+    mkdirSync(join(projectRoot, "build"), { recursive: true });
+    writeFileSync(join(projectRoot, "build", "kernel.bin"), "fake kernel\n");
+    writeFileSync(fakeQemu, "#!/usr/bin/env sh\nprintf 'boot ok\\n'\n");
+    chmodSync(fakeQemu, 0o755);
+    writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify({
+      run: {
+        profiles: [{
+          id: "debug",
+          command: fakeQemu,
+          args: [],
+          artifacts: ["build/kernel.bin"],
+          qmp: { enabled: true, port: 26001 },
+          hmp: { enabled: true },
+          gdb: { enabled: true, port: 26000 },
+        }],
+        cases: [{ id: "shutdown", profile: "debug", success_regex: "boot ok" }],
+      },
+    }, null, 2));
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["qmp-case"],
+      args: [],
+    });
+
+    const run = await runQemuCommand({
+      projectRoot,
+      evidence,
+      profileId: "debug",
+      caseId: "shutdown",
+      dryRun: true,
+    });
+
+    expect(run.status).toBe("ok");
+    const adapter = JSON.parse(readFileSync(join(projectRoot, ".vos", "runs", evidence.run_id, "artifacts", "run", "shutdown", "adapter-contract.json"), "utf8"));
+    expect(adapter.qmp_endpoint).toBe("tcp:127.0.0.1:26001");
+    expect(adapter.hmp_endpoint).toBeTruthy();
+    expect(adapter.gdb_endpoint).toBe("tcp:127.0.0.1:26000");
+    expect(adapter.qemu_args.join(" ")).toContain("-qmp");
   });
 
   test("honors object build command cwd and timeout metadata", async () => {
