@@ -348,18 +348,21 @@ export async function resolveSpecPatch(params: {
   specRoot?: string;
   ref: string;
   bundle?: NormalizedSpecBundle;
+  strict?: boolean;
 }): Promise<{ patch: SpecPatchRecord; impact: PatchImpactReport }> {
   if (!params.ref || params.ref === "-") {
     throw new Error("spec patch commands require a SpecPatch YAML path or commit-ish; use `vos agent apply-patch` for unified diffs");
   }
   const projectRoot = path.resolve(params.projectRoot);
   const bundle = params.bundle ?? await buildNormalizedSpecBundle({ projectRoot, specRoot: params.specRoot });
-  const patch = await loadSpecPatchRecord(projectRoot, params.ref, bundle);
-  const changedFiles = await changedFilesForPatch(projectRoot, patch, params.ref);
-  const derivedImpact = derivePatchImpact(bundle, patch, changedFiles);
+  const resolved = await loadSpecPatchRecord(projectRoot, params.ref, bundle);
+  const patch = resolved.patch;
+  const changedFiles = await changedFilesForPatch(projectRoot, patch, params.ref, params.strict === true);
+  const derivedImpact = derivePatchImpact(bundle, patch, changedFiles, params.strict === true);
   const diagnostics = [
     ...validatePatchRecord(bundle, patch, changedFiles),
     ...derivedImpact.diagnostics,
+    ...validateStrictPatchRecord(projectRoot, patch, resolved.trailers, resolved.metadataCommitSha, params.strict === true),
   ];
   const relatedOps = bundle.operations.filter((operation) =>
     derivedImpact.affected_operations.includes(operation.id) ||
@@ -398,13 +401,17 @@ export function selectPatchVerificationChecks(impact: PatchImpactReport): string
   return impact.required_checks.length > 0 ? impact.required_checks : ["spec lint", "arch lint", "build"];
 }
 
-async function loadSpecPatchRecord(projectRoot: string, ref: string, bundle: NormalizedSpecBundle): Promise<SpecPatchRecord> {
+async function loadSpecPatchRecord(
+  projectRoot: string,
+  ref: string,
+  bundle: NormalizedSpecBundle,
+): Promise<{ patch: SpecPatchRecord; trailers?: Record<string, string>; metadataCommitSha?: string }> {
   const absolute = path.resolve(projectRoot, ref);
   if (existsSync(absolute)) {
     const rel = normalizePath(path.relative(projectRoot, absolute));
     const raw = await readFile(absolute, "utf8");
     const parsed = specPatchSchema.parse(parseYaml(raw));
-    return {
+    const patchRecord = {
       id: parsed.id,
       stage: parsed.stage,
       title: parsed.title,
@@ -418,6 +425,7 @@ async function loadSpecPatchRecord(projectRoot: string, ref: string, bundle: Nor
       affected_operations: parsed.affected_operations,
       required_regressions: parsed.required_regressions,
     };
+    return { patch: patchRecord, metadataCommitSha: patchRecord.commit_sha };
   }
 
   const git = simpleGit(projectRoot);
@@ -436,13 +444,16 @@ async function loadSpecPatchRecord(projectRoot: string, ref: string, bundle: Nor
   }
   const record = await loadSpecPatchRecord(projectRoot, patch, bundle);
   return {
-    ...record,
-    commit_sha: await revParse(projectRoot, ref),
-    spec_commit_sha: trailers["Spec-Commit-SHA"] ?? record.spec_commit_sha,
+    patch: {
+      ...record.patch,
+      commit_sha: await revParse(projectRoot, ref),
+    },
+    trailers,
+    metadataCommitSha: record.patch.commit_sha,
   };
 }
 
-async function changedFilesForPatch(projectRoot: string, patch: SpecPatchRecord, ref: string): Promise<string[]> {
+async function changedFilesForPatch(projectRoot: string, patch: SpecPatchRecord, ref: string, strict: boolean): Promise<string[]> {
   const git = simpleGit(projectRoot);
   const commit = patch.commit_sha && patch.commit_sha !== "null" ? patch.commit_sha : existsSync(path.resolve(projectRoot, ref)) ? undefined : ref;
   if (!commit) return [];
@@ -457,9 +468,43 @@ async function changedFilesForPatch(projectRoot: string, patch: SpecPatchRecord,
     const parent = patch.parent_sha && patch.parent_sha !== "null" ? patch.parent_sha : `${commit}^`;
     const diff = await git.diff(["--name-only", `${parent}..${commit}`]);
     return diff.split(/\r?\n/).map((line) => normalizePath(line)).filter(Boolean);
-  } catch {
+  } catch (error) {
+    if (strict) throw error;
     return [];
   }
+}
+
+function validateStrictPatchRecord(
+  projectRoot: string,
+  patch: SpecPatchRecord,
+  trailers: Record<string, string> | undefined,
+  metadataCommitSha: string | undefined,
+  strict: boolean,
+): SpecDiagnostic[] {
+  if (!strict) return [];
+  const diagnostics: SpecDiagnostic[] = [];
+  void projectRoot;
+  if (!metadataCommitSha || metadataCommitSha === "null") {
+    diagnostics.push(errorDiagnostic("patch.commit_missing", "SpecPatch apply requires commit_sha", patch.path, patch.id));
+  } else if (patch.commit_sha && metadataCommitSha !== patch.commit_sha) {
+    diagnostics.push(errorDiagnostic("patch.commit_mismatch", `SpecPatch commit_sha ${metadataCommitSha} does not match resolved commit ${patch.commit_sha}`, patch.path, patch.id));
+  }
+  if (!patch.parent_sha || patch.parent_sha === "null") {
+    diagnostics.push(errorDiagnostic("patch.parent_missing", "SpecPatch apply requires parent_sha", patch.path, patch.id));
+  }
+  if (trailers) {
+    if (trailers["Spec-Patch-ID"] !== patch.id) {
+      diagnostics.push(errorDiagnostic("patch.trailer_id_mismatch", `Spec-Patch-ID ${trailers["Spec-Patch-ID"]} does not match ${patch.id}`, patch.path, patch.id));
+    }
+    const trailerSpecCommit = trailers["Spec-Commit-SHA"];
+    if (trailerSpecCommit && patch.spec_commit_sha && trailerSpecCommit !== patch.spec_commit_sha) {
+      diagnostics.push(errorDiagnostic("patch.trailer_spec_commit_mismatch", `Spec-Commit-SHA ${trailerSpecCommit} does not match ${patch.spec_commit_sha}`, patch.path, patch.id));
+    }
+    if (trailerSpecCommit && !patch.spec_commit_sha) {
+      diagnostics.push(errorDiagnostic("patch.spec_commit_missing", "SpecPatch YAML must bind spec_commit_sha when commit trailer provides Spec-Commit-SHA", patch.path, patch.id));
+    }
+  }
+  return diagnostics;
 }
 
 function validatePatchRecord(bundle: NormalizedSpecBundle, patch: SpecPatchRecord, changedFiles: string[]): SpecDiagnostic[] {
@@ -527,6 +572,7 @@ function validatePatchDag(patches: SpecPatchRecord[]): SpecDiagnostic[] {
     if (!patch.commit_sha || duplicateCommits.has(patch.commit_sha)) continue;
     if (!patch.parent_sha || patch.parent_sha === "null") continue;
     if (!commits.has(patch.parent_sha)) {
+      if (looksLikeCommitSha(patch.parent_sha)) continue;
       diagnostics.push(errorDiagnostic("patch.parent_missing", `parent_sha does not reference a known SpecPatch commit: ${patch.parent_sha}`, patch.path, patch.id));
       continue;
     }
@@ -539,7 +585,7 @@ function validatePatchDag(patches: SpecPatchRecord[]): SpecDiagnostic[] {
   return diagnostics;
 }
 
-function derivePatchImpact(bundle: NormalizedSpecBundle, patch: SpecPatchRecord, changedFiles: string[]): {
+function derivePatchImpact(bundle: NormalizedSpecBundle, patch: SpecPatchRecord, changedFiles: string[], strict = false): {
   affected_modules: string[];
   affected_operations: string[];
   diagnostics: SpecDiagnostic[];
@@ -553,7 +599,7 @@ function derivePatchImpact(bundle: NormalizedSpecBundle, patch: SpecPatchRecord,
     if (modulePath) {
       modules.add(modulePath[1]);
       if (!patch.affected_modules.includes(modulePath[1])) {
-        diagnostics.push(warningDiagnostic("patch.impact_unlisted_module", `changed module spec not listed in affected_modules: ${modulePath[1]}`, patch.path, modulePath[1]));
+        diagnostics.push(patchImpactDiagnostic(strict, "patch.impact_unlisted_module", `changed module spec not listed in affected_modules: ${modulePath[1]}`, patch.path, modulePath[1]));
       }
       continue;
     }
@@ -563,10 +609,10 @@ function derivePatchImpact(bundle: NormalizedSpecBundle, patch: SpecPatchRecord,
       modules.add(operation.module);
       operations.add(operation.id);
       if (!patch.affected_modules.some((module) => moduleMatches(operation.module, module))) {
-        diagnostics.push(warningDiagnostic("patch.impact_unlisted_module", `changed operation spec module not listed in affected_modules: ${operation.module}`, patch.path, operation.module));
+        diagnostics.push(patchImpactDiagnostic(strict, "patch.impact_unlisted_module", `changed operation spec module not listed in affected_modules: ${operation.module}`, patch.path, operation.module));
       }
       if (!patch.affected_operations.includes(operation.id)) {
-        diagnostics.push(warningDiagnostic("patch.impact_unlisted_operation", `changed operation spec not listed in affected_operations: ${operation.id}`, patch.path, operation.id));
+        diagnostics.push(patchImpactDiagnostic(strict, "patch.impact_unlisted_operation", `changed operation spec not listed in affected_operations: ${operation.id}`, patch.path, operation.id));
       }
     }
   }
@@ -708,6 +754,14 @@ function parseCommitTrailers(message: string): Record<string, string> {
 
 function warningDiagnostic(code: string, message: string, pathValue?: string, ref?: string): SpecDiagnostic {
   return { severity: "warning", code, message, path: pathValue, ref };
+}
+
+function patchImpactDiagnostic(strict: boolean, code: string, message: string, pathValue?: string, ref?: string): SpecDiagnostic {
+  return strict ? errorDiagnostic(code, message, pathValue, ref) : warningDiagnostic(code, message, pathValue, ref);
+}
+
+function looksLikeCommitSha(value: string): boolean {
+  return /^[0-9a-f]{7,40}$/i.test(value);
 }
 
 async function revParse(projectRoot: string, ref: string): Promise<string> {

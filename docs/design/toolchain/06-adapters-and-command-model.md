@@ -180,13 +180,20 @@ load SpecPatch YAML or commit-ish
 
 ```text
 load SpecPatch YAML or commit-ish
-  -> resolve commit-backed SpecPatch metadata
-  -> read git diff
-  -> validate DAG, spec binding, allowed paths, and impact scope
-  -> update normalized cache
-  -> refresh projection
-  -> mark affected tests and regressions
+  -> strict resolve commit-backed SpecPatch metadata
+  -> require local commit_sha / parent_sha and read git diff
+  -> validate trailers, DAG, spec binding, and exact impact scope
+  -> update .vos/cache/normalized/bundle.json
+  -> write patch impact, verification plan, and status cache
+  -> execute verify patch
+  -> refresh local student / agent / staff projections
+  -> mark applied state only after verification passes
 ```
+
+`apply` 不修改当前工作区，也不接受 stdin unified diff。它登记并验证已经存在于
+Git DAG 中的 commit-backed SpecPatch。`affected_specs`、`affected_modules`
+和 `affected_operations` 必须完整覆盖真实 diff impact；`apply` 不使用从 diff
+自动补齐 metadata 的 fallback。
 
 Agent 的 unified diff gate 仍可作为局部写入入口存在；commit-backed
 SpecPatch 是设计演化、复现和提交审计的首选路径。

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, writeFile, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import simpleGit from "simple-git";
@@ -136,6 +136,52 @@ describe("vos-spec semantic bundle", () => {
     expect(report.impact.required_checks).toContain("test kalloc_smoke");
     expect(report.impact.diagnostics.some((item) => item.code === "patch.impact_unlisted_module")).toBe(true);
     expect(report.impact.diagnostics.some((item) => item.code === "patch.impact_unlisted_operation")).toBe(true);
+  });
+
+  test("strict SpecPatch resolution requires commit metadata", async () => {
+    const root = await fixtureProject();
+    await mkdir(path.join(root, "spec", "evolution"), { recursive: true });
+    await writePatch(root, "patch-001", ["spec/modules/kernel/memory/ops/kalloc.yaml"]);
+    const bundle = await buildNormalizedSpecBundle({ projectRoot: root });
+
+    const report = await resolveSpecPatch({
+      projectRoot: root,
+      ref: "spec/evolution/patch-001.yaml",
+      bundle,
+      strict: true,
+    });
+
+    expect(report.impact.diagnostics.some((item) => item.code === "patch.commit_missing")).toBe(true);
+    expect(report.impact.diagnostics.some((item) => item.code === "patch.parent_missing")).toBe(true);
+  });
+
+  test("strict SpecPatch resolution rejects commit trailer mismatches", async () => {
+    const root = await gitFixtureProject(["spec/modules/kernel/memory/ops/kalloc.yaml"]);
+    await writePatch(root, "patch-001", ["spec/modules/kernel/memory/ops/kalloc.yaml"], { parentSha: null });
+    const git = simpleGit(root);
+    await git.add(".");
+    const commit = await git.commit([
+      "patch",
+      "",
+      "Spec-Patch-ID: patch-001",
+      "Spec-Commit-SHA: trailer-spec",
+    ].join("\n"));
+    await writePatch(root, "patch-001", ["spec/modules/kernel/memory/ops/kalloc.yaml"], {
+      commitSha: commit.commit,
+      parentSha: null,
+    });
+    const patchPath = path.join(root, "spec", "evolution", "patch-001.yaml");
+    await writeFile(patchPath, (await readFile(patchPath, "utf8")).replace("parent_sha: null", "parent_sha: null\nspec_commit_sha: yaml-spec"));
+    const bundle = await buildNormalizedSpecBundle({ projectRoot: root });
+
+    const report = await resolveSpecPatch({
+      projectRoot: root,
+      ref: commit.commit,
+      bundle,
+      strict: true,
+    });
+
+    expect(report.impact.diagnostics.some((item) => item.code === "patch.trailer_spec_commit_mismatch")).toBe(true);
   });
 });
 

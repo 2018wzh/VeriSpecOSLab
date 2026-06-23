@@ -104,6 +104,23 @@ spec/evolution/patch-*.yaml
   -> 再进入 build / test / verify
 ```
 
+本地命令流程：
+
+```bash
+vos spec patch lint spec/evolution/patch-003-refcount-pages.yaml
+vos spec patch apply spec/evolution/patch-003-refcount-pages.yaml
+vos verify patch spec/evolution/patch-003-refcount-pages.yaml
+```
+
+`lint` 只报告结构、DAG、影响范围和回归选择；`apply` 是严格 gate，会要求
+`commit_sha` / `parent_sha` 可在本地 Git 中解析，要求 SpecPatch metadata
+完整覆盖真实 diff impact，并默认执行 `verify patch`。只有验证通过后，VOS
+才会刷新 `.vos/cache/patches/applied.json` 和本地 student / agent / staff
+projection。
+
+Agent 生成的 unified diff 只能通过 `vos agent apply-patch` 作为局部写入入口，
+不能替代 commit-backed SpecPatch 演化记录。
+
 这保证：
 
 - 新机制是被解释过的

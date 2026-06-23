@@ -129,7 +129,9 @@ import {
   selectPatchVerificationChecks,
   type AgentSpecReview,
   type NormalizedSpecBundle,
+  type PatchImpactReport,
   type SpecDiagnostic,
+  type SpecPatchRecord,
 } from "vos-spec";
 import {
   addKbSource,
@@ -795,24 +797,112 @@ export async function executeSpecPatchApply(
     specRoot: project.spec_root ?? "spec",
     ref: command.patchPath,
     bundle,
+    strict: true,
+  });
+  const selectedChecks = selectPatchVerificationChecks(impact);
+  const normalizedCache = await writeNormalizedBundle(projectRoot, bundle, evidence);
+  const patchCache = await writePatchApplyCache({
+    projectRoot,
+    evidence,
+    bundle,
+    patch,
+    impact,
+    selectedChecks,
+    status: "planned",
   });
   if (hasBlockingDiagnostics([...bundle.diagnostics, ...impact.diagnostics])) {
+    const failedStatus = await writePatchApplyStatus({
+      projectRoot,
+      evidence,
+      patchId: patch.id,
+      commitSha: patch.commit_sha,
+      parentSha: patch.parent_sha,
+      status: "validation_failed",
+      diagnostics: [...bundle.diagnostics, ...impact.diagnostics],
+      verificationRunId: evidence.run_id,
+    });
     return {
       status: "validation_failed",
-      details: { patch, impact, selected_checks: selectPatchVerificationChecks(impact) },
+      details: {
+        patch,
+        impact,
+        selected_checks: selectedChecks,
+        cache_artifacts: patchCache,
+        normalized_cache: path.relative(projectRoot, normalizedCache),
+        status_artifact: path.relative(projectRoot, failedStatus),
+      },
     };
   }
-  const applyArtifact = path.join(evidence.artifacts_root, "patch", "impact.json");
-  await mkdir(path.dirname(applyArtifact), { recursive: true });
-  await writeFile(applyArtifact, `${JSON.stringify({ patch, impact }, null, 2)}\n`);
-  evidence.addArtifactFromPath("patch", applyArtifact, "SpecPatch impact report");
+  const verification = await runVerifyCommand({
+    projectRoot,
+    evidence,
+    scope: "patch",
+    target: command.patchPath,
+    dryRun: false,
+  });
+  if (verification.status !== "ok") {
+    const failedStatus = await writePatchApplyStatus({
+      projectRoot,
+      evidence,
+      patchId: patch.id,
+      commitSha: patch.commit_sha,
+      parentSha: patch.parent_sha,
+      status: verification.status,
+      diagnostics: [],
+      verificationRunId: evidence.run_id,
+    });
+    return {
+      status: verification.status,
+      details: {
+        patch,
+        impact,
+        selected_checks: selectedChecks,
+        verification,
+        cache_artifacts: patchCache,
+        normalized_cache: path.relative(projectRoot, normalizedCache),
+        status_artifact: path.relative(projectRoot, failedStatus),
+      },
+    };
+  }
+  const finalStatus = await writePatchApplyStatus({
+    projectRoot,
+    evidence,
+    patchId: patch.id,
+    commitSha: patch.commit_sha,
+    parentSha: patch.parent_sha,
+    status: "passed",
+    diagnostics: [],
+    verificationRunId: evidence.run_id,
+  });
+  const appliedState = await writeAppliedPatchState({
+    projectRoot,
+    evidence,
+    patch,
+    impactRef: patchCache.impact,
+    verificationRef: path.relative(projectRoot, evidence.manifest_path),
+  });
+  const projectionArtifacts = await writeLocalPatchProjections({
+    projectRoot,
+    evidence,
+    bundle,
+    patch,
+    impact,
+    selectedChecks,
+  });
   return {
     status: "passed",
     details: {
       patch,
       impact,
-      selected_checks: selectPatchVerificationChecks(impact),
-      artifact: path.relative(projectRoot, applyArtifact),
+      selected_checks: selectedChecks,
+      verification,
+      cache_artifacts: {
+        ...patchCache,
+        status: path.relative(projectRoot, finalStatus),
+      },
+      projection_artifacts: projectionArtifacts,
+      applied_state: appliedState,
+      normalized_cache: path.relative(projectRoot, normalizedCache),
     },
   };
 }
@@ -2514,6 +2604,166 @@ async function writeNormalizedBundle(
   await writeFile(cachePath, `${JSON.stringify(bundle, null, 2)}\n`);
   evidence.addArtifact("spec", path.relative(projectRoot, cachePath), "normalized spec bundle");
   return cachePath;
+}
+
+async function writePatchApplyCache(params: {
+  projectRoot: string;
+  evidence: EvidenceWriter;
+  bundle: NormalizedSpecBundle;
+  patch: SpecPatchRecord;
+  impact: PatchImpactReport;
+  selectedChecks: string[];
+  status: CommandStatus;
+}): Promise<{ impact: string; verification_plan: string; status: string }> {
+  const patchDir = path.join(params.projectRoot, ".vos", "cache", "patches", safeCacheSegment(params.patch.id));
+  await mkdir(patchDir, { recursive: true });
+  const impactPath = path.join(patchDir, "impact.json");
+  const planPath = path.join(patchDir, "verification-plan.json");
+  const statusPath = path.join(patchDir, "status.json");
+  await writeFile(impactPath, `${JSON.stringify({ patch: params.patch, impact: params.impact }, null, 2)}\n`);
+  await writeFile(planPath, `${JSON.stringify({
+    patch_id: params.patch.id,
+    commit_sha: params.patch.commit_sha,
+    parent_sha: params.patch.parent_sha,
+    selected_checks: params.selectedChecks,
+    required_checks: params.impact.required_checks,
+    selected_tests: params.impact.selected_tests,
+    generated_at: new Date().toISOString(),
+  }, null, 2)}\n`);
+  await writeFile(statusPath, `${JSON.stringify({
+    patch_id: params.patch.id,
+    commit_sha: params.patch.commit_sha,
+    parent_sha: params.patch.parent_sha,
+    status: params.status,
+    diagnostics: params.impact.diagnostics,
+    verification_run_id: params.evidence.run_id,
+    updated_at: new Date().toISOString(),
+  }, null, 2)}\n`);
+  params.evidence.addArtifact("patch", path.relative(params.projectRoot, impactPath), "SpecPatch impact report");
+  params.evidence.addArtifact("patch", path.relative(params.projectRoot, planPath), "SpecPatch verification plan");
+  params.evidence.addArtifact("patch", path.relative(params.projectRoot, statusPath), "SpecPatch apply status");
+  void params.bundle;
+  return {
+    impact: path.relative(params.projectRoot, impactPath),
+    verification_plan: path.relative(params.projectRoot, planPath),
+    status: path.relative(params.projectRoot, statusPath),
+  };
+}
+
+async function writePatchApplyStatus(params: {
+  projectRoot: string;
+  evidence: EvidenceWriter;
+  patchId: string;
+  commitSha?: string;
+  parentSha?: string;
+  status: CommandStatus;
+  diagnostics: SpecDiagnostic[];
+  verificationRunId: string;
+}): Promise<string> {
+  const statusPath = path.join(params.projectRoot, ".vos", "cache", "patches", safeCacheSegment(params.patchId), "status.json");
+  await mkdir(path.dirname(statusPath), { recursive: true });
+  await writeFile(statusPath, `${JSON.stringify({
+    patch_id: params.patchId,
+    commit_sha: params.commitSha,
+    parent_sha: params.parentSha,
+    status: params.status,
+    diagnostics: params.diagnostics,
+    verification_run_id: params.verificationRunId,
+    updated_at: new Date().toISOString(),
+  }, null, 2)}\n`);
+  params.evidence.addArtifact("patch", path.relative(params.projectRoot, statusPath), "SpecPatch apply status");
+  return statusPath;
+}
+
+async function writeAppliedPatchState(params: {
+  projectRoot: string;
+  evidence: EvidenceWriter;
+  patch: SpecPatchRecord;
+  impactRef: string;
+  verificationRef: string;
+}): Promise<Record<string, unknown>> {
+  const appliedPath = path.join(params.projectRoot, ".vos", "cache", "patches", "applied.json");
+  const applied = {
+    patch_id: params.patch.id,
+    commit_sha: params.patch.commit_sha,
+    parent_sha: params.patch.parent_sha,
+    spec_commit_sha: params.patch.spec_commit_sha,
+    applied_at: new Date().toISOString(),
+    impact_ref: params.impactRef,
+    verification_ref: params.verificationRef,
+  };
+  await mkdir(path.dirname(appliedPath), { recursive: true });
+  await writeFile(appliedPath, `${JSON.stringify(applied, null, 2)}\n`);
+  params.evidence.addArtifact("patch", path.relative(params.projectRoot, appliedPath), "applied SpecPatch state");
+  return {
+    ...applied,
+    path: path.relative(params.projectRoot, appliedPath),
+  };
+}
+
+async function writeLocalPatchProjections(params: {
+  projectRoot: string;
+  evidence: EvidenceWriter;
+  bundle: NormalizedSpecBundle;
+  patch: SpecPatchRecord;
+  impact: PatchImpactReport;
+  selectedChecks: string[];
+}): Promise<Record<string, string>> {
+  const projectionDir = path.join(params.projectRoot, ".vos", "cache", "projections");
+  await mkdir(projectionDir, { recursive: true });
+  const specHash = createHash("sha256").update(JSON.stringify(params.bundle.hashes)).digest("hex");
+  const student = {
+    projection_kind: "student",
+    generated_at: new Date().toISOString(),
+    spec_hash: specHash,
+    patch_id: params.patch.id,
+    stage: params.patch.stage,
+    visible_sources: params.bundle.sources.filter((source) => params.bundle.visibility[source.path] === "public").map((source) => source.path),
+    stages: params.bundle.architecture.stages,
+    modules: params.bundle.modules,
+    operations: params.bundle.operations.map((operation) => ({
+      id: operation.id,
+      module: operation.module,
+      operation: operation.operation,
+      stage: operation.stage,
+      public_tests: operation.public_tests,
+    })),
+    public_requirements: params.bundle.verification.public_requirements,
+    selected_public_tests: params.impact.selected_tests,
+    required_checks: params.selectedChecks,
+  };
+  const agent = {
+    ...student,
+    projection_kind: "agent",
+    patch_impact: {
+      affected_specs: params.impact.affected_specs,
+      affected_code_paths: params.impact.affected_code_paths,
+      affected_modules: params.impact.affected_modules,
+      affected_operations: params.impact.affected_operations,
+      requires_cloud_projection_refresh: params.impact.requires_cloud_projection_refresh,
+    },
+  };
+  const staff = {
+    ...agent,
+    projection_kind: "staff",
+    sources: params.bundle.sources,
+    patch_records: params.bundle.patch_records,
+    diagnostics: params.bundle.diagnostics,
+    impact_diagnostics: params.impact.diagnostics,
+  };
+  const projections = { student, agent, staff };
+  const out: Record<string, string> = {};
+  for (const [kind, value] of Object.entries(projections)) {
+    const filePath = path.join(projectionDir, `${kind}.json`);
+    await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
+    params.evidence.addArtifact("projection", path.relative(params.projectRoot, filePath), `${kind} local projection`);
+    out[kind] = path.relative(params.projectRoot, filePath);
+  }
+  return out;
+}
+
+function safeCacheSegment(value: string): string {
+  return value.replace(/[^A-Za-z0-9_.-]/g, "-");
 }
 
 async function runDefaultAgentSpecReview(params: {

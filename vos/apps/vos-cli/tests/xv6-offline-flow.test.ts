@@ -466,6 +466,81 @@ describe("xv6-spec offline runtime flow", () => {
     ]);
   });
 
+  test("spec patch apply writes cache, projections, applied state, and runs verification", async () => {
+    const { projectRoot, patchRef } = await makePatchVerifyFixture();
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["spec", "patch", "apply", patchRef],
+      args: [],
+    });
+
+    const result = await executeCommand({
+      kind: "spec_patch_apply",
+      patchPath: patchRef,
+    }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence,
+    });
+
+    expect(result.status).toBe("passed");
+    expect(existsSync(join(projectRoot, ".vos", "cache", "normalized", "bundle.json"))).toBe(true);
+    expect(existsSync(join(projectRoot, ".vos", "cache", "patches", "patch-001", "impact.json"))).toBe(true);
+    expect(existsSync(join(projectRoot, ".vos", "cache", "patches", "patch-001", "verification-plan.json"))).toBe(true);
+    expect(existsSync(join(projectRoot, ".vos", "cache", "patches", "patch-001", "status.json"))).toBe(true);
+    expect(existsSync(join(projectRoot, ".vos", "cache", "patches", "applied.json"))).toBe(true);
+    expect(existsSync(join(projectRoot, ".vos", "cache", "projections", "student.json"))).toBe(true);
+    expect(existsSync(join(projectRoot, ".vos", "cache", "projections", "agent.json"))).toBe(true);
+    expect(existsSync(join(projectRoot, ".vos", "cache", "projections", "staff.json"))).toBe(true);
+    expect(readFileSync(join(projectRoot, "test.log"), "utf8")).toContain("kalloc_alignment");
+  });
+
+  test("spec patch apply rejects incomplete impact metadata without writing applied state", async () => {
+    const { projectRoot, patchRef } = await makePatchVerifyFixture({ omitImpactMetadata: true });
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["spec", "patch", "apply", patchRef],
+      args: [],
+    });
+
+    const result = await executeCommand({
+      kind: "spec_patch_apply",
+      patchPath: patchRef,
+    }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence,
+    });
+
+    expect(result.status).toBe("validation_failed");
+    expect(JSON.stringify(result.details)).toContain("patch.impact_unlisted_module");
+    expect(existsSync(join(projectRoot, ".vos", "cache", "patches", "applied.json"))).toBe(false);
+  });
+
+  test("spec patch lint does not write applied state", async () => {
+    const { projectRoot, patchRef } = await makePatchVerifyFixture();
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["spec", "patch", "lint", patchRef],
+      args: [],
+    });
+
+    const result = await executeCommand({
+      kind: "spec_patch_lint",
+      patchPath: patchRef,
+    }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence,
+    });
+
+    expect(result.status).toBe("passed");
+    expect(existsSync(join(projectRoot, ".vos", "cache", "patches", "applied.json"))).toBe(false);
+  });
+
   test("verify invariant runs suites mapped from preserved invariants", async () => {
     const projectRoot = makeVerifyMappingFixture();
     const evidence = await EvidenceWriter.create({
@@ -1197,6 +1272,7 @@ async function makePatchVerifyFixture(options: {
   git(root, ["config", "user.name", "Test User"]);
   git(root, ["add", "."]);
   git(root, ["commit", "-m", "base"]);
+  const parent = git(root, ["rev-parse", "HEAD"]).trim();
 
   writePatchVerifyOperation(root, {
     publicTests: options.onlyBuildKernelTest ? ["build_kernel"] : ["kalloc_alignment"],
@@ -1221,14 +1297,19 @@ async function makePatchVerifyFixture(options: {
       "",
     ].join("\n"));
   }
+  git(root, ["add", "."]);
+  git(root, ["commit", "-m", "patch\n\nSpec-Patch-ID: patch-001"]);
+  const patchRef = git(root, ["rev-parse", "HEAD"]).trim();
+
   writeFileSync(join(root, "spec", "evolution", "patch-001.yaml"), [
     "id: patch-001",
     "stage: memory",
     "title: Patch 001",
     "reason: test",
     "kind: operation_change",
+    `commit_sha: ${patchRef}`,
+    `parent_sha: ${parent}`,
     "affected_specs:",
-    "  - spec/evolution/patch-001.yaml",
     ...(options.omitImpactMetadata ? ["  - spec/modules/kernel/memory/module.yaml"] : []),
     "  - spec/modules/kernel/memory/ops/kalloc.yaml",
     `affected_modules: [${options.omitImpactMetadata ? "" : "kernel/memory"}]`,
@@ -1239,9 +1320,7 @@ async function makePatchVerifyFixture(options: {
     "required_regressions: [build_kernel]",
     "",
   ].join("\n"));
-  git(root, ["add", "."]);
-  git(root, ["commit", "-m", "patch\n\nSpec-Patch-ID: patch-001"]);
-  return { projectRoot: root, patchRef: git(root, ["rev-parse", "HEAD"]).trim() };
+  return { projectRoot: root, patchRef };
 }
 
 function writePatchVerifyOperation(root: string, options: { publicTests: string[]; followupChecks: string[] }): void {

@@ -71,6 +71,25 @@
 
 - `verify patch`
 - `agent apply-patch`
+- `spec patch apply`
+
+`spec patch apply` 会把 `PatchImpactReport` 写入：
+
+```text
+.vos/cache/patches/<patch_id>/impact.json
+.vos/cache/patches/<patch_id>/verification-plan.json
+.vos/cache/patches/<patch_id>/status.json
+```
+
+验证通过后才更新：
+
+```text
+.vos/cache/patches/applied.json
+```
+
+`applied.json` 至少记录 `patch_id`、`commit_sha`、`parent_sha`、
+`spec_commit_sha`、`impact_ref` 与 `verification_ref`。验证失败只更新
+`status.json` 和 run evidence，不得把失败 patch 标记为已应用。
 
 ## 3. `ExecutionPlan`
 
@@ -222,6 +241,7 @@ trace 作为 suite 映射。
   cache/
     normalized/
     projections/
+    patches/
   runs/
     <run-id>/
       manifest.json
@@ -237,7 +257,8 @@ trace 作为 suite 映射。
 - `project.yaml`：项目 id、profile、spec root、cloud course
 - `policy.yaml`：角色权限、可见性与路径限制
 - `cache/normalized/`：`NormalizedSpecBundle` 与局部 normalize 结果
-- `cache/projections/`：云端公开约束投影缓存
+- `cache/projections/`：本地 student / agent / staff 投影缓存；云端投影可覆盖但不能成为离线运行前提
+- `cache/patches/`：SpecPatch impact、verification plan、status 与 applied state
 - `runs/<run-id>/manifest.json`：`RunManifest`
 - `runs/<run-id>/events.jsonl`：逐事件日志
 - `index/evidence.json`：跨 run evidence 索引
