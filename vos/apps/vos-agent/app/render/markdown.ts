@@ -3,6 +3,7 @@ import { fromMarkdown } from "mdast-util-from-markdown";
 import { gfmFromMarkdown } from "mdast-util-gfm";
 import { gfm } from "micromark-extension-gfm";
 import type { Root } from "mdast";
+import { indexedGraphemes, stringGraphemes } from "../tui/display-width.ts";
 import type { Style } from "../tui/style.ts";
 import {
   addPrefix,
@@ -372,10 +373,10 @@ function renderCodeBlock(node: MarkdownNode, ctx: RenderContext): RenderLine[] {
   const style = ctx.options.styles.codeBlock ?? {};
   const terminalStyle = primitiveStyle(ctx, style);
   const indent = " ".repeat(style.indent ?? style.margin ?? 0);
-  const rawLines = (node.value ?? "").replace(/\n$/, "").split("\n");
+  const segments = codeBlockSegments((node.value ?? "").replace(/\n$/, ""), node.lang, ctx, terminalStyle);
   const indentSegments = makeInlineSegments(indent, terminalStyle);
   return wrapSegmentLines(
-    rawLines.map((line) => codeLineSegments(line, node.lang, ctx, terminalStyle)),
+    hardBreakSegments(segments),
     ctx.options.wordWrap,
     indentSegments,
     indentSegments,
@@ -383,20 +384,22 @@ function renderCodeBlock(node: MarkdownNode, ctx: RenderContext): RenderLine[] {
   );
 }
 
-function codeLineSegments(
-  line: string,
+function codeBlockSegments(
+  value: string,
   rawLanguage: string | null | undefined,
   ctx: RenderContext,
   baseStyle: Style | undefined,
 ): RenderSegment[] {
   if (!shouldHighlightCode(rawLanguage)) {
-    return makeInlineSegments(line, baseStyle);
+    return makeInlineSegments(value, baseStyle);
   }
 
   const segments: RenderSegment[] = [];
+  const graphemes = indexedGraphemes(value);
+  let graphemeIndex = 0;
   let index = 0;
-  while (index < line.length) {
-    const rest = line.slice(index);
+  while (index < value.length) {
+    const rest = value.slice(index);
     const comment = commentToken(rest);
     if (comment !== undefined) {
       segments.push(...makeInlineSegments(comment, codeTokenStyle(baseStyle, ctx.options.styles.codeComment)));
@@ -428,8 +431,16 @@ function codeLineSegments(
       continue;
     }
 
-    segments.push(...makeInlineSegments(rest[0] ?? "", baseStyle));
-    index += 1;
+    while (graphemeIndex < graphemes.length && (graphemes[graphemeIndex]?.index ?? 0) < index) {
+      graphemeIndex += 1;
+    }
+    const grapheme = graphemes[graphemeIndex];
+    if (grapheme === undefined) {
+      break;
+    }
+    segments.push(...makeInlineSegments(grapheme.text, baseStyle));
+    index = grapheme.nextIndex;
+    graphemeIndex += 1;
   }
 
   return compactSegments(segments);
@@ -651,7 +662,7 @@ function columnWidths(rows: readonly (readonly (readonly RenderSegment[])[])[]):
   const widths: number[] = [];
   for (const row of rows) {
     row.forEach((cell, index) => {
-      widths[index] = Math.max(widths[index] ?? 0, segmentsToText(cell).length, segmentWidth(cell));
+      widths[index] = Math.max(widths[index] ?? 0, segmentWidth(cell));
     });
   }
   return widths;
@@ -662,7 +673,7 @@ function tableMinimumColumnWidths(rows: readonly (readonly (readonly RenderSegme
   for (const row of rows) {
     row.forEach((cell, index) => {
       for (const segment of cell) {
-        for (const char of segment.text) {
+        for (const char of stringGraphemes(segment.text)) {
           widths[index] = Math.max(widths[index] ?? 1, segmentWidth([{ text: char }]));
         }
       }
@@ -703,7 +714,8 @@ function codeTokenStyle(
 
 function commentToken(value: string): string | undefined {
   if (value.startsWith("//")) {
-    return value;
+    const newline = value.search(/\r?\n/);
+    return newline >= 0 ? value.slice(0, newline) : value;
   }
 
   if (value.startsWith("/*")) {
@@ -723,6 +735,9 @@ function stringToken(value: string): string | undefined {
   let escaped = false;
   for (let index = 1; index < value.length; index += 1) {
     const char = value[index];
+    if (quote !== "`" && (char === "\n" || char === "\r")) {
+      return value.slice(0, index);
+    }
     if (escaped) {
       escaped = false;
       continue;

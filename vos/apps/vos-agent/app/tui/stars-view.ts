@@ -1,9 +1,11 @@
 import {
   displayCellWidth,
+  indexedGraphemes,
   padEndDisplay,
   padStartDisplay,
   sliceByDisplayWidth,
   sliceEndByDisplayWidth,
+  stringGraphemes,
   stringDisplayWidth,
 } from "./display-width.ts";
 import {
@@ -579,7 +581,7 @@ function markdownLineToRow(line: RenderLine): RenderedTextRow {
   let text = "";
   for (const segment of line.segments) {
     text += segment.text;
-    for (const glyph of segment.text) {
+    for (const glyph of stringGraphemes(segment.text)) {
       cells.push({ glyph, style: segment.style, link: segment.link });
     }
   }
@@ -875,11 +877,11 @@ function takeWrappedChunk(text: string, width: number): { text: string; remainin
     ? breakNextStart ?? end
     : end;
   while (nextStart < text.length) {
-    const char = Array.from(text.slice(nextStart))[0];
+    const char = text[nextStart] ?? "";
     if (char === undefined || !isBreakableSpace(char)) {
       break;
     }
-    nextStart += char.length;
+    nextStart += 1;
   }
 
   const fallback = text.slice(0, fitEnd > 0 ? fitEnd : end);
@@ -1251,24 +1253,10 @@ function indexedChars(text: string): Array<{
   nextIndex: number;
   width: number;
 }> {
-  const result: Array<{
-    char: string;
-    index: number;
-    nextIndex: number;
-    width: number;
-  }> = [];
-  let index = 0;
-
-  for (const char of text) {
-    const nextIndex = index + char.length;
-    result.push({
-      char,
-      index,
-      nextIndex,
-      width: displayCellWidth(char),
-    });
-    index = nextIndex;
-  }
-
-  return result;
+  return indexedGraphemes(text).map((grapheme) => ({
+    char: grapheme.text,
+    index: grapheme.index,
+    nextIndex: grapheme.nextIndex,
+    width: grapheme.width,
+  }));
 }

@@ -63,6 +63,26 @@ describe("TUI screen buffer", () => {
     expect(stripAnsi(renderScreenDiff(undefined, screen))).toBe("é界B🙂");
   });
 
+  test("preserves emoji grapheme clusters as single wide cells", () => {
+    const screen = new ScreenBuffer(4, 1);
+
+    screen.writeText(0, 0, "👩‍💻A");
+
+    expect(Array.from({ length: 4 }, (_, x) => screen.getCell(x, 0).char)).toEqual([
+      "👩‍💻",
+      " ",
+      "A",
+      " ",
+    ]);
+    expect(Array.from({ length: 4 }, (_, x) => screen.getCellWidth(x, 0))).toEqual([
+      2,
+      0,
+      1,
+      1,
+    ]);
+    expect(stripAnsi(renderScreenDiff(undefined, screen))).toBe("👩‍💻A ");
+  });
+
   test("clearing a wide character rewrites both occupied terminal cells", () => {
     const previous = new ScreenBuffer(3, 1);
     previous.writeText(0, 0, "界B");

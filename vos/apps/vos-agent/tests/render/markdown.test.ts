@@ -91,6 +91,36 @@ describe("markdown renderer", () => {
     expect(secondLine?.segments).toContainEqual({ text: "\"done\"", style: { fg: "green" } });
   });
 
+  test("keeps multiline code tokens highlighted across wrapped source lines", () => {
+    const rendered = renderMarkdown(
+      [
+        "```ts",
+        "/* const hidden = 1;",
+        "return stillComment; */",
+        "const message = `hello",
+        "return stillString`;",
+        "```",
+      ].join("\n"),
+      withStyles(starsDarkStyle),
+      withWordWrap(80),
+    );
+
+    expect(rendered.lines.map((line) => segmentsToText(line.segments))).toEqual([
+      " /* const hidden = 1;",
+      " return stillComment; */",
+      " const message = `hello",
+      " return stillString`;",
+    ]);
+    expect(rendered.lines[1]?.segments).toContainEqual({
+      text: "return stillComment; */",
+      style: { dim: true, fg: "cyan" },
+    });
+    expect(rendered.lines[3]?.segments).toContainEqual({
+      text: "return stillString`",
+      style: { fg: "green" },
+    });
+  });
+
   test("keeps code block base color when token styles omit their own color", () => {
     const rendered = renderMarkdown(
       "```ts\nconst value = 1;\n```",

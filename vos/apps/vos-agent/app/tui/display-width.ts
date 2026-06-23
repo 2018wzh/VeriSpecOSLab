@@ -1,26 +1,29 @@
 export type PrintableCellWidth = 0 | 1 | 2;
 export type DisplayCellWidth = 1 | 2;
 
+export type IndexedGrapheme = Readonly<{
+  text: string;
+  index: number;
+  nextIndex: number;
+  width: DisplayCellWidth;
+}>;
+
+const graphemeSegmenter = typeof Intl.Segmenter === "function"
+  ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+  : undefined;
+
 /**
- * Returns the terminal cell width for a printable Unicode code point.
+ * Returns the terminal cell width for the first printable Unicode grapheme.
  *
  * This is a pragmatic wcwidth subset: it covers CJK/full-width ranges and
- * common emoji as wide cells, treats combining/control code points as
+ * common emoji as wide cells, treats combining/control-only graphemes as
  * non-printable, and keeps everything else single-cell. The TUI renderer uses
- * this to avoid splitting Chinese characters across terminal cells.
+ * this to avoid splitting Chinese characters and emoji clusters across terminal
+ * cells.
  */
 export function printableCellWidth(input: string): PrintableCellWidth {
-  const char = Array.from(input)[0];
-  if (char === undefined) {
-    return 0;
-  }
-
-  const codePoint = char.codePointAt(0);
-  if (codePoint === undefined || isControlCodePoint(codePoint) || isCombiningCodePoint(codePoint)) {
-    return 0;
-  }
-
-  return isWideCodePoint(codePoint) ? 2 : 1;
+  const grapheme = firstGrapheme(input);
+  return grapheme === undefined ? 0 : printableWidthForGrapheme(grapheme);
 }
 
 /** Width after the screen buffer sanitizes unsupported input to a blank cell. */
@@ -28,10 +31,70 @@ export function displayCellWidth(input: string): DisplayCellWidth {
   return printableCellWidth(input) === 2 ? 2 : 1;
 }
 
+export function firstGrapheme(text: string): string | undefined {
+  return indexedGraphemes(text)[0]?.text;
+}
+
+export function stringGraphemes(text: string): string[] {
+  return indexedGraphemes(text).map((grapheme) => grapheme.text);
+}
+
+export function indexedGraphemes(text: string): IndexedGrapheme[] {
+  if (text.length === 0) {
+    return [];
+  }
+
+  if (graphemeSegmenter !== undefined) {
+    const segments = Array.from(graphemeSegmenter.segment(text));
+    return segments.map((segment, index) => ({
+      text: segment.segment,
+      index: segment.index,
+      nextIndex: segments[index + 1]?.index ?? text.length,
+      width: displayWidthForGrapheme(segment.segment),
+    }));
+  }
+
+  const graphemes: IndexedGrapheme[] = [];
+  let index = 0;
+  for (const char of Array.from(text)) {
+    const nextIndex = index + char.length;
+    graphemes.push({
+      text: char,
+      index,
+      nextIndex,
+      width: displayWidthForGrapheme(char),
+    });
+    index = nextIndex;
+  }
+  return graphemes;
+}
+
+function displayWidthForGrapheme(grapheme: string): DisplayCellWidth {
+  return printableWidthForGrapheme(grapheme) === 2 ? 2 : 1;
+}
+
+function printableWidthForGrapheme(grapheme: string): PrintableCellWidth {
+  let hasPrintableCodePoint = false;
+  for (const char of Array.from(grapheme)) {
+    const codePoint = char.codePointAt(0);
+    if (codePoint === undefined || isControlCodePoint(codePoint)) {
+      continue;
+    }
+    if (isWideCodePoint(codePoint)) {
+      return 2;
+    }
+    if (!isCombiningCodePoint(codePoint)) {
+      hasPrintableCodePoint = true;
+    }
+  }
+
+  return hasPrintableCodePoint ? 1 : 0;
+}
+
 export function stringDisplayWidth(text: string): number {
   let width = 0;
-  for (const char of text) {
-    width += displayCellWidth(char);
+  for (const grapheme of indexedGraphemes(text)) {
+    width += grapheme.width;
   }
 
   return width;
@@ -43,15 +106,15 @@ export function sliceByDisplayWidth(text: string, start: number, end: number): s
   let result = "";
   let column = 0;
 
-  for (const char of text) {
-    const width = displayCellWidth(char);
+  for (const grapheme of indexedGraphemes(text)) {
+    const width = grapheme.width;
     const nextColumn = column + width;
 
     if (column >= safeEnd) {
       break;
     }
     if (column >= safeStart && nextColumn <= safeEnd) {
-      result += char;
+      result += grapheme.text;
     }
 
     column = nextColumn;
@@ -66,7 +129,7 @@ export function sliceEndByDisplayWidth(text: string, width: number): string {
     return "";
   }
 
-  const chars = Array.from(text);
+  const chars = indexedGraphemes(text);
   let remaining = safeWidth;
   let result = "";
 
@@ -76,12 +139,12 @@ export function sliceEndByDisplayWidth(text: string, width: number): string {
       continue;
     }
 
-    const charWidth = displayCellWidth(char);
+    const charWidth = char.width;
     if (charWidth > remaining) {
       continue;
     }
 
-    result = `${char}${result}`;
+    result = `${char.text}${result}`;
     remaining -= charWidth;
     if (remaining === 0) {
       break;

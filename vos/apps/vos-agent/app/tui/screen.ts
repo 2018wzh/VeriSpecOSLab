@@ -1,5 +1,5 @@
 import { cursorTo, hyperlinkEnd, hyperlinkStart, sgr } from "./ansi.ts";
-import { printableCellWidth } from "./display-width.ts";
+import { firstGrapheme, printableCellWidth, stringGraphemes } from "./display-width.ts";
 import { defaultStyle, normalizeStyle, stylesEqual } from "./style.ts";
 import type { Style } from "./style.ts";
 import type { PrintableCellWidth } from "./display-width.ts";
@@ -80,7 +80,7 @@ export class ScreenBuffer {
     assertInBoundsY(y, this.height);
 
     let offset = 0;
-    for (const char of text) {
+    for (const char of stringGraphemes(text)) {
       const cellWidth = sanitizedCellWidth(char);
       const targetX = x + offset;
       offset += cellWidth;
@@ -310,7 +310,7 @@ function copyStyle(style: Style): Style {
 }
 
 function sanitizeCellInput(input: string): { char: string; width: Exclude<PrintableCellWidth, 0> } {
-  const char = Array.from(input)[0];
+  const char = firstGrapheme(input);
   if (char === undefined) {
     return { char: blankChar, width: 1 };
   }

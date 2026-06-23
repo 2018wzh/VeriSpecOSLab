@@ -1,4 +1,4 @@
-import { displayCellWidth, stringDisplayWidth } from "../tui/display-width.ts";
+import { displayCellWidth, stringDisplayWidth, stringGraphemes } from "../tui/display-width.ts";
 import type { Style } from "../tui/style.ts";
 import type { RenderLine, RenderSegment } from "./types.ts";
 
@@ -185,7 +185,7 @@ function takeWrappedChunk(
 function flattenSegments(segments: readonly RenderSegment[]): StyledChar[] {
   const chars: StyledChar[] = [];
   for (const segment of segments) {
-    for (const char of segment.text) {
+    for (const char of stringGraphemes(segment.text)) {
       chars.push({
         char,
         width: displayCellWidth(char),

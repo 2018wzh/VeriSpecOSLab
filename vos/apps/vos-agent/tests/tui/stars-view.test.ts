@@ -414,6 +414,20 @@ describe("Stars TUI view", () => {
     expect(screen.getCell(5, 0).char).toBe("o");
   });
 
+  test("renders assistant markdown emoji graphemes without tearing clusters", () => {
+    const screen = renderStarsView({
+      transcript: [{ type: "assistant", text: "**👩‍💻** ok" }],
+      prompt: { text: "" },
+    }, { width: 12, height: 6 });
+
+    expect(screenRows(screen)[0]).toBe("👩‍💻  ok       ");
+    expect(screen.getCell(0, 0)).toEqual({ char: "👩‍💻", style: { bold: true } });
+    expect(screen.getCellWidth(0, 0)).toBe(2);
+    expect(screen.getCellWidth(1, 0)).toBe(0);
+    expect(screen.getCell(2, 0).char).toBe(" ");
+    expect(screen.getCell(3, 0).char).toBe("o");
+  });
+
   test("colors mode labels differently for smart and deep prompt borders", () => {
     const smart = renderStarsView({
       status: { mode: "smart" },
