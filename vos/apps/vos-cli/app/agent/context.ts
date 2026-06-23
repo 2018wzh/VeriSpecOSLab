@@ -316,7 +316,7 @@ function buildRecommendedCommands(currentStage: string, stages: TimelineStage[])
     `agent generate ${suffix}`,
     "build",
     "test",
-    `verify goal` ,
+    "verify public",
   ];
 }
 

@@ -107,8 +107,6 @@ async function runQemuCommandUnlocked(params: {
   }
 
   const caseRoot = path.join(params.evidence.artifacts_root, "run", safeRunArtifactName(plan.testCase.id));
-  const legacySerialPath = path.join(params.evidence.artifacts_root, "qemu.log");
-  const legacyResultPath = path.join(params.evidence.run_root, "smoke-result.json");
   const serialPath = path.join(caseRoot, "serial.log");
   const stderrPath = path.join(caseRoot, "stderr.log");
   const resultPath = path.join(caseRoot, "result.json");
@@ -132,8 +130,7 @@ async function runQemuCommandUnlocked(params: {
       adapterPath: await writeAdapterContract(params, plan, caseRoot),
     });
     await writeFile(resultPath, `${JSON.stringify(dryResult, null, 2)}\n`);
-    await writeFile(legacyResultPath, `${JSON.stringify(dryResult, null, 2)}\n`);
-    params.evidence.addArtifactFromPath("smoke-result", resultPath, "qemu case result");
+    params.evidence.addArtifactFromPath("qemu-result", resultPath, "qemu case result");
     return {
       status: "ok",
       output: `dry-run: ${plan.commandLine.join(" ")}`,
@@ -141,7 +138,6 @@ async function runQemuCommandUnlocked(params: {
       serialPath,
       stderrPath,
       durationMs: 0,
-      smokeResultPath: legacyResultPath,
       resultPath,
       profileId: plan.profile.id,
       caseId: plan.testCase.id,
@@ -186,7 +182,6 @@ async function runQemuCommandUnlocked(params: {
 
   await writeFile(serialPath, commandResult.stdout);
   await writeFile(stderrPath, commandResult.stderr);
-  await writeFile(legacySerialPath, `${commandResult.stdout}${commandResult.stderr}\n`);
   const adapterPath = await writeAdapterContract(params, plan, caseRoot);
 
   const output = `${commandResult.stdout}${commandResult.stderr}`;
@@ -218,11 +213,10 @@ async function runQemuCommandUnlocked(params: {
     oracle,
   });
   await writeFile(resultPath, `${JSON.stringify(result, null, 2)}\n`);
-  await writeFile(legacyResultPath, `${JSON.stringify(result, null, 2)}\n`);
 
   params.evidence.addArtifactFromPath("trace", serialPath, `qemu serial ${plan.testCase.id}`);
   params.evidence.addArtifactFromPath("qemu-stderr", stderrPath, `qemu stderr ${plan.testCase.id}`);
-  params.evidence.addArtifactFromPath("smoke-result", resultPath, `qemu result ${plan.testCase.id}`);
+  params.evidence.addArtifactFromPath("qemu-result", resultPath, `qemu result ${plan.testCase.id}`);
   if (adapterPath) params.evidence.addArtifactFromPath("qemu-adapter", adapterPath, `qemu adapter ${plan.testCase.id}`);
 
   return {
@@ -232,7 +226,6 @@ async function runQemuCommandUnlocked(params: {
     serialPath,
     stderrPath,
     durationMs: commandResult.durationMs,
-    smokeResultPath: legacyResultPath,
     resultPath,
     profileId: plan.profile.id,
     caseId: plan.testCase.id,

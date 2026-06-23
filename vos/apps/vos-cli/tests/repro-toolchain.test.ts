@@ -93,6 +93,31 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
     expect(manifest.output_files).toContain("build/kernel.bin");
   });
 
+  test("init default policy lists only supported verify scopes", async () => {
+    const projectRoot = makeGitProject({ manifest: false, policy: false });
+
+    const init = await executeCliInvocation([
+      "bun",
+      "vos",
+      "--project-root",
+      projectRoot,
+      "--json",
+      "init",
+    ], { print: false });
+
+    expect(init.status).toBe("passed");
+    const policy = readFileSync(join(projectRoot, ".vos", "policy.yaml"), "utf8");
+    expect(policy).toContain("  - verify public");
+    expect(policy).toContain("  - verify patch");
+    expect(policy).toContain("  - verify full");
+    expect(policy).toContain("  - verify invariant");
+    expect(policy).toContain("  - verify fuzz");
+    expect(policy).not.toContain("  - verify base");
+    expect(policy).not.toContain("  - verify architecture");
+    expect(policy).not.toContain("  - verify composition");
+    expect(policy).not.toContain("  - verify goal");
+  });
+
   test("build fails instead of auto-materializing a legacy manifest", async () => {
     const projectRoot = makeGitProject({ manifest: false });
     await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
@@ -128,6 +153,7 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
             manifest_version: 2,
             generator: { name: "vos-agent", version: "toolchain-draft-v1" },
             files: ["Makefile"],
+            environment: { required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }] },
             build: { variants: [{ id: "baseline", commands: ["make all"], artifacts: ["build/kernel.bin"] }] },
             run: {
               profiles: [{ id: "default", command: "printf", args: ["boot ok"], artifacts: ["build/kernel.bin"], timeout_secs: 1 }],
@@ -164,6 +190,43 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
     expect(git(projectRoot, ["log", "-1", "--pretty=%s"]).stdout.trim()).toBe("[vos][toolchain] Generate build system");
   });
 
+  test("build generate rejects drafts missing manifest required tools", async () => {
+    const projectRoot = makeGitProject({ manifest: false });
+    await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
+    const agentRunner = async () => ({
+      content: JSON.stringify({
+        files: [{ path: "Makefile", content: "all:\n\ttrue\n" }],
+        manifest: {
+          manifest_version: 2,
+          generator: { name: "vos-agent", version: "toolchain-draft-v1" },
+          files: ["Makefile"],
+          build: { variants: [{ id: "baseline", commands: ["make all"], artifacts: [] }] },
+          run: { profiles: [{ id: "default", command: "printf", args: ["ok"], artifacts: [] }], cases: [{ id: "smoke", profile: "default", success_regex: "ok" }] },
+          test: { suites: [] },
+        },
+        build_instructions: "missing tools",
+        spec_refs: ["spec/toolchain/build.yaml"],
+        changed_targets: ["Makefile"],
+      }),
+      events: [],
+    });
+
+    const result = await executeCliInvocation([
+      "bun",
+      "vos",
+      "--project-root",
+      projectRoot,
+      "--json",
+      "build",
+      "generate",
+    ], { print: false, agentRunner });
+
+    expect(result.status).toBe("agent_output_error");
+    expect(result.message).toContain("toolchain environment.required_tools is required");
+    expect(existsSync(join(projectRoot, "Makefile"))).toBe(true);
+    expect(existsSync(join(projectRoot, ".vos", "toolchain.json"))).toBe(false);
+  });
+
   test("build generate rejects drafts that write outside allowed_output_path", async () => {
     const projectRoot = makeGitProject({ manifest: false });
     await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
@@ -174,6 +237,7 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
           manifest_version: 2,
           generator: { name: "vos-agent", version: "toolchain-draft-v1" },
           files: ["scripts/build.sh"],
+          environment: { required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }] },
           build: { variants: [{ id: "baseline", commands: ["sh scripts/build.sh"], artifacts: [] }] },
           run: { profiles: [{ id: "default", command: "printf", args: ["ok"], artifacts: [] }], cases: [{ id: "smoke", profile: "default", success_regex: "ok" }] },
           test: { suites: [] },
@@ -200,7 +264,7 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
   });
 });
 
-function makeGitProject(options: { manifest: boolean }): string {
+function makeGitProject(options: { manifest: boolean; policy?: boolean }): string {
   const root = join("/tmp", `vos-repro-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   tmpRoots.push(root);
   mkdirSync(join(root, ".vos"), { recursive: true });
@@ -211,18 +275,20 @@ function makeGitProject(options: { manifest: boolean }): string {
     "current_stage: boot",
     "",
   ].join("\n"));
-  writeFileSync(join(root, ".vos", "policy.yaml"), [
-    "allowed_commands:",
-    "  - build",
-    "  - build generate",
-    "  - ledger record",
-    "allowed_paths:",
-    "  - .vos",
-    "  - spec",
-    "  - Makefile",
-    "visibility_scope: public",
-    "",
-  ].join("\n"));
+  if (options.policy !== false) {
+    writeFileSync(join(root, ".vos", "policy.yaml"), [
+      "allowed_commands:",
+      "  - build",
+      "  - build generate",
+      "  - ledger record",
+      "allowed_paths:",
+      "  - .vos",
+      "  - spec",
+      "  - Makefile",
+      "visibility_scope: public",
+      "",
+    ].join("\n"));
+  }
   writeFileSync(join(root, "spec", "toolchain", "toolchain.yaml"), "includes:\n  - build.yaml\n  - run.yaml\n");
   writeFileSync(join(root, "spec", "toolchain", "profile.yaml"), [
     "environment:",

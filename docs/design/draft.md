@@ -1564,10 +1564,12 @@ vos arch derive-tests spec/architecture/seed.yaml
 vos spec lint spec/modules/kernel/memory/ops/kalloc.yaml
 vos build
 vos run qemu
-vos verify base
-vos verify architecture
-vos verify composition
-vos verify goal
+vos verify public
+vos verify patch
+vos verify full
+vos verify invariant
+vos verify generated
+vos verify fuzz
 vos report
 ```
 

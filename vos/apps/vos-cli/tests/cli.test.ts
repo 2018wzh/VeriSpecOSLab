@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { parseArgs } from "../app/cli.ts";
 
 describe("vos-cli agent command parsing", () => {
@@ -204,6 +205,24 @@ describe("vos-cli agent command parsing", () => {
     expect(() =>
       parseArgs(["bun", "vos", "verify", "trace"])
     ).toThrow(/unsupported verify mode: trace/);
+  });
+
+  test("help lists only supported verify scopes", () => {
+    const result = Bun.spawnSync({
+      cmd: ["bun", "run", "app/main.ts", "--help"],
+      cwd: join(import.meta.dir, ".."),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const output = result.stdout.toString();
+
+    expect(result.exitCode).toBe(0);
+    expect(output).toContain("verify public|patch|full|invariant|generated|fuzz");
+    expect(output).not.toContain("verify public|patch|full|invariant|fuzz|base|architecture|composition|goal");
+    expect(output).not.toContain("verify base");
+    expect(output).not.toContain("verify architecture");
+    expect(output).not.toContain("verify composition");
+    expect(output).not.toContain("verify goal");
   });
 
   test("parses agent debug run requests", () => {

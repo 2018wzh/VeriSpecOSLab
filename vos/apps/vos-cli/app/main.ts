@@ -716,7 +716,6 @@ export async function executeStageShow(
     details: {
       current_stage: current,
       stages: timeline,
-      fallback: timeline.length === 0 ? "boot" : "timeline",
     },
   };
 }
@@ -1522,7 +1521,7 @@ export async function executeBuildGenerate(
       name: ((draft.manifest.generator as { name?: unknown } | undefined)?.name as string | undefined) ?? "vos-agent",
       version: ((draft.manifest.generator as { version?: unknown } | undefined)?.version as string | undefined) ?? "toolchain-draft-v1",
     },
-    environment: normalizeToolchainEnvironment(draft.manifest, spec.environment),
+    environment: normalizeToolchainEnvironment(draft.manifest),
   };
   try {
     parseToolchainManifest(manifest);
@@ -3598,16 +3597,18 @@ function validateToolchainDraftPaths(draft: ToolchainGenerationDraft, allowedOut
 
 function normalizeToolchainEnvironment(
   manifest: Record<string, unknown>,
-  fallback: { required_tools: Array<Record<string, unknown>> },
 ): { required_tools: Array<Record<string, unknown>> } {
   const existing = manifest.environment && typeof manifest.environment === "object" && !Array.isArray(manifest.environment)
     ? (manifest.environment as { required_tools?: unknown }).required_tools
     : undefined;
-  const tools = Array.isArray(existing) && existing.length > 0 ? existing : fallback.required_tools;
-  if (!Array.isArray(tools) || tools.length === 0) {
+  if (!Array.isArray(existing) || existing.length === 0) {
     throw new AgentOutputError("toolchain environment.required_tools is required");
   }
-  return { required_tools: tools.filter((tool): tool is Record<string, unknown> => Boolean(tool) && typeof tool === "object" && !Array.isArray(tool)) };
+  const tools = existing.filter((tool): tool is Record<string, unknown> => Boolean(tool) && typeof tool === "object" && !Array.isArray(tool));
+  if (tools.length === 0) {
+    throw new AgentOutputError("toolchain environment.required_tools is required");
+  }
+  return { required_tools: tools };
 }
 
 function normalizeProfileEnvironment(profileSpec: unknown): { required_tools: Array<Record<string, unknown>> } {
@@ -3711,7 +3712,7 @@ function printHelp(topic?: string): void {
     "  build generate [--agent-session <id>]",
     "  run qemu [--dry-run] [--timeout=<ms>]",
     "  test [--dry-run] [--suite=<name>]...",
-    "  verify public|patch|full|invariant|fuzz|base|architecture|composition|goal [--target <value>] [--staff-policy <path>]",
+    "  verify public|patch|full|invariant|generated|fuzz [--target <value>] [--staff-policy <path>]",
     "  trace syscall [--dry-run] [--timeout=<ms>]",
     "  debug explain-log [log-path]",
     "  report generate [--stage <stage>|--final]",

@@ -247,10 +247,12 @@ vos arch derive-tests spec/architecture/seed.yaml
 vos build
 vos run qemu
 vos test
-vos verify base
-vos verify architecture
-vos verify composition
-vos verify goal
+vos verify public
+vos verify patch
+vos verify full
+vos verify invariant
+vos verify generated
+vos verify fuzz
 vos trace
 vos debug
 vos login --portal-url <url>
@@ -1083,7 +1085,9 @@ TestMatrix =
   "artifacts": [
     "serial.log",
     "trace.json",
-    "qemu.log"
+    "run/<case>/serial.log"
+    "run/<case>/stderr.log"
+    "run/<case>/result.json"
   ],
   "invariants": {
     "endpoint_queue_valid": true,

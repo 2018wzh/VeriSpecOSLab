@@ -7,7 +7,6 @@ export interface RunCommandResult {
   durationMs: number;
   serialPath?: string;
   stderrPath?: string;
-  smokeResultPath?: string;
   resultPath?: string;
   profileId?: string;
   caseId?: string;

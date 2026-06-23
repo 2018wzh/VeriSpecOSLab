@@ -287,13 +287,13 @@ describe("vos-cli package agent runner", () => {
   test("agent debug run reads failed run evidence and writes debug artifacts", async () => {
     const projectRoot = makeProject();
     const runRoot = join(projectRoot, ".vos", "runs", "failed-run");
-    mkdirSync(join(runRoot, "artifacts"), { recursive: true });
-    writeFileSync(join(runRoot, "artifacts", "qemu.log"), "panic: allocator reused page\n");
+    mkdirSync(join(runRoot, "artifacts", "run", "boot-smoke"), { recursive: true });
+    writeFileSync(join(runRoot, "artifacts", "run", "boot-smoke", "serial.log"), "panic: allocator reused page\n");
     writeFileSync(join(runRoot, "manifest.json"), JSON.stringify({
       run_id: "failed-run",
       command: ["verify", "public"],
       status: "validation_failed",
-      artifacts: [{ kind: "trace", path: ".vos/runs/failed-run/artifacts/qemu.log", summary: "qemu log" }],
+      artifacts: [{ kind: "trace", path: ".vos/runs/failed-run/artifacts/run/boot-smoke/serial.log", summary: "qemu serial log" }],
       evidence_refs: [],
     }, null, 2));
     const evidence = await EvidenceWriter.create({
@@ -312,7 +312,7 @@ describe("vos-cli package agent runner", () => {
           suspected_clauses: ["kernel/memory.kalloc"],
           related_specs: ["spec/modules/kernel/memory/ops/kalloc.yaml"],
           suspected_concepts: ["free-list ownership"],
-          evidence_chain: [{ label: "qemu log", artifact: ".vos/runs/failed-run/artifacts/qemu.log", observation: "panic" }],
+          evidence_chain: [{ label: "qemu serial log", artifact: ".vos/runs/failed-run/artifacts/run/boot-smoke/serial.log", observation: "panic" }],
           visualization_steps: [{ phase: "panic", description: "The allocator reused a page." }],
           visualization_html: [
             "<!doctype html>",
@@ -380,13 +380,13 @@ describe("vos-cli package agent runner", () => {
   test("agent debug run rejects missing agent visualization html", async () => {
     const projectRoot = makeProject();
     const runRoot = join(projectRoot, ".vos", "runs", "failed-run");
-    mkdirSync(join(runRoot, "artifacts"), { recursive: true });
-    writeFileSync(join(runRoot, "artifacts", "qemu.log"), "panic: allocator reused page\n");
+    mkdirSync(join(runRoot, "artifacts", "run", "boot-smoke"), { recursive: true });
+    writeFileSync(join(runRoot, "artifacts", "run", "boot-smoke", "serial.log"), "panic: allocator reused page\n");
     writeFileSync(join(runRoot, "manifest.json"), JSON.stringify({
       run_id: "failed-run",
       command: ["verify", "public"],
       status: "validation_failed",
-      artifacts: [{ kind: "trace", path: ".vos/runs/failed-run/artifacts/qemu.log", summary: "qemu log" }],
+      artifacts: [{ kind: "trace", path: ".vos/runs/failed-run/artifacts/run/boot-smoke/serial.log", summary: "qemu serial log" }],
       evidence_refs: [],
     }, null, 2));
     const evidence = await EvidenceWriter.create({
@@ -454,13 +454,13 @@ describe("vos-cli package agent runner", () => {
   test("agent debug run writes GDB failure evidence when MCP setup fails", async () => {
     const projectRoot = makeProject();
     const runRoot = join(projectRoot, ".vos", "runs", "failed-run");
-    mkdirSync(join(runRoot, "artifacts"), { recursive: true });
-    writeFileSync(join(runRoot, "artifacts", "qemu.log"), "panic: trap\n");
+    mkdirSync(join(runRoot, "artifacts", "run", "boot-smoke"), { recursive: true });
+    writeFileSync(join(runRoot, "artifacts", "run", "boot-smoke", "serial.log"), "panic: trap\n");
     writeFileSync(join(runRoot, "manifest.json"), JSON.stringify({
       run_id: "failed-run",
       command: ["verify", "public"],
       status: "validation_failed",
-      artifacts: [{ kind: "trace", path: ".vos/runs/failed-run/artifacts/qemu.log", summary: "qemu log" }],
+      artifacts: [{ kind: "trace", path: ".vos/runs/failed-run/artifacts/run/boot-smoke/serial.log", summary: "qemu serial log" }],
       evidence_refs: [],
     }, null, 2));
     const evidence = await EvidenceWriter.create({

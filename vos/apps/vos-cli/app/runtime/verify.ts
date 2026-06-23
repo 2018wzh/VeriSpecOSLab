@@ -289,7 +289,7 @@ export async function runVerifyCommand(params: {
       availableSuites,
       dryRun: params.dryRun,
       signal: params.signal,
-      allowEmpty: true,
+      emptyCheckId: "public-obligations-required",
     });
     steps.push({ name: "public", status: publicResult.status });
     requiredChecks.push(...publicResult.requiredChecks);
@@ -304,7 +304,7 @@ export async function runVerifyCommand(params: {
       availableSuites,
       dryRun: params.dryRun,
       signal: params.signal,
-      allowEmpty: true,
+      emptyCheckId: "generated-obligations-required",
     });
     const generatedBehavior = await runBehaviorTestsForObligations({
       projectRoot: params.projectRoot,
@@ -334,7 +334,7 @@ export async function runVerifyCommand(params: {
       availableSuites,
       dryRun: params.dryRun,
       signal: params.signal,
-      allowEmpty: true,
+      emptyCheckId: "invariant-obligations-required",
     });
     steps.push({ name: "invariant", status: invariantResult.status });
     requiredChecks.push(...invariantResult.requiredChecks);
@@ -348,7 +348,7 @@ export async function runVerifyCommand(params: {
       availableSuites,
       dryRun: params.dryRun,
       signal: params.signal,
-      allowEmpty: true,
+      emptyCheckId: "fuzz-obligations-required",
     });
     const fuzzBehavior = await runBehaviorTestsForObligations({
       projectRoot: params.projectRoot,
@@ -658,10 +658,17 @@ async function runSuitesForObligations(params: {
   availableSuites: Set<string>;
   dryRun: boolean;
   signal?: AbortSignal;
-  allowEmpty?: boolean;
+  emptyCheckId?: string;
 }): Promise<{ status: CommandStatus; suites: string[]; requiredChecks: Array<{ id: string; status: CommandStatus }> }> {
   if (params.obligations.length === 0) {
-    return { status: params.allowEmpty ? "ok" : "validation_failed", suites: [], requiredChecks: [] };
+    return {
+      status: "validation_failed",
+      suites: [],
+      requiredChecks: [{
+        id: params.emptyCheckId ?? "obligations-required",
+        status: "validation_failed",
+      }],
+    };
   }
   const missing = params.obligations.filter((id) => suitesForObligation(id, params.mapping, params.availableSuites).length === 0);
   if (missing.length > 0) {
@@ -705,7 +712,13 @@ async function runStaffSuites(params: {
   dryRun: boolean;
   signal?: AbortSignal;
 }): Promise<{ status: CommandStatus; suites: string[]; requiredChecks: Array<{ id: string; status: CommandStatus }> }> {
-  if (!params.staffPolicy) return { status: "ok", suites: [], requiredChecks: [] };
+  if (!params.staffPolicy) {
+    return {
+      status: "validation_failed",
+      suites: [],
+      requiredChecks: [{ id: "staff-policy-required", status: "validation_failed" }],
+    };
+  }
   if (params.visibilityScope !== "staff-only") {
     return { status: "policy_blocked", suites: [], requiredChecks: [{ id: "staff-policy", status: "policy_blocked" }] };
   }
@@ -724,7 +737,13 @@ async function runStaffSuites(params: {
       requiredChecks: missing.map((id) => ({ id, status: "validation_failed" as CommandStatus })),
     };
   }
-  if (suites.length === 0) return { status: "ok", suites, requiredChecks: [] };
+  if (suites.length === 0) {
+    return {
+      status: "validation_failed",
+      suites,
+      requiredChecks: [{ id: "staff-policy-suites-required", status: "validation_failed" }],
+    };
+  }
   const result = await runTestCommand({
     projectRoot: params.projectRoot,
     evidence: params.evidence,

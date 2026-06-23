@@ -182,6 +182,28 @@ describe("xv6-spec offline runtime flow", () => {
     expect(result.details.publicSummaryPath).toBe("artifacts/verify/public-summary.json");
   });
 
+  test("stage show does not report fallback source", async () => {
+    const projectRoot = makeVerifyMappingFixture();
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["stage", "show"],
+      args: [],
+    });
+
+    const result = await executeCommand({
+      kind: "stage_show",
+    }, {
+      projectRoot,
+      global: { projectRoot, json: true },
+      evidence,
+    });
+
+    expect(result.status).toBe("passed");
+    expect(result.details.current_stage).toBe("memory");
+    expect(result.details).not.toHaveProperty("fallback");
+  });
+
   test("treats ready signal as success even when QEMU is later timed out", async () => {
     const projectRoot = makeXv6Fixture();
     const fakeQemu = join(projectRoot, "fake-qemu.sh");
@@ -276,6 +298,9 @@ describe("xv6-spec offline runtime flow", () => {
     const result = JSON.parse(readFileSync(join(projectRoot, ".vos", "runs", evidence.run_id, "artifacts", "run", "write-smoke", "result.json"), "utf8"));
     expect(result.oracle.success_matched).toBe(true);
     expect(result.oracle.required_artifacts_present).toBe(true);
+    expect(existsSync(join(projectRoot, ".vos", "runs", evidence.run_id, "artifacts", "qemu.log"))).toBe(false);
+    expect(existsSync(join(projectRoot, ".vos", "runs", evidence.run_id, "smoke-result.json"))).toBe(false);
+    expect("smokeResultPath" in run).toBe(false);
   });
 
   test("parses QMP greeting responses and events", () => {
@@ -777,15 +802,85 @@ describe("xv6-spec offline runtime flow", () => {
   });
 
   test("verify mapping failures and staff policy gates are explicit", async () => {
-    let projectRoot = makeVerifyMappingFixture({ invariantMapping: false });
+    let projectRoot = makeVerifyMappingFixture({ visibility: "staff-only" });
     let evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["verify-full-missing-staff"],
+      args: [],
+    });
+
+    let verify = await runVerifyCommand({
+      projectRoot,
+      evidence,
+      scope: "full",
+      dryRun: false,
+      visibilityScope: "staff-only",
+      behaviorTestRunner: fakeBehaviorTestRunner(),
+    });
+
+    expect(verify.status).toBe("validation_failed");
+    expect(verify.requiredChecks).toContainEqual(expect.objectContaining({ id: "staff-policy-required", status: "validation_failed" }));
+
+    projectRoot = makeVerifyMappingFixture({ invariantMapping: false, visibility: "staff-only" });
+    const staffPolicyForFull = join("/tmp", `vos-staff-missing-map-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
+    tmpRoots.push(staffPolicyForFull);
+    writeFileSync(staffPolicyForFull, JSON.stringify({ verify: { full: ["staff_full"] } }));
+    evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["verify-full-missing-mapping"],
+      args: [],
+    });
+
+    verify = await runVerifyCommand({
+      projectRoot,
+      evidence,
+      scope: "full",
+      dryRun: false,
+      staffPolicy: staffPolicyForFull,
+      visibilityScope: "staff-only",
+      behaviorTestRunner: fakeBehaviorTestRunner(),
+    });
+
+    expect(verify.status).toBe("validation_failed");
+    expect(verify.steps).toContainEqual(expect.objectContaining({ name: "invariant", status: "validation_failed" }));
+    expect(verify.requiredChecks).toContainEqual(expect.objectContaining({ id: "freelist", status: "validation_failed" }));
+
+    projectRoot = makeVerifyMappingFixture({ generatedObligations: false, visibility: "staff-only" });
+    const staffPolicyForObligations = join("/tmp", `vos-staff-no-obligation-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
+    tmpRoots.push(staffPolicyForObligations);
+    writeFileSync(staffPolicyForObligations, JSON.stringify({ verify: { full: ["staff_full"] } }));
+    evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["verify-full-missing-obligations"],
+      args: [],
+    });
+
+    verify = await runVerifyCommand({
+      projectRoot,
+      evidence,
+      scope: "full",
+      dryRun: false,
+      staffPolicy: staffPolicyForObligations,
+      visibilityScope: "staff-only",
+      behaviorTestRunner: fakeBehaviorTestRunner(),
+    });
+
+    expect(verify.status).toBe("validation_failed");
+    expect(verify.steps).toContainEqual(expect.objectContaining({ name: "generated", status: "validation_failed" }));
+    expect(verify.requiredChecks).toContainEqual(expect.objectContaining({ id: "generated-obligations-required", status: "validation_failed" }));
+
+    projectRoot = makeVerifyMappingFixture({ invariantMapping: false });
+    evidence = await EvidenceWriter.create({
       projectRoot,
       evidenceDir: ".vos",
       command: ["verify-invariant-missing"],
       args: [],
     });
 
-    let verify = await runVerifyCommand({
+    verify = await runVerifyCommand({
       projectRoot,
       evidence,
       scope: "invariant",
@@ -1055,6 +1150,7 @@ function makeXv6Fixture(options: {
 
 function makeVerifyMappingFixture(options: {
   invariantMapping?: boolean;
+  generatedObligations?: boolean;
   visibility?: "public" | "agent-only" | "staff-only";
 } = {}): string {
   const root = join("/tmp", `vos-cli-verify-${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -1145,7 +1241,7 @@ function makeVerifyMappingFixture(options: {
     "failure_semantics: [null on exhaustion]",
     "test_obligations:",
     "  public: [bootstrap_banner_not_null]",
-    "  generated: [kalloc_zeroed]",
+    `  generated: ${options.generatedObligations === false ? "[]" : "[kalloc_zeroed]"}`,
     "  hidden_tags: [kalloc_race]",
     "codegen:",
     "  targets: []",

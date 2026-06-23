@@ -176,7 +176,7 @@ Any runtime entity -> N Artifact
 VeriSpecOSLab 在公共模型上额外要求：
 
 - `StudentProject` 需要保存当前 ISA / machine / boot profile 摘要
-- `PipelineRun` 需要能关联 `serial.log`、`qemu.log`、镜像、trace
+- `PipelineRun` 需要能关联 `run/<case>/serial.log`、`run/<case>/stderr.log`、`run/<case>/result.json`、镜像、trace
 - `JudgeResult` 需要能区分 boot、syscall、memory、verification、benchmark 类 suite
 
 ## 7. 后续扩展点

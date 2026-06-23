@@ -196,8 +196,9 @@ reproducibility_error
 
 VeriSpecOSLab 额外生成：
 
-- `serial.log`
-- `qemu.log`
+- `run/<case>/serial.log`
+- `run/<case>/stderr.log`
+- `run/<case>/result.json`
 - `image-manifest.json`
 - `trace/*.json`
 
