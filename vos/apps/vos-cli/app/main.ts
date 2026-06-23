@@ -120,6 +120,7 @@ import {
   git,
   parentSha,
 } from "./repro/ledger.ts";
+import { generateCourseReport } from "./report/generate.ts";
 import {
   buildNormalizedSpecBundle,
   composeArchitecture,
@@ -364,11 +365,73 @@ async function finalizeRun(params: {
     message: (params.outcome.details.message as string | undefined) ?? "ok",
     details: params.outcome.details,
   };
+  if (params.parsed.command.kind === "report_generate" && isSuccessStatus(params.outcome.status)) {
+    const commit = await commitGeneratedReport({
+      projectRoot: manifest.project_root,
+      runId: params.evidence.run_id,
+      details: params.outcome.details,
+      artifacts: manifest.artifacts.map((artifact) => artifact.path),
+      evidenceRefs: manifest.evidence_refs,
+      final: params.parsed.command.final,
+      stage: params.parsed.command.stage,
+      agentSessionId: params.parsed.global.agentSession,
+    });
+    finalOutput.details = {
+      ...finalOutput.details,
+      commit_sha: commit.commitSha,
+      ledger_ref: commit.ledgerRef,
+    };
+  }
   if (params.parsed.global.reportPath) {
     await writeFile(params.parsed.global.reportPath, `${JSON.stringify(finalOutput, null, 2)}\n`);
   }
   params.progress.finish(params.outcome.status, typeof params.outcome.details.message === "string" ? params.outcome.details.message : undefined);
   return finalOutput;
+}
+
+async function commitGeneratedReport(params: {
+  projectRoot: string;
+  runId: string;
+  details: Record<string, unknown>;
+  artifacts: string[];
+  evidenceRefs: import("./evidence/manifest.ts").EvidenceRef[];
+  final: boolean;
+  stage?: string;
+  agentSessionId?: string;
+}): Promise<{ commitSha: string; ledgerRef: string }> {
+  const changedTargets = collectStringArray(params.details.changed_targets);
+  if (changedTargets.length === 0) {
+    throw new CliError("report generate did not return changed targets for commit", "failed");
+  }
+  const toAdd = [
+    ...changedTargets,
+    ".vos/index/evidence.json",
+    ".vos/commit-ledger.jsonl",
+    ...params.artifacts,
+  ].filter((entry) => existsSync(path.join(params.projectRoot, entry)));
+  git(params.projectRoot, ["add", "-f", ...[...new Set(toAdd)]]);
+  const title = params.final ? "final" : (params.stage ?? "stage");
+  git(params.projectRoot, ["commit", "-m", `[vos][report] Generate ${title} report`]);
+  const commitSha = currentHead(params.projectRoot);
+  if (!commitSha) {
+    throw new CliError("report generate commit did not produce a HEAD commit", "failed");
+  }
+  await appendLedgerEntry(params.projectRoot, {
+    commit_sha: commitSha,
+    parent_sha: parentSha(params.projectRoot),
+    actor: "human",
+    agent_session_id: params.agentSessionId,
+    run_id: params.runId,
+    spec_refs: collectStringArray(params.details.spec_refs),
+    changed_targets: [...new Set([...changedTargets, ".vos/commit-ledger.jsonl"])],
+    evidence_refs: params.evidenceRefs,
+    collaboration_intent: params.final ? "generate final course report" : `generate ${params.stage ?? "stage"} course report`,
+    based_on_agent_output: true,
+  });
+  return {
+    commitSha,
+    ledgerRef: `.vos/commit-ledger.jsonl#${commitSha}`,
+  };
 }
 
 async function resolveAuthContext(params: {
@@ -1034,19 +1097,33 @@ export async function executeDebugExplainLog(
 }
 
 export async function executeReportGenerate(
-  _command: ReportGenerateCommand,
-  projectRoot: string,
-  evidence: EvidenceWriter,
+  command: ReportGenerateCommand,
+  context: ExecContext,
 ): Promise<CommandOutcome> {
-  const runs = await collectRunManifestSummaries(projectRoot);
-  const reportPath = path.join(projectRoot, ".vos", "report", "report.json");
-  await writeFile(reportPath, `${JSON.stringify({ generated_at: new Date().toISOString(), runs }, null, 2)}\n`);
-  evidence.addArtifact("report", path.relative(projectRoot, reportPath), "report generate");
+  updateProgress(context, { stage: "report generate", status: "running", message: "aggregating evidence" });
+  const projectRoot = context.projectRoot;
+  const result = await generateCourseReport({
+    projectRoot,
+    stage: command.stage,
+    final: command.final,
+    visibilityScope: context.auth?.verdict === "not_required" ? "full" : context.effectivePolicy?.visibilityScope,
+    evidence: context.evidence,
+    agentRunner: context.agentRunner,
+  });
   return {
     status: "passed",
     details: {
-      run_count: runs.length,
-      report: path.relative(projectRoot, reportPath),
+      report_path: path.relative(projectRoot, result.reportPath),
+      summary_path: path.relative(projectRoot, result.summaryPath),
+      agent_narrative_ref: path.relative(projectRoot, result.agentNarrativePath),
+      final: command.final,
+      stage: result.summary.stage,
+      visibility_scope: result.summary.visibility_scope,
+      requirements_total: result.summary.requirements_total,
+      requirements_passed: result.summary.requirements_passed,
+      ai_used: result.summary.ai_used,
+      changed_targets: result.changedTargets,
+      spec_refs: result.specRefs,
     },
   };
 }
@@ -3094,7 +3171,12 @@ export function commandToArray(command: CliCommand): string[] {
     case "kb_import_manifest":
       return ["kb", "import-manifest", command.manifestPath];
     case "report_generate":
-      return ["report", "generate"];
+      return [
+        "report",
+        "generate",
+        ...(command.final ? ["--final"] : []),
+        ...(command.stage ? ["--stage", command.stage] : []),
+      ];
     case "submit_pack":
       return ["submit", "pack"];
     case "ledger_record":
@@ -3577,7 +3659,7 @@ function printHelp(topic?: string): void {
     "  verify public|patch|full|invariant|fuzz|base|architecture|composition|goal [--target <value>] [--staff-policy <path>]",
     "  trace syscall [--dry-run] [--timeout=<ms>]",
     "  debug explain-log [log-path]",
-    "  report generate",
+    "  report generate [--stage <stage>|--final]",
     "  submit pack",
     "  ledger record --actor human|agent --intent <text> [--spec-ref <ref>]... [--changed-target <path>]...",
     "  kb add <path-or-url> [--source-kind course|project|external] [--stage <stage>] [--title <title>] [--recursive] [--manifest <path>]",

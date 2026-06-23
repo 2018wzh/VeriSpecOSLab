@@ -90,13 +90,21 @@ vos agent plan --stage memory-management "check allocator design"
 vos agent generate kernel/memory
 vos agent apply-patch --require-spec --run-validation patch.diff
 vos agent log
-vos report generate
+vos report generate --stage memory
+vos report generate --final
 vos submit pack
 ```
 
 所有课程命令应支持 `--json`、`--project-root` 与 `--agent-session`；
 所有执行类命令都应写入 `.vos/runs/<run-id>/manifest.json` 与
 `.vos/runs/<run-id>/events.jsonl`。
+
+`vos report generate` 会严格读取 `spec/verification/report-contract.yaml`、
+`verify public` evidence、commit ledger 与 Agent 审计日志，生成
+`spec/reports/` 下的 Markdown 报告和 `.vos/report/` 下的 JSON summary。
+报告生成包含 `reporter.v2` Agent narrative；Agent 输出非法或缺少必要
+evidence 时命令失败。成功后 VOS 自动提交报告产物并为新 `HEAD` 追加 ledger
+记录。
 
 ### 3. Agent
 

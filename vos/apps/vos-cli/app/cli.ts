@@ -674,7 +674,32 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
     if (second !== "generate") {
       throw new Error("only `report generate` is supported");
     }
-    return { kind: "report_generate" } satisfies ReportGenerateCommand;
+    let stage: string | undefined;
+    let final = false;
+    for (let i = 1; i < rest.length; i++) {
+      const arg = rest[i];
+      if (arg === "--final") {
+        final = true;
+        continue;
+      }
+      if (arg === "--stage") {
+        stage = resolveRequiredValue(rest, i, arg);
+        i++;
+        continue;
+      }
+      if (arg.startsWith("--stage=")) {
+        stage = arg.slice("--stage=".length);
+        continue;
+      }
+      if (arg.startsWith("-")) {
+        throw new Error(`unknown flag for report generate: ${arg}`);
+      }
+      throw new Error(`unexpected positional argument for report generate: ${arg}`);
+    }
+    if (final && stage) {
+      throw new Error("report generate accepts either --final or --stage, not both");
+    }
+    return { kind: "report_generate", stage, final } satisfies ReportGenerateCommand;
   }
 
   if (command === "submit") {

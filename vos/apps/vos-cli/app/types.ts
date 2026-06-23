@@ -185,6 +185,8 @@ export interface DebugExplainLogCommand extends BaseCommand {
 
 export interface ReportGenerateCommand extends BaseCommand {
   kind: "report_generate";
+  stage?: string;
+  final: boolean;
 }
 
 export interface SubmitPackCommand extends BaseCommand {
@@ -406,6 +408,7 @@ export interface CommitLedgerEntry {
   evidence_refs: EvidenceRef[];
   created_at: string;
   collaboration_intent: string;
+  based_on_agent_output?: boolean;
 }
 
 export interface ReproducibilityVerdict {

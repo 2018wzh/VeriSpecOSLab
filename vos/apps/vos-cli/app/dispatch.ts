@@ -74,7 +74,7 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
       return handlers.executeDebugExplainLog(command, projectRoot);
 
     case "report_generate":
-      return handlers.executeReportGenerate(command, projectRoot, evidence);
+      return handlers.executeReportGenerate(command, context);
 
     case "submit_pack":
       return handlers.executeSubmitPack(command, projectRoot, evidence);
