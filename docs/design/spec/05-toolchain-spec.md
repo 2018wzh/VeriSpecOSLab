@@ -118,9 +118,19 @@ build:
   asmflags:
   ldflags:
   features:
+  variants:
+    - id: baseline
+      purpose:
+      features:
+      defines:
+      test_only: false
   forbidden_flags:
   generated_artifacts:
 ```
+
+`BuildVariant` 表示编译期配置集合。基础内核、测试内核、带 instrumentation 的
+内核必须用不同 variant 显式表达；`vos test` 只能引用 variant，不能在 suite
+中临时改写编译 flag 或内核源码。
 
 ## 6. LinkContract 最小字段
 
@@ -150,12 +160,18 @@ run:
   bios:
   kernel_arg:
   success_signal:
+  profiles:
+  cases:
 
 debug:
   symbols_required:
   gdb_script:
   trace_points:
 ```
+
+正常启动与测试启动切换属于 `run.profiles` / `run.cases`：profile 描述 QEMU
+命令、kernel args 和资源端点，case 描述 stdin、success/failure regex、
+exit code、timeout 和 required artifacts。`TestSuite` 只引用 `run_case`。
 
 ## 8. Validation 绑定
 

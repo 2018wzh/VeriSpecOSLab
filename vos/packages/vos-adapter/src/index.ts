@@ -30,6 +30,22 @@ export interface AdapterPlan {
   command: AdapterCommand;
 }
 
+export interface ExecutionNode {
+  id: string;
+  kind: AdapterKind | "test-suite";
+  adapter: string;
+  inputs: Record<string, unknown>;
+  depends_on?: string[];
+  resource_locks?: string[];
+  timeout_ms?: number;
+}
+
+export interface ExecutionPlan {
+  id: string;
+  command: string;
+  nodes: ExecutionNode[];
+}
+
 export interface ToolchainAdapter {
   name: string;
   kind: AdapterKind;

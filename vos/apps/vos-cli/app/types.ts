@@ -48,11 +48,8 @@ export type VerifyScope =
   | "patch"
   | "full"
   | "invariant"
-  | "fuzz"
-  | "base"
-  | "architecture"
-  | "composition"
-  | "goal";
+  | "generated"
+  | "fuzz";
 
 export interface BaseCommand {
   kind: string;
@@ -142,6 +139,7 @@ export interface BuildCommand extends BaseCommand {
   kind: "build";
   dryRun: boolean;
   toolchainPath?: string;
+  variant?: string;
 }
 
 export interface BuildGenerateCommand extends BaseCommand {

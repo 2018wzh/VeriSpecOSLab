@@ -231,7 +231,8 @@ describe("vos-cli package agent runner", () => {
     expect(prompt).toContain("treat it as a read-only runtime contract");
     expect(prompt).toContain("do not create, replace, rewrite, or simplify it");
     expect(prompt).toContain("Follow the existing header layout from project_tree");
-    expect(prompt).toContain(".vos/toolchain.json.test.suites");
+    expect(prompt).toContain("manifest_version 2");
+    expect(prompt).toContain("object-form test.suites");
     expect(prompt).toContain("verify.full");
     expect(prompt).toContain("verify.invariant");
     expect(prompt).toContain("verify.fuzz");
@@ -849,18 +850,14 @@ describe("vos-cli package agent runner", () => {
       "",
     ].join("\n"));
     writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify({
+      manifest_version: 2,
       files: ["Makefile"],
-      build: {
-        commands: ["make all"],
-        artifacts: ["build/kernel.bin"],
-      },
+      build: { variants: [{ id: "baseline", commands: ["make all"], artifacts: ["build/kernel.bin"] }] },
       run: {
-        command: "sh",
-        args: ["-c", "echo XV6_BOOT_OK", "-kernel", "build/kernel.bin"],
-        successSignal: "XV6_BOOT_OK",
-        artifact: "build/kernel.bin",
-        timeout_ms: 1000,
+        profiles: [{ id: "default", command: "sh", args: ["-c", "echo XV6_BOOT_OK", "-kernel", "build/kernel.bin"], artifacts: ["build/kernel.bin"], timeout_ms: 1000 }],
+        cases: [{ id: "smoke", profile: "default", success_regex: "XV6_BOOT_OK", timeout_ms: 1000 }],
       },
+      test: { suites: [] },
     }, null, 2));
 
     const evidence = await EvidenceWriter.create({

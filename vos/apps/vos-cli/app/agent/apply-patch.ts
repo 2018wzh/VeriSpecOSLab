@@ -1,11 +1,12 @@
 import path from "node:path";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { runCommand } from "../runtime/executor.ts";
 import type { EvidenceWriter } from "../evidence/index.ts";
 import { runBuildCommand } from "../runtime/build.ts";
 import { runTestCommand } from "../runtime/test.ts";
 import { hasResolvableToolchainManifest } from "../runtime/toolchain-manifest.ts";
+import { loadToolchainManifest } from "../runtime/manifest.ts";
 import { parseTopLevelYaml } from "../utils/yaml.ts";
 
 interface ValidationSummary {
@@ -219,7 +220,7 @@ async function runMinimalValidationDag(
   summary.push({ name: "build", status: buildResult.status, details: buildResult.output });
   if (buildResult.status === "failed") return { status: "failed", summary };
 
-  const suites = collectAffectedTestSuites(changedPaths, projectRoot);
+  const suites = await collectAffectedTestSuites(changedPaths, projectRoot);
   if (suites.length > 0) {
     const testResult = await runTestCommand({
       projectRoot,
@@ -266,65 +267,18 @@ async function runSpecLintFromPatch(projectRoot: string): Promise<ValidationSumm
   }
 }
 
-function collectAffectedTestSuites(changedPaths: string[], projectRoot: string): string[] {
+async function collectAffectedTestSuites(changedPaths: string[], projectRoot: string): Promise<string[]> {
+  if (!existsSync(path.join(projectRoot, ".vos", "toolchain.json"))) return [];
+  const { manifest } = await loadToolchainManifest({ projectRoot });
+  const changed = changedPaths.map((entry) => entry.replace(/\\/g, "/").toLowerCase());
   const suiteSet = new Set<string>();
-  const manifestPath = path.join(projectRoot, ".vos", "toolchain.json");
-  if (!existsSync(manifestPath)) return [];
-
-  return runSyncJson(manifestPath, projectRoot, changedPaths, suiteSet);
-}
-
-function runSyncJson(
-  manifestPath: string,
-  projectRoot: string,
-  changedPaths: string[],
-  suiteSet: Set<string>,
-): string[] {
-  const manifestText = readFileSync(manifestPath, "utf8");
-  const parsed = safeJsonParse(manifestText);
-  if (!parsed || typeof parsed !== "object") return [];
-
-  const test = (parsed as {
-    test?: {
-      suites?: Array<{ name?: string } | string>;
-      tests?: string[];
-    };
-  }).test;
-  const suites: Array<{ name?: string } | string> = Array.isArray(test?.suites)
-    ? test?.suites as Array<{ name?: string } | string>
-    : [];
-
-  for (const entry of suites) {
-    if (typeof entry === "string") {
-      const lowered = entry.toLowerCase();
-      if (matchesChangedPath(lowered, changedPaths, projectRoot)) {
-        suiteSet.add(entry);
-      }
-      continue;
-    }
-    if (!entry || !entry.name) continue;
-    if (matchesChangedPath(entry.name.toLowerCase(), changedPaths, projectRoot)) {
-      suiteSet.add(entry.name);
-    }
-  }
-
-  const fallbackTests = (parsed as { test?: { suites?: string[] } }).test?.suites;
-  if (suiteSet.size === 0 && Array.isArray(fallbackTests) && fallbackTests.length > 0) {
-    if (changedPaths.some((value) => value.startsWith("spec/"))) {
-      for (const suite of fallbackTests.slice(0, 1)) {
-        suiteSet.add(String(suite));
-      }
+  for (const suite of manifest.test.suites) {
+    const refs = [suite.name, ...suite.related_specs].map((entry) => entry.toLowerCase());
+    if (changed.some((changedPath) => refs.some((ref) => changedPath.includes(ref) || ref.includes(changedPath)))) {
+      suiteSet.add(suite.name);
     }
   }
   return [...suiteSet];
-}
-
-function matchesChangedPath(suiteName: string, changedPaths: string[], projectRoot: string): boolean {
-  const normalizedRoot = path.resolve(projectRoot);
-  return changedPaths.some((changed) => {
-    const lower = changed.toLowerCase();
-    return lower.includes(suiteName) || suiteName.includes(lower) || lower.includes("spec") || lower.includes("kernel") || lower.includes("user");
-  }) || false;
 }
 
 export async function readPatchFromStdin(): Promise<string> {

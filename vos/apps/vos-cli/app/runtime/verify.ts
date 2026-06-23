@@ -5,9 +5,9 @@ import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { runBuildCommand } from "./build.ts";
-import { runQemuCommand } from "./qemu.ts";
 import { runTestCommand } from "./test.ts";
 import { runCommand } from "./executor.ts";
+import { loadToolchainManifest, type ToolchainManifestV2 } from "./manifest.ts";
 import {
   buildAgentBehaviorTestPatchPrompt,
   buildAgentBehaviorTestPlanPrompt,
@@ -58,10 +58,7 @@ interface VerifyMapping {
 }
 
 interface ToolchainVerifySpec {
-  test?: {
-    suites?: Array<{ name?: unknown }>;
-  };
-  tests?: string[];
+  test: ToolchainManifestV2["test"];
   verify?: VerifyMapping;
 }
 
@@ -400,81 +397,20 @@ export async function runVerifyCommand(params: {
     });
   }
 
-  const plan = resolveVerifyPlan(scope);
-  const steps: Array<{ name: string; status: CommandStatus }> = [];
-  for (const step of plan) {
-    if (step === "build") {
-      const result = await runBuildCommand({
-        projectRoot: params.projectRoot,
-        evidence: params.evidence,
-        dryRun: params.dryRun,
-        signal: params.signal,
-      });
-      steps.push({ name: "build", status: result.status });
-      if (result.status !== "ok") {
-        return { status: result.status, scope, steps };
-      }
-      continue;
-    }
-
-    if (step === "run") {
-      const result = await runQemuCommand({
-        projectRoot: params.projectRoot,
-        evidence: params.evidence,
-        dryRun: params.dryRun,
-        signal: params.signal,
-      });
-      steps.push({ name: "run", status: result.status });
-      if (result.status !== "ok") {
-        return { status: result.status, scope, steps };
-      }
-      continue;
-    }
-
-    steps.push({ name: step, status: "ok" });
-  }
-
   return {
-    status: "ok",
+    status: "validation_failed",
     scope,
-    steps,
+    steps: [{ name: `unsupported verify scope: ${scope}`, status: "validation_failed" }],
+    requiredChecks: [{ id: `unsupported-scope:${scope}`, status: "validation_failed" }],
   };
 }
 
-function resolveVerifyPlan(scope: string): string[] {
-  switch (scope) {
-    case "public":
-      return ["normalize", "consistency", "build", "run"];
-    case "full":
-      return ["build", "run"];
-    case "base":
-      return ["run"];
-    case "architecture":
-      return ["build"];
-    case "composition":
-      return ["build", "run"];
-    case "goal":
-      return ["build", "run"];
-    default:
-      return ["build", "run"];
-  }
-}
-
 async function loadToolchainVerifySpec(projectRoot: string): Promise<ToolchainVerifySpec> {
-  const toolchainPath = path.join(projectRoot, ".vos", "toolchain.json");
-  if (!existsSync(toolchainPath)) return {};
-  return JSON.parse(await readFile(toolchainPath, "utf8")) as ToolchainVerifySpec;
+  return (await loadToolchainManifest({ projectRoot })).manifest;
 }
 
 function collectAvailableSuites(toolchain: ToolchainVerifySpec): Set<string> {
-  const out = new Set<string>();
-  for (const suite of toolchain.test?.suites ?? []) {
-    if (typeof suite.name === "string" && suite.name.trim()) out.add(suite.name.trim());
-  }
-  for (const suite of toolchain.tests ?? []) {
-    if (typeof suite === "string" && suite.trim()) out.add(suite.trim());
-  }
-  return out;
+  return new Set(toolchain.test.suites.map((suite) => suite.name));
 }
 
 function invariantObligations(bundle: Awaited<ReturnType<typeof buildNormalizedSpecBundle>>, target?: string): string[] {

@@ -137,19 +137,19 @@ async function makePortalBoundProject(options: { longBuild?: boolean } = {}): Pr
     writeFileSync(script, "#!/usr/bin/env sh\nsleep 5\n");
     chmodSync(script, 0o755);
     writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify({
+      manifest_version: 2,
       files: [],
-      build: {
-        commands: [{ name: "slow", command: [script], timeout_ms: 10_000 }],
-        artifacts: [],
-      },
+      build: { variants: [{ id: "baseline", commands: [{ name: "slow", command: [script], timeout_ms: 10_000 }], artifacts: [] }] },
+      run: { profiles: [{ id: "default", command: "printf", args: ["ok"], artifacts: [] }], cases: [{ id: "smoke", profile: "default", success_regex: "ok" }] },
+      test: { suites: [] },
     }, null, 2));
   } else {
     writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify({
+      manifest_version: 2,
       files: [],
-      build: {
-        commands: ["printf ok"],
-        artifacts: [],
-      },
+      build: { variants: [{ id: "baseline", commands: ["printf ok"], artifacts: [] }] },
+      run: { profiles: [{ id: "default", command: "printf", args: ["ok"], artifacts: [] }], cases: [{ id: "smoke", profile: "default", success_regex: "ok" }] },
+      test: { suites: [] },
     }, null, 2));
   }
   git(root, ["init"]);

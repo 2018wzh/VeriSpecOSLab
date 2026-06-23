@@ -307,17 +307,14 @@ function makeTraceProject(): string {
   ].join("\n"));
   chmodSync(join(root, "fake-qemu.sh"), 0o755);
   writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify({
+    manifest_version: 2,
     files: ["Makefile"],
-    build: {
-      commands: ["make all"],
-      artifacts: ["build/kernel.bin"],
-    },
+    build: { variants: [{ id: "baseline", commands: ["make all"], artifacts: ["build/kernel.bin"] }] },
     run: {
-      command: "./fake-qemu.sh",
-      args: [],
-      artifact: "build/kernel.bin",
-      timeout_ms: 1000,
+      profiles: [{ id: "default", command: "./fake-qemu.sh", args: [], artifacts: ["build/kernel.bin"], timeout_ms: 1000 }],
+      cases: [{ id: "smoke", profile: "default", timeout_ms: 1000 }],
     },
+    test: { suites: [] },
   }, null, 2));
   writeFileSync(join(root, "spec", "toolchain", "toolchain.yaml"), "includes:\n  - build.yaml\n");
   writeFileSync(join(root, "spec", "toolchain", "build.yaml"), [

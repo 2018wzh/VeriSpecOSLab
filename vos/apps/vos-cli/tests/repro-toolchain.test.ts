@@ -125,19 +125,15 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
             content: "all:\n\tprintf generated\n",
           }],
           manifest: {
+            manifest_version: 2,
             generator: { name: "vos-agent", version: "toolchain-draft-v1" },
             files: ["Makefile"],
-            build: {
-              commands: ["make all"],
-              artifacts: ["build/kernel.bin"],
-            },
+            build: { variants: [{ id: "baseline", commands: ["make all"], artifacts: ["build/kernel.bin"] }] },
             run: {
-              command: "printf",
-              args: ["boot ok"],
-              successSignal: "boot ok",
-              artifact: "build/kernel.bin",
-              timeout_secs: 1,
+              profiles: [{ id: "default", command: "printf", args: ["boot ok"], artifacts: ["build/kernel.bin"], timeout_secs: 1 }],
+              cases: [{ id: "smoke", profile: "default", success_regex: "boot ok" }],
             },
+            test: { suites: [] },
           },
           build_instructions: "Run `vos build` after generation.",
           spec_refs: ["spec/toolchain/build.yaml"],
@@ -175,9 +171,12 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
       content: JSON.stringify({
         files: [{ path: "scripts/build.sh", content: "echo bad\n" }],
         manifest: {
+          manifest_version: 2,
           generator: { name: "vos-agent", version: "toolchain-draft-v1" },
           files: ["scripts/build.sh"],
-          build: { commands: ["sh scripts/build.sh"], artifacts: [] },
+          build: { variants: [{ id: "baseline", commands: ["sh scripts/build.sh"], artifacts: [] }] },
+          run: { profiles: [{ id: "default", command: "printf", args: ["ok"], artifacts: [] }], cases: [{ id: "smoke", profile: "default", success_regex: "ok" }] },
+          test: { suites: [] },
         },
         build_instructions: "bad",
         spec_refs: ["spec/toolchain/build.yaml"],
@@ -244,9 +243,12 @@ function makeGitProject(options: { manifest: boolean }): string {
   writeFileSync(join(root, "Makefile"), "all:\n\tprintf existing\n");
   if (options.manifest) {
     writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify({
+      manifest_version: 2,
       generator: { name: "test", version: "1" },
       files: ["Makefile"],
-      build: { commands: ["make all"], artifacts: ["build/kernel.bin"] },
+      build: { variants: [{ id: "baseline", commands: ["make all"], artifacts: ["build/kernel.bin"] }] },
+      run: { profiles: [{ id: "default", command: "printf", args: ["boot ok"], artifacts: ["build/kernel.bin"] }], cases: [{ id: "smoke", profile: "default", success_regex: "boot ok" }] },
+      test: { suites: [] },
     }, null, 2));
   }
   git(root, ["init"]);

@@ -16,6 +16,46 @@ afterEach(() => {
   }
 });
 
+function manifestV2(options: {
+  buildCommands?: unknown[];
+  buildArtifacts?: string[];
+  suites?: unknown[];
+  runProfiles?: unknown[];
+  runCases?: unknown[];
+  verify?: unknown;
+} = {}) {
+  return {
+    manifest_version: 2,
+    files: ["Makefile"],
+    build: {
+      variants: [{
+        id: "baseline",
+        commands: options.buildCommands ?? ["true"],
+        artifacts: options.buildArtifacts ?? [],
+      }],
+    },
+    run: {
+      profiles: options.runProfiles ?? [{
+        id: "default",
+        command: "sh",
+        args: ["-c", "printf XV6_BOOT_OK"],
+        artifacts: [],
+        timeout_ms: 1000,
+      }],
+      cases: options.runCases ?? [{
+        id: "smoke",
+        profile: "default",
+        success_regex: "XV6_BOOT_OK",
+        timeout_ms: 1000,
+      }],
+    },
+    test: {
+      suites: options.suites ?? [],
+    },
+    verify: options.verify,
+  };
+}
+
 describe("xv6-spec offline runtime flow", () => {
   test("supports dry-run build, run, and public verify without LLM/toolchain/QEMU", async () => {
     const projectRoot = makeXv6Fixture();
@@ -153,20 +193,12 @@ describe("xv6-spec offline runtime flow", () => {
       "",
     ].join("\n"));
     chmodSync(fakeQemu, 0o755);
-    writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify({
-      files: ["Makefile"],
-      build: {
-        commands: ["make all"],
-        artifacts: ["build/kernel.bin"],
-      },
-      run: {
-        command: fakeQemu,
-        args: ["-kernel"],
-        successSignal: "XV6_BOOT_OK",
-        artifact: "build/kernel.bin",
-        timeout_ms: 50,
-      },
-    }, null, 2));
+    writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify(manifestV2({
+      buildCommands: ["make all"],
+      buildArtifacts: ["build/kernel.bin"],
+      runProfiles: [{ id: "default", command: fakeQemu, args: ["-kernel", "build/kernel.bin"], artifacts: ["build/kernel.bin"], timeout_ms: 50 }],
+      runCases: [{ id: "smoke", profile: "default", success_regex: "XV6_BOOT_OK", timeout_ms: 50 }],
+    }), null, 2));
     const evidence = await EvidenceWriter.create({
       projectRoot,
       evidenceDir: ".vos",
@@ -200,11 +232,10 @@ describe("xv6-spec offline runtime flow", () => {
       "",
     ].join("\n"));
     chmodSync(fakeQemu, 0o755);
-    writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify({
-      files: ["Makefile"],
-      build: { commands: ["make all"], artifacts: ["build/kernel.bin"] },
-      run: {
-        profiles: [{
+    writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify(manifestV2({
+      buildCommands: ["make all"],
+      buildArtifacts: ["build/kernel.bin"],
+      runProfiles: [{
           id: "syscall",
           command: fakeQemu,
           args: [],
@@ -212,7 +243,7 @@ describe("xv6-spec offline runtime flow", () => {
           timeout_ms: 1000,
           serial: true,
         }],
-        cases: [{
+      runCases: [{
           id: "write-smoke",
           profile: "syscall",
           stdin_after: { pattern: "READY", text: "hello\n" },
@@ -221,8 +252,7 @@ describe("xv6-spec offline runtime flow", () => {
           exit_code: 0,
           required_artifacts: ["build/case.ok"],
         }],
-      },
-    }, null, 2));
+    }), null, 2));
     const evidence = await EvidenceWriter.create({
       projectRoot,
       evidenceDir: ".vos",
@@ -266,9 +296,8 @@ describe("xv6-spec offline runtime flow", () => {
     writeFileSync(join(projectRoot, "build", "kernel.bin"), "fake kernel\n");
     writeFileSync(fakeQemu, "#!/usr/bin/env sh\nprintf 'boot ok\\n'\n");
     chmodSync(fakeQemu, 0o755);
-    writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify({
-      run: {
-        profiles: [{
+    writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify(manifestV2({
+      runProfiles: [{
           id: "debug",
           command: fakeQemu,
           args: [],
@@ -277,9 +306,8 @@ describe("xv6-spec offline runtime flow", () => {
           hmp: { enabled: true },
           gdb: { enabled: true, port: 26000 },
         }],
-        cases: [{ id: "shutdown", profile: "debug", success_regex: "boot ok" }],
-      },
-    }, null, 2));
+      runCases: [{ id: "shutdown", profile: "debug", success_regex: "boot ok" }],
+    }), null, 2));
     const evidence = await EvidenceWriter.create({
       projectRoot,
       evidenceDir: ".vos",
@@ -306,18 +334,14 @@ describe("xv6-spec offline runtime flow", () => {
   test("honors object build command cwd and timeout metadata", async () => {
     const projectRoot = makeXv6Fixture();
     mkdirSync(join(projectRoot, "subdir"), { recursive: true });
-    writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify({
-      files: ["Makefile"],
-      build: {
-        commands: [{
+    writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify(manifestV2({
+      buildCommands: [{
           name: "record-cwd",
           command: ["sh", "-c", "pwd > cwd.txt"],
           cwd: "subdir",
           timeout_ms: 1000,
         }],
-        artifacts: [],
-      },
-    }, null, 2));
+    }), null, 2));
     const evidence = await EvidenceWriter.create({
       projectRoot,
       evidenceDir: ".vos",
@@ -1006,25 +1030,23 @@ function makeXv6Fixture(options: {
       ? []
       : ["bootstrap_banner_not_null", "sys_write_basic"].map((name) => ({
         name,
-        command: options.failingPublicSuite === name ? "false" : "true",
+        kind: "command",
+        command: ["sh", "-c", options.failingPublicSuite === name ? "false" : "true"],
+        related_specs: name === "sys_write_basic" ? ["kernel/syscall"] : ["kernel/boot"],
       }));
-    writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify({
-      files: ["Makefile"],
-      build: {
-        commands: ["make all"],
-        artifacts: ["build/kernel.bin"],
-      },
-      test: {
-        suites: publicSuites,
-      },
-      run: {
+    writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify(manifestV2({
+      buildCommands: ["make all"],
+      buildArtifacts: ["build/kernel.bin"],
+      suites: publicSuites,
+      runProfiles: [{
+        id: "default",
         command: "qemu-system-riscv64",
-        args: ["-machine", "virt", "-kernel"],
-        successSignal: "XV6_BOOT_OK",
-        artifact: "build/kernel.bin",
+        args: ["-machine", "virt", "-kernel", "build/kernel.bin"],
+        artifacts: ["build/kernel.bin"],
         timeout_ms: 1000,
-      },
-    }, null, 2));
+      }],
+      runCases: [{ id: "smoke", profile: "default", success_regex: "XV6_BOOT_OK", timeout_ms: 1000 }],
+    }), null, 2));
   }
 
   return root;
@@ -1138,21 +1160,15 @@ function makeVerifyMappingFixture(options: {
     "      - qemu_boot.log",
     "",
   ].join("\n"));
-  writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify({
-    files: ["Makefile"],
-    build: {
-      commands: ["true"],
-      artifacts: [],
-    },
-    test: {
-      suites: [
-        { name: "bootstrap_banner_not_null", command: ["sh", "-c", "echo bootstrap_banner_not_null >> test.log"] },
-        { name: "kalloc_alignment", command: ["sh", "-c", "echo kalloc_alignment >> test.log"] },
-        { name: "kalloc_zeroed", command: ["sh", "-c", "echo kalloc_zeroed >> test.log"] },
-        { name: "grind", command: ["sh", "-c", "echo grind >> test.log"] },
-        { name: "staff_full", command: ["sh", "-c", "echo staff_full >> test.log"] },
-      ],
-    },
+  writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify(manifestV2({
+    buildCommands: ["true"],
+    suites: [
+      { name: "bootstrap_banner_not_null", kind: "command", command: ["sh", "-c", "echo bootstrap_banner_not_null >> test.log"], related_specs: ["kernel/memory"] },
+      { name: "kalloc_alignment", kind: "command", command: ["sh", "-c", "echo kalloc_alignment >> test.log"], related_specs: ["kernel/memory"] },
+      { name: "kalloc_zeroed", kind: "command", command: ["sh", "-c", "echo kalloc_zeroed >> test.log"], related_specs: ["kernel/memory"] },
+      { name: "grind", kind: "command", command: ["sh", "-c", "echo grind >> test.log"], related_specs: ["kernel/memory"] },
+      { name: "staff_full", kind: "command", command: ["sh", "-c", "echo staff_full >> test.log"], related_specs: ["kernel/memory"] },
+    ],
     verify: {
       full: [],
       generated: {
@@ -1165,7 +1181,7 @@ function makeVerifyMappingFixture(options: {
         kalloc_race: ["grind"],
       },
     },
-  }, null, 2));
+  }), null, 2));
 
   return root;
 }
@@ -1253,19 +1269,14 @@ async function makePatchVerifyFixture(options: {
     "    - Makefile",
     "",
   ].join("\n"));
-  writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify({
-    files: ["Makefile"],
-    build: {
-      commands: [{ name: "build", command: ["sh", "-c", "mkdir -p build; echo kernel > build/kernel.bin; echo build >> build.log"] }],
-      artifacts: ["build/kernel.bin"],
-    },
-    test: {
-      suites: [
-        { name: "build_kernel", command: ["sh", "-c", "echo build_kernel >> test.log"] },
-        { name: "kalloc_alignment", command: ["sh", "-c", "echo kalloc_alignment >> test.log"] },
-      ],
-    },
-  }, null, 2));
+  writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify(manifestV2({
+    buildCommands: [{ name: "build", command: ["sh", "-c", "mkdir -p build; echo kernel > build/kernel.bin; echo build >> build.log"] }],
+    buildArtifacts: ["build/kernel.bin"],
+    suites: [
+      { name: "build_kernel", kind: "command", command: ["sh", "-c", "echo build_kernel >> test.log"], related_specs: ["kernel/memory"] },
+      { name: "kalloc_alignment", kind: "command", command: ["sh", "-c", "echo kalloc_alignment >> test.log"], related_specs: ["kernel/memory"] },
+    ],
+  }), null, 2));
 
   git(root, ["init"]);
   git(root, ["config", "user.email", "test@example.com"]);
@@ -1379,23 +1390,36 @@ function makeAgentGeneratePatch(): string {
     "index 0000000..2222222",
     "--- /dev/null",
     "+++ b/.vos/toolchain.json",
-    "@@ -0,0 +1,17 @@",
+    "@@ -0,0 +1,31 @@",
     "+{",
+    "+  \"manifest_version\": 2,",
     "+  \"files\": [\"Makefile\"],",
     "+  \"build\": {",
-    "+    \"commands\": [{",
-    "+      \"name\": \"offline-build\",",
-    "+      \"command\": [\"sh\", \"-c\", \"true\"]",
-    "+    }],",
-    "+    \"artifacts\": [\"build/kernel.bin\"]",
+    "+    \"variants\": [{",
+    "+      \"id\": \"baseline\",",
+    "+      \"commands\": [{",
+    "+        \"name\": \"offline-build\",",
+    "+        \"command\": [\"sh\", \"-c\", \"true\"]",
+    "+      }],",
+    "+      \"artifacts\": [\"build/kernel.bin\"]",
+    "+    }]",
     "+  },",
     "+  \"run\": {",
-    "+    \"command\": \"sh\",",
-    "+    \"args\": [\"-c\", \"echo XV6_BOOT_OK\", \"-kernel\"],",
-    "+    \"successSignal\": \"XV6_BOOT_OK\",",
-    "+    \"artifact\": \"Makefile\",",
-    "+    \"timeout_ms\": 1000",
-    "+  }",
+    "+    \"profiles\": [{",
+    "+      \"id\": \"default\",",
+    "+      \"command\": \"sh\",",
+    "+      \"args\": [\"-c\", \"echo XV6_BOOT_OK\", \"-kernel\"],",
+    "+      \"artifacts\": [\"Makefile\"],",
+    "+      \"timeout_ms\": 1000",
+    "+    }],",
+    "+    \"cases\": [{",
+    "+      \"id\": \"smoke\",",
+    "+      \"profile\": \"default\",",
+    "+      \"success_regex\": \"XV6_BOOT_OK\",",
+    "+      \"timeout_ms\": 1000",
+    "+    }]",
+    "+  },",
+    "+  \"test\": { \"suites\": [] }",
     "+}",
     "",
   ].join("\n");

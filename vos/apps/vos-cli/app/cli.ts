@@ -383,6 +383,7 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
     }
     let dryRun = false;
     let toolchainPath: string | undefined;
+    let variant: string | undefined;
     for (let i = 0; i < rest.length; i++) {
       const arg = rest[i];
       if (arg === "--dry-run") {
@@ -398,9 +399,18 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
         toolchainPath = arg.slice("--toolchain=".length);
         continue;
       }
+      if (arg === "--variant") {
+        variant = resolveRequiredValue(rest, i, arg);
+        i++;
+        continue;
+      }
+      if (arg.startsWith("--variant=")) {
+        variant = arg.slice("--variant=".length);
+        continue;
+      }
       throw new Error(`unknown flag for build: ${arg}`);
     }
-    return { kind: "build", dryRun, toolchainPath } satisfies BuildCommand;
+    return { kind: "build", dryRun, toolchainPath, variant } satisfies BuildCommand;
   }
 
   if (command === "ledger") {
@@ -1124,11 +1134,8 @@ function isVerifyScope(value: string): value is VerifyScope {
     "patch",
     "full",
     "invariant",
+    "generated",
     "fuzz",
-    "base",
-    "architecture",
-    "composition",
-    "goal",
   ].includes(value);
 }
 

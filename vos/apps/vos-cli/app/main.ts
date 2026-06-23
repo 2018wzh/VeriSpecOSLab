@@ -83,6 +83,7 @@ import { runBuildCommand } from "./runtime/build.ts";
 import { runQemuCommand } from "./runtime/qemu.ts";
 import { runTestCommand } from "./runtime/test.ts";
 import { runVerifyCommand, type BehaviorTestRunner } from "./runtime/verify.ts";
+import { loadToolchainManifest, parseToolchainManifest } from "./runtime/manifest.ts";
 import {
   buildDebugTraceInput,
   ensureCleanGitWorktree,
@@ -569,10 +570,8 @@ function collectStringArray(value: unknown): string[] {
 }
 
 function collectManifestOutputFiles(manifest: Record<string, unknown>): string[] {
-  const out = [
-    ...collectStringArray((manifest.build as { artifacts?: unknown } | undefined)?.artifacts),
-    ...collectStringArray(manifest.artifacts),
-  ];
+  const variants = (manifest.build as { variants?: Array<{ artifacts?: unknown }> } | undefined)?.variants ?? [];
+  const out = variants.flatMap((variant) => collectStringArray(variant.artifacts));
   return [...new Set(out)];
 }
 
@@ -1632,6 +1631,7 @@ export async function executeBuild(command: BuildCommand, context: ExecContext, 
     projectRoot,
     evidence,
     toolchainPath: command.toolchainPath,
+    variant: command.variant,
     dryRun: command.dryRun,
     signal: context.signal,
   });
@@ -2512,10 +2512,10 @@ async function writeGdbFailureArtifact(
 async function readToolchainForDebug(projectRoot: string): Promise<{
   run?: { args?: string[]; artifact?: string; artifacts?: string[] };
 }> {
-  const toolchainPath = await resolveToolchainManifestPath({ projectRoot });
-  if (!existsSync(toolchainPath)) return {};
-  const parsed = safeJsonTryParse(await readFile(toolchainPath, "utf8"));
-  return isRecord(parsed) ? parsed as { run?: { args?: string[]; artifact?: string; artifacts?: string[] } } : {};
+  if (!existsSync(path.join(projectRoot, ".vos", "toolchain.json"))) return {};
+  const { manifest } = await loadToolchainManifest({ projectRoot });
+  const profile = manifest.run.profiles[0];
+  return { run: { args: profile.args, artifact: profile.artifacts[0], artifacts: profile.artifacts } };
 }
 
 function ensureQemuGdbstubArgs(args: string[], endpoint: string): string[] {
@@ -3503,12 +3503,10 @@ function validateToolchainDraft(draft: ToolchainGenerationDraft, allowedOutputPa
   if (missing.length > 0) {
     throw new AgentOutputError(`toolchain manifest references files not in draft: ${missing.join(", ")}`);
   }
-  const build = draft.manifest.build as { commands?: unknown; artifacts?: unknown } | undefined;
-  if (!build || typeof build !== "object" || !Array.isArray(build.commands) || build.commands.length === 0) {
-    throw new AgentOutputError("toolchain manifest requires build.commands");
-  }
-  if (!("artifacts" in build)) {
-    throw new AgentOutputError("toolchain manifest requires build.artifacts");
+  try {
+    parseToolchainManifest(draft.manifest);
+  } catch (error) {
+    throw new AgentOutputError(error instanceof Error ? error.message : String(error));
   }
 }
 

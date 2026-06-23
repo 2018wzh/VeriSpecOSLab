@@ -5,8 +5,8 @@ import path from "node:path";
 import { EvidenceWriter } from "../evidence/index.ts";
 import { runCommand } from "./executor.ts";
 import { collectStringListByKey, parseTopLevelYaml } from "../utils/yaml.ts";
-import { resolveToolchainManifestPath } from "./toolchain-manifest.ts";
 import { withResourceLock } from "./locks.ts";
+import { getBuildVariant, loadToolchainManifest, type ToolchainCommandV2, type ToolchainManifestV2 } from "./manifest.ts";
 
 export interface ToolchainCommand {
   name: string;
@@ -52,6 +52,7 @@ export async function runBuildCommand(params: {
   projectRoot: string;
   evidence: EvidenceWriter;
   toolchainPath?: string;
+  variant?: string;
   dryRun: boolean;
   signal?: AbortSignal;
 }): Promise<BuildResult> {
@@ -62,19 +63,14 @@ async function runBuildCommandUnlocked(params: {
   projectRoot: string;
   evidence: EvidenceWriter;
   toolchainPath?: string;
+  variant?: string;
   dryRun: boolean;
   signal?: AbortSignal;
 }): Promise<BuildResult> {
-  const toolchainFile = await resolveToolchainManifestPath({
+  const { path: toolchainFile, manifest } = await loadToolchainManifest({
     projectRoot: params.projectRoot,
     toolchainPath: params.toolchainPath,
   });
-
-  if (!existsSync(toolchainFile)) {
-    throw new Error(`build requires toolchain manifest at ${toolchainFile}`);
-  }
-
-  const manifest: BuildManifest = JSON.parse(await readFile(toolchainFile, "utf8"));
   const requiredSpecHash = manifest.spec_hash;
   if (requiredSpecHash) {
     await ensureCachedSpecHashMatches(params.projectRoot, requiredSpecHash);
@@ -82,7 +78,8 @@ async function runBuildCommandUnlocked(params: {
   enforceManifestFilesExist(manifest, params.projectRoot);
   const allowedOutputPaths = await loadAllowedOutputPaths(params.projectRoot);
   enforceManifestPathGuard(manifest, allowedOutputPaths);
-  const steps = normalizeCommands(manifest, params.projectRoot);
+  const variant = getBuildVariant(manifest, params.variant ?? "baseline");
+  const steps = normalizeCommands(manifest, params.projectRoot, variant.id);
 
   if (params.dryRun) {
     const dryPlan = steps.map((s) => `${s.command} ${s.args.join(" ")}`);
@@ -138,8 +135,8 @@ async function runBuildCommandUnlocked(params: {
     params.evidence.addArtifact("build", path.relative(params.projectRoot, logPath), `step ${step.id}`);
   }
 
-  if (manifest.build?.artifacts) {
-    for (const rel of manifest.build.artifacts) {
+  if (variant.artifacts) {
+    for (const rel of variant.artifacts) {
       const p = path.resolve(params.projectRoot, rel);
       if (existsSync(p) && (await lstat(p)).isFile()) {
         const hash = await hashFile(p);
@@ -156,17 +153,6 @@ async function runBuildCommandUnlocked(params: {
     manifest_hash: normalizedManifestHash,
   };
   await writeFile(path.join(path.dirname(toolchainFile), "toolchain.meta.json"), `${JSON.stringify(runManifest, null, 2)}\n`);
-
-  if (manifest.artifacts) {
-    for (const rel of manifest.artifacts) {
-      const p = path.resolve(params.projectRoot, rel);
-      if (existsSync(p) && (await lstat(p)).isFile()) {
-        const hash = await hashFile(p);
-        params.evidence.addArtifact("artifact", path.relative(params.projectRoot, p), `sha256:${hash}`);
-        artifacts.push(p);
-      }
-    }
-  }
 
   if (manifest.generator?.name) {
     if (manifest.generator.version) {
@@ -189,7 +175,7 @@ async function loadAllowedOutputPaths(projectRoot: string): Promise<string[]> {
   return collectStringListByKey(parseTopLevelYaml(raw), "allowed_output_path");
 }
 
-function enforceManifestPathGuard(manifest: BuildManifest, allowedOutputPaths: string[]): void {
+function enforceManifestPathGuard(manifest: ToolchainManifestV2, allowedOutputPaths: string[]): void {
   const candidates = collectManifestOutputPaths(manifest);
   if (allowedOutputPaths.length === 0) {
     if (candidates.length > 0) {
@@ -203,7 +189,7 @@ function enforceManifestPathGuard(manifest: BuildManifest, allowedOutputPaths: s
   }
 }
 
-function enforceManifestFilesExist(manifest: BuildManifest, projectRoot: string): void {
+function enforceManifestFilesExist(manifest: ToolchainManifestV2, projectRoot: string): void {
   const files = Array.isArray(manifest.files) ? manifest.files : [];
   const missing = files
     .filter((entry) => typeof entry === "string" && entry.trim().length > 0)
@@ -213,7 +199,7 @@ function enforceManifestFilesExist(manifest: BuildManifest, projectRoot: string)
   }
 }
 
-function collectManifestOutputPaths(manifest: BuildManifest): string[] {
+function collectManifestOutputPaths(manifest: ToolchainManifestV2): string[] {
   const out: string[] = [];
   if (Array.isArray(manifest.files)) {
     for (const value of manifest.files) {
@@ -235,11 +221,8 @@ function normalizeArtifactPath(raw: string): string {
   return path.normalize(raw.trim()).replace(/^\.?[\\/]/, "");
 }
 
-function normalizeCommands(manifest: BuildManifest, projectRoot: string): BuildPlanStep[] {
-  const raw = manifest.commands ?? manifest.build?.commands;
-  if (!raw || raw.length === 0) {
-    throw new Error("toolchain manifest has no build commands");
-  }
+function normalizeCommands(manifest: ToolchainManifestV2, projectRoot: string, variantId: string): BuildPlanStep[] {
+  const raw = getBuildVariant(manifest, variantId).commands;
 
   return raw.map((cmd, index) => {
     const { command, args } = normalizeCommand(cmd);
@@ -260,7 +243,7 @@ function normalizeCommands(manifest: BuildManifest, projectRoot: string): BuildP
   });
 }
 
-function normalizeCommand(cmd: string | ToolchainCommand): { command: string; args: string[] } {
+function normalizeCommand(cmd: string | ToolchainCommandV2): { command: string; args: string[] } {
   if (typeof cmd === "string") {
     const parts = splitCommand(cmd);
     return { command: parts[0], args: parts.slice(1) };

@@ -1,12 +1,9 @@
 import { createConnection } from "node:net";
-import { existsSync, readFileSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { z } from "zod";
 import { EvidenceWriter } from "../evidence/index.ts";
 import { runCommand } from "./executor.ts";
-import { isRecord, parseTopLevelYaml, stringArray } from "../utils/yaml.ts";
-import { resolveToolchainManifestPath } from "./toolchain-manifest.ts";
 import { withResourceLock } from "./locks.ts";
 import {
   escapeRunShellArg,
@@ -14,71 +11,7 @@ import {
   safeRunArtifactName,
   type RunCommandResult,
 } from "./run.ts";
-
-const endpointSchema = z.union([
-  z.boolean(),
-  z.object({
-    enabled: z.boolean().optional(),
-    path: z.string().optional(),
-    port: z.number().int().positive().optional(),
-  }),
-]).optional();
-
-const profileSchema = z.object({
-  id: z.string().min(1),
-  command: z.string().min(1),
-  args: z.array(z.string()).optional(),
-  cwd: z.string().optional(),
-  env: z.record(z.string(), z.string()).optional(),
-  artifacts: z.array(z.string()).optional(),
-  timeout_ms: z.number().nonnegative().optional(),
-  timeout_secs: z.number().nonnegative().optional(),
-  serial: endpointSchema,
-  qmp: endpointSchema,
-  hmp: endpointSchema,
-  gdb: endpointSchema,
-  resource_lock: z.string().optional(),
-});
-
-const caseSchema = z.object({
-  id: z.string().min(1),
-  profile: z.string().optional(),
-  stdin: z.string().optional(),
-  stdin_after: z.object({
-    pattern: z.string(),
-    text: z.string(),
-  }).optional(),
-  success_regex: z.string().optional(),
-  failure_regex: z.string().optional(),
-  exit_code: z.number().int().optional(),
-  timeout_ms: z.number().nonnegative().optional(),
-  required_artifacts: z.array(z.string()).optional(),
-  expected_qmp_events: z.array(z.string()).optional(),
-});
-
-const manifestRunSchema = z.object({
-  command: z.string().optional(),
-  args: z.array(z.string()).optional(),
-  timeout_ms: z.number().nonnegative().optional(),
-  timeout_secs: z.number().nonnegative().optional(),
-  successSignal: z.string().optional(),
-  artifact: z.string().optional(),
-  artifacts: z.array(z.string()).optional(),
-  profiles: z.array(profileSchema).optional(),
-  cases: z.array(caseSchema).optional(),
-});
-
-interface QemuToolchainManifest {
-  run?: unknown;
-}
-
-interface LegacyQemuRunYaml {
-  command: string;
-  args: string[];
-  successSignal?: string;
-  timeoutSecs: number;
-  artifact: string;
-}
+import { loadToolchainManifest, type RunCaseV2, type RunProfileV2 } from "./manifest.ts";
 
 interface EndpointConfig {
   enabled: boolean;
@@ -98,7 +31,6 @@ interface QemuProfile {
   hmp: EndpointConfig;
   gdb: EndpointConfig;
   resourceLock: string;
-  legacyKernelInject: boolean;
 }
 
 interface QemuCase {
@@ -315,18 +247,9 @@ async function resolveRunPlan(params: {
   profileId?: string;
   caseId?: string;
 }): Promise<QemuRunPlan> {
-  const toolchainFile = await resolveToolchainManifestPath({ projectRoot: params.projectRoot });
-  if (!existsSync(toolchainFile)) throw new Error("run requires .vos/toolchain.json");
-  const manifest: QemuToolchainManifest = JSON.parse(await readFile(toolchainFile, "utf8"));
-  const manifestRun = manifestRunSchema.parse(manifest.run ?? {});
-  const yaml = parseRunYaml(path.join(params.projectRoot, "spec", "toolchain", "run.yaml"));
-  const legacy = !manifestRun.profiles?.length && !manifestRun.cases?.length;
-  const profiles = legacy
-    ? [legacyProfile(manifestRun, yaml)]
-    : manifestRun.profiles!.map((profile) => normalizeProfile(profile, params.evidence.run_root, false));
-  const cases = legacy
-    ? [legacyCase(manifestRun, yaml, params.readyPattern, params.timeoutMs)]
-    : manifestRun.cases!.map((testCase) => normalizeCase(testCase, profiles[0].id, params.readyPattern, params.timeoutMs));
+  const { manifest } = await loadToolchainManifest({ projectRoot: params.projectRoot });
+  const profiles = manifest.run.profiles.map((profile) => normalizeProfile(profile));
+  const cases = manifest.run.cases.map((testCase) => normalizeCase(testCase, profiles[0].id, params.readyPattern, params.timeoutMs));
   const profile = profiles.find((candidate) => candidate.id === (params.profileId ?? cases.find((item) => item.id === (params.caseId ?? "smoke"))?.profileId ?? "default"))
     ?? profiles[0];
   const testCase = cases.find((candidate) => candidate.id === (params.caseId ?? "smoke") && candidate.profileId === profile.id)
@@ -345,42 +268,7 @@ async function resolveRunPlan(params: {
   return { profiles, cases, profile, testCase, commandLine, qmpEndpoint, hmpEndpoint, gdbEndpoint };
 }
 
-function legacyProfile(run: z.infer<typeof manifestRunSchema>, yaml: LegacyQemuRunYaml): QemuProfile {
-  const artifact = run.artifact ?? run.artifacts?.[0] ?? yaml.artifact;
-  const args = run.args ? [...run.args] : [...yaml.args];
-  return {
-    id: "default",
-    command: run.command ?? yaml.command,
-    args,
-    artifacts: artifact ? [artifact] : [],
-    timeoutMs: resolveRunTimeoutMs(run.timeout_ms, run.timeout_secs, yaml.timeoutSecs),
-    qmp: { enabled: false },
-    hmp: { enabled: false },
-    gdb: { enabled: false },
-    resourceLock: "qemu:default",
-    legacyKernelInject: true,
-  };
-}
-
-function legacyCase(
-  run: z.infer<typeof manifestRunSchema>,
-  yaml: LegacyQemuRunYaml,
-  readyPattern?: string,
-  timeoutMs?: number,
-): QemuCase {
-  const success = readyPattern ?? run.successSignal ?? yaml.successSignal;
-  if (!success) throw new Error("run requires success signal");
-  return {
-    id: "smoke",
-    profileId: "default",
-    successRegex: success,
-    timeoutMs,
-    requiredArtifacts: [],
-    expectedQmpEvents: [],
-  };
-}
-
-function normalizeProfile(raw: z.infer<typeof profileSchema>, runRoot: string, legacyKernelInject: boolean): QemuProfile {
+function normalizeProfile(raw: RunProfileV2): QemuProfile {
   return {
     id: raw.id,
     command: raw.command,
@@ -393,12 +281,11 @@ function normalizeProfile(raw: z.infer<typeof profileSchema>, runRoot: string, l
     hmp: normalizeEndpoint(raw.hmp),
     gdb: normalizeEndpoint(raw.gdb),
     resourceLock: raw.resource_lock ?? `qemu:${raw.id}`,
-    legacyKernelInject,
   };
 }
 
 function normalizeCase(
-  raw: z.infer<typeof caseSchema>,
+  raw: RunCaseV2,
   defaultProfileId: string,
   readyPattern?: string,
   timeoutMs?: number,
@@ -423,14 +310,6 @@ function buildCommandLine(profile: QemuProfile, endpoints: {
   gdbEndpoint?: string;
 }): string[] {
   const args = [...profile.args];
-  if (profile.legacyKernelInject && profile.artifacts[0]) {
-    const kernelArgIndex = args.indexOf("-kernel");
-    if (kernelArgIndex >= 0) {
-      if (args[kernelArgIndex + 1] !== profile.artifacts[0]) args.splice(kernelArgIndex + 1, 0, profile.artifacts[0]);
-    } else if (!args.includes(`-kernel=${profile.artifacts[0]}`)) {
-      args.push("-kernel", profile.artifacts[0]);
-    }
-  }
   if (endpoints.qmpEndpoint) {
     args.push("-qmp", qemuUnixArg(endpoints.qmpEndpoint));
   }
@@ -444,7 +323,7 @@ function buildCommandLine(profile: QemuProfile, endpoints: {
   return [profile.command, ...args];
 }
 
-function normalizeEndpoint(raw: z.infer<typeof endpointSchema>): EndpointConfig {
+function normalizeEndpoint(raw: boolean | { enabled?: boolean; path?: string; port?: number } | undefined): EndpointConfig {
   if (raw === true) return { enabled: true };
   if (raw === undefined || raw === false) return { enabled: false };
   return { enabled: raw.enabled ?? true, path: raw.path, port: raw.port };
@@ -640,47 +519,6 @@ export function parseQmpMessages(text: string): Array<Record<string, unknown>> {
     }
   }
   return out;
-}
-
-function parseRunYaml(runYamlPath: string): LegacyQemuRunYaml {
-  if (!existsSync(runYamlPath)) {
-    throw new Error(`run requires ${runYamlPath}`);
-  }
-  const run: LegacyQemuRunYaml = {
-    command: "qemu-system-riscv64",
-    args: [],
-    timeoutSecs: 30,
-    artifact: "build/kernel.bin",
-  };
-  const parsed = parseTopLevelYaml(readFileSync(runYamlPath, "utf8"));
-  const rawRun = parsed.run;
-  if (!isRecord(rawRun)) {
-    run.args.push("-machine", "virt", "-cpu", "rv64");
-    return run;
-  }
-  const command = stringValue(rawRun.command) ?? stringValue(rawRun.emulator);
-  if (command) run.command = command;
-  const kernelArg = stringValue(rawRun.kernel_arg);
-  if (kernelArg) run.args.push(kernelArg);
-  run.args.push("-machine", stringValue(rawRun.machine) ?? "virt");
-  run.args.push("-cpu", stringValue(rawRun.cpu) ?? "rv64");
-  const extraArgs = stringArray(rawRun.extra_args);
-  if (extraArgs) run.args.push(...extraArgs);
-  const artifact = stringValue(rawRun.kernel_path) ?? stringValue(rawRun.artifact);
-  if (artifact) run.artifact = artifact;
-  const successSignal = stringValue(rawRun.success_signal) ?? stringValue(rawRun.successSignal);
-  if (successSignal) run.successSignal = successSignal;
-  const timeoutSecs = numberValue(rawRun.timeout_secs) ?? numberValue(rawRun.timeoutSecs);
-  if (timeoutSecs !== undefined && timeoutSecs > 0) run.timeoutSecs = timeoutSecs;
-  return run;
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
-}
-
-function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function stripUnixPrefix(endpoint: string): string {

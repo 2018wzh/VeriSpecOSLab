@@ -296,18 +296,32 @@ evidence：
 内部执行链：
 
 ```text
-resolve suite -> select test adapter -> execute harness -> collect verdicts
+load manifest v2 -> resolve explicit suite objects -> select registered test adapter
+  -> execute command or qemu-case harness -> collect suite verdicts
 ```
 
 输出 JSON：
 
 - suites run
 - passed / failed / skipped
+- suite-level verdicts; case/oracle details stay in evidence artifacts
 
 evidence：
 
 - per-suite logs
-- junit or structured summary
+- structured result JSON
+- qemu serial/stderr/result artifacts for `qemu-case` suites
+
+`.vos/toolchain.json` 必须使用 `manifest_version: 2`。`test.suites` 只接受对象：
+
+```json
+{ "name": "kalloc_static", "kind": "command", "command": ["sh", "tests/public/kalloc.sh"] }
+{ "name": "usertests", "kind": "qemu-case", "build_variant": "baseline", "run_case": "usertests" }
+```
+
+`vos test` 只消费已经存在于 manifest 或临时 worktree manifest 中的 suite；
+它不生成测试代码。`verify generated` / `verify fuzz` 负责在临时 worktree 中生成
+行为测试并把它们作为临时 suite 执行。
 
 ## 5. Verify 命令
 
@@ -357,9 +371,9 @@ resolve module invariant obligations -> map to registered test suites -> emit in
 resolve generated/fuzz target -> map to registered test suites -> archive logs/crashes
 ```
 
-`verify invariant` 与 `verify fuzz` 复用 `.vos/toolchain.json` 中已有
+`verify invariant` 与 `verify fuzz` 复用 `.vos/toolchain.json` v2 中已有
 `test.suites`，并通过 `verify.invariant`、`verify.generated`、`verify.fuzz`
-映射 obligation 到 suite 名称；不引入独立 adapter 框架。
+映射 obligation 到 suite 名称；suite 执行走 VOS 注册的内置 test adapter。
 
 `verify generated` 与 `verify fuzz` 还会生成 `verify-behavior` evidence：
 先产出 TestPlan JSON，再在临时 worktree 中应用行为测试 patch 并运行自动化

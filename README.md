@@ -81,8 +81,8 @@ vos arch lint spec/architecture/seed.yaml
 vos arch compose spec/architecture/seed.yaml
 vos arch derive-tests spec/architecture/seed.yaml
 vos build
-vos run qemu
-vos test
+vos run qemu --case boot-smoke
+vos test usertests_all_pass
 vos verify public
 vos debug explain-log path/to/log
 vos agent context --stage memory-management

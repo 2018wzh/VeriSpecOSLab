@@ -7,7 +7,7 @@ import type { EvidenceWriter } from "../evidence/index.ts";
 import { AgentOutputError, CliError } from "../errors.ts";
 import { runCommand } from "./executor.ts";
 import { runBuildCommand } from "./build.ts";
-import { resolveToolchainManifestPath } from "./toolchain-manifest.ts";
+import { loadToolchainManifest } from "./manifest.ts";
 import { isRecord, parseTopLevelYaml, stringArray } from "../utils/yaml.ts";
 
 const TRACE_PREFIX = "VOS_TRACE ";
@@ -108,18 +108,6 @@ interface RawDebugTracePlan {
   instrumentation_patch?: unknown;
   trace_format?: unknown;
   cases?: unknown;
-}
-
-interface RunManifest {
-  run?: {
-    command?: string;
-    args?: string[];
-    timeout_ms?: number;
-    timeout_secs?: number;
-    successSignal?: string;
-    artifact?: string;
-    artifacts?: string[];
-  };
 }
 
 interface RunSpec {
@@ -653,29 +641,20 @@ async function applyPatchInWorktree(worktreePath: string, patchText: string): Pr
 }
 
 async function resolveRunSpec(projectRoot: string): Promise<RunSpec> {
-  const toolchainFile = await resolveToolchainManifestPath({ projectRoot });
-  const manifest: RunManifest = JSON.parse(await readFile(toolchainFile, "utf8"));
-  const run = manifest.run;
-  if (!run?.command) {
-    throw new Error("agent debug trace requires run.command in .vos/toolchain.json");
-  }
-  const artifact = run.artifact ?? run.artifacts?.[0] ?? "build/kernel.bin";
-  const args = [...(run.args ?? [])];
-  const kernelArgIndex = args.indexOf("-kernel");
-  if (kernelArgIndex >= 0 && args[kernelArgIndex + 1] !== artifact) {
-    args.splice(kernelArgIndex + 1, 0, artifact);
-  } else if (kernelArgIndex < 0) {
-    args.push("-kernel", artifact);
-  }
+  const { manifest } = await loadToolchainManifest({ projectRoot });
+  const profile = manifest.run.profiles[0];
+  const runCase = manifest.run.cases.find((candidate) => candidate.profile === profile.id) ?? manifest.run.cases[0];
+  const artifact = profile.artifacts[0] ?? "build/kernel.bin";
+  const args = [...profile.args];
   if (!existsSync(path.resolve(projectRoot, artifact))) {
     throw new Error(`agent debug trace requires kernel artifact: ${artifact}`);
   }
   return {
-    command: run.command,
+    command: profile.command,
     args,
     artifact,
-    timeoutMs: run.timeout_ms ?? (run.timeout_secs ? run.timeout_secs * 1000 : 30_000),
-    readyPattern: run.successSignal,
+    timeoutMs: profile.timeout_ms ?? (profile.timeout_secs ? profile.timeout_secs * 1000 : 30_000),
+    readyPattern: runCase.success_regex,
   };
 }
 
@@ -698,17 +677,16 @@ async function collectTraceProjectTree(projectRoot: string): Promise<string[]> {
 
 async function collectToolchainSummary(projectRoot: string): Promise<DebugTraceInput["toolchain"]> {
   try {
-    const toolchainFile = await resolveToolchainManifestPath({ projectRoot });
-    const manifest = JSON.parse(await readFile(toolchainFile, "utf8")) as {
-      build?: { commands?: unknown };
-      run?: RunManifest["run"];
-    };
+    const { manifest } = await loadToolchainManifest({ projectRoot });
+    const variant = manifest.build.variants.find((candidate) => candidate.id === "baseline") ?? manifest.build.variants[0];
+    const profile = manifest.run.profiles[0];
+    const runCase = manifest.run.cases.find((candidate) => candidate.profile === profile.id) ?? manifest.run.cases[0];
     return {
-      buildCommands: normalizeBuildCommands(manifest.build?.commands),
-      runCommand: manifest.run?.command,
-      runArgs: manifest.run?.args ?? [],
-      runArtifact: manifest.run?.artifact ?? manifest.run?.artifacts?.[0],
-      successSignal: manifest.run?.successSignal,
+      buildCommands: normalizeBuildCommands(variant.commands),
+      runCommand: profile.command,
+      runArgs: profile.args,
+      runArtifact: profile.artifacts[0],
+      successSignal: runCase.success_regex,
     };
   } catch {
     return {

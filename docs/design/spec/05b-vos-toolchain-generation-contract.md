@@ -145,13 +145,29 @@ Output:
   files:
     - path: Path       # must be listed in build.allowed_output_path
       content: string  # Makefile, CMakeLists.txt, Rust code, etc
-  manifest: object     # candidate .vos/toolchain.json
+  manifest: object     # candidate .vos/toolchain.json, manifest_version: 2
   build_instructions: string
   spec_refs: [string]
   changed_targets: [Path]
 ```
 
 ### 2.3 必需元数据
+
+生成的构建配置必须包含 spec 来源信息（用于溯源），并产出 v2 manifest：
+
+```json
+{
+  "manifest_version": 2,
+  "files": ["Makefile"],
+  "build": { "variants": [{ "id": "baseline", "commands": ["make all"], "artifacts": ["build/kernel.bin"] }] },
+  "run": { "profiles": [{ "id": "default", "command": "qemu-system-riscv64", "args": [] }], "cases": [{ "id": "boot-smoke", "profile": "default", "success_regex": "XV6_BOOT_OK" }] },
+  "test": { "suites": [{ "name": "boot-smoke", "kind": "qemu-case", "build_variant": "baseline", "run_case": "boot-smoke" }] }
+}
+```
+
+不得生成旧式 `build.commands`、顶层 `tests`、字符串 suite、或旧式
+`run.command/successSignal/artifact`。VOS 不做旧 manifest fallback，也不隐式扫描
+Makefile、QEMU 参数或测试脚本。
 
 生成的构建配置必须包含 spec 来源信息（用于溯源）：
 
