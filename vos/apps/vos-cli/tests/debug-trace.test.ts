@@ -3,19 +3,18 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { EvidenceWriter } from "../app/evidence/index.ts";
-import { executeCommand } from "../app/main.ts";
 import {
   buildTraceCoverageHints,
-  buildTraceValidationInput,
+  buildDebugTraceInput,
   collectModuleTestSurfaces,
   collectPublicRequirements,
   filterModuleTestsForTarget,
   filterPublicRequirementsForTarget,
-  parseTraceValidationPlan,
+  parseDebugTracePlan,
   parseVosTraceLines,
+  runAgentDebugTrace,
   validateInstrumentationPatch,
-} from "../app/runtime/trace-validation.ts";
-import type { HeadlessAgentOptions } from "vos-agent/headless";
+} from "../app/runtime/debug-trace.ts";
 
 const tmpRoots: string[] = [];
 
@@ -25,7 +24,7 @@ afterEach(() => {
   }
 });
 
-describe("trace validation runtime", () => {
+describe("DebugAgent trace helpers", () => {
   test("collects public requirements and module test surfaces without modifying spec", async () => {
     const projectRoot = makeTraceProject();
 
@@ -89,7 +88,7 @@ describe("trace validation runtime", () => {
 
   test("builds target coverage hints from public requirements and module tests", async () => {
     const projectRoot = makeTraceProject();
-    const input = await buildTraceValidationInput({
+    const input = await buildDebugTraceInput({
       projectRoot,
       target: "full-syscall",
       recentEvidence: [],
@@ -111,9 +110,9 @@ describe("trace validation runtime", () => {
     });
   });
 
-  test("filters trace validation input to a requested module target", async () => {
+  test("filters debug trace input to a requested module target", async () => {
     const projectRoot = makeTraceProject();
-    const input = await buildTraceValidationInput({
+    const input = await buildDebugTraceInput({
       projectRoot,
       target: "kernel/memory",
       recentEvidence: [],
@@ -134,7 +133,7 @@ describe("trace validation runtime", () => {
   });
 
   test("validates agent plans, instrumentation paths, and trace lines", () => {
-    const plan = parseTraceValidationPlan(JSON.stringify({
+    const plan = parseDebugTracePlan(JSON.stringify({
       instrumentation_patch: makeInstrumentationPatch(),
       trace_format: { prefix: "VOS_TRACE " },
       cases: [{
@@ -172,14 +171,14 @@ describe("trace validation runtime", () => {
     ]);
   });
 
-  test("rejects invalid agent trace validation output", () => {
-    expect(() => parseTraceValidationPlan("not json")).toThrow(/not JSON/);
-    expect(() => parseTraceValidationPlan(JSON.stringify({
+  test("rejects invalid agent debug trace output", () => {
+    expect(() => parseDebugTracePlan("not json")).toThrow(/not JSON/);
+    expect(() => parseDebugTracePlan(JSON.stringify({
       instrumentation_patch: "",
       trace_format: { prefix: "VOS_TRACE " },
       cases: [],
     }))).toThrow(/at least one case/);
-    expect(() => parseTraceValidationPlan(JSON.stringify({
+    expect(() => parseDebugTracePlan(JSON.stringify({
       instrumentation_patch: "",
       trace_format: { prefix: "VOS_TRACE " },
       cases: [{
@@ -191,207 +190,53 @@ describe("trace validation runtime", () => {
     }))).toThrow(/success_regex must validate non-trace serial output/);
   });
 
-  test("runs verify trace in a temporary worktree with per-case evidence", async () => {
+  test("runs debug trace instrumentation in a temporary branch worktree with per-case evidence", async () => {
     const projectRoot = makeTraceProject();
     const evidence = await EvidenceWriter.create({
       projectRoot,
       evidenceDir: ".vos",
-      command: ["agent", "validate-generated"],
+      command: ["agent", "debug", "--run", "run-1"],
       args: [],
     });
-    let captured: HeadlessAgentOptions | undefined;
-    const runner = async (options: HeadlessAgentOptions) => {
-      captured = options;
-      return {
-        content: JSON.stringify({
-          instrumentation_patch: makeInstrumentationPatch(),
-          trace_format: { prefix: "VOS_TRACE " },
-          cases: [{
-            id: "boot-case",
-            requirement_id: "verify-boot-banner",
-            related_specs: ["kernel/boot.boot_banner"],
-            stdin: "echo trace\n",
-            success_regex: "TRACE_OK",
-            failure_regex: "panic",
-            expected_trace_events: ["boot"],
-          }, {
-            id: "shell-case",
-            requirement_id: "verify-boot-banner",
-            related_specs: ["user/programs.generate_sh_c"],
-            stdin: "echo shell\n",
-            success_regex: "SHELL_OK",
-            expected_trace_events: ["shell"],
-          }],
-        }),
-        events: [],
-      };
-    };
-
-    const result = await executeCommand({
-      kind: "verify",
-      scope: "trace",
-      target: "full-syscall",
-      dryRun: false,
-      patchFile: undefined,
-      keepWorktree: false,
-    }, {
+    const result = await runAgentDebugTrace({
       projectRoot,
-      global: { projectRoot, json: false },
       evidence,
-      agentRunner: runner,
+      target: "full-syscall",
+      keepWorktree: false,
+      agentPlanText: JSON.stringify({
+        instrumentation_patch: makeInstrumentationPatch(),
+        trace_format: { prefix: "VOS_TRACE " },
+        cases: [{
+          id: "boot-case",
+          requirement_id: "verify-boot-banner",
+          related_specs: ["kernel/boot.boot_banner"],
+          stdin: "echo trace\n",
+          success_regex: "TRACE_OK",
+          failure_regex: "panic",
+          expected_trace_events: ["boot"],
+        }, {
+          id: "shell-case",
+          requirement_id: "verify-boot-banner",
+          related_specs: ["user/programs.generate_sh_c"],
+          stdin: "echo shell\n",
+          success_regex: "SHELL_OK",
+          expected_trace_events: ["shell"],
+        }],
+      }),
+      recentEvidence: [],
     });
 
     expect(result.status).toBe("passed");
-    expect(captured?.courseMode).toBe(true);
-    expect(captured?.prompt).toContain("verify-boot-banner");
-    expect(captured?.prompt).toContain("coverageHints");
-    expect(captured?.prompt).toContain("If target names a specific module or requirement");
-    expect(captured?.prompt).toContain("do not select unrelated public requirements");
-    expect(captured?.prompt).toContain("kernel/syscall");
-    expect(captured?.prompt).toContain("kernel/fs");
-    expect(captured?.prompt).toContain("include at least min(N, 6) validation cases");
-    expect(captured?.prompt).toContain("Prefer one high-signal QEMU case per coverageHints module");
-    expect(captured?.prompt).toContain("Coverage is measured by validation cases and mapped requirements");
-    expect(captured?.prompt).toContain("aim for at most 3 touched files and at most 4 hunks");
-    expect(captured?.prompt).toContain("projectTree");
-    expect(captured?.prompt).toContain("toolchain");
-    expect(captured?.prompt).toContain("kernel/probe.c");
-    expect(captured?.prompt).not.toContain("For this MVP trace validation pass, choose exactly 1 high-signal boot smoke case.");
-    expect(captured?.prompt).not.toContain("Prefer 1 to 2 high-signal cases");
-    expect(captured?.prompt).not.toContain("Modify only kernel/main.c unless the target cannot boot without another file.");
     expect(readFileSync(join(projectRoot, "kernel", "probe.c"), "utf8")).toBe("int probe = 0;\n");
     expect(existsSync(join(projectRoot, ".vos", "worktrees", evidence.run_id))).toBe(false);
-    expect(result.details.caseCount).toBe(2);
-    expect(result.details.passedCount).toBe(2);
-    const summaryPath = join(projectRoot, result.details.summary as string);
+    expect(result.worktreeBranch).toBe(`vos-debug/${evidence.run_id}`);
+    expect(result.cases).toHaveLength(2);
+    const summaryPath = result.summaryPath;
     const summary = JSON.parse(readFileSync(summaryPath, "utf8"));
+    expect(summary.worktree_branch).toBe(`vos-debug/${evidence.run_id}`);
     expect(summary.cases.map((item: { id: string }) => item.id)).toEqual(["boot-case", "shell-case"]);
-    const traceLog = join(projectRoot, ".vos", "runs", evidence.run_id, "artifacts", "trace-validation", "boot-case", "trace.jsonl");
+    const traceLog = join(projectRoot, ".vos", "runs", evidence.run_id, "artifacts", "agent-debug", "trace", "boot-case", "trace.jsonl");
     expect(readFileSync(traceLog, "utf8")).toContain("\"event\":\"boot\"");
-  });
-
-  test("re-prompts the agent when generated instrumentation patch fails validation", async () => {
-    const projectRoot = makeTraceProject();
-    const evidence = await EvidenceWriter.create({
-      projectRoot,
-      evidenceDir: ".vos",
-      command: ["verify", "trace"],
-      args: [],
-    });
-    const prompts: string[] = [];
-    const runner = async (options: HeadlessAgentOptions) => {
-      prompts.push(options.prompt);
-      if (prompts.length === 1) {
-        return {
-          content: JSON.stringify({
-            instrumentation_patch: [
-              "diff --git a/kernel/probe.c b/kernel/probe.c",
-              "--- a/kernel/probe.c",
-              "+++ b/kernel/probe.c",
-              "@@ -1 +1 @@",
-              "-int missing = 0;",
-              "+int probe = 1;",
-              "",
-            ].join("\n"),
-            trace_format: { prefix: "VOS_TRACE " },
-            cases: [{
-              id: "boot-case",
-              requirement_id: "verify-boot-banner",
-              related_specs: ["kernel/boot.boot_banner"],
-              stdin: "",
-              success_regex: "TRACE_OK",
-              expected_trace_events: ["boot"],
-            }],
-          }),
-          events: [],
-        };
-      }
-      return {
-        content: JSON.stringify({
-          instrumentation_patch: makeInstrumentationPatch(),
-          trace_format: { prefix: "VOS_TRACE " },
-          cases: [{
-            id: "boot-case",
-            requirement_id: "verify-boot-banner",
-            related_specs: ["kernel/boot.boot_banner"],
-            stdin: "",
-            success_regex: "TRACE_OK",
-            expected_trace_events: ["boot"],
-          }],
-        }),
-        events: [],
-      };
-    };
-
-    const result = await executeCommand({
-      kind: "verify",
-      scope: "trace",
-      target: "full-syscall",
-      dryRun: false,
-      patchFile: undefined,
-      keepWorktree: false,
-    }, {
-      projectRoot,
-      global: { projectRoot, json: false },
-      evidence,
-      agentRunner: runner,
-    });
-
-    expect(result.status).toBe("passed");
-    expect(prompts).toHaveLength(2);
-    expect(prompts[1]).toContain("PREVIOUS OUTPUT FAILED MACHINE VALIDATION");
-    expect(prompts[1]).toContain("patch does not apply");
-    expect(result.details.agentAttempts).toBe(2);
-  });
-
-  test("repair prompt preserves a built patch and asks for case-only fixes", async () => {
-    const projectRoot = makeTraceProject();
-    const evidence = await EvidenceWriter.create({
-      projectRoot,
-      evidenceDir: ".vos",
-      command: ["verify", "trace"],
-      args: [],
-    });
-    const prompts: string[] = [];
-    const runner = async (options: HeadlessAgentOptions) => {
-      prompts.push(options.prompt);
-      return {
-        content: JSON.stringify({
-          instrumentation_patch: makeInstrumentationPatch(),
-          trace_format: { prefix: "VOS_TRACE " },
-          cases: [{
-            id: "boot-case",
-            requirement_id: "verify-boot-banner",
-            related_specs: ["kernel/boot.boot_banner"],
-            stdin: "",
-            success_regex: "TRACE_OK",
-            expected_trace_events: prompts.length === 1 ? ["missing_event"] : ["boot"],
-          }],
-        }),
-        events: [],
-      };
-    };
-
-    const result = await executeCommand({
-      kind: "verify",
-      scope: "trace",
-      target: "full-syscall",
-      dryRun: false,
-      patchFile: undefined,
-      keepWorktree: false,
-    }, {
-      projectRoot,
-      global: { projectRoot, json: false },
-      evidence,
-      agentRunner: runner,
-    });
-
-    expect(result.status).toBe("passed");
-    expect(prompts).toHaveLength(2);
-    expect(prompts[1]).toContain("Reuse the previous instrumentation_patch byte-for-byte");
-    expect(prompts[1]).toContain("prefer editing cases only");
-    expect(prompts[1]).toContain("expected_trace_events is usually too broad");
-    expect(result.details.agentAttempts).toBe(2);
   });
 
   test("blocks dirty source worktrees before creating an instrumentation worktree", async () => {
@@ -403,26 +248,17 @@ describe("trace validation runtime", () => {
       command: ["agent", "validate-generated"],
       args: [],
     });
-    const runner = async () => ({
-      content: JSON.stringify({
+    await expect(runAgentDebugTrace({
+      projectRoot,
+      evidence,
+      target: "full-syscall",
+      keepWorktree: false,
+      agentPlanText: JSON.stringify({
         instrumentation_patch: "",
         trace_format: { prefix: "VOS_TRACE " },
         cases: [{ id: "boot", success_regex: "ok", related_specs: [], expected_trace_events: [] }],
       }),
-      events: [],
-    });
-
-    await expect(executeCommand({
-      kind: "verify",
-      scope: "trace",
-      target: "full-syscall",
-      dryRun: false,
-      keepWorktree: false,
-    }, {
-      projectRoot,
-      global: { projectRoot, json: false },
-      evidence,
-      agentRunner: runner,
+      recentEvidence: [],
     })).rejects.toThrow(/requires a clean git worktree/);
   });
 });

@@ -60,9 +60,12 @@ describe("vos-agent HTTP server", () => {
     };
     expect(profile.agent_profile).toMatchObject({
       promptId: "debug-agent.v1",
-      skills: ["verification-diagnosis"],
       outputSchema: "debug_output.v1",
     });
+    expect(profile.agent_profile.skills).toContain("gdb-debug");
+    expect(profile.agent_profile.skills).toContain("qemu-monitor");
+    expect(profile.agent_profile.skills).toContain("bret-victor-tutor");
+    expect(profile.agent_profile.skills).toContain("verification-diagnosis");
     expect(profile.agent_profile.mcpServers).toContain("evidence-store");
   });
 
@@ -189,9 +192,12 @@ describe("vos-agent HTTP server", () => {
     expect(response.session_id).toStartWith("VOS-");
     expect(response.agent_profile).toMatchObject({
       promptId: "debug-agent.v1",
-      skills: ["verification-diagnosis"],
       outputSchema: "debug_output.v1",
     });
+    expect(response.agent_profile.skills).toContain("gdb-debug");
+    expect(response.agent_profile.skills).toContain("qemu-monitor");
+    expect(response.agent_profile.skills).toContain("bret-victor-tutor");
+    expect(response.agent_profile.skills).toContain("verification-diagnosis");
     expect(Object.keys(response)).not.toContain("role_id");
     expect(Object.keys(response)).not.toContain("runtime_role");
     expect(response.model).toBe("test-smart");

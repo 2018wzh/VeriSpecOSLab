@@ -84,11 +84,11 @@ import { runQemuCommand } from "./runtime/run.ts";
 import { runTestCommand } from "./runtime/test.ts";
 import { runVerifyCommand, type BehaviorTestRunner } from "./runtime/verify.ts";
 import {
-  buildTraceValidationInput,
+  buildDebugTraceInput,
   ensureCleanGitWorktree,
-  runAgentTraceValidation,
-  type TraceValidationInput,
-} from "./runtime/trace-validation.ts";
+  runAgentDebugTrace,
+  type DebugTraceInput,
+} from "./runtime/debug-trace.ts";
 import { resolveToolchainManifestPath } from "./runtime/toolchain-manifest.ts";
 import { buildContextBundle, loadAgentAllowedPaths } from "./agent/context.ts";
 import {
@@ -103,7 +103,7 @@ import {
   startAgentServer,
   type HeadlessAgentRunner,
 } from "./agent/runner.ts";
-import { parseDebugOutput, parseKnowledgebaseAnswer, parsePatchProposal, parsePlanDraft } from "./agent/schemas.ts";
+import { isRecord, parseDebugOutput, parseKnowledgebaseAnswer, parsePatchProposal, parsePlanDraft } from "./agent/schemas.ts";
 import { applyPatchText, readPatchFromStdin } from "./agent/apply-patch.ts";
 import { createKbEmbedder, kbEmbeddingEnv } from "./kb/embedding.ts";
 import { type VosCommandExecutionContext, startVosHttpServer } from "vos-server";
@@ -142,7 +142,7 @@ import {
 } from "vos-kb";
 
 const COMMAND_VERSION = "0.1.0";
-const TRACE_VALIDATION_AGENT_ATTEMPTS = 3;
+const DEBUG_TRACE_AGENT_ATTEMPTS = 3;
 
 async function main(): Promise<void> {
   try {
@@ -1602,17 +1602,6 @@ export async function executeVerify(
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
-  if (command.scope === "trace") {
-    return executeTraceValidation({
-      context,
-      evidence,
-      target: command.target ?? (await currentStageForProject(projectRoot)),
-      patchFile: command.patchFile,
-      keepWorktree: command.keepWorktree ?? false,
-      requestedScope: "verify.trace",
-    });
-  }
-
   updateProgress(context, { stage: "verify", status: "running", message: `verifying ${command.scope}` });
   const result = await runVerifyCommand({
     projectRoot,
@@ -1625,12 +1614,19 @@ export async function executeVerify(
     behaviorTestRunner: createVerifyBehaviorTestRunner(context, projectRoot),
     signal: context.signal,
   });
+  const debug = result.status === "passed" || result.status === "ok"
+    ? undefined
+    : {
+      run_id: evidence.run_id,
+      command: `vos agent debug --run ${evidence.run_id}`,
+    };
   return {
     status: result.status,
     details: {
       scope: result.scope,
       scopeTarget: command.target,
       steps: result.steps,
+      ...(debug ? { debug } : {}),
     },
   };
 }
@@ -1962,7 +1958,7 @@ export async function executeAgentValidateGenerated(
   context: ExecContext,
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
-  return executeTraceValidation({
+  return executeDebugTrace({
     context,
     evidence,
     target: command.target,
@@ -1972,7 +1968,7 @@ export async function executeAgentValidateGenerated(
   });
 }
 
-async function executeTraceValidation(params: {
+async function executeDebugTrace(params: {
   context: ExecContext;
   evidence: EvidenceWriter;
   target: string;
@@ -1982,29 +1978,29 @@ async function executeTraceValidation(params: {
 }): Promise<CommandOutcome> {
   const { context, evidence } = params;
   const projectRoot = context.projectRoot;
-  updateProgress(context, { stage: "trace validation", status: "running", message: "checking worktree" });
+  updateProgress(context, { stage: "agent debug trace", status: "running", message: "checking worktree" });
   await ensureCleanGitWorktree(projectRoot);
   const recentEvidence = await collectRunManifestSummaries(projectRoot);
-  const traceInput = await buildTraceValidationInput({
+  const traceInput = await buildDebugTraceInput({
     projectRoot,
     target: params.target,
     recentEvidence,
   });
   const rawEvents: Array<Record<string, unknown>> = [];
-  let prompt = buildAgentTraceValidationPrompt(traceInput);
+  let prompt = buildAgentDebugTracePrompt(traceInput);
   let lastAgentOutput = "";
   let lastError: unknown;
-  for (let attempt = 1; attempt <= TRACE_VALIDATION_AGENT_ATTEMPTS; attempt++) {
-    updateProgress(context, { stage: "trace validation", status: "running", message: `agent attempt ${attempt}`, current: attempt, total: TRACE_VALIDATION_AGENT_ATTEMPTS });
-    const agentProgress = createAgentProgressParams(context, "trace validation");
+  for (let attempt = 1; attempt <= DEBUG_TRACE_AGENT_ATTEMPTS; attempt++) {
+    updateProgress(context, { stage: "agent debug trace", status: "running", message: `agent attempt ${attempt}`, current: attempt, total: DEBUG_TRACE_AGENT_ATTEMPTS });
+    const agentProgress = createAgentProgressParams(context, "agent debug trace");
     const agentResult = await runAgentWithPrompt({
       projectRoot,
       taskPrompt: agentProgress.taskPrompt(prompt),
-      taskKind: "trace-validation",
+      taskKind: "debug",
       requestedScope: params.requestedScope,
       context: traceInput,
       courseMode: true,
-        allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
       runner: context.agentRunner,
@@ -2012,7 +2008,7 @@ async function executeTraceValidation(params: {
     rawEvents.push(...agentResult.rawEvents);
     lastAgentOutput = agentResult.resultText;
     try {
-      const result = await runAgentTraceValidation({
+      const result = await runAgentDebugTrace({
         projectRoot,
         evidence,
         target: params.target,
@@ -2022,12 +2018,13 @@ async function executeTraceValidation(params: {
         recentEvidence,
       });
 
-      if (result.status === "passed" || attempt >= TRACE_VALIDATION_AGENT_ATTEMPTS) {
+      if (result.status === "passed" || attempt >= DEBUG_TRACE_AGENT_ATTEMPTS) {
         return {
           status: result.status,
           details: {
             target: params.target,
             worktree: path.relative(projectRoot, result.worktreePath),
+            worktreeBranch: result.worktreeBranch,
             worktreeKept: result.worktreeKept,
             plan: path.relative(projectRoot, result.planPath),
             summary: path.relative(projectRoot, result.summaryPath),
@@ -2041,25 +2038,25 @@ async function executeTraceValidation(params: {
         };
       }
 
-      prompt = buildAgentTraceValidationRepairPrompt({
+      prompt = buildAgentDebugTraceRepairPrompt({
         input: traceInput,
         previousOutput: agentResult.resultText,
-        errorMessage: traceValidationFailureSummary(result),
+        errorMessage: debugTraceFailureSummary(result),
         patchAlreadyBuilt: true,
       });
     } catch (error) {
       lastError = error;
-      if (attempt >= TRACE_VALIDATION_AGENT_ATTEMPTS || !isTracePlanFeedbackError(error)) {
+      if (attempt >= DEBUG_TRACE_AGENT_ATTEMPTS || !isTracePlanFeedbackError(error)) {
         throw error;
       }
-      prompt = buildAgentTraceValidationRepairPrompt({
+      prompt = buildAgentDebugTraceRepairPrompt({
         input: traceInput,
         previousOutput: lastAgentOutput,
         errorMessage: error instanceof Error ? error.message : String(error),
       });
     }
   }
-  throw lastError instanceof Error ? lastError : new CliError("trace validation failed", "validation_failed");
+  throw lastError instanceof Error ? lastError : new CliError("agent debug trace failed", "validation_failed");
 }
 
 export async function executeAgentDebug(
@@ -2068,37 +2065,402 @@ export async function executeAgentDebug(
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
+  if (!command.logPath && !command.runId) {
+    const recentFailedRuns = await findRecentFailedRunIds(projectRoot);
+    return {
+      status: "planned",
+      details: {
+        repl: "not_implemented",
+        message: "Debug REPL is reserved for a future vos-agent API. Use `vos agent debug --run <run-id>`.",
+        recent_failed_runs: recentFailedRuns,
+      },
+    };
+  }
+
   updateProgress(context, { stage: "agent debug", status: "running", message: "loading log" });
-  const logPath = command.logPath ?? (await findLatestLogPath(projectRoot));
+  const runContext = command.runId ? await loadDebugRunContext(projectRoot, command.runId) : undefined;
+  const debugTarget = runContext ? inferDebugTarget(runContext) : undefined;
+  const debugRoot = path.join(evidence.artifacts_root, "agent-debug");
+  await mkdir(debugRoot, { recursive: true });
+  const traceEvidence = runContext
+    ? await prepareAgentDebugTraceEvidence({
+      projectRoot,
+      context,
+      evidence,
+      debugRoot,
+      target: debugTarget ?? "full-syscall",
+      keepWorktree: command.keepWorktree,
+    })
+    : undefined;
+  const adapterContractPath = runContext
+    ? await writeGdbAdapterContract(projectRoot, evidence, debugRoot, runContext, debugTarget ?? "full-syscall")
+    : undefined;
+  const logPath = command.logPath ?? (runContext?.primaryLogPath ?? await findLatestLogPath(projectRoot));
   if (!logPath) {
     return { status: "failed", details: { message: "log path required" } };
   }
   const text = await readFile(logPath, "utf8");
   const prompt = buildAgentDebugPrompt({
-    logText: text,
+    logText: runContext
+      ? [
+        `Debug VOS run ${runContext.runId}.`,
+        `Run status: ${runContext.status}`,
+        `Command: ${runContext.command.join(" ")}`,
+        "Artifact snippets:",
+        ...runContext.artifacts.map((artifact) => [
+          `- ${artifact.path}`,
+          artifact.snippet,
+        ].join("\n")),
+        "",
+        "Built-in DebugAgent skills available inside vos-agent: gdb-debug, qemu-monitor, bret-victor-tutor, verification-diagnosis.",
+        "Use GDB MCP autonomously through the built-in gdb-debug skill when the adapter contract is present.",
+        "Use QEMU monitor MCP as supplemental readonly evidence through the built-in qemu-monitor skill; inspect qmp_endpoint and hmp_endpoint from the adapter contract.",
+        "For xv6/QEMU-system use target remote; do not use qemu-user-gdb or gdb_attach for QEMU.",
+        "QEMU monitor is readonly in this flow; do not use quit, stop, cont, system_reset, system_powerdown, device_add, or device_del.",
+        traceEvidence ? `Trace evidence summary: ${traceEvidence.summary}` : "Trace evidence summary: not observed",
+        traceEvidence?.summaryPath ? `Trace summary artifact: ${path.relative(projectRoot, traceEvidence.summaryPath)}` : "",
+        adapterContractPath ? `GDB adapter contract: ${path.relative(projectRoot, adapterContractPath)}` : "GDB adapter contract: not available",
+        debugTarget ? `Debug target: ${debugTarget}` : "Debug target: full-syscall",
+      ].join("\n")
+      : text,
     logRef: path.basename(logPath),
   });
   updateProgress(context, { stage: "agent debug", status: "running", message: "waiting for agent" });
   const agentProgress = createAgentProgressParams(context, "agent debug");
-  const response = await runAgentWithPrompt({
-    projectRoot,
-    taskPrompt: agentProgress.taskPrompt(prompt),
-    taskKind: "debug",
-    requestedScope: "agent.debug",
-    courseMode: true,
-    allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
-    extraMcpServers: agentProgress.extraMcpServers,
-    onEvent: agentProgress.onEvent,
-    runner: context.agentRunner,
-  });
+  let response: Awaited<ReturnType<typeof runAgentWithPrompt>>;
+  try {
+    response = await runAgentWithPrompt({
+      projectRoot,
+      taskPrompt: agentProgress.taskPrompt(prompt),
+      taskKind: "debug",
+      requestedScope: "agent.debug",
+      courseMode: true,
+      allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      extraMcpServers: agentProgress.extraMcpServers,
+      onEvent: agentProgress.onEvent,
+      runner: context.agentRunner,
+    });
+  } catch (error) {
+    if (!command.runId) throw error;
+    const failurePath = await writeGdbFailureArtifact(projectRoot, evidence, debugRoot, error, adapterContractPath);
+    return {
+      status: "failed",
+      details: {
+        run_id: command.runId,
+        message: "DebugAgent GDB MCP setup failed",
+        gdb_failure: path.relative(projectRoot, failurePath),
+        adapter_contract: adapterContractPath ? path.relative(projectRoot, adapterContractPath) : undefined,
+      },
+    };
+  }
   const debugOutput = parseDebugOutput(parseAgentJson(response.resultText, "agent_debug"));
-  const artifact = path.join(projectRoot, ".vos", "agent-debug.json");
+  const gdbSummaryPath = await writeGdbSummaryArtifact(projectRoot, evidence, debugRoot, debugOutput, adapterContractPath);
+  const artifact = path.join(debugRoot, "debug.json");
+  const markdown = path.join(debugRoot, "debug.md");
+  const visualization = path.join(debugRoot, "visualization.html");
   await writeFile(artifact, `${JSON.stringify(debugOutput, null, 2)}\n`);
-  evidence.addArtifact("agent", path.relative(projectRoot, artifact), "agent debug output");
+  await writeFile(markdown, renderDebugMarkdown(debugOutput));
+  await writeFile(visualization, sanitizeAgentVisualizationHtml(debugOutput.visualization_html));
+  evidence.addArtifactFromPath("agent-debug", artifact, "agent debug output");
+  evidence.addArtifactFromPath("agent-debug-markdown", markdown, "agent debug report");
+  evidence.addArtifactFromPath("agent-debug-visualization", visualization, "agent debug visualization");
   return {
     status: "passed",
-    details: { debug: debugOutput, artifact: path.relative(projectRoot, artifact) },
+    details: {
+      debug: debugOutput,
+      run_id: command.runId,
+      artifact: path.relative(projectRoot, artifact),
+      report: path.relative(projectRoot, markdown),
+      visualization: path.relative(projectRoot, visualization),
+      gdb_summary: path.relative(projectRoot, gdbSummaryPath),
+      adapter_contract: adapterContractPath ? path.relative(projectRoot, adapterContractPath) : undefined,
+      raw_events: response.rawEvents,
+    },
   };
+}
+
+async function prepareAgentDebugTraceEvidence(params: {
+  projectRoot: string;
+  context: ExecContext;
+  evidence: EvidenceWriter;
+  debugRoot: string;
+  target: string;
+  keepWorktree: boolean;
+}): Promise<{ summary: string; summaryPath: string }> {
+  const summaryPath = path.join(params.debugRoot, "trace", "summary.json");
+  await mkdir(path.dirname(summaryPath), { recursive: true });
+  const toolchainPath = await resolveToolchainManifestPath({ projectRoot: params.projectRoot });
+  if (!existsSync(toolchainPath) || !currentHead(params.projectRoot)) {
+    await writeFile(summaryPath, `${JSON.stringify({
+      status: "not_observed",
+      reason: "debug trace requires a git project with .vos/toolchain.json",
+      target: params.target,
+    }, null, 2)}\n`);
+    params.evidence.addArtifactFromPath("agent-debug-trace-summary", summaryPath, "agent debug trace summary");
+    return { summary: "not observed", summaryPath };
+  }
+
+  try {
+    const recentEvidence = await collectRunManifestSummaries(params.projectRoot);
+    const traceInput = await buildDebugTraceInput({
+      projectRoot: params.projectRoot,
+      target: params.target,
+      recentEvidence,
+    });
+    const agentProgress = createAgentProgressParams(params.context, "agent debug trace");
+    const agentResult = await runAgentWithPrompt({
+      projectRoot: params.projectRoot,
+      taskPrompt: agentProgress.taskPrompt(buildAgentDebugTracePrompt(traceInput)),
+      taskKind: "debug",
+      requestedScope: "agent.debug.trace",
+      context: traceInput,
+      courseMode: true,
+      allowedVosCommands: await loadAgentAllowedCommands(params.projectRoot, params.context.effectivePolicy),
+      extraMcpServers: agentProgress.extraMcpServers,
+      onEvent: agentProgress.onEvent,
+      runner: params.context.agentRunner,
+    });
+    const result = await runAgentDebugTrace({
+      projectRoot: params.projectRoot,
+      evidence: params.evidence,
+      target: params.target,
+      keepWorktree: params.keepWorktree,
+      agentPlanText: agentResult.resultText,
+      recentEvidence,
+    });
+    return {
+      summary: `${result.status}; ${result.cases.length} trace case(s); branch ${result.worktreeBranch}`,
+      summaryPath: result.summaryPath,
+    };
+  } catch (error) {
+    await writeFile(summaryPath, `${JSON.stringify({
+      status: "failed",
+      target: params.target,
+      reason: error instanceof Error ? error.message : String(error),
+    }, null, 2)}\n`);
+    params.evidence.addArtifactFromPath("agent-debug-trace-summary", summaryPath, "agent debug trace summary");
+    return { summary: "failed", summaryPath };
+  }
+}
+
+async function findRecentFailedRunIds(projectRoot: string): Promise<string[]> {
+  const runsRoot = path.join(projectRoot, ".vos", "runs");
+  if (!existsSync(runsRoot)) return [];
+  const out: string[] = [];
+  for (const entry of await readdir(runsRoot, { withFileTypes: true }).catch(() => [])) {
+    if (!entry.isDirectory()) continue;
+    const manifestPath = path.join(runsRoot, entry.name, "manifest.json");
+    if (!existsSync(manifestPath)) continue;
+    const manifest = safeJsonTryParse(await readFile(manifestPath, "utf8")) as { status?: string; run_id?: string } | undefined;
+    if (manifest?.status && !["passed", "ok", "partial", "planned"].includes(manifest.status)) {
+      out.push(manifest.run_id ?? entry.name);
+    }
+  }
+  return out.sort().slice(-10).reverse();
+}
+
+async function loadDebugRunContext(projectRoot: string, runId: string): Promise<{
+  runId: string;
+  status: string;
+  command: string[];
+  primaryLogPath: string;
+  artifacts: Array<{ path: string; snippet: string }>;
+  manifest: Record<string, unknown>;
+}> {
+  const manifestPath = path.join(projectRoot, ".vos", "runs", runId, "manifest.json");
+  if (!existsSync(manifestPath)) {
+    throw new CliError(`debug run not found: ${runId}`, "failed");
+  }
+  const manifest = safeJsonTryParse(await readFile(manifestPath, "utf8")) as {
+    run_id?: string;
+    command?: unknown;
+    status?: string;
+    artifacts?: Array<{ path?: unknown; kind?: unknown; summary?: unknown }>;
+  } | undefined;
+  if (!manifest) {
+    throw new CliError(`debug run manifest is not JSON: ${runId}`, "failed");
+  }
+  const artifacts = [];
+  for (const artifact of manifest.artifacts ?? []) {
+    if (typeof artifact.path !== "string") continue;
+    const absolute = path.resolve(projectRoot, artifact.path);
+    if (!existsSync(absolute)) continue;
+    const text = await readFile(absolute, "utf8").catch(() => "");
+    artifacts.push({
+      path: artifact.path,
+      snippet: text.slice(0, 12_000),
+    });
+  }
+  const primary = artifacts.find((artifact) => /log|result|trace|manifest/i.test(artifact.path)) ?? artifacts[0];
+  if (!primary) {
+    throw new CliError(`debug run has no readable artifacts: ${runId}`, "failed");
+  }
+  return {
+    runId: manifest.run_id ?? runId,
+    status: manifest.status ?? "unknown",
+    command: Array.isArray(manifest.command) ? manifest.command.map(String) : [],
+    primaryLogPath: path.resolve(projectRoot, primary.path),
+    artifacts,
+    manifest: manifest as Record<string, unknown>,
+  };
+}
+
+function inferDebugTarget(runContext: {
+  command: string[];
+  manifest: Record<string, unknown>;
+  artifacts: Array<{ path: string; snippet: string }>;
+}): string {
+  const details = isRecord(runContext.manifest.details) ? runContext.manifest.details : {};
+  if (typeof details.scopeTarget === "string" && details.scopeTarget.trim()) return details.scopeTarget.trim();
+  const command = runContext.command.join(" ");
+  const targetIndex = runContext.command.indexOf("--target");
+  if (targetIndex >= 0 && runContext.command[targetIndex + 1]) return runContext.command[targetIndex + 1];
+  if (/verify\s+public/.test(command)) return "public";
+  for (const artifact of runContext.artifacts) {
+    const match = artifact.snippet.match(/kernel\/[A-Za-z0-9_/-]+/);
+    if (match) return match[0];
+  }
+  return "full-syscall";
+}
+
+async function writeGdbAdapterContract(
+  projectRoot: string,
+  evidence: EvidenceWriter,
+  debugRoot: string,
+  runContext: { runId: string; command: string[] },
+  target: string,
+): Promise<string> {
+  const gdbRoot = path.join(debugRoot, "gdb");
+  await mkdir(gdbRoot, { recursive: true });
+  const contractPath = path.join(gdbRoot, "adapter-contract.json");
+  const toolchain = await readToolchainForDebug(projectRoot);
+  const runArgs = toolchain.run?.args ?? [];
+  const endpoint = "127.0.0.1:26000";
+  const monitorRoot = path.join(gdbRoot, "monitor");
+  await mkdir(monitorRoot, { recursive: true });
+  const qmpEndpoint = `unix:${path.join(monitorRoot, "qmp.sock")}`;
+  const hmpEndpoint = `unix:${path.join(monitorRoot, "hmp.sock")}`;
+  const contract = {
+    mode: "qemu-gdbstub",
+    target,
+    source_run_id: runContext.runId,
+    source_command: runContext.command,
+    program: toolchain.run?.artifact ?? toolchain.run?.artifacts?.[0] ?? "build/kernel.elf",
+    symbols: toolchain.run?.artifact ?? toolchain.run?.artifacts?.[0] ?? "build/kernel.elf",
+    endpoint,
+    qmp_endpoint: qmpEndpoint,
+    hmp_endpoint: hmpEndpoint,
+    connect_gdb: [`target remote ${endpoint}`],
+    qemu_args: ensureQemuDebugArgs(runArgs, endpoint, qmpEndpoint, hmpEndpoint),
+    forbidden: ["qemu-user-gdb", "gdb_attach for QEMU-system"],
+    monitor_forbidden_commands: ["quit", "stop", "cont", "system_reset", "system_powerdown", "device_add", "device_del", "migrate", "savevm", "loadvm", "screendump"],
+    notes: [
+      "Use built-in gdb-debug skill.",
+      "Use built-in qemu-monitor skill only for supplemental readonly QEMU monitor evidence.",
+      "Use target remote for QEMU-system gdbstub.",
+      "Adapter contract is evidence; DebugAgent chooses breakpoints and inspection commands.",
+    ],
+  };
+  await writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
+  evidence.addArtifactFromPath("agent-debug-gdb-adapter", contractPath, "GDB adapter contract");
+  return contractPath;
+}
+
+async function writeGdbSummaryArtifact(
+  projectRoot: string,
+  evidence: EvidenceWriter,
+  debugRoot: string,
+  debugOutput: ReturnType<typeof parseDebugOutput>,
+  adapterContractPath?: string,
+): Promise<string> {
+  const gdbRoot = path.join(debugRoot, "gdb");
+  await mkdir(gdbRoot, { recursive: true });
+  const summaryPath = path.join(gdbRoot, "summary.json");
+  await writeFile(summaryPath, `${JSON.stringify({
+    summary: debugOutput.gdb_summary ?? "not observed",
+    adapter_contract: adapterContractPath ? path.relative(projectRoot, adapterContractPath) : undefined,
+    observations: debugOutput.evidence_chain.filter((entry) => /gdb|backtrace|register|breakpoint/i.test(`${entry.label} ${entry.observation}`)),
+  }, null, 2)}\n`);
+  evidence.addArtifactFromPath("agent-debug-gdb-summary", summaryPath, "GDB debug summary");
+  return summaryPath;
+}
+
+async function writeGdbFailureArtifact(
+  projectRoot: string,
+  evidence: EvidenceWriter,
+  debugRoot: string,
+  error: unknown,
+  adapterContractPath?: string,
+): Promise<string> {
+  const gdbRoot = path.join(debugRoot, "gdb");
+  await mkdir(gdbRoot, { recursive: true });
+  const failurePath = path.join(gdbRoot, "failure.json");
+  await writeFile(failurePath, `${JSON.stringify({
+    status: "failed",
+    reason: error instanceof Error ? error.message : String(error),
+    adapter_contract: adapterContractPath ? path.relative(projectRoot, adapterContractPath) : undefined,
+  }, null, 2)}\n`);
+  evidence.addArtifactFromPath("agent-debug-gdb-failure", failurePath, "GDB debug failure");
+  return failurePath;
+}
+
+async function readToolchainForDebug(projectRoot: string): Promise<{
+  run?: { args?: string[]; artifact?: string; artifacts?: string[] };
+}> {
+  const toolchainPath = await resolveToolchainManifestPath({ projectRoot });
+  if (!existsSync(toolchainPath)) return {};
+  const parsed = safeJsonTryParse(await readFile(toolchainPath, "utf8"));
+  return isRecord(parsed) ? parsed as { run?: { args?: string[]; artifact?: string; artifacts?: string[] } } : {};
+}
+
+function ensureQemuGdbstubArgs(args: string[], endpoint: string): string[] {
+  const port = endpoint.split(":").at(-1) ?? "26000";
+  const out = [...args];
+  if (!out.includes("-S")) out.push("-S");
+  if (!out.includes("-gdb")) out.push("-gdb", `tcp::${port}`);
+  return out;
+}
+
+function ensureQemuDebugArgs(args: string[], gdbEndpoint: string, qmpEndpoint: string, hmpEndpoint: string): string[] {
+  const out = ensureQemuGdbstubArgs(args, gdbEndpoint);
+  if (!out.includes("-qmp")) out.push("-qmp", `${qmpEndpoint.slice("unix:".length)},server=on,wait=off`);
+  if (!out.includes("-monitor")) out.push("-monitor", `${hmpEndpoint.slice("unix:".length)},server=on,wait=off`);
+  return out;
+}
+
+function renderDebugMarkdown(debug: ReturnType<typeof parseDebugOutput>): string {
+  return [
+    `# Debug Summary`,
+    "",
+    `**Failure class:** ${debug.failure_class}`,
+    "",
+    debug.summary,
+    debug.trace_summary ? ["", "## Trace Summary", debug.trace_summary].join("\n") : "",
+    debug.gdb_summary ? ["", "## GDB Summary", debug.gdb_summary].join("\n") : "",
+    "",
+    "## Evidence Chain",
+    ...debug.evidence_chain.map((entry) => `- ${entry.label}: ${entry.observation}${entry.artifact ? ` (${entry.artifact})` : ""}`),
+    "",
+    "## Suspected Concepts",
+    ...debug.suspected_concepts.map((concept) => `- ${concept}`),
+    "",
+    "## Next Commands",
+    ...debug.next_diagnostic_commands.map((command) => `- \`${command}\``),
+    "",
+    "## Student-visible limitations",
+    ...(debug.student_visible_limitations.length > 0 ? debug.student_visible_limitations : ["Full instrumentation diffs are withheld from this report."]).map((item) => `- ${item}`),
+    "",
+  ].join("\n");
+}
+
+function sanitizeAgentVisualizationHtml(html: string): string {
+  if (!/<!doctype html|<html[\s>]/i.test(html)) {
+    throw new CliError("DebugOutput.visualization_html must be a complete HTML document", "validation_failed");
+  }
+  if (/diff --git|^@@\s/m.test(html)) {
+    throw new CliError("DebugOutput.visualization_html must not include full instrumentation diffs", "validation_failed");
+  }
+  return html;
 }
 
 export async function executeAgentLog(
@@ -2364,8 +2726,7 @@ export function commandToArray(command: CliCommand): string[] {
         command.scope,
         ...(command.dryRun ? ["--dry-run"] : []),
         ...(command.target ? ["--target", command.target] : []),
-        ...(command.patchFile ? ["--patch-file", command.patchFile] : []),
-        ...(command.keepWorktree ? ["--keep-worktree"] : []),
+        ...(command.staffPolicy ? ["--staff-policy", command.staffPolicy] : []),
       ];
     case "trace_syscall":
       return [
@@ -2416,7 +2777,13 @@ export function commandToArray(command: CliCommand): string[] {
         ...(command.keepWorktree ? ["--keep-worktree"] : []),
       ];
     case "agent_debug":
-      return command.logPath ? ["agent", "debug", "--log", command.logPath] : ["agent", "debug"];
+      return [
+        "agent",
+        "debug",
+        ...(command.logPath ? ["--log", command.logPath] : []),
+        ...(command.runId ? ["--run", command.runId] : []),
+        ...(command.keepWorktree ? ["--keep-worktree"] : []),
+      ];
     case "agent_log":
       return [
         "agent",
@@ -2618,9 +2985,9 @@ async function collectRunManifestSummaries(projectRoot: string): Promise<Array<{
   return out;
 }
 
-function buildAgentTraceValidationPrompt(input: TraceValidationInput): string {
+function buildAgentDebugTracePrompt(input: DebugTraceInput): string {
   return [
-    "You are producing a VOS trace validation plan for an xv6-style project.",
+    "You are producing a VOS agent debug trace plan for an xv6-style project.",
     "Return exactly one JSON object and nothing else.",
     "Do not execute commands.",
     "Do not modify spec files.",
@@ -2666,7 +3033,7 @@ function buildAgentTraceValidationPrompt(input: TraceValidationInput): string {
     "Instrumentation may only touch kernel/, user/, mkfs/, Makefile, or .vos/toolchain.json.",
     "Instrumentation must emit trace lines as: VOS_TRACE {\"event\":\"name\",...}.",
     "Use existing kernel/user printing facilities already present in the inspected file, such as printk/printf, instead of adding new dependencies.",
-    "Do not weaken the build or run contract in .vos/toolchain.json. Only touch it when trace validation cannot run without a toolchain fix grounded in the current manifest.",
+    "Do not weaken the build or run contract in .vos/toolchain.json. Only touch it when agent debug trace cannot run without a toolchain fix grounded in the current manifest.",
     "Unified diff requirements:",
     "- instrumentation_patch must be a git-style patch: every file section starts with `diff --git a/<path> b/<path>`.",
     "- Every file diff must use exact current file paths and real surrounding context.",
@@ -2683,14 +3050,14 @@ function buildAgentTraceValidationPrompt(input: TraceValidationInput): string {
   ].join("\n");
 }
 
-function buildAgentTraceValidationRepairPrompt(args: {
-  input: TraceValidationInput;
+function buildAgentDebugTraceRepairPrompt(args: {
+  input: DebugTraceInput;
   previousOutput: string;
   errorMessage: string;
   patchAlreadyBuilt?: boolean;
 }): string {
   return [
-    buildAgentTraceValidationPrompt(args.input),
+    buildAgentDebugTracePrompt(args.input),
     "",
     "PREVIOUS OUTPUT FAILED MACHINE VALIDATION.",
     "Return a corrected complete JSON object and nothing else.",
@@ -2725,7 +3092,7 @@ function buildAgentTraceValidationRepairPrompt(args: {
   ].join("\n");
 }
 
-function traceValidationFailureSummary(result: {
+function debugTraceFailureSummary(result: {
   status: CommandStatus;
   cases: Array<{
     id: string;
@@ -2739,7 +3106,7 @@ function traceValidationFailureSummary(result: {
   }>;
 }): string {
   return [
-    `trace validation finished with status ${result.status}`,
+    `agent debug trace finished with status ${result.status}`,
     ...result.cases.map((item) => [
       `case ${item.id}: ${item.status}`,
       item.requirement_id ? `requirement=${item.requirement_id}` : undefined,
@@ -2945,7 +3312,6 @@ function printHelp(topic?: string): void {
     "  run qemu [--dry-run] [--timeout=<ms>]",
     "  test [--dry-run] [--suite=<name>]...",
     "  verify public|patch|full|invariant|fuzz|base|architecture|composition|goal [--target <value>] [--staff-policy <path>]",
-    "  verify trace [--target <value>] [--patch-file <file>] [--keep-worktree]",
     "  trace syscall [--dry-run] [--timeout=<ms>]",
     "  debug explain-log [log-path]",
     "  report generate",
@@ -2966,7 +3332,7 @@ function printHelp(topic?: string): void {
     "  agent apply-patch [--patch-file <file>] [--run-validation] [--no-require-spec]",
     "  agent validate-generated --target <value> [--patch-file <file>] [--keep-worktree]",
     "  agent review-spec [--target <path|stage|patch>]",
-    "  agent debug [--log <path>]",
+    "  agent debug [--run <run-id>] [--log <path>] [--keep-worktree]",
     "  agent log [--append] [entry-path]",
   ];
   console.log(globalHelp.join("\n"));

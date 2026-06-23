@@ -25,7 +25,7 @@ const DEFAULT_REJECTED_INSTRUMENTATION_PATHS = [
   ".vos/worktrees/",
 ];
 
-export interface TraceValidationInput {
+export interface DebugTraceInput {
   target: string;
   publicRequirements: PublicRequirement[];
   moduleTests: ModuleTestSurface[];
@@ -63,15 +63,15 @@ export interface TraceCoverageHint {
   source?: string;
 }
 
-export interface TraceValidationPlan {
+export interface DebugTracePlan {
   instrumentation_patch: string;
   trace_format: {
     prefix: string;
   };
-  cases: TraceValidationCase[];
+  cases: DebugTraceCase[];
 }
 
-export interface TraceValidationCase {
+export interface DebugTraceCase {
   id: string;
   requirement_id?: string;
   related_specs: string[];
@@ -81,7 +81,7 @@ export interface TraceValidationCase {
   expected_trace_events: string[];
 }
 
-export interface TraceValidationCaseResult {
+export interface DebugTraceCaseResult {
   id: string;
   requirement_id?: string;
   status: "ok" | "failed";
@@ -94,16 +94,17 @@ export interface TraceValidationCaseResult {
   failure_matched: boolean;
 }
 
-export interface TraceValidationResult {
+export interface DebugTraceResult {
   status: CommandStatus;
   worktreePath: string;
+  worktreeBranch: string;
   worktreeKept: boolean;
   planPath: string;
   summaryPath: string;
-  cases: TraceValidationCaseResult[];
+  cases: DebugTraceCaseResult[];
 }
 
-interface RawTraceValidationPlan {
+interface RawDebugTracePlan {
   instrumentation_patch?: unknown;
   trace_format?: unknown;
   cases?: unknown;
@@ -129,7 +130,7 @@ interface RunSpec {
   readyPattern?: string;
 }
 
-export async function runAgentTraceValidation(params: {
+export async function runAgentDebugTrace(params: {
   projectRoot: string;
   evidence: EvidenceWriter;
   target: string;
@@ -137,31 +138,32 @@ export async function runAgentTraceValidation(params: {
   keepWorktree: boolean;
   agentPlanText: string;
   recentEvidence: Array<{ run_id: string; status?: string }>;
-}): Promise<TraceValidationResult> {
+}): Promise<DebugTraceResult> {
   await ensureCleanGitWorktree(params.projectRoot);
 
-  const input = await buildTraceValidationInput({
+  const input = await buildDebugTraceInput({
     projectRoot: params.projectRoot,
     target: params.target,
     recentEvidence: params.recentEvidence,
   });
-  const plan = parseTraceValidationPlan(params.agentPlanText);
+  const plan = parseDebugTracePlan(params.agentPlanText);
   const patchPolicy = validateInstrumentationPatch(plan.instrumentation_patch);
   if (!patchPolicy.ok) {
     throw new CliError(patchPolicy.reason, "policy_blocked");
   }
 
-  const planPath = path.join(params.evidence.artifacts_root, "trace-validation", "agent-plan.json");
+  const planPath = path.join(params.evidence.artifacts_root, "agent-debug", "trace", "agent-plan.json");
   await mkdir(path.dirname(planPath), { recursive: true });
   await writeFile(planPath, `${JSON.stringify({ input, plan }, null, 2)}\n`);
-  params.evidence.addArtifactFromPath("trace-validation", planPath, "agent trace validation plan");
+  params.evidence.addArtifactFromPath("agent-debug-trace-plan", planPath, "agent debug trace plan");
 
   const worktreePath = path.join(params.projectRoot, ".vos", "worktrees", params.evidence.run_id);
+  const worktreeBranch = `vos-debug/${params.evidence.run_id}`;
   await mkdir(path.dirname(worktreePath), { recursive: true });
   let worktreeCreated = false;
   let worktreeKept = params.keepWorktree;
   try {
-    await createDetachedWorktree(params.projectRoot, worktreePath);
+    await createDebugWorktree(params.projectRoot, worktreePath, worktreeBranch);
     worktreeCreated = true;
 
     if (params.patchFile) {
@@ -178,40 +180,42 @@ export async function runAgentTraceValidation(params: {
       dryRun: false,
     });
     if (buildResult.status === "failed") {
-      throw new CliError("trace validation build failed", "validation_failed");
+      throw new CliError("agent debug trace build failed", "validation_failed");
     }
 
-    const cases: TraceValidationCaseResult[] = [];
-    for (const validationCase of plan.cases) {
-      const result = await runTraceValidationCase({
+    const cases: DebugTraceCaseResult[] = [];
+    for (const debugCase of plan.cases) {
+      const result = await runDebugTraceCase({
         projectRoot: worktreePath,
         evidence: params.evidence,
-        validationCase,
+        debugCase,
       });
       cases.push(result);
       params.evidence.addEvidenceRef(
         `${params.evidence.run_id}:${result.id}`,
-        "trace-validation-case",
+        "agent-debug-trace-case",
         result.result_json,
       );
     }
 
     const status: CommandStatus = cases.every((item) => item.status === "ok") ? "passed" : "validation_failed";
-    const summaryPath = path.join(params.evidence.artifacts_root, "trace-validation", "trace-validation-summary.json");
+    const summaryPath = path.join(params.evidence.artifacts_root, "agent-debug", "trace", "summary.json");
     const summary = {
       target: params.target,
       status,
       worktree: path.relative(params.projectRoot, worktreePath),
-      worktree_kept: params.keepWorktree,
+      worktree_branch: worktreeBranch,
+      worktree_kept: worktreeKept,
       public_requirement_count: input.publicRequirements.length,
       module_test_surface_count: input.moduleTests.reduce((sum, item) => sum + item.tests.length, 0),
       cases,
     };
     await writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
-    params.evidence.addArtifactFromPath("trace-validation-summary", summaryPath, "trace validation summary");
+    params.evidence.addArtifactFromPath("agent-debug-trace-summary", summaryPath, "agent debug trace summary");
     return {
       status,
       worktreePath,
+      worktreeBranch,
       worktreeKept,
       planPath,
       summaryPath,
@@ -219,17 +223,17 @@ export async function runAgentTraceValidation(params: {
     };
   } finally {
     if (worktreeCreated && !params.keepWorktree) {
-      await removeWorktree(params.projectRoot, worktreePath);
+      await removeDebugWorktree(params.projectRoot, worktreePath, worktreeBranch);
       worktreeKept = false;
     }
   }
 }
 
-export async function buildTraceValidationInput(params: {
+export async function buildDebugTraceInput(params: {
   projectRoot: string;
   target: string;
   recentEvidence: Array<{ run_id: string; status?: string }>;
-}): Promise<TraceValidationInput> {
+}): Promise<DebugTraceInput> {
   const allPublicRequirements = await collectPublicRequirements(params.projectRoot);
   const allModuleTests = await collectModuleTestSurfaces(params.projectRoot);
   const publicRequirements = filterPublicRequirementsForTarget(params.target, allPublicRequirements);
@@ -375,7 +379,7 @@ export async function collectModuleTestSurfaces(projectRoot: string): Promise<Mo
   return out;
 }
 
-export function parseTraceValidationPlan(text: string): TraceValidationPlan {
+export function parseDebugTracePlan(text: string): DebugTracePlan {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -383,44 +387,44 @@ export function parseTraceValidationPlan(text: string): TraceValidationPlan {
     const first = text.indexOf("{");
     const last = text.lastIndexOf("}");
     if (first === -1 || last === -1) {
-      throw new AgentOutputError("trace validation agent output is not JSON");
+      throw new AgentOutputError("agent debug trace agent output is not JSON");
     }
     try {
       parsed = JSON.parse(text.slice(first, last + 1));
     } catch {
-      throw new AgentOutputError("trace validation agent output is not JSON");
+      throw new AgentOutputError("agent debug trace agent output is not JSON");
     }
   }
 
   if (!isRecord(parsed)) {
-    throw new AgentOutputError("trace validation agent output must be an object");
+    throw new AgentOutputError("agent debug trace agent output must be an object");
   }
-  const raw = parsed as RawTraceValidationPlan;
+  const raw = parsed as RawDebugTracePlan;
   if (typeof raw.instrumentation_patch !== "string") {
-    throw new AgentOutputError("trace validation plan requires instrumentation_patch");
+    throw new AgentOutputError("agent debug trace plan requires instrumentation_patch");
   }
   if (!Array.isArray(raw.cases) || raw.cases.length === 0) {
-    throw new AgentOutputError("trace validation plan requires at least one case");
+    throw new AgentOutputError("agent debug trace plan requires at least one case");
   }
 
   const traceFormat = isRecord(raw.trace_format) && typeof raw.trace_format.prefix === "string"
     ? { prefix: raw.trace_format.prefix }
     : { prefix: TRACE_PREFIX };
   if (traceFormat.prefix !== TRACE_PREFIX) {
-    throw new AgentOutputError(`trace validation trace_format.prefix must be ${TRACE_PREFIX.trim()}`);
+    throw new AgentOutputError(`agent debug trace trace_format.prefix must be ${TRACE_PREFIX.trim()}`);
   }
 
-  const cases: TraceValidationCase[] = raw.cases.map((item, index) => {
+  const cases: DebugTraceCase[] = raw.cases.map((item, index) => {
     if (!isRecord(item)) {
-      throw new AgentOutputError(`trace validation case ${index + 1} must be an object`);
+      throw new AgentOutputError(`agent debug trace case ${index + 1} must be an object`);
     }
     const id = optionalString(item.id);
     if (!id) {
-      throw new AgentOutputError(`trace validation case ${index + 1} requires id`);
+      throw new AgentOutputError(`agent debug trace case ${index + 1} requires id`);
     }
     const successRegex = optionalString(item.success_regex);
     if (successRegex && /VOS_TRACE/i.test(successRegex)) {
-      throw new AgentOutputError(`trace validation case ${id} success_regex must validate non-trace serial output`);
+      throw new AgentOutputError(`agent debug trace case ${id} success_regex must validate non-trace serial output`);
     }
     return {
       id,
@@ -484,35 +488,36 @@ export function parseVosTraceLines(serialOutput: string): Array<Record<string, u
   return traces;
 }
 
-async function runTraceValidationCase(params: {
+async function runDebugTraceCase(params: {
   projectRoot: string;
   evidence: EvidenceWriter;
-  validationCase: TraceValidationCase;
-}): Promise<TraceValidationCaseResult> {
-  const safeId = safeCaseId(params.validationCase.id);
+  debugCase: DebugTraceCase;
+}): Promise<DebugTraceCaseResult> {
+  const debugCase = params.debugCase;
+  const safeId = safeCaseId(debugCase.id);
   const runSpec = await resolveRunSpec(params.projectRoot);
   const commandLine = [runSpec.command, ...runSpec.args];
-  const successRegex = params.validationCase.success_regex
-    ? new RegExp(params.validationCase.success_regex)
+  const successRegex = debugCase.success_regex
+    ? new RegExp(debugCase.success_regex)
     : undefined;
-  const failureRegex = params.validationCase.failure_regex
-    ? new RegExp(params.validationCase.failure_regex)
+  const failureRegex = debugCase.failure_regex
+    ? new RegExp(debugCase.failure_regex)
     : undefined;
   const stdinReadyPattern = runSpec.readyPattern
     ? `${runSpec.readyPattern}|\\$\\s`
     : undefined;
-  const nodeId = `trace-validation:${safeId}`;
+  const nodeId = `agent-debug-trace:${safeId}`;
   await params.evidence.markNodeStarted(nodeId);
   const commandResult = await runCommand({
     command: commandLine,
     cwd: params.projectRoot,
     timeoutMs: runSpec.timeoutMs,
     timeoutGraceMs: 500,
-    stdin: stdinReadyPattern && params.validationCase.stdin?.trim()
+    stdin: stdinReadyPattern && debugCase.stdin?.trim()
       ? undefined
-      : params.validationCase.stdin,
-    stdinAfter: stdinReadyPattern && params.validationCase.stdin?.trim()
-      ? { pattern: stdinReadyPattern, text: params.validationCase.stdin }
+      : debugCase.stdin,
+    stdinAfter: stdinReadyPattern && debugCase.stdin?.trim()
+      ? { pattern: stdinReadyPattern, text: debugCase.stdin }
       : undefined,
     stopWhen: ({ stdout, stderr }) => {
       const output = `${stdout}${stderr}`;
@@ -524,14 +529,14 @@ async function runTraceValidationCase(params: {
   const traces = parseVosTraceLines(output);
   const successMatched = successRegex ? successRegex.test(output) : commandResult.exitCode === 0;
   const failureMatched = failureRegex ? failureRegex.test(output) : false;
-  const traceEventsSatisfied = params.validationCase.expected_trace_events.length === 0
+  const traceEventsSatisfied = debugCase.expected_trace_events.length === 0
     ? true
-    : params.validationCase.expected_trace_events.every((eventName) =>
+    : debugCase.expected_trace_events.every((eventName) =>
       traces.some((trace) => trace.event === eventName || trace.name === eventName || trace.type === eventName)
     );
   const status: "ok" | "failed" = successMatched && !failureMatched && traceEventsSatisfied ? "ok" : "failed";
 
-  const caseRoot = path.join(params.evidence.artifacts_root, "trace-validation", safeId);
+  const caseRoot = path.join(params.evidence.artifacts_root, "agent-debug", "trace", safeId);
   await mkdir(caseRoot, { recursive: true });
   const serialPath = path.join(caseRoot, "serial.log");
   const tracePath = path.join(caseRoot, "trace.jsonl");
@@ -540,8 +545,8 @@ async function runTraceValidationCase(params: {
   await writeFile(tracePath, traces.map((trace) => JSON.stringify(trace)).join("\n") + (traces.length > 0 ? "\n" : ""));
 
   const result = {
-    id: params.validationCase.id,
-    requirement_id: params.validationCase.requirement_id,
+    id: debugCase.id,
+    requirement_id: debugCase.requirement_id,
     status,
     command: commandLine,
     exit_code: commandResult.exitCode,
@@ -556,14 +561,14 @@ async function runTraceValidationCase(params: {
     trace_log: path.relative(params.evidence.run_root, tracePath),
   };
   await writeFile(resultPath, `${JSON.stringify(result, null, 2)}\n`);
-  params.evidence.addArtifactFromPath("trace-validation-log", serialPath, params.validationCase.id);
-  params.evidence.addArtifactFromPath("trace", tracePath, params.validationCase.id);
-  params.evidence.addArtifactFromPath("trace-validation-result", resultPath, params.validationCase.id);
+  params.evidence.addArtifactFromPath("agent-debug-trace-log", serialPath, debugCase.id);
+  params.evidence.addArtifactFromPath("trace", tracePath, debugCase.id);
+  params.evidence.addArtifactFromPath("agent-debug-trace-result", resultPath, debugCase.id);
   await params.evidence.markNodeFinished(nodeId, status);
 
   return {
-    id: params.validationCase.id,
-    requirement_id: params.validationCase.requirement_id,
+    id: debugCase.id,
+    requirement_id: debugCase.requirement_id,
     status,
     duration_ms: commandResult.durationMs,
     serial_log: path.relative(params.evidence.run_root, serialPath),
@@ -593,13 +598,13 @@ export async function ensureCleanGitWorktree(projectRoot: string): Promise<void>
       return !file.startsWith(".vos/runs/") && !file.startsWith(".vos/worktrees/");
     });
   if (dirty.length > 0) {
-    throw new CliError(`trace validation requires a clean git worktree: ${dirty.join(", ")}`, "policy_blocked");
+    throw new CliError(`agent debug trace requires a clean git worktree: ${dirty.join(", ")}`, "policy_blocked");
   }
 }
 
-async function createDetachedWorktree(projectRoot: string, worktreePath: string): Promise<void> {
+async function createDebugWorktree(projectRoot: string, worktreePath: string, branchName: string): Promise<void> {
   const result = await runCommand({
-    command: ["git", "worktree", "add", "--detach", worktreePath, "HEAD"],
+    command: ["git", "worktree", "add", "-b", branchName, worktreePath, "HEAD"],
     cwd: projectRoot,
     timeoutMs: 120_000,
   });
@@ -608,7 +613,7 @@ async function createDetachedWorktree(projectRoot: string, worktreePath: string)
   }
 }
 
-async function removeWorktree(projectRoot: string, worktreePath: string): Promise<void> {
+async function removeDebugWorktree(projectRoot: string, worktreePath: string, branchName: string): Promise<void> {
   const result = await runCommand({
     command: ["git", "worktree", "remove", "--force", worktreePath],
     cwd: projectRoot,
@@ -617,11 +622,16 @@ async function removeWorktree(projectRoot: string, worktreePath: string): Promis
   if (result.exitCode !== 0 && existsSync(worktreePath)) {
     await rm(worktreePath, { recursive: true, force: true });
   }
+  await runCommand({
+    command: ["git", "branch", "-D", branchName],
+    cwd: projectRoot,
+    timeoutMs: 120_000,
+  });
 }
 
 async function applyPatchInWorktree(worktreePath: string, patchText: string): Promise<void> {
   if (!patchText.trim()) return;
-  const patchPath = path.join(worktreePath, ".vos", `trace-validation-${shortHash(patchText)}.patch`);
+  const patchPath = path.join(worktreePath, ".vos", `agent-debug-trace-${shortHash(patchText)}.patch`);
   await mkdir(path.dirname(patchPath), { recursive: true });
   await writeFile(patchPath, normalizePatchForGitApply(patchText));
   const check = await runCommand({
@@ -647,7 +657,7 @@ async function resolveRunSpec(projectRoot: string): Promise<RunSpec> {
   const manifest: RunManifest = JSON.parse(await readFile(toolchainFile, "utf8"));
   const run = manifest.run;
   if (!run?.command) {
-    throw new Error("trace validation requires run.command in .vos/toolchain.json");
+    throw new Error("agent debug trace requires run.command in .vos/toolchain.json");
   }
   const artifact = run.artifact ?? run.artifacts?.[0] ?? "build/kernel.bin";
   const args = [...(run.args ?? [])];
@@ -658,7 +668,7 @@ async function resolveRunSpec(projectRoot: string): Promise<RunSpec> {
     args.push("-kernel", artifact);
   }
   if (!existsSync(path.resolve(projectRoot, artifact))) {
-    throw new Error(`trace validation requires kernel artifact: ${artifact}`);
+    throw new Error(`agent debug trace requires kernel artifact: ${artifact}`);
   }
   return {
     command: run.command,
@@ -686,7 +696,7 @@ async function collectTraceProjectTree(projectRoot: string): Promise<string[]> {
   return uniqueStrings(out).slice(0, 240);
 }
 
-async function collectToolchainSummary(projectRoot: string): Promise<TraceValidationInput["toolchain"]> {
+async function collectToolchainSummary(projectRoot: string): Promise<DebugTraceInput["toolchain"]> {
   try {
     const toolchainFile = await resolveToolchainManifestPath({ projectRoot });
     const manifest = JSON.parse(await readFile(toolchainFile, "utf8")) as {

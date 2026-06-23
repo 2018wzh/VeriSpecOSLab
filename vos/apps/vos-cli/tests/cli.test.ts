@@ -200,25 +200,27 @@ describe("vos-cli agent command parsing", () => {
     ).toThrow(/requires --target/);
   });
 
-  test("parses verify trace as the concise trace validation entrypoint", () => {
+  test("rejects verify trace because trace is debug evidence, not a verify suite", () => {
+    expect(() =>
+      parseArgs(["bun", "vos", "verify", "trace"])
+    ).toThrow(/unsupported verify mode: trace/);
+  });
+
+  test("parses agent debug run requests", () => {
     const parsed = parseArgs([
       "bun",
       "vos",
-      "verify",
-      "trace",
-      "--target",
-      "full-syscall",
-      "--patch-file",
-      "candidate.patch",
+      "agent",
+      "debug",
+      "--run",
+      "202606220545277-a328a3f0",
       "--keep-worktree",
     ]);
 
     expect(parsed.command).toEqual({
-      kind: "verify",
-      scope: "trace",
-      target: "full-syscall",
-      dryRun: false,
-      patchFile: "candidate.patch",
+      kind: "agent_debug",
+      runId: "202606220545277-a328a3f0",
+      logPath: undefined,
       keepWorktree: true,
     });
   });
@@ -238,8 +240,6 @@ describe("vos-cli agent command parsing", () => {
       scope: "full",
       target: undefined,
       dryRun: false,
-      patchFile: undefined,
-      keepWorktree: false,
       staffPolicy: "../staff/verify.json",
     });
   });

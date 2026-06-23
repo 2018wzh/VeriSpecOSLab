@@ -24,6 +24,21 @@ export interface DebugOutput {
   summary: string;
   suspected_clauses: string[];
   related_specs: string[];
+  suspected_concepts: string[];
+  evidence_chain: Array<{
+    label: string;
+    artifact?: string;
+    observation: string;
+  }>;
+  visualization_steps: Array<{
+    phase: string;
+    description: string;
+  }>;
+  visualization_html: string;
+  trace_summary?: string;
+  gdb_summary?: string;
+  next_diagnostic_commands: string[];
+  student_visible_limitations: string[];
   suggested_next_commands: string[];
   suggested_next_agent_task?: string;
 }
@@ -142,13 +157,46 @@ export function parseDebugOutput(value: unknown): DebugOutput {
   if (typeof value.summary !== "string") throw new Error("DebugOutput.summary must be string");
   if (!Array.isArray(value.suspected_clauses)) throw new Error("DebugOutput.suspected_clauses must be array");
   if (!Array.isArray(value.related_specs)) throw new Error("DebugOutput.related_specs must be array");
-  if (!Array.isArray(value.suggested_next_commands)) throw new Error("DebugOutput.suggested_next_commands must be array");
+  const nextCommands = Array.isArray(value.next_diagnostic_commands)
+    ? value.next_diagnostic_commands
+    : value.suggested_next_commands;
+  if (!Array.isArray(nextCommands)) throw new Error("DebugOutput.next_diagnostic_commands must be array");
+  if (typeof value.visualization_html !== "string") throw new Error("DebugOutput.visualization_html must be string");
   return {
     failure_class: value.failure_class,
     summary: value.summary,
     suspected_clauses: value.suspected_clauses.map(String),
     related_specs: value.related_specs.map(String),
-    suggested_next_commands: value.suggested_next_commands.map(String),
+    suspected_concepts: Array.isArray(value.suspected_concepts)
+      ? value.suspected_concepts.map(String)
+      : [],
+    evidence_chain: Array.isArray(value.evidence_chain)
+      ? value.evidence_chain.map((item) => {
+        const entry = isRecord(item) ? item : {};
+        return {
+          label: typeof entry.label === "string" ? entry.label : "evidence",
+          artifact: typeof entry.artifact === "string" ? entry.artifact : undefined,
+          observation: typeof entry.observation === "string" ? entry.observation : String(item),
+        };
+      })
+      : [],
+    visualization_steps: Array.isArray(value.visualization_steps)
+      ? value.visualization_steps.map((item) => {
+        const entry = isRecord(item) ? item : {};
+        return {
+          phase: typeof entry.phase === "string" ? entry.phase : "debug",
+          description: typeof entry.description === "string" ? entry.description : String(item),
+        };
+      })
+      : [],
+    visualization_html: value.visualization_html,
+    trace_summary: typeof value.trace_summary === "string" ? value.trace_summary : undefined,
+    gdb_summary: typeof value.gdb_summary === "string" ? value.gdb_summary : undefined,
+    next_diagnostic_commands: nextCommands.map(String),
+    student_visible_limitations: Array.isArray(value.student_visible_limitations)
+      ? value.student_visible_limitations.map(String)
+      : [],
+    suggested_next_commands: nextCommands.map(String),
     suggested_next_agent_task: typeof value.suggested_next_agent_task === "string"
       ? value.suggested_next_agent_task
       : undefined,

@@ -12,6 +12,7 @@ import {
   buildAgentGeneratePrompt,
 } from "../app/agent/prompt.ts";
 import { buildContextBundle, loadAgentAllowedPaths } from "../app/agent/context.ts";
+import { parseDebugOutput } from "../app/agent/schemas.ts";
 import { executeCommand } from "../app/main.ts";
 import { EvidenceWriter } from "../app/evidence/index.ts";
 import type { HeadlessAgentOptions } from "vos-agent/headless";
@@ -231,6 +232,268 @@ describe("vos-cli package agent runner", () => {
     expect(prompt).toContain("verify-behavior");
     expect(prompt).toContain("obligation -> suite -> behavior case -> oracle -> observed output -> suspected failure");
     expect(prompt).not.toContain("verify-trace");
+  });
+
+  test("agent debug schema accepts evidence chains and visualization steps", () => {
+    const parsed = parseDebugOutput({
+      failure_class: "verification_failure",
+      summary: "Allocator evidence failed after public verify.",
+      suspected_clauses: ["kernel/memory.kalloc"],
+      related_specs: ["spec/modules/kernel/memory/ops/kalloc.yaml"],
+      suspected_concepts: ["free-list ownership"],
+      evidence_chain: [{
+        label: "public verify",
+        artifact: ".vos/runs/run-1/manifest.json",
+        observation: "page allocator case failed",
+      }],
+      visualization_steps: [{
+        phase: "oracle",
+        description: "Public oracle observed a repeated page.",
+      }],
+      trace_summary: "trace observed allocator reuse",
+      gdb_summary: "gdb stopped in kalloc",
+      visualization_html: "<!doctype html><html><body><script>const states=[];</script><input id=\"scrubber\"></body></html>",
+      next_diagnostic_commands: ["vos agent debug --run run-1 --keep-worktree"],
+      student_visible_limitations: ["full instrumentation diff withheld"],
+    });
+
+    expect(parsed.evidence_chain[0]?.label).toBe("public verify");
+    expect(parsed.suspected_concepts).toEqual(["free-list ownership"]);
+    expect(parsed.visualization_steps[0]?.phase).toBe("oracle");
+    expect(parsed.trace_summary).toBe("trace observed allocator reuse");
+    expect(parsed.gdb_summary).toBe("gdb stopped in kalloc");
+    expect(parsed.visualization_html).toContain("states=[]");
+    expect(parsed.next_diagnostic_commands).toEqual(["vos agent debug --run run-1 --keep-worktree"]);
+  });
+
+  test("agent debug run reads failed run evidence and writes debug artifacts", async () => {
+    const projectRoot = makeProject();
+    const runRoot = join(projectRoot, ".vos", "runs", "failed-run");
+    mkdirSync(join(runRoot, "artifacts"), { recursive: true });
+    writeFileSync(join(runRoot, "artifacts", "qemu.log"), "panic: allocator reused page\n");
+    writeFileSync(join(runRoot, "manifest.json"), JSON.stringify({
+      run_id: "failed-run",
+      command: ["verify", "public"],
+      status: "validation_failed",
+      artifacts: [{ kind: "trace", path: ".vos/runs/failed-run/artifacts/qemu.log", summary: "qemu log" }],
+      evidence_refs: [],
+    }, null, 2));
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["agent", "debug", "--run", "failed-run"],
+      args: [],
+    });
+    let captured: HeadlessAgentOptions | undefined;
+    const runner = async (options: HeadlessAgentOptions) => {
+      captured = options;
+      return {
+        content: JSON.stringify({
+          failure_class: "verification_failure",
+          summary: "Allocator evidence failed.",
+          suspected_clauses: ["kernel/memory.kalloc"],
+          related_specs: ["spec/modules/kernel/memory/ops/kalloc.yaml"],
+          suspected_concepts: ["free-list ownership"],
+          evidence_chain: [{ label: "qemu log", artifact: ".vos/runs/failed-run/artifacts/qemu.log", observation: "panic" }],
+          visualization_steps: [{ phase: "panic", description: "The allocator reused a page." }],
+          visualization_html: [
+            "<!doctype html>",
+            "<html><body>",
+            "<main data-agent-generated=\"true\">",
+            "<section>Spec / Code from agent</section>",
+            "<section>Verify / Trace Timeline from agent</section>",
+            "<section>GDB State from agent</section>",
+            "<input id=\"scrubber\" type=\"range\">",
+            "<script>// states[]\nconst states=[{phase:'panic'}];</script>",
+            "</main>",
+            "</body></html>",
+          ].join(""),
+          trace_summary: "trace not observed",
+          gdb_summary: "gdb reached kalloc",
+          next_diagnostic_commands: ["vos verify public"],
+          student_visible_limitations: ["full instrumentation diff withheld"],
+        }),
+        events: [],
+      };
+    };
+
+    const result = await executeCommand({
+      kind: "agent_debug",
+      runId: "failed-run",
+      keepWorktree: false,
+    }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence,
+      agentRunner: runner,
+    });
+
+    expect(result.status).toBe("passed");
+    expect(captured?.prompt).toContain("failed-run");
+    expect(captured?.prompt).toContain("panic: allocator reused page");
+    expect(captured?.prompt).toContain("Built-in DebugAgent skills available inside vos-agent");
+    expect(captured?.prompt).toContain("gdb-debug");
+    expect(captured?.prompt).toContain("qemu-monitor");
+    expect(captured?.prompt).toContain("bret-victor-tutor");
+    expect(captured?.prompt).toContain("target remote");
+    expect(captured?.prompt).toContain("QEMU monitor");
+    expect(captured?.prompt).toContain("qmp_endpoint");
+    expect(captured?.prompt).toContain("visualization_html");
+    expect(captured?.prompt).not.toContain(".tmp/skills");
+    expect(result.details.artifact).toMatch(/agent-debug\/debug\.json$/);
+    expect(result.details.visualization).toMatch(/agent-debug\/visualization\.html$/);
+    expect(result.details.gdb_summary).toMatch(/agent-debug\/gdb\/summary\.json$/);
+    expect(result.details.adapter_contract).toMatch(/agent-debug\/gdb\/adapter-contract\.json$/);
+    const adapter = JSON.parse(readFileSync(join(projectRoot, result.details.adapter_contract as string), "utf8"));
+    expect(adapter.qmp_endpoint).toMatch(/^unix:/);
+    expect(adapter.hmp_endpoint).toMatch(/^unix:/);
+    expect(adapter.qemu_args.join(" ")).toContain("-qmp");
+    expect(adapter.qemu_args.join(" ")).toContain("-monitor");
+    expect(adapter.monitor_forbidden_commands).toContain("system_reset");
+    const visualization = readFileSync(join(projectRoot, result.details.visualization as string), "utf8");
+    expect(visualization).toContain("scrubber");
+    expect(visualization).toContain("states[]");
+    expect(visualization).toContain("data-agent-generated");
+    expect(visualization).not.toContain("VOS Debug Visualization");
+    const markdown = readFileSync(join(projectRoot, result.details.report as string), "utf8");
+    expect(markdown).not.toContain("diff --git");
+  });
+
+  test("agent debug run rejects missing agent visualization html", async () => {
+    const projectRoot = makeProject();
+    const runRoot = join(projectRoot, ".vos", "runs", "failed-run");
+    mkdirSync(join(runRoot, "artifacts"), { recursive: true });
+    writeFileSync(join(runRoot, "artifacts", "qemu.log"), "panic: allocator reused page\n");
+    writeFileSync(join(runRoot, "manifest.json"), JSON.stringify({
+      run_id: "failed-run",
+      command: ["verify", "public"],
+      status: "validation_failed",
+      artifacts: [{ kind: "trace", path: ".vos/runs/failed-run/artifacts/qemu.log", summary: "qemu log" }],
+      evidence_refs: [],
+    }, null, 2));
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["agent", "debug", "--run", "failed-run"],
+      args: [],
+    });
+
+    await expect(executeCommand({
+      kind: "agent_debug",
+      runId: "failed-run",
+      keepWorktree: false,
+    }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence,
+      agentRunner: async () => ({
+        content: JSON.stringify({
+          failure_class: "verification_failure",
+          summary: "Allocator evidence failed.",
+          suspected_clauses: [],
+          related_specs: [],
+          evidence_chain: [],
+          visualization_steps: [],
+          next_diagnostic_commands: [],
+          student_visible_limitations: [],
+        }),
+        events: [],
+      }),
+    })).rejects.toThrow("DebugOutput.visualization_html must be string");
+  });
+
+  test("agent debug without inputs returns recent failed runs and REPL placeholder", async () => {
+    const projectRoot = makeProject();
+    mkdirSync(join(projectRoot, ".vos", "runs", "failed-run"), { recursive: true });
+    writeFileSync(join(projectRoot, ".vos", "runs", "failed-run", "manifest.json"), JSON.stringify({
+      run_id: "failed-run",
+      command: ["verify", "public"],
+      status: "validation_failed",
+      artifacts: [],
+      evidence_refs: [],
+    }, null, 2));
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["agent", "debug"],
+      args: [],
+    });
+
+    const result = await executeCommand({
+      kind: "agent_debug",
+      keepWorktree: false,
+    }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence,
+    });
+
+    expect(result.status).toBe("planned");
+    expect(result.details.repl).toBe("not_implemented");
+    expect(result.details.recent_failed_runs).toEqual(["failed-run"]);
+  });
+
+  test("agent debug run writes GDB failure evidence when MCP setup fails", async () => {
+    const projectRoot = makeProject();
+    const runRoot = join(projectRoot, ".vos", "runs", "failed-run");
+    mkdirSync(join(runRoot, "artifacts"), { recursive: true });
+    writeFileSync(join(runRoot, "artifacts", "qemu.log"), "panic: trap\n");
+    writeFileSync(join(runRoot, "manifest.json"), JSON.stringify({
+      run_id: "failed-run",
+      command: ["verify", "public"],
+      status: "validation_failed",
+      artifacts: [{ kind: "trace", path: ".vos/runs/failed-run/artifacts/qemu.log", summary: "qemu log" }],
+      evidence_refs: [],
+    }, null, 2));
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["agent", "debug", "--run", "failed-run"],
+      args: [],
+    });
+
+    const result = await executeCommand({
+      kind: "agent_debug",
+      runId: "failed-run",
+      keepWorktree: false,
+    }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence,
+      agentRunner: async () => {
+        throw new Error("failed to start MCP server gdb");
+      },
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.details.gdb_failure).toMatch(/agent-debug\/gdb\/failure\.json$/);
+    expect(readFileSync(join(projectRoot, result.details.gdb_failure as string), "utf8")).toContain("failed to start MCP server gdb");
+  });
+
+  test("failed public verify points to agent debug run command", async () => {
+    const projectRoot = makeProject();
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["verify", "public"],
+      args: [],
+    });
+
+    const result = await executeCommand({
+      kind: "verify",
+      scope: "public",
+      dryRun: false,
+    }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.details.debug).toEqual({
+      run_id: evidence.run_id,
+      command: `vos agent debug --run ${evidence.run_id}`,
+    });
   });
 
   test("behavior test prompts split planning from patch generation", () => {

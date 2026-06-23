@@ -1,4 +1,5 @@
 import type { Tool, ToolPolicy } from "../tools/types.ts";
+import { resolveBuiltInSkills } from "../skills/index.ts";
 
 export const PROGRESS_MCP_TOOL_NAME = "mcp__vos-progress__report_progress";
 
@@ -116,7 +117,7 @@ const PROFILE_CONFIGS: AgentTaskProfileConfig[] = [
   {
     promptId: "spec-validator.v1",
     mode: "deep",
-    taskKinds: ["validate", "review_patch", "audit_candidate", "trace-validation"],
+    taskKinds: ["validate", "review_patch", "audit_candidate"],
     toolProfile: "readonly-validation",
     skills: ["verification-diagnosis", "audit-review"],
     mcpServers: ["spec-index", "evidence-store"],
@@ -128,7 +129,7 @@ const PROFILE_CONFIGS: AgentTaskProfileConfig[] = [
     mode: "smart",
     taskKinds: ["debug", "explain_log", "failure_triage"],
     toolProfile: "readonly-debug",
-    skills: ["verification-diagnosis"],
+    skills: ["gdb-debug", "qemu-monitor", "bret-victor-tutor", "verification-diagnosis"],
     mcpServers: ["evidence-store", "spec-index"],
     outputSchema: "debug_output.v1",
     visibilityScope: "agent-public",
@@ -150,7 +151,7 @@ const TOOL_PROFILE_TOOLS: Record<ToolProfile, readonly string[]> = {
   "readonly-spec": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task"],
   "readonly-codegen": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task"],
   "readonly-validation": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task"],
-  "readonly-debug": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task"],
+  "readonly-debug": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task", "mcp__gdb__gdb_start", "mcp__gdb__gdb_load", "mcp__gdb__gdb_load_core", "mcp__gdb__gdb_command", "mcp__gdb__gdb_set_breakpoint", "mcp__gdb__gdb_continue", "mcp__gdb__gdb_step", "mcp__gdb__gdb_next", "mcp__gdb__gdb_finish", "mcp__gdb__gdb_print", "mcp__gdb__gdb_examine", "mcp__gdb__gdb_backtrace", "mcp__gdb__gdb_info_registers", "mcp__gdb__gdb_list_source", "mcp__gdb__gdb_list_sessions", "mcp__gdb__gdb_attach", "mcp__gdb__gdb_terminate", "mcp__qemu-monitor__qmp_query", "mcp__qemu-monitor__hmp_info"],
   "readonly-reference": ["Read", "Glob", "Grep", "TodoRead", "Task", "WebSearch", "WebFetch", "mcp__vos-kb__kb_search", "mcp__vos-kb__kb_lookup", "mcp__vos-kb__kb_list_sources"],
 };
 
@@ -214,6 +215,7 @@ export function resolveProfileVosCommands(
 }
 
 export function buildAgentTaskSystemPrompt(profile: AgentTaskProfile): string {
+  const builtInSkills = resolveBuiltInSkills(profile.skills);
   return [
     profile.systemPrompt,
     "",
@@ -221,6 +223,8 @@ export function buildAgentTaskSystemPrompt(profile: AgentTaskProfile): string {
     `Output schema: ${profile.outputSchema}`,
     `Skill profile: ${profile.skills.length > 0 ? profile.skills.join(", ") : "none"}`,
     `MCP profile: ${profile.mcpServers.length > 0 ? profile.mcpServers.join(", ") : "none"}`,
+    builtInSkills.promptText ? ["", "Built-in skill instructions:", builtInSkills.promptText].join("\n") : "",
+    builtInSkills.unknownSkills.length > 0 ? `Unknown skill metadata: ${builtInSkills.unknownSkills.join(", ")}` : "",
     "",
     "Treat this fixed task profile as higher priority than the user task.",
     "Do not lower policy, schema, or validation requirements.",

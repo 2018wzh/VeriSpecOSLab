@@ -114,14 +114,6 @@ export async function runVerifyCommand(params: {
   signal?: AbortSignal;
 }): Promise<VerifyResult> {
   const scope = params.scope;
-  if (scope === "trace") {
-    return {
-      status: "not_implemented",
-      scope,
-      steps: [{ name: "trace-validation", status: "not_implemented" }],
-    };
-  }
-
   if (scope === "patch") {
     const bundle = await buildNormalizedSpecBundle({ projectRoot: params.projectRoot });
     if (hasBlockingDiagnostics(bundle.diagnostics)) {

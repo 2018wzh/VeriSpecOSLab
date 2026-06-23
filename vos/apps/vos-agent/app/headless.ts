@@ -20,6 +20,7 @@ import {
   type AgentTaskProfile,
   type AgentTaskProfileInput,
 } from "./agent/profiles.ts";
+import { resolveBuiltInSkills } from "./skills/index.ts";
 
 export interface HeadlessAgentOptions {
   projectRoot: string;
@@ -169,6 +170,7 @@ export async function runAgentTask(
   const profile = resolveInternalAgentTaskProfile({
     taskKind: options.taskKind,
   }, options.agentProfile);
+  const builtInSkills = resolveBuiltInSkills(profile.skills, { workspaceRoot });
   const modelSettings = options.model
     ? { model: options.model, mode: options.mode }
     : resolveActiveModelSettings(config, {
@@ -204,7 +206,7 @@ export async function runAgentTask(
     maxIterations: options.maxIterations,
     courseMode: options.courseMode ?? true,
     allowedVosCommands: resolveProfileVosCommands(profile, options.allowedVosCommands),
-    extraMcpServers: options.extraMcpServers,
+    extraMcpServers: [...builtInSkills.mcpServers, ...(options.extraMcpServers ?? [])],
     toolPolicy: composeToolPolicies(createProfileToolPolicy(profile), options.toolPolicy),
     startDir: workspaceRoot,
     fixedSystemPrompt: buildAgentTaskSystemPrompt(profile),

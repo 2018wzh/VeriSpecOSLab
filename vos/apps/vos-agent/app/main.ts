@@ -19,10 +19,16 @@ import {
 import { discoverWorkspaceRoot } from "./workspace.ts";
 import { runInteractive } from "./terminal/repl.ts";
 import { serveAgentHttp } from "./server/http.ts";
+import { runQemuMonitorMcpServer } from "./mcp/qemu-monitor-server.ts";
 
 const VERSION = "0.1.0";
 
 async function main(): Promise<void> {
+  if (process.argv[2] === "internal" && process.argv[3] === "qemu-monitor-mcp") {
+    await runQemuMonitorMcpServer();
+    return;
+  }
+
   const args = parseArgs(process.argv);
   const workspaceRoot = discoverWorkspaceRoot();
   const store = createThreadStore({ workspaceRoot });

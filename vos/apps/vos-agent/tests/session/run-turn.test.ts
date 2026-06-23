@@ -521,4 +521,31 @@ describe("runSessionTurn", () => {
 
     expect(result.content).toBe("extra mcp consumed");
   });
+
+  test("rejects duplicate MCP server names between plugins and task profile extras", async () => {
+    const serverPath = writeFixture(tmp, "fake-mcp.js", fakeMcpServerScript());
+    writeFixture(tmp, ".agents/plugins/gdb.json", JSON.stringify({
+      name: "gdb-plugin",
+      mcpServers: {
+        gdb: {
+          command: process.execPath,
+          args: [serverPath],
+        },
+      },
+    }));
+
+    await expect(runSessionTurn({
+      chat: new CallbackChatClient(() => textResponse("unused")),
+      store,
+      workspaceRoot: tmp,
+      prompt: "use debug mcp",
+      model: TEST_MODEL,
+      extraMcpServers: [{
+        name: "gdb",
+        command: process.execPath,
+        args: [serverPath],
+        cwd: tmp,
+      }],
+    })).rejects.toThrow(/duplicate MCP server name "gdb"/);
+  });
 });

@@ -117,7 +117,7 @@ export async function runSessionTurn(
 
   const pluginManifests = loadPluginManifests({ workspaceRoot: resolvedWorkspaceRoot });
   const mcpProvider = await createMcpToolProvider({
-    servers: [...pluginMcpServers(pluginManifests), ...(opts.extraMcpServers ?? [])],
+    servers: mergeMcpServers(pluginMcpServers(pluginManifests), opts.extraMcpServers ?? []),
   });
   try {
     const todos = new TodoState(thread.todos);
@@ -229,6 +229,23 @@ export async function runSessionTurn(
   } finally {
     await mcpProvider.close();
   }
+}
+
+function mergeMcpServers(
+  pluginServers: readonly McpServerConfig[],
+  extraServers: readonly McpServerConfig[],
+): McpServerConfig[] {
+  const out: McpServerConfig[] = [];
+  const seen = new Set<string>();
+  for (const server of [...pluginServers, ...extraServers]) {
+    const name = server.name.toLowerCase();
+    if (seen.has(name)) {
+      throw new Error(`duplicate MCP server name "${server.name}" between plugin manifests and task profile`);
+    }
+    seen.add(name);
+    out.push(server);
+  }
+  return out;
 }
 
 function combineSystemPrompts(

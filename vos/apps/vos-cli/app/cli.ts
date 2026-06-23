@@ -550,8 +550,6 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
     }
     let dryRun = false;
     let target: string | undefined;
-    let patchFile: string | undefined;
-    let keepWorktree = false;
     let staffPolicy: string | undefined;
     for (let i = 1; i < rest.length; i++) {
       const arg = rest[i];
@@ -566,19 +564,6 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       if (arg === "--target") {
         target = resolveRequiredValue(rest, i, arg);
         i++;
-        continue;
-      }
-      if (arg === "--patch-file") {
-        patchFile = resolveRequiredValue(rest, i, arg);
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--patch-file=")) {
-        patchFile = arg.slice("--patch-file=".length);
-        continue;
-      }
-      if (arg === "--keep-worktree") {
-        keepWorktree = true;
         continue;
       }
       if (arg === "--staff-policy") {
@@ -596,7 +581,7 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       }
       throw new Error(`unknown flag for verify: ${arg}`);
     }
-    return { kind: "verify", scope, target, dryRun, patchFile, keepWorktree, staffPolicy } satisfies VerifyCommand;
+    return { kind: "verify", scope, target, dryRun, staffPolicy } satisfies VerifyCommand;
   }
 
   if (command === "trace") {
@@ -972,7 +957,39 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       } satisfies AgentValidateGeneratedCommand;
     }
     if (second === "debug") {
-      return { kind: "agent_debug", logPath: parseOptionalStringValue(rest, "--log") } satisfies AgentDebugCommand;
+      let logPath: string | undefined;
+      let runId: string | undefined;
+      let keepWorktree = false;
+      for (let i = 1; i < rest.length; i++) {
+        const arg = rest[i];
+        if (arg === "--log") {
+          logPath = resolveRequiredValue(rest, i, arg);
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--log=")) {
+          logPath = arg.slice("--log=".length);
+          continue;
+        }
+        if (arg === "--run") {
+          runId = resolveRequiredValue(rest, i, arg);
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--run=")) {
+          runId = arg.slice("--run=".length);
+          continue;
+        }
+        if (arg === "--keep-worktree") {
+          keepWorktree = true;
+          continue;
+        }
+        throw new Error(`unknown flag for agent debug: ${arg}`);
+      }
+      if (logPath && runId) {
+        throw new Error("agent debug accepts either --log or --run, not both");
+      }
+      return { kind: "agent_debug", logPath, runId, keepWorktree } satisfies AgentDebugCommand;
     }
     if (second === "log") {
       let append = false;
@@ -1078,7 +1095,6 @@ function isVerifyScope(value: string): value is VerifyScope {
     "architecture",
     "composition",
     "goal",
-    "trace",
   ].includes(value);
 }
 

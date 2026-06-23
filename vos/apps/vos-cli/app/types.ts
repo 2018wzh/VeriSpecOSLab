@@ -52,8 +52,7 @@ export type VerifyScope =
   | "base"
   | "architecture"
   | "composition"
-  | "goal"
-  | "trace";
+  | "goal";
 
 export interface BaseCommand {
   kind: string;
@@ -168,8 +167,6 @@ export interface VerifyCommand extends BaseCommand {
   scope: VerifyScope;
   target?: string;
   dryRun: boolean;
-  patchFile?: string;
-  keepWorktree?: boolean;
   staffPolicy?: string;
 }
 
@@ -243,6 +240,8 @@ export interface AgentValidateGeneratedCommand extends BaseCommand {
 export interface AgentDebugCommand extends BaseCommand {
   kind: "agent_debug";
   logPath?: string;
+  runId?: string;
+  keepWorktree: boolean;
 }
 
 export interface AgentLogCommand extends BaseCommand {
