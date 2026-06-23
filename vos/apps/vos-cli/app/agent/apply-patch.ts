@@ -82,7 +82,7 @@ export async function applyPatchText(params: {
   await writeFile(patchFile, normalizePatchForGitApply(params.patchText));
 
   const apply = await runCommand({
-    command: ["git", "apply", patchFile],
+    command: ["git", "apply", "--recount", patchFile],
     cwd: params.projectRoot,
     env: gitApplyProjectEnv(params.projectRoot),
     timeoutMs: 120_000,
@@ -105,7 +105,7 @@ export async function applyPatchText(params: {
 
   if (validationResult.status === "failed") {
     const rollback = await runCommand({
-      command: ["git", "apply", "-R", patchFile],
+      command: ["git", "apply", "--recount", "-R", patchFile],
       cwd: params.projectRoot,
       env: gitApplyProjectEnv(params.projectRoot),
       timeoutMs: 120_000,

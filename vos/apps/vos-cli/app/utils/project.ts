@@ -191,7 +191,7 @@ export async function ensureDefaultProjectConfig(projectRoot: string): Promise<v
 function ensureVosGitignore(projectRoot: string): void {
   const gitignorePath = path.join(projectRoot, ".gitignore");
   const existing = existsSync(gitignorePath) ? readFileSync(gitignorePath, "utf8") : "";
-  if (existing.split(/\r?\n/).map((line) => line.trim()).includes(".vos/")) return;
+  if (existing.split(/\r?\n/).map((line) => line.trim()).some((line) => line === ".vos/" || line === ".vos/*")) return;
   const prefix = existing && !existing.endsWith("\n") ? `${existing}\n` : existing;
   writeFileSync(gitignorePath, `${prefix}.vos/\n`);
 }

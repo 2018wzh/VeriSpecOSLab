@@ -50,15 +50,95 @@ describe("xv6-spec offline runtime flow", () => {
     });
     expect(verify.status).toBe("ok");
     expect(verify.steps.map((step) => step.name)).toEqual([
-      "normalize",
-      "consistency",
+      "spec bundle",
       "build",
-      "run",
+      "public tests",
+      "required artifacts",
+      "public summary",
     ]);
     expect(verify.requiredChecks?.map((check) => check.id)).toEqual([
       "verify-boot-banner",
       "verify-sys-write",
     ]);
+    expect(verify.requiredChecks?.[0]?.tests?.map((test) => test.id)).toEqual(["bootstrap_banner_not_null"]);
+    expect(verify.publicSummaryPath).toBe("artifacts/verify/public-summary.json");
+  });
+
+  test("public verify rejects missing matrix, missing suites, failed suites, and missing artifacts", async () => {
+    let projectRoot = makeXv6Fixture({ publicMatrix: false });
+    let evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["verify-public-no-matrix"],
+      args: [],
+    });
+    let verify = await runVerifyCommand({ projectRoot, evidence, scope: "public", dryRun: true });
+    expect(verify.status).toBe("validation_failed");
+    expect(verify.requiredChecks).toContainEqual(expect.objectContaining({ id: "public-matrix", status: "validation_failed" }));
+
+    projectRoot = makeXv6Fixture({ publicTestSuites: false });
+    evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["verify-public-missing-suite"],
+      args: [],
+    });
+    verify = await runVerifyCommand({ projectRoot, evidence, scope: "public", dryRun: true });
+    expect(verify.status).toBe("validation_failed");
+    expect(verify.requiredChecks?.[0]?.tests).toContainEqual(expect.objectContaining({
+      id: "bootstrap_banner_not_null",
+      status: "validation_failed",
+    }));
+
+    projectRoot = makeXv6Fixture({ failingPublicSuite: "sys_write_basic" });
+    evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["verify-public-failed-suite"],
+      args: [],
+    });
+    verify = await runVerifyCommand({ projectRoot, evidence, scope: "public", dryRun: false });
+    expect(verify.status).toBe("failed");
+    expect(verify.requiredChecks?.find((check) => check.id === "verify-sys-write")?.tests)
+      .toContainEqual(expect.objectContaining({ id: "sys_write_basic", status: "failed" }));
+
+    projectRoot = makeXv6Fixture({ publicArtifacts: false });
+    evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["verify-public-missing-artifact"],
+      args: [],
+    });
+    verify = await runVerifyCommand({ projectRoot, evidence, scope: "public", dryRun: false });
+    expect(verify.status).toBe("failed");
+    expect(verify.requiredChecks?.[0]?.artifacts).toContainEqual(expect.objectContaining({
+      path: "build/qemu_boot.log",
+      status: "failed",
+    }));
+  });
+
+  test("execute verify exposes public requirement details", async () => {
+    const projectRoot = makeXv6Fixture();
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["verify", "public"],
+      args: [],
+    });
+
+    const result = await executeCommand({
+      kind: "verify",
+      scope: "public",
+      dryRun: true,
+    }, {
+      projectRoot,
+      global: { projectRoot, json: true },
+      evidence,
+    });
+
+    expect(result.status).toBe("ok");
+    expect(Array.isArray(result.details.requiredChecks)).toBe(true);
+    expect(result.details.publicSummaryPath).toBe("artifacts/verify/public-summary.json");
   });
 
   test("treats ready signal as success even when QEMU is later timed out", async () => {
@@ -771,6 +851,9 @@ describe("xv6-spec offline runtime flow", () => {
 
 function makeXv6Fixture(options: {
   publicMatrix?: boolean;
+  publicTestSuites?: boolean;
+  publicArtifacts?: boolean;
+  failingPublicSuite?: string;
   toolchainManifest?: boolean;
   buildEntrypoint?: boolean;
 } = {}): string {
@@ -826,20 +909,38 @@ function makeXv6Fixture(options: {
     writeFileSync(join(root, "spec", "verification", "public-matrix.yaml"), [
       "public_requirements:",
       "  - id: verify-boot-banner",
+      "    required_tests:",
+      "      - bootstrap_banner_not_null",
       "    required_artifacts:",
-      "      - qemu_boot.log",
+      "      - build/qemu_boot.log",
       "  - id: verify-sys-write",
+      "    required_tests:",
+      "      - sys_write_basic",
       "    required_artifacts:",
-      "      - kernel.elf",
+      "      - build/kernel.elf",
       "",
     ].join("\n"));
   }
+  if (options.publicArtifacts !== false) {
+    mkdirSync(join(root, "build"), { recursive: true });
+    writeFileSync(join(root, "build", "qemu_boot.log"), "XV6_BOOT_OK\n");
+    writeFileSync(join(root, "build", "kernel.elf"), "fake elf\n");
+  }
   if (options.toolchainManifest !== false) {
+    const publicSuites = options.publicTestSuites === false
+      ? []
+      : ["bootstrap_banner_not_null", "sys_write_basic"].map((name) => ({
+        name,
+        command: options.failingPublicSuite === name ? "false" : "true",
+      }));
     writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify({
       files: ["Makefile"],
       build: {
         commands: ["make all"],
         artifacts: ["build/kernel.bin"],
+      },
+      test: {
+        suites: publicSuites,
       },
       run: {
         command: "qemu-system-riscv64",

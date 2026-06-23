@@ -30,6 +30,9 @@ export interface HeadlessAgentOptions {
   threadId?: string;
   maxIterations?: number;
   disabledTools?: readonly string[];
+  allowedPaths?: readonly string[];
+  requiredValidations?: readonly string[];
+  policyFlags?: readonly string[];
   courseMode?: boolean;
   allowedVosCommands?: readonly string[];
   extraMcpServers?: readonly McpServerConfig[];

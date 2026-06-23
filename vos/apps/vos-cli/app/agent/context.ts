@@ -24,7 +24,39 @@ export interface ContextBundle {
   spec_snippets: Array<{ kind: string; summary: string; path?: string }>;
   policy_flags: string[];
   project_tree: string[];
+  readonly_context: ReadonlyContextFile[];
 }
+
+export interface ReadonlyContextFile {
+  path: string;
+  content: string;
+  truncated: boolean;
+}
+
+const READONLY_CONTEXT_CANDIDATES = [
+  ".vos/toolchain.json",
+  "Makefile",
+  "kernel/defs.h",
+  "kernel/types.h",
+  "kernel/riscv.h",
+  "kernel/param.h",
+  "kernel/start.c",
+  "kernel/main.c",
+  "kernel/entry.S",
+  "kernel/kernel.ld",
+  "spec/modules/kernel/boot/module.yaml",
+  "spec/modules/kernel/boot/ops/entry.yaml",
+  "spec/modules/kernel/boot/ops/kernel_main.yaml",
+  "spec/modules/kernel/boot/ops/boot_banner.yaml",
+  "spec/modules/kernel/boot/ops/console_putchar.yaml",
+  "spec/modules/kernel/boot/ops/console_write.yaml",
+  "spec/modules/kernel/boot/ops/shutdown.yaml",
+  "spec/modules/kernel/headers/ops/defs.yaml",
+  "spec/modules/kernel/headers/ops/link_ld.yaml",
+];
+
+const READONLY_CONTEXT_MAX_FILES = 20;
+const READONLY_CONTEXT_MAX_CHARS_PER_FILE = 8_000;
 
 export async function buildContextBundle(params: {
   projectRoot: string;
@@ -62,10 +94,13 @@ export async function buildContextBundle(params: {
   const currentStage = project.current_stage;
   const recommended = buildRecommendedCommands(currentStage, stages);
   const policyPaths = params.effectivePolicy?.allowedPaths ?? policy.allowed_paths ?? ["src", "spec", "tests", ".vos"];
-  const allowedPaths = params.effectivePolicy?.allowedPaths ?? await loadAgentAllowedPaths(params.projectRoot);
+  const allowedPaths = params.effectivePolicy?.source === "portal"
+    ? params.effectivePolicy.allowedPaths
+    : await loadAgentAllowedPaths(params.projectRoot);
   const specBoundAllowedPathCount = allowedPaths
     .filter((entry) => !isPathCoveredByPolicy(entry, policyPaths))
     .length;
+  const readonlyContext = await collectReadonlyContext(params.projectRoot, allowedPaths);
 
   return {
     requested_scope: params.requestedScope ?? "agent",
@@ -91,6 +126,7 @@ export async function buildContextBundle(params: {
       `visibility:${params.effectivePolicy?.visibilityScope ?? policy.visibility_scope ?? "public"}`,
     ],
     project_tree: projectTree,
+    readonly_context: readonlyContext,
   };
 }
 
@@ -151,7 +187,7 @@ async function collectEditablePathsFromNormalizedCache(projectRoot: string): Pro
     const parsed = JSON.parse(await readFile(bundlePath, "utf8"));
     const paths: string[] = [];
     walkJson(parsed, (key, value) => {
-      if ((key === "file" || key === "target_file") && typeof value === "string") {
+      if ((key === "file" || key === "target_file" || key === "path") && typeof value === "string") {
         if (looksLikeEditableProjectPath(value)) {
           paths.push(value);
         }
@@ -232,6 +268,39 @@ function uniquePaths(values: string[]): string[] {
     if (!normalized || seen.has(normalized)) continue;
     seen.add(normalized);
     out.push(normalized);
+  }
+  return out;
+}
+
+async function collectReadonlyContext(
+  projectRoot: string,
+  allowedPaths: readonly string[],
+): Promise<ReadonlyContextFile[]> {
+  const out: ReadonlyContextFile[] = [];
+  for (const candidate of READONLY_CONTEXT_CANDIDATES) {
+    if (out.length >= READONLY_CONTEXT_MAX_FILES) break;
+    const normalized = normalizeProjectPath(candidate);
+    if (!isPathCoveredByPolicy(normalized, allowedPaths)) continue;
+    const absolute = path.join(projectRoot, normalized);
+    if (!existsSync(absolute)) continue;
+
+    let content: string;
+    try {
+      content = await readFile(absolute, "utf8");
+    } catch (error) {
+      throw new CliError(`failed to read readonly context file ${normalized}`, "failed", {
+        kind: "readonly_context_read_failed",
+        path: normalized,
+        cause: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    const truncated = content.length > READONLY_CONTEXT_MAX_CHARS_PER_FILE;
+    out.push({
+      path: normalized,
+      content: truncated ? content.slice(0, READONLY_CONTEXT_MAX_CHARS_PER_FILE) : content,
+      truncated,
+    });
   }
   return out;
 }

@@ -8,7 +8,6 @@ import { runBuildCommand } from "./build.ts";
 import { runQemuCommand } from "./qemu.ts";
 import { runTestCommand } from "./test.ts";
 import { runCommand } from "./executor.ts";
-import { parseTopLevelYaml } from "../utils/yaml.ts";
 import {
   buildAgentBehaviorTestPatchPrompt,
   buildAgentBehaviorTestPlanPrompt,
@@ -27,6 +26,7 @@ export interface VerifyResult {
   scope: string;
   steps: VerifyStep[];
   requiredChecks?: VerifyCheck[];
+  publicSummaryPath?: string;
 }
 
 export interface VerifyStep {
@@ -39,15 +39,15 @@ export interface VerifyCheck {
   id: string;
   status: CommandStatus;
   requiredArtifacts?: string[];
+  requiredTests?: string[];
+  tests?: Array<{ id: string; status: CommandStatus; output?: string }>;
+  artifacts?: Array<{ path: string; status: CommandStatus }>;
+  reason?: string;
 }
 
 export interface VerifyPublicPlan {
   status: CommandStatus;
   requiredChecks: Array<{ id: string } | string>;
-}
-
-interface PublicMatrixSpec {
-  public_requirements?: Array<{ id?: unknown; required_tests?: unknown; required_artifacts?: unknown }>;
 }
 
 interface VerifyMapping {
@@ -390,78 +390,14 @@ export async function runVerifyCommand(params: {
   }
 
   if (scope === "public") {
-    const requiredChecks = await collectPublicChecks(params.projectRoot);
-    if (requiredChecks.length === 0) {
-      return {
-        status: "failed",
-        scope,
-        steps: [],
-        requiredChecks: [{ id: "public-matrix", status: "failed", requiredArtifacts: [] }],
-      };
-    }
-
-    const steps: VerifyStep[] = [];
-
-    const normalizeResult = await runPublicNormalization(params.projectRoot);
-    steps.push({ name: "normalize", status: normalizeResult.status });
-    if (normalizeResult.status === "failed") {
-      return {
-        status: "failed",
-        scope,
-        steps,
-        requiredChecks: requiredChecks.map((check) => ({ id: check.id, status: "failed", requiredArtifacts: check.required_artifacts })),
-      };
-    }
-
-    const consistencyResult = await runSpecConsistency(params.projectRoot);
-    steps.push({ name: "consistency", status: consistencyResult.status });
-    if (consistencyResult.status === "failed") {
-      return {
-        status: "failed",
-        scope,
-        steps,
-        requiredChecks: requiredChecks.map((check) => ({ id: check.id, status: "failed", requiredArtifacts: check.required_artifacts })),
-      };
-    }
-
-    const buildResult = await runBuildCommand({
+    return runPublicVerify({
       projectRoot: params.projectRoot,
       evidence: params.evidence,
-      dryRun: params.dryRun,
-      signal: params.signal,
-    });
-    steps.push({ name: "build", status: buildResult.status });
-    if (buildResult.status !== "ok") {
-      return {
-        status: buildResult.status,
-        scope,
-        steps,
-        requiredChecks: requiredChecks.map((check) => ({ id: check.id, status: "failed", requiredArtifacts: check.required_artifacts })),
-      };
-    }
-
-    const runResult = await runQemuCommand({
-      projectRoot: params.projectRoot,
-      evidence: params.evidence,
-      dryRun: params.dryRun,
-      signal: params.signal,
-    });
-    steps.push({ name: "run", status: runResult.status });
-
-    const checkStatus: CommandStatus = runResult.status === "ok" ? "ok" : "failed";
-
-    const checks = requiredChecks.map((check) => ({
-      id: check.id,
-      status: checkStatus,
-      requiredArtifacts: check.required_artifacts,
-    }));
-
-    return {
-      status: runResult.status,
       scope,
-      steps,
-      requiredChecks: checks as VerifyCheck[],
-    };
+      target: params.target,
+      dryRun: params.dryRun,
+      signal: params.signal,
+    });
   }
 
   const plan = resolveVerifyPlan(scope);
@@ -559,13 +495,187 @@ async function publicSuiteObligations(
   availableSuites?: Set<string>,
 ): Promise<string[]> {
   const out = new Set<string>();
-  for (const check of await collectPublicChecks(projectRoot)) {
-    for (const test of check.required_tests ?? []) out.add(test);
+  void projectRoot;
+  for (const check of bundle.verification.public_requirements) {
+    for (const test of check.required_tests) out.add(test);
   }
   for (const test of deriveTestMatrix(bundle, target).public_tests) {
     if (!test.id.startsWith("verify-") || availableSuites?.has(test.id)) out.add(test.id);
   }
   return [...out].sort();
+}
+
+async function runPublicVerify(params: {
+  projectRoot: string;
+  evidence: EvidenceWriter;
+  scope: string;
+  target?: string;
+  dryRun: boolean;
+  signal?: AbortSignal;
+}): Promise<VerifyResult> {
+  const steps: VerifyStep[] = [];
+  const bundle = await buildNormalizedSpecBundle({ projectRoot: params.projectRoot });
+  const specStatus: CommandStatus = hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "ok";
+  steps.push({ name: "spec bundle", status: specStatus });
+  if (specStatus !== "ok") {
+    const requiredChecks = bundle.diagnostics
+      .filter((diagnostic) => diagnostic.severity === "error")
+      .map((diagnostic) => ({ id: diagnostic.code, status: "validation_failed" as CommandStatus, reason: diagnostic.message }));
+    const summaryPath = await writePublicSummary(params.evidence, {
+      status: "validation_failed",
+      requirements: requiredChecks,
+    });
+    return { status: "validation_failed", scope: params.scope, steps, requiredChecks, publicSummaryPath: summaryPath };
+  }
+
+  const requirements = selectPublicRequirements(bundle.verification.public_requirements, params.target);
+  const validation = validatePublicRequirements(requirements);
+  if (validation.length > 0) {
+    const requiredChecks = validation.map((id) => ({ id, status: "validation_failed" as CommandStatus, reason: "invalid public verification matrix" }));
+    const summaryPath = await writePublicSummary(params.evidence, {
+      status: "validation_failed",
+      requirements: requiredChecks,
+    });
+    return { status: "validation_failed", scope: params.scope, steps, requiredChecks, publicSummaryPath: summaryPath };
+  }
+
+  const toolchain = await loadToolchainVerifySpec(params.projectRoot);
+  const availableSuites = collectAvailableSuites(toolchain);
+  const missingTests = [...new Set(requirements.flatMap((req) => req.required_tests))]
+    .filter((test) => !availableSuites.has(test));
+  if (missingTests.length > 0) {
+    const requiredChecks = requirements.map((req) => publicRequirementCheck(req, {
+      status: req.required_tests.some((test) => missingTests.includes(test)) ? "validation_failed" : "planned",
+      testStatus: (test) => missingTests.includes(test) ? "validation_failed" : "planned",
+      reason: req.required_tests.some((test) => missingTests.includes(test)) ? "missing test suite mapping" : undefined,
+    }));
+    const summaryPath = await writePublicSummary(params.evidence, {
+      status: "validation_failed",
+      requirements: requiredChecks,
+      missing_tests: missingTests,
+    });
+    return { status: "validation_failed", scope: params.scope, steps, requiredChecks, publicSummaryPath: summaryPath };
+  }
+
+  const buildResult = await runBuildCommand({
+    projectRoot: params.projectRoot,
+    evidence: params.evidence,
+    dryRun: params.dryRun,
+    signal: params.signal,
+  });
+  steps.push({ name: "build", status: buildResult.status });
+  if (buildResult.status !== "ok") {
+    const requiredChecks = requirements.map((req) => publicRequirementCheck(req, { status: "failed", testStatus: () => "planned" }));
+    const summaryPath = await writePublicSummary(params.evidence, {
+      status: buildResult.status,
+      requirements: requiredChecks,
+    });
+    return { status: buildResult.status, scope: params.scope, steps, requiredChecks, publicSummaryPath: summaryPath };
+  }
+
+  steps.push({ name: "public tests", status: "ok" });
+  const testStatuses = new Map<string, { status: CommandStatus; output?: string }>();
+  for (const testId of [...new Set(requirements.flatMap((req) => req.required_tests))]) {
+    const result = await runTestCommand({
+      projectRoot: params.projectRoot,
+      evidence: params.evidence,
+      suites: [testId],
+      dryRun: params.dryRun,
+      signal: params.signal,
+    });
+    const detail = result.details[testId];
+    testStatuses.set(testId, {
+      status: result.status,
+      output: detail?.output,
+    });
+    if (result.status !== "ok") steps[steps.length - 1].status = result.status;
+  }
+  if (steps.at(-1)?.status !== "ok") {
+    const requiredChecks = requirements.map((req) => publicRequirementCheck(req, {
+      status: req.required_tests.some((test) => testStatuses.get(test)?.status !== "ok") ? "failed" : "ok",
+      testStatus: (test) => testStatuses.get(test)?.status ?? "failed",
+      testOutput: (test) => testStatuses.get(test)?.output,
+    }));
+    const summaryPath = await writePublicSummary(params.evidence, {
+      status: "failed",
+      requirements: requiredChecks,
+    });
+    return { status: "failed", scope: params.scope, steps, requiredChecks, publicSummaryPath: summaryPath };
+  }
+
+  const artifactStatuses = new Map<string, CommandStatus>();
+  for (const artifact of [...new Set(requirements.flatMap((req) => req.required_artifacts))]) {
+    artifactStatuses.set(artifact, existsSync(path.resolve(params.projectRoot, artifact)) ? "ok" : "failed");
+  }
+  const artifactStepStatus: CommandStatus = [...artifactStatuses.values()].some((status) => status !== "ok") ? "failed" : "ok";
+  steps.push({ name: "required artifacts", status: artifactStepStatus });
+  const requiredChecks = requirements.map((req) => publicRequirementCheck(req, {
+    status: req.required_artifacts.some((artifact) => artifactStatuses.get(artifact) !== "ok") ? "failed" : "ok",
+    testStatus: (test) => testStatuses.get(test)?.status ?? "ok",
+    testOutput: (test) => testStatuses.get(test)?.output,
+    artifactStatus: (artifact) => artifactStatuses.get(artifact) ?? "failed",
+  }));
+
+  const status: CommandStatus = artifactStepStatus === "ok" ? "ok" : "failed";
+  const summaryPath = await writePublicSummary(params.evidence, { status, requirements: requiredChecks });
+  steps.push({ name: "public summary", status: "ok", evidenceRefs: [summaryPath] });
+  return { status, scope: params.scope, steps, requiredChecks, publicSummaryPath: summaryPath };
+}
+
+type PublicRequirement = Awaited<ReturnType<typeof buildNormalizedSpecBundle>>["verification"]["public_requirements"][number];
+
+function selectPublicRequirements(requirements: PublicRequirement[], target?: string): PublicRequirement[] {
+  if (!target) return requirements;
+  return requirements.filter((req) => req.id === target || req.related_specs.includes(target));
+}
+
+function validatePublicRequirements(requirements: PublicRequirement[]): string[] {
+  const errors: string[] = [];
+  if (requirements.length === 0) errors.push("public-matrix");
+  const seen = new Set<string>();
+  for (const req of requirements) {
+    if (seen.has(req.id)) errors.push(req.id);
+    seen.add(req.id);
+    if (req.required_tests.length === 0) errors.push(req.id);
+  }
+  return [...new Set(errors)];
+}
+
+function publicRequirementCheck(req: PublicRequirement, options: {
+  status: CommandStatus;
+  testStatus: (test: string) => CommandStatus;
+  testOutput?: (test: string) => string | undefined;
+  artifactStatus?: (artifact: string) => CommandStatus;
+  reason?: string;
+}): VerifyCheck {
+  return {
+    id: req.id,
+    status: options.status,
+    requiredTests: req.required_tests,
+    requiredArtifacts: req.required_artifacts,
+    tests: req.required_tests.map((test) => ({
+      id: test,
+      status: options.testStatus(test),
+      output: options.testOutput?.(test),
+    })),
+    artifacts: req.required_artifacts.map((artifact) => ({
+      path: artifact,
+      status: options.artifactStatus?.(artifact) ?? "planned",
+    })),
+    reason: options.reason,
+  };
+}
+
+async function writePublicSummary(
+  evidence: EvidenceWriter,
+  payload: Record<string, unknown>,
+): Promise<string> {
+  const summaryPath = path.join(evidence.artifacts_root, "verify", "public-summary.json");
+  await mkdir(path.dirname(summaryPath), { recursive: true });
+  await writeFile(summaryPath, `${JSON.stringify(payload, null, 2)}\n`);
+  evidence.addArtifactFromPath("verify-summary", summaryPath, "public verification summary");
+  evidence.addEvidenceRef(`${evidence.run_id}:verify-public`, "verify-summary", path.relative(evidence.run_root, summaryPath));
+  return path.relative(evidence.run_root, summaryPath);
 }
 
 async function runMappedVerifySuites(params: {
@@ -996,55 +1106,4 @@ async function latestSpecPatchRef(projectRoot: string): Promise<string | undefin
     .sort();
   const latest = patches.at(-1);
   return latest ? path.join("spec", "evolution", latest) : undefined;
-}
-
-async function runSpecConsistency(projectRoot: string): Promise<{ status: CommandStatus }> {
-  const runCommandText = path.join(projectRoot, "spec", "toolchain", "toolchain.yaml");
-  if (!existsSync(runCommandText)) {
-    return { status: "failed" };
-  }
-  return { status: "ok" };
-}
-
-async function runPublicNormalization(projectRoot: string): Promise<{ status: CommandStatus }> {
-  const normalizedBundle = path.join(projectRoot, ".vos", "cache", "normalized", "bundle.json");
-  if (!existsSync(normalizedBundle)) {
-    return { status: "failed" };
-  }
-  try {
-    await readFile(normalizedBundle, "utf8");
-  } catch {
-    return { status: "failed" };
-  }
-  return { status: "ok" };
-}
-
-async function collectPublicChecks(projectRoot: string): Promise<Array<{ id: string; required_tests?: string[]; required_artifacts?: string[] }>> {
-  const matrixPath = path.join(projectRoot, "spec", "verification", "public-matrix.yaml");
-  if (!existsSync(matrixPath)) {
-    return [];
-  }
-  const raw = await readFile(matrixPath, "utf8");
-  const parsed = parseTopLevelYaml(raw) as PublicMatrixSpec;
-  const requirements = parsed.public_requirements ?? [];
-  const out: Array<{ id: string; required_tests?: string[]; required_artifacts?: string[] }> = [];
-
-  for (const rawReq of requirements) {
-    if (!rawReq || typeof rawReq !== "object") continue;
-    const req = rawReq as { id?: unknown; required_tests?: unknown; required_artifacts?: unknown };
-    const id = typeof req.id === "string" && req.id.trim().length > 0
-      ? req.id.trim()
-      : "anonymous";
-    out.push({
-      id,
-      required_tests: Array.isArray(req.required_tests)
-        ? req.required_tests.filter((value) => typeof value === "string") as string[]
-        : undefined,
-      required_artifacts: Array.isArray(req.required_artifacts)
-        ? req.required_artifacts.filter((value) => typeof value === "string") as string[]
-        : undefined,
-    });
-  }
-
-  return out;
 }

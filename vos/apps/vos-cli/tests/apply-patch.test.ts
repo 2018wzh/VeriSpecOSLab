@@ -79,6 +79,38 @@ describe("agent apply-patch spec gate", () => {
     expect(result.reason).toBe("patch_apply_failed");
   });
 
+  test("accepts complete patches with inaccurate hunk counts via git recount", async () => {
+    const projectRoot = makeProject();
+    mkdirSync(join(projectRoot, "kernel"), { recursive: true });
+    mkdirSync(join(projectRoot, "spec", "modules", "kernel", "boot", "ops"), { recursive: true });
+    writeFileSync(
+      join(projectRoot, "spec", "modules", "kernel", "boot", "ops", "kernel_main.yaml"),
+      "id: kernel/boot.kernel_main\n",
+    );
+
+    const result = await applyPatchText({
+      projectRoot,
+      patchText: [
+        "diff --git a/kernel/boot.c b/kernel/boot.c",
+        "new file mode 100644",
+        "--- /dev/null",
+        "+++ b/kernel/boot.c",
+        "@@ -0,0 +1,1 @@",
+        "+int boot(void) {",
+        "+  return 1;",
+        "+}",
+        "",
+      ].join("\n"),
+      specBindings: ["spec/modules/kernel/boot/ops/kernel_main.yaml"],
+      allowedPaths: ["kernel/boot.c"],
+      requireSpec: true,
+      runValidation: false,
+    });
+
+    expect(result.status).toBe("ok");
+    expect(readFileSync(join(projectRoot, "kernel", "boot.c"), "utf8")).toContain("return 1");
+  });
+
   test("accepts operation id bindings resolved from normalized spec cache", async () => {
     const projectRoot = makeProject();
     mkdirSync(join(projectRoot, "kernel"), { recursive: true });

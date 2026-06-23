@@ -36,6 +36,11 @@ interface PromptBundle {
   allowed_paths: string[];
   policy_flags: string[];
   project_tree?: string[];
+  readonly_context?: Array<{
+    path: string;
+    content: string;
+    truncated: boolean;
+  }>;
 }
 
 export function buildPromptEnvelope(args: {
@@ -226,34 +231,46 @@ export function buildAgentGeneratePrompt(args: {
     "The patch field must be a single git-style unified diff string suitable for `git apply` without repair.",
     "Every file diff must include `diff --git`, `---`, `+++`, and correct hunk headers/counts.",
     "Do not return bare diffs that start only with `--- /dev/null`.",
-    "If you cannot produce a patch, return patch as an empty string and explain only via self_reported_risks.",
+    "Do not return an empty patch.",
+    "Before final JSON, use Read or Grep to inspect every existing file you will modify; stale hunk context fails validation.",
+    "If you cannot inspect an existing file, do not modify that file.",
   ].join("\n");
   const contextReviewContract = [
     "PROJECT CONTEXT REVIEW:",
-    "Before producing the final JSON, inspect the existing project tree and relevant specs.",
+    "Before producing the final JSON, inspect the existing project tree and relevant specs with readonly tools.",
+    "readonly_context contains current file contents granted through read-only access and must be treated as authoritative hunk context.",
+    "For xv6-spec boot codegen, read at least .vos/toolchain.json, Makefile, kernel/main.c, kernel/defs.h, kernel/types.h, kernel/riscv.h, kernel/param.h, kernel/start.c, kernel/entry.S, kernel/kernel.ld, and the relevant spec/modules/kernel/boot and spec/modules/kernel/headers YAML files before touching those files.",
     "Use the provided project_tree as the minimum file list to reason about current files, generated outputs, and build/run contracts.",
     "If file-reading tools are available, read the relevant project files yourself before finalizing the patch.",
     "Do not assume missing files exist; generate required files explicitly in the patch.",
     "project_tree:",
     JSON.stringify(args.bundle.project_tree ?? [], null, 2),
+    "readonly_context:",
+    JSON.stringify(args.bundle.readonly_context ?? [], null, 2),
   ].join("\n");
   const buildRunContract = args.buildRequested || args.runRequested
     ? [
       "BUILD/RUN CONTRACT:",
-      "`agent generate --build` and `agent generate --run` require a patch that can validate immediately after apply.",
-      "If the project does not already contain Makefile, CMakeLists.txt, xtask/Cargo.toml, or .vos/toolchain.json, include one in changed_paths and in the unified diff.",
+      "`agent generate --build` and `agent generate --run` require a real patch that validates immediately after apply.",
+    "If the project already contains .vos/toolchain.json, treat it as a read-only runtime contract: do not create, replace, rewrite, or simplify it.",
+    "If the project already contains a Makefile, patch it only when the requested code change cannot build through the existing targets.",
+    "If the project does not already contain Makefile, CMakeLists.txt, xtask/Cargo.toml, or .vos/toolchain.json, include one in changed_paths and in the unified diff.",
       "Prefer a Makefile that produces build/kernel.elf, build/kernel.bin, and build/kernel.asm from the generated RISC-V kernel sources.",
       "If C code uses inline assembly, use -std=gnu11 in CFLAGS or use __asm__/__volatile__; do not combine -std=c11 with bare asm.",
       "For SBI ecall helpers in C, prefer register variables bound to a0/a1/a6/a7 and an asm template containing only `ecall`; do not use numbered operands such as %1/%2/%3 inside multi-line ecall templates unless every operand is declared correctly.",
       "The generated Makefile's default `make all` target must compile without unresolved symbols or C dialect errors.",
       "Compile kernel C code with -ffreestanding -fno-builtin -fno-stack-protector so names like exit are not treated as hosted C library builtins.",
       "For a RISC-V kernel linked at 0x80000000, compile every C and assembly object with -mcmodel=medany to avoid R_RISCV_HI20 relocation truncation.",
-      "If Makefile uses -Iinclude, source files must include headers as \"defs.h\"/\"types.h\", not \"include/defs.h\".",
+    "Follow the existing header layout from project_tree; do not introduce an include/ directory when the project already uses kernel/*.h headers.",
+    "If Makefile uses -Iinclude, source files must include headers as \"defs.h\"/\"types.h\", not \"include/defs.h\".",
       "Do not define the same global symbol in assembly and C; for example kernel/kernelvec.S should export kernelvec, not kerneltrap, when kernel/trap.c defines kerneltrap().",
       "For OpenSBI/QEMU virt, link the kernel at 0x80200000 and ensure _start is the ELF entry point at the beginning of .text by using .text.entry first in the linker script.",
       "Do not reference concrete object paths inside linker scripts; use section patterns such as *(.text.entry) and *(.text .text.*).",
       "Use build/kernel.elf as the QEMU -kernel artifact; build/kernel.bin may still be generated as an auxiliary artifact.",
       "Do not leave unresolved symbols for later stages when --build or --run is requested.",
+    "For xv6-spec, preserve the existing runtime boot path when kernel/main.c already reaches userinit and scheduler: keep start.c jumping to main(), keep kernel/main.o in Makefile, and do not replace that path with kernel_main().",
+    "For xv6-spec qemu uses -bios none; do not put SBI ecall console_putchar/shutdown calls on the boot path. Reuse the existing UART/printk path for boot output.",
+    "Adding spec-required boot helpers in kernel/boot.c is acceptable, but they must not break shell_boots, shell_executes_echo, or usertests_all_pass.",
       "Generate the dependency closure needed by the requested target, including sources, assembly stubs, headers, linker script, and build entrypoint.",
       args.runRequested
         ? "For --run, the resulting kernel must be runnable by qemu-system-riscv64 and emit the success signal XV6_BOOT_OK."
@@ -264,7 +281,8 @@ export function buildAgentGeneratePrompt(args: {
     ? [
       "VERIFY CONTRACT:",
       "A buildable or runnable patch must also be verifiable by vos-cli.",
-      "If you create or replace .vos/toolchain.json, include .vos/toolchain.json.test.suites with runnable suite names.",
+      "If .vos/toolchain.json already exists, do not create or replace it; the CLI will run the existing build/run/verify contracts after apply.",
+      "If you create .vos/toolchain.json for a project that lacks one, include .vos/toolchain.json.test.suites with runnable suite names.",
       "Include verify.full, verify.invariant, verify.fuzz, and verify.generated mappings in .vos/toolchain.json when the relevant spec obligations exist.",
       "Every verify mapping value must name an existing test.suites entry; do not invent suite names without adding the suite command.",
       "Public matrix required_tests may be covered by same-name test.suites or explicit verify mappings.",

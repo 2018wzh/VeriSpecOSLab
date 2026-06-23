@@ -207,6 +207,11 @@ describe("vos-cli package agent runner", () => {
         allowed_paths: ["Makefile", ".vos/toolchain.json", "kernel", "user"],
         policy_flags: ["visibility:public"],
         project_tree: ["spec/verification/public-matrix.yaml", "spec/modules/kernel/memory/tests.yaml"],
+        readonly_context: [{
+          path: "kernel/defs.h",
+          content: "typedef uint64 pte_t;\ntypedef uint64 *pagetable_t;\n",
+          truncated: false,
+        }],
       },
       task: "generate xv6 memory stage",
       buildRequested: true,
@@ -214,6 +219,18 @@ describe("vos-cli package agent runner", () => {
     });
 
     expect(prompt).toContain("VERIFY CONTRACT");
+    expect(prompt).toContain("Do not return an empty patch");
+    expect(prompt).toContain("readonly_context contains current file contents");
+    expect(prompt).toContain("typedef uint64 *pagetable_t");
+    expect(prompt).toContain("use Read or Grep to inspect every existing file you will modify");
+    expect(prompt).toContain("read at least .vos/toolchain.json, Makefile, kernel/main.c");
+    expect(prompt).toContain("keep start.c jumping to main()");
+    expect(prompt).toContain("do not replace that path with kernel_main()");
+    expect(prompt).toContain("qemu uses -bios none");
+    expect(prompt).toContain("do not put SBI ecall console_putchar/shutdown calls on the boot path");
+    expect(prompt).toContain("treat it as a read-only runtime contract");
+    expect(prompt).toContain("do not create, replace, rewrite, or simplify it");
+    expect(prompt).toContain("Follow the existing header layout from project_tree");
     expect(prompt).toContain(".vos/toolchain.json.test.suites");
     expect(prompt).toContain("verify.full");
     expect(prompt).toContain("verify.invariant");
@@ -489,7 +506,7 @@ describe("vos-cli package agent runner", () => {
       evidence,
     });
 
-    expect(result.status).toBe("failed");
+    expect(result.status).toBe("validation_failed");
     expect(result.details.debug).toEqual({
       run_id: evidence.run_id,
       command: `vos agent debug --run ${evidence.run_id}`,
@@ -651,6 +668,61 @@ describe("vos-cli package agent runner", () => {
     });
     expect(bundle.policy_flags).toContain("spec_bound_allowed_paths:1");
     expect(bundle.policy_flags).toContain("effective_allowed_paths:3");
+  });
+
+  test("context bundle extends local effective policy with spec-bound paths", async () => {
+    const projectRoot = makeProject();
+    mkdirSync(join(projectRoot, ".vos", "cache", "normalized"), { recursive: true });
+    writeFileSync(join(projectRoot, ".vos", "project.yaml"), [
+      "project_id: local-project",
+      "spec_root: spec",
+      "current_stage: boot",
+      "",
+    ].join("\n"));
+    writeFileSync(join(projectRoot, ".vos", "policy.yaml"), [
+      "allowed_paths:",
+      "  - spec",
+      "  - .vos",
+      "visibility_scope: public",
+      "",
+    ].join("\n"));
+    writeFileSync(join(projectRoot, ".vos", "cache", "normalized", "bundle.json"), JSON.stringify({
+      operations: [{
+        id: "kernel/boot.entry",
+        module: "kernel/boot",
+        operation: "entry",
+        codegen: {
+          targets: [{
+            path: "kernel/entry.S",
+          }],
+        },
+      }],
+    }));
+    mkdirSync(join(projectRoot, "kernel"), { recursive: true });
+    writeFileSync(join(projectRoot, "kernel", "entry.S"), ".section .text.entry\n.globl _entry\n_entry:\n");
+
+    const bundle = await buildContextBundle({
+      projectRoot,
+      requestedScope: "agent.generate",
+      effectivePolicy: {
+        source: "local",
+        allowedCommands: ["agent generate"],
+        allowedPaths: ["spec", ".vos"],
+        visibilityScope: "public",
+      },
+    });
+
+    expect(bundle.allowed_paths).toContain("kernel/entry.S");
+    expect(bundle.allowed_path_sources).toEqual({
+      policy_paths: 2,
+      spec_bound_paths: 1,
+      effective_paths: 3,
+    });
+    expect(bundle.readonly_context).toEqual([{
+      path: "kernel/entry.S",
+      content: ".section .text.entry\n.globl _entry\n_entry:\n",
+      truncated: false,
+    }]);
   });
 
   test("policy directory prefixes cover spec-bound child files", async () => {
@@ -841,6 +913,101 @@ describe("vos-cli package agent runner", () => {
     const applyArtifactText = readFileSync(applyArtifact, "utf8");
     expect(applyArtifactText).toContain("\"status\":\"ok\"");
     expect(readFileSync(join(projectRoot, "Makefile"), "utf8")).toContain("@echo syscall");
+  });
+
+  test("agent generate apply uses resolved spec-bound local paths", async () => {
+    const projectRoot = makeProject();
+    mkdirSync(join(projectRoot, ".vos", "cache", "normalized"), { recursive: true });
+    mkdirSync(join(projectRoot, "kernel"), { recursive: true });
+    writeFileSync(join(projectRoot, ".vos", "project.yaml"), [
+      "project_id: runner-test",
+      "spec_root: spec",
+      "current_stage: boot",
+      "",
+    ].join("\n"));
+    writeFileSync(join(projectRoot, ".vos", "policy.yaml"), [
+      "allowed_paths:",
+      "  - spec",
+      "  - .vos",
+      "allowed_commands:",
+      "  - agent generate",
+      "",
+    ].join("\n"));
+    writeFileSync(join(projectRoot, ".vos", "cache", "normalized", "bundle.json"), JSON.stringify({
+      operations: [{
+        id: "kernel/boot.entry",
+        module: "kernel/boot",
+        operation: "entry",
+        codegen: {
+          targets: [{
+            path: "kernel/entry.S",
+          }],
+        },
+      }],
+    }));
+    writeFileSync(join(projectRoot, "kernel", "entry.S"), [
+      ".globl entry",
+      "entry:",
+      "  ret",
+      "",
+    ].join("\n"));
+
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["agent", "generate"],
+      args: ["agent", "generate"],
+    });
+    let captured: HeadlessAgentOptions | undefined;
+    const runner = async (options: HeadlessAgentOptions) => {
+      captured = options;
+      return {
+      content: JSON.stringify({
+        task: "patch entry",
+        patch: [
+          "diff --git a/kernel/entry.S b/kernel/entry.S",
+          "--- a/kernel/entry.S",
+          "+++ b/kernel/entry.S",
+          "@@ -1,3 +1,4 @@",
+          " .globl entry",
+          " entry:",
+          "+  nop",
+          "   ret",
+        ].join("\n"),
+        bound_clauses: ["kernel/boot.entry"],
+        changed_paths: ["kernel/entry.S"],
+        changed_code_files: ["kernel/entry.S"],
+        output_kind: "unified_diff",
+        self_reported_risks: [],
+      }),
+      events: [],
+      };
+    };
+
+    const result = await executeCommand({
+      kind: "agent_generate",
+      target: undefined,
+      task: undefined,
+      apply: true,
+      build: false,
+      run: false,
+    }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence,
+      agentRunner: runner,
+      effectivePolicy: {
+        source: "local",
+        allowedCommands: ["agent generate"],
+        allowedPaths: ["spec", ".vos"],
+        visibilityScope: "public",
+      },
+    });
+
+    expect(result.status).toBe("passed");
+    expect(result.details.applyStatus).toBe("ok");
+    expect(captured?.allowedPaths).toContain("kernel/entry.S");
+    expect(readFileSync(join(projectRoot, "kernel", "entry.S"), "utf8")).toContain("nop");
   });
 
   test("agent ask injects vos-kb MCP and validates knowledgebase answers", async () => {

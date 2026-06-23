@@ -1636,6 +1636,8 @@ export async function executeVerify(
       scope: result.scope,
       scopeTarget: command.target,
       steps: result.steps,
+      requiredChecks: result.requiredChecks,
+      publicSummaryPath: result.publicSummaryPath,
       ...(debug ? { debug } : {}),
     },
   };
@@ -1714,6 +1716,7 @@ export async function executeAgentGenerate(
     taskKind: "codegen",
     requestedScope: "agent.generate",
     context: bundle,
+    allowedPaths: bundle.allowed_paths,
     courseMode: true,
     allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
     extraMcpServers: agentProgress.extraMcpServers,
@@ -1742,7 +1745,7 @@ export async function executeAgentGenerate(
       projectRoot,
       patchText: parsed.patch,
       specBindings: parsed.bound_clauses,
-        allowedPaths: context.effectivePolicy?.allowedPaths ?? await loadAgentAllowedPaths(projectRoot),
+      allowedPaths: bundle.allowed_paths,
       requireSpec: true,
       runValidation: command.build || command.run,
       evidence,
@@ -1826,7 +1829,9 @@ export async function executeAgentApplyPatch(
   const result = await applyPatchText({
     projectRoot,
     patchText,
-    allowedPaths: effectivePolicy?.allowedPaths ?? await loadAgentAllowedPaths(projectRoot),
+    allowedPaths: effectivePolicy?.source === "portal"
+      ? effectivePolicy.allowedPaths
+      : await loadAgentAllowedPaths(projectRoot),
     requireSpec: command.requireSpec,
     runValidation: command.runValidation,
     evidence,
