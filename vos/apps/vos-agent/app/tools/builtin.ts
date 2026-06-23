@@ -70,9 +70,12 @@ export function createBuiltinToolRegistry(
   if (opts.task) {
     tools.push(createTaskTool({
       ...opts.task,
-      registryFactory: () => createBuiltinToolRegistry({
+      registryFactory: (spec) => createBuiltinToolRegistry({
         rootDir,
-        disabledTools: opts.disabledTools,
+        disabledTools: [
+          ...(opts.disabledTools ?? []),
+          ...(spec.disabledTools ?? []),
+        ],
         permissionRules: opts.permissionRules,
         approveToolExecution: opts.approveToolExecution,
         extraTools: opts.extraTools,

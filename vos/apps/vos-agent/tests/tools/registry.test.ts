@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ToolRegistry, type Tool } from "../../app/tools/types.ts";
 import { createBuiltinToolRegistry } from "../../app/tools/builtin.ts";
-import { ScriptedChatClient, TEST_MODEL } from "../helpers/stub-chat.ts";
+import { CallbackChatClient, ScriptedChatClient, TEST_MODEL, textResponse } from "../helpers/stub-chat.ts";
 
 function fakeTool(name: string, handler: (args: string) => string): Tool {
   return {
@@ -170,5 +170,32 @@ describe("createBuiltinToolRegistry", () => {
     expect(await reg.execute("mcp__fake__echo", "{}")).toContain(
       'Tool "mcp__fake__echo" denied by policy',
     );
+  });
+
+  test("Task subagent specs restrict the nested built-in registry", async () => {
+    const chat = new CallbackChatClient((request) => {
+      const names = request.tools.map((tool) => tool.function.name);
+      expect(names).toContain("Read");
+      expect(names).not.toContain("Write");
+      expect(names).not.toContain("Task");
+      return textResponse("finder done");
+    });
+    const reg = createBuiltinToolRegistry({
+      task: {
+        chat,
+        model: TEST_MODEL,
+        specs: [{
+          name: "finder",
+          description: "Read-only code finder",
+          disabledTools: ["Write"],
+        }],
+      },
+    });
+
+    expect(await reg.execute("Task", JSON.stringify({
+      description: "find files",
+      subagent_type: "finder",
+      prompt: "Find config files.",
+    }))).toBe("finder done");
   });
 });

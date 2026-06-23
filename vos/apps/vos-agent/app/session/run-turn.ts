@@ -207,6 +207,7 @@ export async function runSessionTurn(
         model: turnModel,
         reasoningEffort: turnReasoningEffort,
         maxIterations: opts.maxIterations,
+        onEvent: handleAgentEvent,
       },
     });
     await onEvent?.({

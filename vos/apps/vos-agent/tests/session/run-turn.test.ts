@@ -396,11 +396,14 @@ describe("runSessionTurn", () => {
           role: "user",
           content: "Find the important file and report it.",
         });
+        expect(request.onUsage).toBeDefined();
+        request.onUsage?.({ inputTokens: 40, outputTokens: 2, totalTokens: 42 });
         return textResponse("subagent found src/app.ts");
       }
       expect(String(request.messages.at(-1)?.content)).toContain("subagent found src/app.ts");
       return textResponse("delegated result consumed");
     });
+    const usageEvents: number[] = [];
 
     const result = await runSessionTurn({
       chat,
@@ -408,9 +411,16 @@ describe("runSessionTurn", () => {
       workspaceRoot: tmp,
       prompt: "Use a subagent to inspect the repo.",
       model: TEST_MODEL,
+      onEvent: (event) => {
+        if (event.type === "model.usage") {
+          usageEvents.push(event.totalTokens);
+        }
+      },
     });
 
     expect(result.content).toBe("delegated result consumed");
+    expect(usageEvents).toEqual([42]);
+    expect(result.thread.usage.totalTokens).toBe(42);
   });
 
   test("disabled tools are not advertised and model calls receive denial text", async () => {
