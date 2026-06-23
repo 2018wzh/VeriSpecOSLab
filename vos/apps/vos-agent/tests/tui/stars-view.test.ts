@@ -311,6 +311,43 @@ describe("Stars TUI view", () => {
     expect(screen.getCell(codeX, 0).style).toEqual({ fg: "yellow" });
   });
 
+  test("uses Stars-neutral markdown heading styles", () => {
+    const screen = renderStarsView({
+      transcript: [{ type: "assistant", text: "# Result" }],
+      prompt: { text: "" },
+    }, { width: 40, height: 6 });
+
+    expect(screenRows(screen)[0]).toBe(row(40, "Result"));
+    expect(screen.getCell(0, 0).style).toEqual({ bold: true });
+  });
+
+  test("uses light-theme-safe assistant markdown accents", () => {
+    const screen = renderStarsView({
+      theme: "light",
+      transcript: [{ type: "assistant", text: "Read [docs](https://example.com) and `code`." }],
+      prompt: { text: "" },
+    }, { width: 72, height: 6 });
+    const firstRow = screenRows(screen)[0] ?? "";
+    const linkX = firstRow.indexOf("docs");
+    const codeX = firstRow.indexOf("`code`");
+
+    expect(firstRow).toContain("Read docs https://example.com and `code`.");
+    expect(screen.getCell(linkX, 0).style).toEqual({ fg: "blue" });
+    expect(screen.getCell(codeX, 0).style).toEqual({ fg: "blue" });
+  });
+
+  test("soft-wraps long assistant code fence rows instead of clipping them", () => {
+    const screen = renderStarsView({
+      transcript: [{ type: "assistant", text: "```ts\nalpha beta gamma delta\n```" }],
+      prompt: { text: "" },
+    }, { width: 20, height: 7 });
+
+    expect(screenRows(screen)[0]).toBe(row(20, " alpha beta gamma"));
+    expect(screenRows(screen)[1]).toBe(row(20, " delta"));
+    expect(screen.getCell(0, 0).style).toEqual({ fg: "cyan" });
+    expect(screen.getCell(0, 1).style).toEqual({ fg: "cyan" });
+  });
+
   test("renders wide assistant markdown cells without column drift", () => {
     const screen = renderStarsView({
       transcript: [{ type: "assistant", text: "**你好** ok" }],

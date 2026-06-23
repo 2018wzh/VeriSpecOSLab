@@ -18,6 +18,7 @@ import { StarsTuiPromptInput, type StarsRawInput } from "../tui/prompt-input.ts"
 import { TerminalDriver } from "../tui/terminal.ts";
 import { disableMouseReporting, enableMouseReporting } from "../tui/ansi.ts";
 import type { StarsTranscriptItem, StarsViewSize } from "../tui/stars-view.ts";
+import { resolveStarsTuiTheme } from "../tui/theme.ts";
 
 export type InteractiveStatus = WelcomeInput;
 
@@ -118,6 +119,7 @@ async function runInteractiveTui(
     presenter: driver,
     size: () => terminalSize(opts.output),
     debugLabels: opts.debugLabels,
+    theme: resolveStarsTuiTheme(),
     welcomeAnimation: opts.welcomeAnimation,
   });
   const promptInput = new StarsTuiPromptInput({ input: opts.input, view });

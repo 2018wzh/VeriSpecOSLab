@@ -20,6 +20,8 @@ export {
   defaultStyles,
   lightStyle,
   normalizeStyleConfig,
+  starsDarkStyle,
+  starsLightStyle,
   styleToTerminalStyle,
 } from "./styles.ts";
 export { renderedMarkdownToText, segmentsToText } from "./layout.ts";

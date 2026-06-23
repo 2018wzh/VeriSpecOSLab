@@ -175,6 +175,23 @@ describe("Stars TUI interactive view", () => {
     expect(presenter.latestText()).toContain("assistant: final answer");
   });
 
+  test("passes the configured theme to assistant markdown rendering", () => {
+    const presenter = new RecordingPresenter();
+    const view = new StarsTuiInteractiveView({
+      presenter,
+      size: () => ({ width: 40, height: 6 }),
+      theme: "light",
+    });
+
+    view.onSessionEvent({ type: "done", thread_id: "T-session", content: "Use `code`." });
+
+    const frame = presenter.frames.at(-1);
+    const firstLine = frame ? screenLine(frame.screen, 0) : "";
+    const codeX = firstLine.indexOf("`code`");
+    expect(codeX).toBeGreaterThanOrEqual(0);
+    expect(frame?.screen.getCell(codeX, 0).style).toEqual({ fg: "blue" });
+  });
+
   test("loops the shader logo welcome animation until closed", async () => {
     const presenter = new RecordingPresenter();
     const view = new StarsTuiInteractiveView({
@@ -439,13 +456,17 @@ describe("Stars TUI interactive view", () => {
 function screenText(screen: ScreenBuffer): string {
   const lines: string[] = [];
   for (let y = 0; y < screen.height; y += 1) {
-    let line = "";
-    for (let x = 0; x < screen.width; x += 1) {
-      line += screen.getCell(x, y).char;
-    }
-    lines.push(line.trimEnd());
+    lines.push(screenLine(screen, y).trimEnd());
   }
   return lines.join("\n");
+}
+
+function screenLine(screen: ScreenBuffer, y: number): string {
+  let line = "";
+  for (let x = 0; x < screen.width; x += 1) {
+    line += screen.getCell(x, y).char;
+  }
+  return line;
 }
 
 function countOccurrences(value: string, needle: string): number {

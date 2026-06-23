@@ -292,7 +292,13 @@ function renderCodeBlock(node: MarkdownNode, ctx: RenderContext): RenderLine[] {
   const terminalStyle = primitiveStyle(ctx, style);
   const indent = " ".repeat(style.indent ?? style.margin ?? 0);
   const rawLines = (node.value ?? "").replace(/\n$/, "").split("\n");
-  return rawLines.map((line) => textLine(`${indent}${line}`, terminalStyle));
+  const indentSegments = makeInlineSegments(indent, terminalStyle);
+  return wrapSegmentLines(
+    rawLines.map((line) => makeInlineSegments(line, terminalStyle)),
+    ctx.options.wordWrap,
+    indentSegments,
+    indentSegments,
+  );
 }
 
 function renderTable(node: MarkdownNode, ctx: RenderContext): RenderLine[] {

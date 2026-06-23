@@ -14,6 +14,7 @@ import {
   type StarsViewFrame,
   type StarsViewSize,
 } from "./stars-view.ts";
+import type { StarsTuiTheme } from "./theme.ts";
 
 export type StarsTuiPresenter = {
   renderFrame(frame: StarsViewFrame): void;
@@ -24,6 +25,7 @@ export type StarsTuiInteractiveViewOptions = Readonly<{
   size: () => StarsViewSize;
   maxTranscriptItems?: number;
   debugLabels?: boolean;
+  theme?: StarsTuiTheme;
   welcomeAnimation?: boolean;
   welcomeAnimationFrameDelayMs?: number;
 }>;
@@ -277,6 +279,7 @@ export class StarsTuiInteractiveView implements InteractiveView {
     return {
       status: this.currentStatus,
       transcript: this.transcript,
+      theme: this.opts.theme,
       transcriptScrollOffset: this.transcriptScrollOffset,
       prompt: this.currentPrompt,
       busy: this.busy,

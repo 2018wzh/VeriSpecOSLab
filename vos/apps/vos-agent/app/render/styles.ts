@@ -60,6 +60,28 @@ export const lightStyle: StyleConfig = {
   codeBlock: { color: "blue", margin: 1 },
 };
 
+export const starsDarkStyle: StyleConfig = {
+  ...darkStyle,
+  blockQuote: { indent: 1, indentToken: "│ ", faint: true },
+  h1: {},
+  h2: {},
+  h3: {},
+  h4: {},
+  h5: {},
+  h6: {},
+  horizontalRule: { prefix: "────────", faint: true },
+  linkText: { color: "cyan" },
+};
+
+export const starsLightStyle: StyleConfig = {
+  ...starsDarkStyle,
+  blockQuote: { indent: 1, indentToken: "│ ", color: "blue" },
+  link: { color: "blue" },
+  linkText: { color: "blue" },
+  code: { blockPrefix: "`", blockSuffix: "`", color: "blue" },
+  codeBlock: { color: "blue", margin: 1 },
+};
+
 export const defaultStyleName = "dark";
 
 export const defaultStyles: Readonly<Record<string, StyleConfig>> = {
@@ -67,6 +89,8 @@ export const defaultStyles: Readonly<Record<string, StyleConfig>> = {
   dark: darkStyle,
   light: lightStyle,
   notty: asciiStyle,
+  starsdark: starsDarkStyle,
+  starslight: starsLightStyle,
 };
 
 export function normalizeStyleConfig(value: unknown): StyleConfig {

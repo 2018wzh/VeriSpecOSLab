@@ -6,7 +6,14 @@ import {
   sliceEndByDisplayWidth,
   stringDisplayWidth,
 } from "./display-width.ts";
-import { renderMarkdown, withPreservedNewLines, withWordWrap } from "../render/index.ts";
+import {
+  renderMarkdown,
+  starsDarkStyle,
+  starsLightStyle,
+  withPreservedNewLines,
+  withStyles,
+  withWordWrap,
+} from "../render/index.ts";
 import type { RenderLine } from "../render/index.ts";
 import { ScreenBuffer } from "./screen.ts";
 import {
@@ -16,6 +23,7 @@ import {
   type LogoCell,
 } from "./welcome-logo.ts";
 import type { Style } from "./style.ts";
+import type { StarsTuiTheme } from "./theme.ts";
 
 export type StarsViewSize = Readonly<{
   width: number;
@@ -73,6 +81,7 @@ export type StarsCommandPalette = Readonly<{
 export type StarsTuiState = Readonly<{
   status?: StarsTuiStatus;
   transcript?: readonly StarsTranscriptItem[];
+  theme?: StarsTuiTheme;
   /** Rendered transcript rows to keep below the visible viewport. */
   transcriptScrollOffset?: number;
   prompt: StarsPromptState;
@@ -183,6 +192,7 @@ export function measureStarsTranscriptViewport(
     state.transcript ?? [],
     width,
     state.debugLabels === true,
+    state.theme ?? "dark",
   ).length;
   const visibleRows = transcriptVisibleHeight(state, { width, height });
 
@@ -233,6 +243,7 @@ function renderCompactFrame(screen: ScreenBuffer, state: StarsTuiState): StarsVi
       state.transcript ?? [],
       screen.width,
       state.debugLabels === true,
+      state.theme ?? "dark",
     );
     if (transcriptRows.length === 0) {
       writeCenteredLine(screen, 0, "Welcome to VOS Agent", welcomeTitleStyle);
@@ -269,6 +280,7 @@ function renderTranscriptArea(screen: ScreenBuffer, state: StarsTuiState, height
     state.transcript ?? [],
     screen.width,
     state.debugLabels === true,
+    state.theme ?? "dark",
   );
   if (transcriptRows.length === 0) {
     renderWelcome(screen, height, state.welcomeFrame);
@@ -439,6 +451,7 @@ function renderTranscriptRows(
   items: readonly StarsTranscriptItem[],
   width: number,
   debugLabels: boolean,
+  theme: StarsTuiTheme,
 ): RenderedTextRow[] {
   const rows: RenderedTextRow[] = [];
   for (let index = 0; index < items.length; index += 1) {
@@ -452,7 +465,7 @@ function renderTranscriptRows(
     if (item.type === "user" && previous !== undefined && previous.type !== "user") {
       rows.push(transcriptSpacerRow());
     }
-    rows.push(...renderTranscriptItemRows(item, width, debugLabels));
+    rows.push(...renderTranscriptItemRows(item, width, debugLabels, theme));
     if (item.type === "user" && next !== undefined && next.type !== "user") {
       rows.push(transcriptSpacerRow());
     }
@@ -491,6 +504,7 @@ function renderTranscriptItemRows(
   item: StarsTranscriptItem,
   width: number,
   debugLabels: boolean,
+  theme: StarsTuiTheme,
 ): RenderedTextRow[] {
   switch (item.type) {
     case "user":
@@ -498,7 +512,7 @@ function renderTranscriptItemRows(
     case "assistant":
       return debugLabels
         ? prefixedRows("assistant", item.text, transcriptStyles.assistant, width)
-        : markdownRows(item.text, width);
+        : markdownRows(item.text, width, theme);
     case "command":
       return prefixedRows("command", item.text, transcriptStyles.command, width);
     case "error":
@@ -523,8 +537,13 @@ function plainRows(text: string, style: Style, width: number): RenderedTextRow[]
   return lines.flatMap((line) => wrapPrefixedLine("", line, "", style, width));
 }
 
-function markdownRows(text: string, width: number): RenderedTextRow[] {
-  const lines = renderMarkdown(text, withWordWrap(width), withPreservedNewLines()).lines;
+function markdownRows(text: string, width: number, theme: StarsTuiTheme): RenderedTextRow[] {
+  const lines = renderMarkdown(
+    text,
+    withStyles(theme === "light" ? starsLightStyle : starsDarkStyle),
+    withWordWrap(width),
+    withPreservedNewLines(),
+  ).lines;
   if (lines.length === 0) {
     return wrapPrefixedLine("", "", "", transcriptStyles.assistant, width);
   }
