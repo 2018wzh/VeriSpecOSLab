@@ -333,7 +333,9 @@ describe("Stars TUI view", () => {
 
     expect(firstRow).toContain("Read docs https://example.com and `code`.");
     expect(screen.getCell(linkX, 0).style).toEqual({ fg: "blue" });
+    expect(screen.getCell(linkX, 0).link).toBe("https://example.com");
     expect(screen.getCell(codeX, 0).style).toEqual({ fg: "blue" });
+    expect(screen.getCell(codeX, 0).link).toBeUndefined();
   });
 
   test("soft-wraps long assistant code fence rows instead of clipping them", () => {
@@ -346,6 +348,18 @@ describe("Stars TUI view", () => {
     expect(screenRows(screen)[1]).toBe(row(20, " delta"));
     expect(screen.getCell(0, 0).style).toEqual({ fg: "cyan" });
     expect(screen.getCell(0, 1).style).toEqual({ fg: "cyan" });
+  });
+
+  test("preserves styled trailing spaces inside assistant code fences", () => {
+    const screen = renderStarsView({
+      transcript: [{ type: "assistant", text: "```ts\nalpha  \n```" }],
+      prompt: { text: "" },
+    }, { width: 20, height: 6 });
+
+    expect(screenRows(screen)[0]).toBe(row(20, " alpha  "));
+    expect(screen.getCell(6, 0).style).toEqual({ fg: "cyan" });
+    expect(screen.getCell(7, 0).style).toEqual({ fg: "cyan" });
+    expect(screen.getCell(8, 0).style).toBe(defaultStyle);
   });
 
   test("renders wide assistant markdown cells without column drift", () => {

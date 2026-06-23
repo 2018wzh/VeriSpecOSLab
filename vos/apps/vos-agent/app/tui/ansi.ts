@@ -2,6 +2,8 @@ import { normalizeStyle } from "./style.ts";
 import type { AnsiColor, Style } from "./style.ts";
 
 const CSI = "\x1b[";
+const OSC = "\x1b]";
+const ST = "\x1b\\";
 
 type NamedColor = Exclude<AnsiColor, "default" | `#${string}`>;
 
@@ -59,6 +61,15 @@ export function sgr(style?: Style): string {
   return `${CSI}${codes.join(";")}m`;
 }
 
+export function hyperlinkStart(uri: string): string {
+  const sanitized = sanitizeOsc8Uri(uri);
+  return sanitized.length === 0 ? hyperlinkEnd() : `${OSC}8;;${sanitized}${ST}`;
+}
+
+export function hyperlinkEnd(): string {
+  return `${OSC}8;;${ST}`;
+}
+
 function colorCodes(color: Exclude<AnsiColor, "default">, target: "fg" | "bg"): string[] {
   const rgb = parseHexColor(color);
   if (rgb) {
@@ -83,6 +94,10 @@ function parseHexColor(color: string): { red: number; green: number; blue: numbe
     green: Number.parseInt(value.slice(2, 4), 16),
     blue: Number.parseInt(value.slice(4, 6), 16),
   };
+}
+
+function sanitizeOsc8Uri(uri: string): string {
+  return uri.replace(/[\u0000-\u001f\u007f]/g, "");
 }
 
 export function beginSynchronizedOutput(): string {

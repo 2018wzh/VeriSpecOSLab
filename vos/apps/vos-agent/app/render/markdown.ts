@@ -298,6 +298,7 @@ function renderCodeBlock(node: MarkdownNode, ctx: RenderContext): RenderLine[] {
     ctx.options.wordWrap,
     indentSegments,
     indentSegments,
+    true,
   );
 }
 
@@ -387,8 +388,12 @@ function renderDecoratedInline(
 }
 
 function renderLink(node: MarkdownNode, ctx: RenderContext, style?: Style): RenderSegment[] {
-  const label = renderInlineChildren(node.children ?? [], ctx, mergeTerminalStyle(style, primitiveStyle(ctx, ctx.options.styles.linkText)));
   const href = resolveUrl(ctx.options.baseUrl, node.url ?? "");
+  const link = href.length > 0 && !href.startsWith("#") ? href : undefined;
+  const label = linkSegments(
+    renderInlineChildren(node.children ?? [], ctx, mergeTerminalStyle(style, primitiveStyle(ctx, ctx.options.styles.linkText))),
+    link,
+  );
   if (!ctx.options.inlineLinks || href.length === 0 || href.startsWith("#")) {
     return label;
   }
@@ -396,7 +401,7 @@ function renderLink(node: MarkdownNode, ctx: RenderContext, style?: Style): Rend
   return compactSegments([
     ...label,
     ...makeInlineSegments(" ", style),
-    ...makeInlineSegments(href, linkStyle),
+    ...makeInlineSegments(href, linkStyle, link),
   ]);
 }
 
@@ -440,8 +445,18 @@ function columnWidths(rows: readonly (readonly (readonly RenderSegment[])[])[]):
   return widths;
 }
 
-function makeInlineSegments(text: string, style?: Style): RenderSegment[] {
-  return text.length === 0 ? [] : [{ text, style }];
+function makeInlineSegments(text: string, style?: Style, link?: string): RenderSegment[] {
+  return text.length === 0
+    ? []
+    : [{ text, style, ...(link === undefined ? {} : { link }) }];
+}
+
+function linkSegments(segments: readonly RenderSegment[], link: string | undefined): RenderSegment[] {
+  if (link === undefined) {
+    return segments.slice();
+  }
+
+  return segments.map((segment) => ({ ...segment, link }));
 }
 
 function primitiveStyle(ctx: RenderContext, primitive: StylePrimitive | undefined): Style | undefined {

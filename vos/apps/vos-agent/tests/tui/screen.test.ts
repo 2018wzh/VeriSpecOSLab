@@ -147,6 +147,21 @@ describe("TUI screen buffer", () => {
     expect(stripAnsi(output)).toBe("x");
   });
 
+  test("renders OSC-8 hyperlinks for linked cells and closes them before plain text", () => {
+    const current = new ScreenBuffer(8, 1);
+
+    current.writeText(0, 0, "docs", { fg: "blue" }, "https://example.com/docs");
+    current.writeText(4, 0, " ok");
+    const output = renderScreenDiff(undefined, current);
+
+    expect(output).toContain("\x1b]8;;https://example.com/docs\x1b\\");
+    expect(output.indexOf("docs")).toBeLessThan(output.indexOf("\x1b]8;;\x1b\\"));
+    expect(output.indexOf("\x1b]8;;\x1b\\")).toBeLessThan(output.indexOf(" ok"));
+    expect(stripAnsi(output).replace(/\x1b\]8;;[^\x1b]*\x1b\\/g, "")).toBe("docs ok ");
+    expect(current.getCell(0, 0).link).toBe("https://example.com/docs");
+    expect(current.getCell(4, 0).link).toBeUndefined();
+  });
+
   test("clearing a cell rewrites it as a default styled space", () => {
     const previous = new ScreenBuffer(2, 1);
     previous.writeCell(1, 0, "X", { bold: true, fg: "red" });

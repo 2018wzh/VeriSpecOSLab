@@ -121,6 +121,7 @@ type RenderedTextRow = Readonly<{
 type RenderedTextCell = Readonly<{
   glyph: string;
   style?: Style;
+  link?: string;
 }>;
 
 type PromptContentLayout = Readonly<{
@@ -177,6 +178,8 @@ const promptBorderLabelLeftPadding = 1;
 const promptBorderLabelRightPadding = 3;
 const toolPreviewMaxLength = 160;
 const welcomeLogoTimeStep = 0.08;
+const markdownRowCacheMaxEntries = 250;
+const markdownRowCache = new Map<string, readonly RenderedTextRow[]>();
 
 export function renderStarsView(state: StarsTuiState, size: StarsViewSize): ScreenBuffer {
   return renderStarsViewFrame(state, size).screen;
@@ -538,6 +541,14 @@ function plainRows(text: string, style: Style, width: number): RenderedTextRow[]
 }
 
 function markdownRows(text: string, width: number, theme: StarsTuiTheme): RenderedTextRow[] {
+  const cacheKey = markdownRowsCacheKey(text, width, theme);
+  const cached = markdownRowCache.get(cacheKey);
+  if (cached !== undefined) {
+    markdownRowCache.delete(cacheKey);
+    markdownRowCache.set(cacheKey, cached);
+    return cached.slice();
+  }
+
   const lines = renderMarkdown(
     text,
     withStyles(theme === "light" ? starsLightStyle : starsDarkStyle),
@@ -548,7 +559,19 @@ function markdownRows(text: string, width: number, theme: StarsTuiTheme): Render
     return wrapPrefixedLine("", "", "", transcriptStyles.assistant, width);
   }
 
-  return lines.map(markdownLineToRow);
+  const rows = lines.map(markdownLineToRow);
+  markdownRowCache.set(cacheKey, rows);
+  if (markdownRowCache.size > markdownRowCacheMaxEntries) {
+    const oldestKey = markdownRowCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      markdownRowCache.delete(oldestKey);
+    }
+  }
+  return rows.slice();
+}
+
+function markdownRowsCacheKey(text: string, width: number, theme: StarsTuiTheme): string {
+  return `${theme}\0${width}\0${text}`;
 }
 
 function markdownLineToRow(line: RenderLine): RenderedTextRow {
@@ -557,7 +580,7 @@ function markdownLineToRow(line: RenderLine): RenderedTextRow {
   for (const segment of line.segments) {
     text += segment.text;
     for (const glyph of segment.text) {
-      cells.push({ glyph, style: segment.style });
+      cells.push({ glyph, style: segment.style, link: segment.link });
     }
   }
 
@@ -1158,7 +1181,7 @@ function writeCells(
     if (targetX >= screen.width) {
       break;
     }
-    screen.writeCell(targetX, y, cell.glyph, cell.style);
+    screen.writeCell(targetX, y, cell.glyph, cell.style, cell.link);
   }
 }
 

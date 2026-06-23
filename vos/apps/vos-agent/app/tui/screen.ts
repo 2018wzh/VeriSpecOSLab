@@ -1,4 +1,4 @@
-import { cursorTo, sgr } from "./ansi.ts";
+import { cursorTo, hyperlinkEnd, hyperlinkStart, sgr } from "./ansi.ts";
 import { printableCellWidth } from "./display-width.ts";
 import { defaultStyle, normalizeStyle, stylesEqual } from "./style.ts";
 import type { Style } from "./style.ts";
@@ -7,12 +7,14 @@ import type { PrintableCellWidth } from "./display-width.ts";
 export type Cell = Readonly<{
   char: string;
   style: Style;
+  link?: string;
 }>;
 
 type MutableCell = {
   char: string;
   style: Style;
   width: DisplayCellWidth;
+  link?: string;
 };
 
 const blankChar = " ";
@@ -53,9 +55,9 @@ export class ScreenBuffer {
     return this.cells[this.indexOf(x, y)].width;
   }
 
-  writeCell(x: number, y: number, char: string, style?: Style): this {
+  writeCell(x: number, y: number, char: string, style?: Style, link?: string): this {
     const targetIndex = this.indexOf(x, y);
-    const cell = createCell(char, style);
+    const cell = createCell(char, style, link);
 
     this.clearCellFootprint(x, y);
     if (cell.width === 2) {
@@ -66,7 +68,7 @@ export class ScreenBuffer {
 
       this.clearCellFootprint(x + 1, y);
       this.cells[targetIndex] = cell;
-      this.cells[targetIndex + 1] = createContinuationCell(cell.style);
+      this.cells[targetIndex + 1] = createContinuationCell(cell.style, cell.link);
       return this;
     }
 
@@ -74,7 +76,7 @@ export class ScreenBuffer {
     return this;
   }
 
-  writeText(x: number, y: number, text: string, style?: Style): this {
+  writeText(x: number, y: number, text: string, style?: Style, link?: string): this {
     assertInBoundsY(y, this.height);
 
     let offset = 0;
@@ -90,7 +92,7 @@ export class ScreenBuffer {
         break;
       }
 
-      this.writeCell(targetX, y, char, style);
+      this.writeCell(targetX, y, char, style, link);
     }
 
     return this;
@@ -157,6 +159,7 @@ export function renderScreenDiff(
   // unchanged cells causes visible flicker in real terminals and tmux.
   let output = "";
   let activeStyle: Style | undefined;
+  let activeLink: string | undefined;
 
   for (let y = 0; y < current.height; y += 1) {
     let x = 0;
@@ -165,6 +168,11 @@ export function renderScreenDiff(
       if (!cellChanged(previous, current, x, y)) {
         x += 1;
         continue;
+      }
+
+      if (activeLink !== undefined) {
+        output += hyperlinkEnd();
+        activeLink = undefined;
       }
 
       output += cursorTo(y + 1, x + 1);
@@ -178,6 +186,16 @@ export function renderScreenDiff(
 
         const cell = current.getCell(x, y);
 
+        if (activeLink !== cell.link) {
+          if (activeLink !== undefined) {
+            output += hyperlinkEnd();
+          }
+          if (cell.link !== undefined) {
+            output += hyperlinkStart(cell.link);
+          }
+          activeLink = cell.link;
+        }
+
         if (activeStyle === undefined || !stylesEqual(activeStyle, cell.style)) {
           output += sgr(cell.style);
           activeStyle = cell.style;
@@ -187,6 +205,10 @@ export function renderScreenDiff(
         x += cellWidth;
       }
     }
+  }
+
+  if (activeLink !== undefined) {
+    output += hyperlinkEnd();
   }
 
   if (activeStyle !== undefined && !stylesEqual(activeStyle, defaultStyle)) {
@@ -210,7 +232,9 @@ function cellChanged(
 }
 
 function cellsEqual(left: Cell, right: Cell): boolean {
-  return left.char === right.char && stylesEqual(left.style, right.style);
+  return left.char === right.char
+    && stylesEqual(left.style, right.style)
+    && left.link === right.link;
 }
 
 function cellsEqualAt(left: ScreenBuffer, right: ScreenBuffer, x: number, y: number): boolean {
@@ -218,37 +242,61 @@ function cellsEqualAt(left: ScreenBuffer, right: ScreenBuffer, x: number, y: num
     && left.getCellWidth(x, y) === right.getCellWidth(x, y);
 }
 
-function createCell(char: string, style: Style | undefined): MutableCell {
+function createCell(char: string, style: Style | undefined, link?: string): MutableCell {
   const sanitized = sanitizeCellInput(char);
 
-  return {
+  const cell: MutableCell = {
     char: sanitized.char,
     style: copyStyle(normalizeStyle(style)),
     width: sanitized.width,
   };
+
+  if (link !== undefined && link.length > 0) {
+    cell.link = link;
+  }
+
+  return cell;
 }
 
-function createContinuationCell(style: Style): MutableCell {
-  return {
+function createContinuationCell(style: Style, link: string | undefined): MutableCell {
+  const cell: MutableCell = {
     char: blankChar,
     style: copyStyle(style),
     width: 0,
   };
+
+  if (link !== undefined) {
+    cell.link = link;
+  }
+
+  return cell;
 }
 
 function copyPublicCell(cell: MutableCell): Cell {
-  return {
+  const publicCell: { char: string; style: Style; link?: string } = {
     char: cell.char,
     style: copyStyle(cell.style),
   };
+
+  if (cell.link !== undefined) {
+    publicCell.link = cell.link;
+  }
+
+  return publicCell;
 }
 
 function copyMutableCell(cell: MutableCell): MutableCell {
-  return {
+  const copy: MutableCell = {
     char: cell.char,
     style: copyStyle(cell.style),
     width: cell.width,
   };
+
+  if (cell.link !== undefined) {
+    copy.link = cell.link;
+  }
+
+  return copy;
 }
 
 function copyStyle(style: Style): Style {

@@ -6,6 +6,7 @@ type StyledChar = Readonly<{
   char: string;
   width: number;
   style?: Style;
+  link?: string;
 }>;
 
 export function renderedMarkdownToText(lines: readonly RenderLine[]): string {
@@ -27,10 +28,11 @@ export function wrapSegmentLines(
   width: number,
   firstPrefix: readonly RenderSegment[] = [],
   continuationPrefix: readonly RenderSegment[] = [],
+  preserveTrailingSpaces = false,
 ): RenderLine[] {
   const rendered: RenderLine[] = [];
   for (const line of lines.length > 0 ? lines : [[]]) {
-    rendered.push(...wrapSegments(line, width, firstPrefix, continuationPrefix));
+    rendered.push(...wrapSegments(line, width, firstPrefix, continuationPrefix, preserveTrailingSpaces));
   }
   return rendered;
 }
@@ -40,6 +42,7 @@ export function wrapSegments(
   width: number,
   firstPrefix: readonly RenderSegment[] = [],
   continuationPrefix: readonly RenderSegment[] = [],
+  preserveTrailingSpaces = false,
 ): RenderLine[] {
   const rows: RenderLine[] = [];
   const chars = flattenSegments(segments);
@@ -50,7 +53,7 @@ export function wrapSegments(
     const prefix = first ? firstPrefix : continuationPrefix;
     const prefixWidth = segmentWidth(prefix);
     const available = width > 0 ? Math.max(1, width - prefixWidth) : Number.POSITIVE_INFINITY;
-    const chunk = takeWrappedChunk(remaining, available);
+    const chunk = takeWrappedChunk(remaining, available, preserveTrailingSpaces);
     rows.push({
       segments: compactSegments([
         ...prefix,
@@ -71,7 +74,7 @@ export function hardBreakSegments(segments: readonly RenderSegment[]): RenderSeg
     for (let index = 0; index < parts.length; index += 1) {
       const part = parts[index] ?? "";
       if (part.length > 0) {
-        lines[lines.length - 1]?.push({ text: part, style: segment.style });
+        lines[lines.length - 1]?.push(renderSegment(part, segment.style, segment.link));
       }
       if (index + 1 < parts.length) {
         lines.push([]);
@@ -112,10 +115,11 @@ export function compactSegments(segments: readonly RenderSegment[]): RenderSegme
       continue;
     }
     const previous = compacted.at(-1);
-    if (previous && stylesEqual(previous.style, segment.style)) {
+    if (previous && stylesEqual(previous.style, segment.style) && previous.link === segment.link) {
       compacted[compacted.length - 1] = {
         text: `${previous.text}${segment.text}`,
         style: previous.style,
+        ...(previous.link === undefined ? {} : { link: previous.link }),
       };
       continue;
     }
@@ -124,12 +128,16 @@ export function compactSegments(segments: readonly RenderSegment[]): RenderSegme
   return compacted;
 }
 
-function takeWrappedChunk(chars: readonly StyledChar[], width: number): {
+function takeWrappedChunk(
+  chars: readonly StyledChar[],
+  width: number,
+  preserveTrailingSpaces: boolean,
+): {
   chars: StyledChar[];
   remaining: StyledChar[];
 } {
   if (!Number.isFinite(width) || charsWidth(chars) <= width) {
-    return { chars: trimEndChars(chars), remaining: [] };
+    return { chars: preserveTrailingSpaces ? chars.slice() : trimEndChars(chars), remaining: [] };
   }
 
   let fitEnd = 0;
@@ -158,14 +166,18 @@ function takeWrappedChunk(chars: readonly StyledChar[], width: number): {
     }
   }
 
-  const end = breakEnd !== undefined && breakEnd > 0 ? breakEnd : fitEnd;
+  const end = breakEnd !== undefined && breakEnd > 0
+    ? preserveTrailingSpaces ? breakEnd + 1 : breakEnd
+    : fitEnd;
   let nextStart = breakEnd !== undefined && breakEnd > 0 ? breakNextStart ?? end : end;
-  while (nextStart < chars.length && isBreakableSpace(chars[nextStart]?.char ?? "")) {
+  while (!preserveTrailingSpaces && nextStart < chars.length && isBreakableSpace(chars[nextStart]?.char ?? "")) {
     nextStart += 1;
   }
 
   return {
-    chars: trimEndChars(chars.slice(0, Math.max(1, end))),
+    chars: preserveTrailingSpaces
+      ? chars.slice(0, Math.max(1, end))
+      : trimEndChars(chars.slice(0, Math.max(1, end))),
     remaining: chars.slice(nextStart),
   };
 }
@@ -178,6 +190,7 @@ function flattenSegments(segments: readonly RenderSegment[]): StyledChar[] {
         char,
         width: displayCellWidth(char),
         style: segment.style,
+        link: segment.link,
       });
     }
   }
@@ -185,10 +198,15 @@ function flattenSegments(segments: readonly RenderSegment[]): StyledChar[] {
 }
 
 function charsToSegments(chars: readonly StyledChar[]): RenderSegment[] {
-  return compactSegments(chars.map((char) => ({
-    text: char.char,
-    style: char.style,
-  })));
+  return compactSegments(chars.map((char) => renderSegment(char.char, char.style, char.link)));
+}
+
+function renderSegment(text: string, style: Style | undefined, link: string | undefined): RenderSegment {
+  return {
+    text,
+    style,
+    ...(link === undefined ? {} : { link }),
+  };
 }
 
 function trimEndChars(chars: readonly StyledChar[]): StyledChar[] {

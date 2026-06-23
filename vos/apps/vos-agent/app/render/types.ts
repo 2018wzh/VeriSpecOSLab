@@ -3,6 +3,7 @@ import type { Style } from "../tui/style.ts";
 export type RenderSegment = Readonly<{
   text: string;
   style?: Style;
+  link?: string;
 }>;
 
 export type RenderLine = Readonly<{
