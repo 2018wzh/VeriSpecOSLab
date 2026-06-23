@@ -6,6 +6,7 @@ import {
   withStyles,
   withWordWrap,
 } from "../../app/render/index.ts";
+import { stringDisplayWidth } from "../../app/tui/display-width.ts";
 
 describe("markdown renderer", () => {
   test("keeps visible URL fallbacks while marking link text as clickable", () => {
@@ -105,5 +106,96 @@ describe("markdown renderer", () => {
       text: "const",
       style: { bold: true, fg: "cyan" },
     });
+  });
+
+  test("wraps wide markdown tables to the configured terminal width", () => {
+    const rendered = renderMarkdown(
+      [
+        "| Feature | Details |",
+        "| --- | --- |",
+        "| Markdown tables | wrap long cells instead of clipping |",
+      ].join("\n"),
+      withStyles(starsDarkStyle),
+      withWordWrap(28),
+    );
+
+    const texts = rendered.lines.map((line) => segmentsToText(line.segments));
+
+    expect(texts.every((line) => line.length <= 28)).toBe(true);
+    expect(texts).toEqual([
+      "Feature      | Details      ",
+      "-------------|--------------",
+      "Markdown     | wrap long    ",
+      "tables       | cells        ",
+      "             | instead of   ",
+      "             | clipping     ",
+    ]);
+  });
+
+  test("keeps no-wrap and compact table separator behavior stable", () => {
+    const compact = renderMarkdown(
+      [
+        "| A | B |",
+        "| --- | --- |",
+        "| c | d |",
+      ].join("\n"),
+      withStyles(starsDarkStyle),
+      withWordWrap(80),
+    );
+    const noWrap = renderMarkdown(
+      [
+        "| Feature | Details |",
+        "| --- | --- |",
+        "| Markdown tables | wrap long cells instead of clipping |",
+      ].join("\n"),
+      withStyles(starsDarkStyle),
+      withWordWrap(0),
+    );
+    const narrow = renderMarkdown(
+      [
+        "| A | B |",
+        "| --- | --- |",
+        "| c | d |",
+      ].join("\n"),
+      withStyles(starsDarkStyle),
+      withWordWrap(5),
+    );
+
+    expect(compact.lines.map((line) => segmentsToText(line.segments))).toEqual([
+      "A | B",
+      "----|----",
+      "c | d",
+    ]);
+    expect(noWrap.lines.map((line) => segmentsToText(line.segments))).toEqual([
+      "Feature         | Details                            ",
+      "----------------|------------------------------------",
+      "Markdown tables | wrap long cells instead of clipping",
+    ]);
+    expect(narrow.lines.map((line) => segmentsToText(line.segments))).toEqual([
+      "A | B",
+      "--|--",
+      "c | d",
+    ]);
+  });
+
+  test("fits markdown tables with wide glyph cells by display width", () => {
+    const rendered = renderMarkdown(
+      [
+        "| 名 | 说明 |",
+        "| --- | --- |",
+        "| 好 | 非常长 |",
+      ].join("\n"),
+      withStyles(starsDarkStyle),
+      withWordWrap(10),
+    );
+    const texts = rendered.lines.map((line) => segmentsToText(line.segments));
+
+    expect(texts.every((line) => stringDisplayWidth(line) <= 10)).toBe(true);
+    expect(texts).toEqual([
+      "名 | 说明 ",
+      "---|------",
+      "好 | 非常 ",
+      "   | 长   ",
+    ]);
   });
 });

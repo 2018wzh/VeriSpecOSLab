@@ -378,6 +378,29 @@ describe("Stars TUI view", () => {
     expect(screen.getCell(commentX, 0).style).toEqual({ dim: true, fg: "cyan" });
   });
 
+  test("wraps wide assistant markdown tables instead of clipping columns", () => {
+    const screen = renderStarsView({
+      transcript: [{
+        type: "assistant",
+        text: [
+          "| Feature | Details |",
+          "| --- | --- |",
+          "| Markdown tables | wrap long cells instead of clipping |",
+        ].join("\n"),
+      }],
+      prompt: { text: "" },
+    }, { width: 28, height: 11 });
+
+    expect(screenRows(screen).slice(0, 6)).toEqual([
+      "Feature      | Details      ",
+      "-------------|--------------",
+      "Markdown     | wrap long    ",
+      "tables       | cells        ",
+      "             | instead of   ",
+      "             | clipping     ",
+    ]);
+  });
+
   test("renders wide assistant markdown cells without column drift", () => {
     const screen = renderStarsView({
       transcript: [{ type: "assistant", text: "**你好** ok" }],

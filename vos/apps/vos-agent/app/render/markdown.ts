@@ -443,12 +443,16 @@ function renderTable(node: MarkdownNode, ctx: RenderContext): RenderLine[] {
     return [];
   }
 
-  const widths = columnWidths(rows);
+  const naturalWidths = columnWidths(rows);
+  const fitToWidth = shouldFitTable(naturalWidths, ctx.options.wordWrap);
+  const widths = fitToWidth
+    ? fittedTableColumnWidths(naturalWidths, tableMinimumColumnWidths(rows), ctx.options.wordWrap)
+    : naturalWidths;
   const rendered: RenderLine[] = [];
   rows.forEach((row, rowIndex) => {
-    rendered.push(joinTableRow(row, widths, ctx));
+    rendered.push(...joinTableRow(row, widths, ctx));
     if (rowIndex === 0) {
-      rendered.push(textLine(widths.map((width) => "-".repeat(Math.max(3, width))).join("-|-"), primitiveStyle(ctx, ctx.options.styles.table)));
+      rendered.push(tableSeparatorLine(widths, fitToWidth, ctx));
     }
   });
   return rendered;
@@ -555,17 +559,92 @@ function joinTableRow(
   row: readonly (readonly RenderSegment[])[],
   widths: readonly number[],
   ctx: RenderContext,
-): RenderLine {
+): RenderLine[] {
   const style = primitiveStyle(ctx, ctx.options.styles.table);
-  const segments: RenderSegment[] = [];
-  row.forEach((cell, index) => {
-    if (index > 0) {
-      segments.push({ text: " | ", style });
+  const cellLines = widths.map((width, index) => wrapSegments(row[index] ?? [], width));
+  const height = Math.max(1, ...cellLines.map((lines) => lines.length));
+  const lines: RenderLine[] = [];
+
+  for (let lineIndex = 0; lineIndex < height; lineIndex += 1) {
+    const segments: RenderSegment[] = [];
+    widths.forEach((width, cellIndex) => {
+      if (cellIndex > 0) {
+        segments.push({ text: " | ", style });
+      }
+      const cellLine = cellLines[cellIndex]?.[lineIndex] ?? { segments: [] };
+      segments.push(...padSegmentLine(cellLine, width).segments);
+    });
+    lines.push({ segments: compactSegments(segments) });
+  }
+
+  return lines;
+}
+
+function tableSeparatorLine(widths: readonly number[], fitToWidth: boolean, ctx: RenderContext): RenderLine {
+  const style = primitiveStyle(ctx, ctx.options.styles.table);
+  const minSeparatorWidth = fitToWidth ? 1 : 3;
+  return textLine(widths.map((width) => "-".repeat(Math.max(minSeparatorWidth, width))).join("-|-"), style);
+}
+
+function fittedTableColumnWidths(
+  widths: readonly number[],
+  minimumWidths: readonly number[],
+  maxWidth: number,
+): number[] {
+  const fitted = widths.map((width) => Math.max(1, Math.trunc(width)));
+  if (fitted.length === 0) {
+    return fitted;
+  }
+
+  const separatorWidth = Math.max(0, fitted.length - 1) * 3;
+  if (!shouldFitTable(fitted, maxWidth)) {
+    return fitted;
+  }
+
+  const minimums = fitted.map((_, index) => Math.max(1, Math.trunc(minimumWidths[index] ?? 1)));
+  const availableCellWidth = Math.max(sumNumbers(minimums), Math.trunc(maxWidth) - separatorWidth);
+  let currentCellWidth = sumNumbers(fitted);
+  while (currentCellWidth > availableCellWidth) {
+    let widestIndex = -1;
+    let widestWidth = 1;
+    let secondWidestWidth = 1;
+    for (let index = 0; index < fitted.length; index += 1) {
+      const width = fitted[index] ?? 1;
+      if (width > widestWidth && width > (minimums[index] ?? 1)) {
+        secondWidestWidth = widestWidth;
+        widestWidth = width;
+        widestIndex = index;
+      } else if (width > secondWidestWidth) {
+        secondWidestWidth = width;
+      }
     }
-    const padded = padSegmentLine({ segments: cell }, widths[index] ?? 0);
-    segments.push(...padded.segments);
-  });
-  return { segments: compactSegments(segments) };
+
+    if (widestIndex < 0) {
+      break;
+    }
+
+    const minimum = minimums[widestIndex] ?? 1;
+    const maxDropToNextColumn = widestWidth - Math.max(minimum, secondWidestWidth);
+    const drop = Math.min(currentCellWidth - availableCellWidth, Math.max(1, maxDropToNextColumn));
+    fitted[widestIndex] = widestWidth - drop;
+    currentCellWidth -= drop;
+  }
+
+  return fitted;
+}
+
+function shouldFitTable(widths: readonly number[], maxWidth: number): boolean {
+  return Number.isFinite(maxWidth)
+    && maxWidth > 0
+    && Math.max(tableWidth(widths), tableWidth(widths.map((width) => Math.max(3, width)))) > Math.trunc(maxWidth);
+}
+
+function tableWidth(widths: readonly number[]): number {
+  return sumNumbers(widths) + Math.max(0, widths.length - 1) * 3;
+}
+
+function sumNumbers(values: readonly number[]): number {
+  return values.reduce((sum, value) => sum + value, 0);
 }
 
 function columnWidths(rows: readonly (readonly (readonly RenderSegment[])[])[]): number[] {
@@ -573,6 +652,20 @@ function columnWidths(rows: readonly (readonly (readonly RenderSegment[])[])[]):
   for (const row of rows) {
     row.forEach((cell, index) => {
       widths[index] = Math.max(widths[index] ?? 0, segmentsToText(cell).length, segmentWidth(cell));
+    });
+  }
+  return widths;
+}
+
+function tableMinimumColumnWidths(rows: readonly (readonly (readonly RenderSegment[])[])[]): number[] {
+  const widths: number[] = [];
+  for (const row of rows) {
+    row.forEach((cell, index) => {
+      for (const segment of cell) {
+        for (const char of segment.text) {
+          widths[index] = Math.max(widths[index] ?? 1, segmentWidth([{ text: char }]));
+        }
+      }
     });
   }
   return widths;
