@@ -50,6 +50,25 @@ attempt fails immediately; the test only asserts that the *router*
 resolved a backend (or correctly threw). It also verifies provider
 capability metadata exposed through the routed client.
 
+### Layer 1c: Terminal rendering primitives
+
+[tests/render/markdown.test.ts](../tests/render/markdown.test.ts)
+covers the Markdown renderer before it enters the full TUI: visible URL
+fallbacks plus OSC-8 link metadata, fenced-code wrapping and
+highlighting, GFM tables, nested task lists, responsive table fitting,
+and display-width-sensitive cases such as CJK cells.
+
+[tests/tui/screen.test.ts](../tests/tui/screen.test.ts) covers the
+screen buffer and terminal diff layer: Unicode cell widths, grapheme
+cluster preservation, wide-cell clearing, style diffs, OSC-8 hyperlink
+open/close handling, and sanitisation of control bytes.
+
+[tests/tui/stars-view.test.ts](../tests/tui/stars-view.test.ts) covers
+the integration boundary where assistant transcript Markdown becomes
+viewport rows. These tests assert theme-safe styles, code fence/table
+wrapping, clickable links, wide glyph alignment, and emoji grapheme
+cluster handling in rendered transcript cells.
+
 ### Layer 2: Tools
 
 [tests/tools/](../tests/tools/) — one file per tool plus

@@ -17,7 +17,10 @@
    request to the right provider based on the model identifier.
 5. The **session/context layer** persists local threads, injects scoped
    `AGENTS.md` guidance, and carries thread todos across turns.
-6. The **tools** are plain values that implement the `Tool` interface.
+6. The **terminal rendering layer** turns assistant Markdown into
+   styled, width-aware transcript rows without changing the raw
+   conversation history sent to providers.
+7. The **tools** are plain values that implement the `Tool` interface.
 
 This separation is what makes the loop testable in isolation, the LLM
 provider swappable, multi-provider mixing possible, and the tool set
@@ -37,6 +40,7 @@ app/
 ├── server/                   HTTP gateway, VOS-native agent routes, portal API
 ├── terminal/                 slash commands + interactive loop
 ├── tui/                      alternate-screen rendering + raw prompt input
+├── render/                   Markdown AST → styled terminal segments
 ├── output/                   stream-json helpers
 ├── agent/
 │   ├── loop.ts               runAgent({...}); ChatClient interface
@@ -107,6 +111,73 @@ app/
 
 The loop has no compile-time knowledge of the OpenAI SDK, the
 Anthropic SDK, or any specific tool. Everything is injected at boot.
+
+## Terminal Markdown rendering
+
+Assistant messages are stored and sent to providers as raw text. Only
+the human-facing TUI transcript renders Markdown. This keeps provider
+round-trips lossless while allowing the terminal UI to use rich
+formatting.
+
+```diagram
+╭────────────────────╮
+│ assistant text      │  raw transcript/provider payload
+╰─────────┬──────────╯
+          │ release TUI rendering only
+          ▼
+╭────────────────────╮
+│ render/markdown.ts  │  mdast + GFM → RenderLine[]
+│ TermRenderer        │  headings, lists, tables, code, links
+╰─────────┬──────────╯
+          │ styled RenderSegment{text, style, link}
+          ▼
+╭────────────────────╮
+│ render/layout.ts    │  grapheme-aware wrap/pad/hard-break
+╰─────────┬──────────╯
+          │ terminal-cell rows
+          ▼
+╭────────────────────╮
+│ tui/stars-view.ts   │  transcript cache + viewport layout
+╰─────────┬──────────╯
+          │ cells with style/link metadata
+          ▼
+╭────────────────────╮
+│ tui/screen.ts       │  diff renderer + SGR + OSC-8 links
+╰────────────────────╯
+```
+
+The render layer deliberately has two outputs:
+
+- `RenderSegment` carries text, terminal `Style`, and optional link
+  URI. This is the semantic output used by the TUI so clickable OSC-8
+  links survive wrapping and wide-cell layout.
+- Plain text helpers such as `renderMarkdownText` and
+  `renderedMarkdownToText` exist for tests and non-TTY fallbacks.
+
+`app/render/markdown.ts` owns Markdown semantics: parsing via mdast +
+GFM, block rendering, list/table layout decisions, visible URL
+fallbacks, and lightweight TypeScript/JavaScript/JSON fenced-code
+highlighting. Code highlighting is stateful across physical lines so
+block comments and template literals keep their style until the token
+actually closes.
+
+`app/render/layout.ts` owns terminal layout over render segments:
+wrapping, hard line breaks, padding, segment compaction, link
+preservation, and display-cell measurement. It uses the shared
+grapheme helpers in `app/tui/display-width.ts` so CJK text, emoji, and
+ZWJ clusters are never split into broken terminal cells.
+
+`app/tui/stars-view.ts` is the integration boundary. It renders
+assistant transcript items with `starsDarkStyle` or `starsLightStyle`,
+caches rendered Markdown rows by text/width/theme, and leaves user,
+command, tool, and error transcript rows on their simpler plain-text
+paths. Debug assistant labels also use plain text so diagnostics show
+the original payload.
+
+`app/tui/screen.ts` is the final terminal boundary. It stores style
+and link metadata per cell, tracks wide-cell continuations, and emits
+OSC-8 hyperlink open/close sequences only in the terminal diff. This
+keeps terminal-control concerns out of the Markdown renderer.
 
 ## The `ChatClient` seam
 
@@ -274,7 +345,14 @@ Tools and the loop emit results into messages and return values. The
 single `console.log(result.content)` at the end of `main()` is the
 only line that produces user-visible output.
 
-### 7. New env vars use a meaningful prefix
+### 7. Rendering never mutates conversation history
+
+The TUI may render assistant Markdown richly, but session transcripts
+and provider messages remain raw model text. Rendering-specific data
+(`Style`, OSC-8 links, terminal cell widths, caches) stays inside
+`app/render/` and `app/tui/`.
+
+### 8. New env vars use a meaningful prefix
 
 Provider-related settings use the provider's prefix (`OPENAI_*`,
 `ANTHROPIC_*`). Cross-cutting settings use a project prefix.
@@ -289,6 +367,7 @@ Provider-related settings use the provider's prefix (`OPENAI_*`,
 | Add a named mode (e.g. `cheap`)       | Add an entry to `Config.modes`; resolver picks it up    |
 | Mix models per turn                   | Wrap a `ChatClient` and rewrite `request.model`         |
 | Add retries / caching / telemetry     | Decorator around a `ChatClient`                         |
+| Change assistant Markdown rendering   | `app/render/` for semantics/layout; `app/tui/` for cells |
 | Stream responses                      | Extend `ChatClient` with `chatStream`; update loop      |
 | Persist conversations                 | Owner is `app/main.ts`; pass loaded messages to loop    |
 | Per-tool authorisation                | Middleware over `ToolRegistry.execute`                  |
