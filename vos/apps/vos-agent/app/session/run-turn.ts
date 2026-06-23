@@ -1,3 +1,4 @@
+import type OpenAI from "openai";
 import type { AgentEvent, ChatClient, ChatUsage } from "../agent/loop.ts";
 import { runAgent } from "../agent/loop.ts";
 import { resolve } from "node:path";
@@ -7,6 +8,7 @@ import {
   loadAgentGuidance,
   toAgentGuidanceRefs,
 } from "../context/agents.ts";
+import { loadProjectSkills } from "../context/skills.ts";
 import { createMcpToolProvider } from "../mcp/tools.ts";
 import { loadPluginManifests, pluginMcpServers, type McpServerConfig } from "../plugins/manifest.ts";
 import { createBuiltinToolRegistry } from "../tools/builtin.ts";
@@ -77,12 +79,20 @@ export async function runSessionTurn(
   } = opts;
   const resolvedWorkspaceRoot = resolve(workspaceRoot);
   const startDir = resolve(opts.startDir ?? workspaceRoot);
+  const guidance = loadAgentGuidance({
+    rootDir: resolvedWorkspaceRoot,
+    startDir,
+  });
+  const skills = loadProjectSkills({ rootDir: resolvedWorkspaceRoot });
+  const system = combineSystemPrompts(
+    opts.fixedSystemPrompt,
+    buildAgentSystemPrompt(guidance, skills),
+  );
 
   let thread: StoredThread;
   let turnModel: string;
   let turnMode: string | undefined;
   let turnReasoningEffort: ReasoningEffort | undefined;
-  let system: string | undefined;
   let threadEventType: "thread.created" | "thread.loaded";
   if (threadId) {
     thread = store.load(threadId);
@@ -105,11 +115,6 @@ export async function runSessionTurn(
     turnMode = mode;
     turnReasoningEffort = reasoningEffort;
     threadEventType = "thread.created";
-    const guidance = loadAgentGuidance({
-      rootDir: resolvedWorkspaceRoot,
-      startDir,
-    });
-    system = combineSystemPrompts(opts.fixedSystemPrompt, buildAgentSystemPrompt(guidance));
     thread = store.create({
       prompt,
       model: turnModel,
@@ -192,6 +197,9 @@ export async function runSessionTurn(
         await recordModelUsage(event.iteration, event.model, event.usage);
       }
     };
+    const historyForRun = threadId
+      ? prependSystemMessage(stripInstructionMessages(thread.messages), system)
+      : undefined;
     const registry = createBuiltinToolRegistry({
       rootDir: resolvedWorkspaceRoot,
       disabledTools: opts.disabledTools,
@@ -228,11 +236,11 @@ export async function runSessionTurn(
       reasoningEffort: turnReasoningEffort,
       maxIterations: opts.maxIterations,
       streamAssistant,
-      ...(threadId ? { history: thread.messages } : { system }),
+      ...(historyForRun ? { history: historyForRun } : { system }),
       onEvent: handleAgentEvent,
     });
 
-    thread.messages = result.messages;
+    thread.messages = stripInstructionMessages(result.messages);
     thread.model = turnModel;
     if (turnMode) {
       thread.mode = turnMode;
@@ -244,6 +252,7 @@ export async function runSessionTurn(
     } else {
       delete thread.reasoningEffort;
     }
+    thread.guidanceFiles = toAgentGuidanceRefs(guidance);
     thread.todos = todos.items;
     thread.usage = usage;
     store.save(thread);
@@ -281,4 +290,21 @@ function combineSystemPrompts(
     return `${fixedSystemPrompt}\n\n${workspaceSystemPrompt}`;
   }
   return fixedSystemPrompt ?? workspaceSystemPrompt;
+}
+
+function stripInstructionMessages(
+  messages: readonly OpenAI.Chat.ChatCompletionMessageParam[],
+): OpenAI.Chat.ChatCompletionMessageParam[] {
+  return messages.filter((message) =>
+    message.role !== "system" && message.role !== "developer"
+  );
+}
+
+function prependSystemMessage(
+  history: readonly OpenAI.Chat.ChatCompletionMessageParam[],
+  system: string | undefined,
+): OpenAI.Chat.ChatCompletionMessageParam[] {
+  return system
+    ? [{ role: "system", content: system }, ...history]
+    : [...history];
 }

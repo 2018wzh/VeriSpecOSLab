@@ -5,6 +5,7 @@ import {
   loadAgentGuidance,
   toAgentGuidanceRefs,
 } from "../../app/context/agents.ts";
+import type { ProjectSkill } from "../../app/context/skills.ts";
 import { makeTmpDir, removeTmpDir, writeFixture } from "../helpers/tmp.ts";
 
 describe("AGENTS.md guidance", () => {
@@ -38,12 +39,19 @@ describe("AGENTS.md guidance", () => {
   test("builds a VOS system prompt with guidance sections", () => {
     writeFixture(tmp, "AGENTS.md", "root rules\n");
     const files = loadAgentGuidance({ rootDir: tmp, startDir: tmp });
-    const prompt = buildAgentSystemPrompt(files);
+    const skills: ProjectSkill[] = [{
+      name: "code-review",
+      description: "Review code for correctness and risk.",
+      path: join(tmp, ".agents/skills/code-review/SKILL.md"),
+    }];
+    const prompt = buildAgentSystemPrompt(files, skills);
 
     expect(prompt).toContain("You are VOS Agent");
     expect(prompt).toContain("Use the Vos tool");
     expect(prompt).toContain(`# AGENTS.md instructions for ${tmp}`);
     expect(prompt).toContain("<INSTRUCTIONS>\nroot rules\n</INSTRUCTIONS>");
+    expect(prompt).toContain("# Available project skills");
+    expect(prompt).toContain("code-review: Review code for correctness and risk.");
   });
 
   test("returns the base VOS system prompt when no AGENTS files are present", () => {

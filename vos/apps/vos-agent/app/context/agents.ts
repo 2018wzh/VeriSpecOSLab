@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { AgentGuidanceFileRef } from "../session/types.ts";
+import type { ProjectSkill } from "./skills.ts";
 
 export interface AgentGuidanceFile {
   path: string;
@@ -36,6 +37,7 @@ export function loadAgentGuidance(
 
 export function buildAgentSystemPrompt(
   files: readonly AgentGuidanceFile[],
+  skills: readonly ProjectSkill[] = [],
 ): string | undefined {
   const sections = files.map((file) =>
     [
@@ -46,6 +48,16 @@ export function buildAgentSystemPrompt(
       "</INSTRUCTIONS>",
     ].join("\n"),
   );
+  const skillSections = skills.length === 0
+    ? []
+    : [
+        "# Available project skills",
+        "",
+        "When a listed skill is relevant, read its SKILL.md before doing that specialized work.",
+        ...skills.map((skill) =>
+          `- ${skill.name}: ${skill.description} (${skill.path})`
+        ),
+      ];
 
   return [
     "You are VOS Agent, the TypeScript coding-agent backend for VeriSpecOSLab.",
@@ -63,6 +75,8 @@ export function buildAgentSystemPrompt(
       : []),
     "",
     ...sections,
+    ...(sections.length > 0 && skillSections.length > 0 ? [""] : []),
+    ...skillSections,
   ].join("\n");
 }
 

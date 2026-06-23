@@ -86,7 +86,10 @@ describe("runSessionTurn", () => {
 
     expect(result.thread.id).toBe("T-session");
     expect(result.content).toBe("done");
-    expect(store.load("T-session").messages).toHaveLength(3);
+    expect(store.load("T-session").messages).toEqual([
+      { role: "user", content: "inspect" },
+      { role: "assistant", content: "done", refusal: null },
+    ]);
     expect(events).toEqual([
       "thread.created",
       "assistant.message",
@@ -151,6 +154,29 @@ describe("runSessionTurn", () => {
     });
   });
 
+  test("injects project skills into the system prompt", async () => {
+    writeFixture(tmp, ".agents/skills/review/SKILL.md", [
+      "---",
+      "name: review",
+      "description: Review code for correctness and risk.",
+      "---",
+      "# Review",
+    ].join("\n"));
+    const chat = new CallbackChatClient((request) => {
+      expect(String(request.messages[0].content)).toContain("# Available project skills");
+      expect(String(request.messages[0].content)).toContain("review: Review code for correctness and risk.");
+      return textResponse("done");
+    });
+
+    await runSessionTurn({
+      chat,
+      store,
+      workspaceRoot: tmp,
+      prompt: "inspect",
+      model: TEST_MODEL,
+    });
+  });
+
   test("continues an existing thread without duplicating guidance", async () => {
     const first = await runSessionTurn({
       chat: new CallbackChatClient(() => textResponse("first")),
@@ -161,6 +187,7 @@ describe("runSessionTurn", () => {
     });
 
     const chat = new CallbackChatClient((request) => {
+      expect(request.messages[0]).toMatchObject({ role: "system" });
       expect(request.messages.filter((m) => m.role === "user").map((m) => m.content)).toEqual([
         "first",
         "second",
@@ -177,8 +204,44 @@ describe("runSessionTurn", () => {
       model: TEST_MODEL,
     });
 
-    expect(second.thread.messages.filter((m) => m.role === "system")).toHaveLength(1);
+    expect(second.thread.messages.filter((m) => m.role === "system")).toHaveLength(0);
     expect(second.content).toBe("second done");
+  });
+
+  test("reloads AGENTS guidance dynamically when resuming a thread", async () => {
+    writeFixture(tmp, "AGENTS.md", "Use old guidance.");
+    const first = await runSessionTurn({
+      chat: new CallbackChatClient((request) => {
+        expect(String(request.messages[0].content)).toContain("Use old guidance.");
+        return textResponse("first");
+      }),
+      store,
+      workspaceRoot: tmp,
+      prompt: "first",
+      model: TEST_MODEL,
+    });
+    writeFixture(tmp, "AGENTS.md", "Use refreshed guidance.");
+
+    const second = await runSessionTurn({
+      chat: new CallbackChatClient((request) => {
+        expect(request.messages[0]).toMatchObject({ role: "system" });
+        expect(String(request.messages[0].content)).toContain("Use refreshed guidance.");
+        expect(String(request.messages[0].content)).not.toContain("Use old guidance.");
+        expect(request.messages.filter((m) => m.role === "user").map((m) => m.content)).toEqual([
+          "first",
+          "second",
+        ]);
+        return textResponse("second done");
+      }),
+      store,
+      workspaceRoot: tmp,
+      threadId: first.thread.id,
+      prompt: "second",
+      model: TEST_MODEL,
+    });
+
+    expect(second.thread.messages.filter((m) => m.role === "system")).toHaveLength(0);
+    expect(second.thread.guidanceFiles).toHaveLength(1);
   });
 
   test("continues with the stored model and mode unless overridden", async () => {
