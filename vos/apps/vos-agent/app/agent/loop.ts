@@ -1,6 +1,7 @@
 import type OpenAI from "openai";
 import type { ReasoningEffort } from "../config.ts";
 import type { ToolRegistry } from "../tools/types.ts";
+import { throwIfAborted } from "../cancellation.ts";
 
 export interface ChatRequest {
   /** Model identifier for this turn. Drives routing in multi-provider setups. */
@@ -11,12 +12,24 @@ export interface ChatRequest {
   tools: OpenAI.Chat.ChatCompletionFunctionTool[];
   /** Optional provider text streaming hook. Final messages are still returned by chat(). */
   onEvent?: (event: ChatStreamEvent) => void | Promise<void>;
+  /** Optional provider token-usage hook. */
+  onUsage?: (usage: ChatUsage) => void | Promise<void>;
+  /** Optional cancellation signal for provider requests. */
+  signal?: AbortSignal;
 }
 
 export type ChatStreamEvent = Readonly<{
   type: "text.delta";
   delta: string;
 }>;
+
+export interface ChatUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cachedInputTokens?: number;
+  cacheCreationInputTokens?: number;
+}
 
 export type ChatInputKind = "text" | "image" | "pdf";
 export type ChatInputCapabilities = Readonly<Record<ChatInputKind, boolean>>;
@@ -87,6 +100,8 @@ export interface RunAgentOptions {
   streamAssistant?: boolean;
   /** Optional lifecycle event hook for TUI/stream-json/session surfaces. */
   onEvent?: (event: AgentEvent) => void | Promise<void>;
+  /** Optional cancellation signal for the whole agent run. */
+  signal?: AbortSignal;
 }
 
 export type AgentEvent =
@@ -111,6 +126,12 @@ export type AgentEvent =
       toolCallId: string;
       name: string;
       content: string;
+    }
+  | {
+      type: "model.usage";
+      iteration: number;
+      model: string;
+      usage: ChatUsage;
     }
   | { type: "agent.done"; iteration: number; content: string | null };
 
@@ -144,12 +165,14 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     history,
     streamAssistant = false,
     onEvent,
+    signal,
   } = opts;
   if (!Number.isInteger(maxIterations) || maxIterations < 1) {
     throw new Error(
       `maxIterations must be a positive integer, got ${maxIterations}`,
     );
   }
+  throwIfAborted(signal);
 
   const tools = registry.schemas();
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = history
@@ -164,11 +187,13 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
   messages.push({ role: "user", content: prompt });
 
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
+    throwIfAborted(signal);
     const message = await chat.chat({
       model,
       reasoningEffort,
       messages,
       tools,
+      ...(signal ? { signal } : {}),
       ...(streamAssistant && onEvent
         ? {
             onEvent: async (event) => {
@@ -178,9 +203,17 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
             },
           }
         : {}),
+      ...(onEvent
+        ? {
+            onUsage: async (usage) => {
+              await onEvent({ type: "model.usage", iteration, model, usage });
+            },
+          }
+        : {}),
     });
     messages.push(message);
     await onEvent?.({ type: "assistant.message", iteration, message });
+    throwIfAborted(signal);
 
     const toolCalls = message.tool_calls;
     if (!toolCalls || toolCalls.length === 0) {
@@ -195,6 +228,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     }
 
     for (const call of toolCalls) {
+      throwIfAborted(signal);
       if (call.type !== "function") {
         throw new Error(`unsupported tool call type: ${call.type}`);
       }
@@ -202,7 +236,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       const result = await registry.execute(
         call.function.name,
         call.function.arguments,
+        { signal },
       );
+      throwIfAborted(signal);
       await onEvent?.({
         type: "tool.result",
         iteration,

@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { defineChatClientCapabilities } from "../agent/loop.ts";
 import type {
+  ChatUsage,
   ChatClient,
   ChatClientCapabilities,
   ChatRequest,
@@ -56,7 +57,7 @@ export function createOpenAIChatClient(
           ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
           messages: request.messages,
           tools: request.tools,
-        });
+        }, request.signal ? { signal: request.signal } : undefined);
       } catch (e) {
         throw new Error(
           `OpenAI chat request failed for model "${request.model}": ${formatError(e)}`,
@@ -68,6 +69,7 @@ export function createOpenAIChatClient(
           `OpenAI chat request for model "${request.model}" returned no choices`,
         );
       }
+      await emitOpenAIUsage(request, response.usage);
       return response.choices[0].message;
     },
   };
@@ -80,6 +82,7 @@ async function streamChatCompletion(
   const contentParts: string[] = [];
   const refusalParts: string[] = [];
   const toolCalls = new Map<number, StreamingToolCall>();
+  let usage: ChatUsage | undefined;
 
   try {
     const stream = await client.chat.completions.create({
@@ -88,9 +91,11 @@ async function streamChatCompletion(
       messages: request.messages,
       tools: request.tools,
       stream: true,
-    });
+      ...(request.onUsage ? { stream_options: { include_usage: true } } : {}),
+    }, request.signal ? { signal: request.signal } : undefined);
 
     for await (const chunk of stream) {
+      usage = openAIUsageToChatUsage(chunk.usage) ?? usage;
       const choice = chunk.choices[0];
       if (!choice) {
         continue;
@@ -147,5 +152,33 @@ async function streamChatCompletion(
     message.tool_calls = assembledToolCalls;
   }
 
+  if (usage) {
+    await request.onUsage?.(usage);
+  }
+
   return message;
+}
+
+async function emitOpenAIUsage(
+  request: ChatRequest,
+  usage: OpenAI.Completions.CompletionUsage | undefined,
+): Promise<void> {
+  const normalized = openAIUsageToChatUsage(usage);
+  if (normalized) {
+    await request.onUsage?.(normalized);
+  }
+}
+
+function openAIUsageToChatUsage(
+  usage: OpenAI.Completions.CompletionUsage | null | undefined,
+): ChatUsage | undefined {
+  if (!usage) return undefined;
+  return {
+    inputTokens: usage.prompt_tokens,
+    outputTokens: usage.completion_tokens,
+    totalTokens: usage.total_tokens,
+    ...(usage.prompt_tokens_details?.cached_tokens
+      ? { cachedInputTokens: usage.prompt_tokens_details.cached_tokens }
+      : {}),
+  };
 }

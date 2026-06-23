@@ -14,7 +14,14 @@ import { formatError } from "./common.ts";
 export interface Tool {
   readonly name: string;
   readonly schema: OpenAI.Chat.ChatCompletionFunctionTool;
-  execute(argumentsJson: string): string | Promise<string>;
+  execute(
+    argumentsJson: string,
+    context?: ToolExecutionContext,
+  ): string | Promise<string>;
+}
+
+export interface ToolExecutionContext {
+  signal?: AbortSignal;
 }
 
 export interface ToolExecutionRequest {
@@ -79,7 +86,11 @@ export class ToolRegistry {
       .map((t) => t.schema);
   }
 
-  async execute(name: string, argumentsJson: string): Promise<string> {
+  async execute(
+    name: string,
+    argumentsJson: string,
+    context: ToolExecutionContext = {},
+  ): Promise<string> {
     const tool = this.tools.get(name);
     if (!tool) {
       return `Unknown tool: ${name}`;
@@ -89,7 +100,7 @@ export class ToolRegistry {
       return formatPolicyDenied(name, policyDecision.reason);
     }
     try {
-      return await tool.execute(argumentsJson);
+      return await tool.execute(argumentsJson, context);
     } catch (e) {
       return `Error executing tool "${name}": ${formatError(e)}`;
     }

@@ -344,4 +344,109 @@ describe("runAgent", () => {
 
     expect(providerStreamingHookSeen).toBe(false);
   });
+
+  test("emits model usage reported by the chat client", async () => {
+    const chat = new ScriptedChatClient([textResponse("hello")]);
+    const registry = new ToolRegistry();
+    const events: string[] = [];
+
+    chat.chat = async (request) => {
+      await request.onUsage?.({
+        inputTokens: 10,
+        outputTokens: 3,
+        totalTokens: 13,
+      });
+      return textResponse("hello");
+    };
+
+    await runAgent({
+      model: TEST_MODEL,
+      chat,
+      registry,
+      prompt: "go",
+      onEvent(event) {
+        if (event.type === "model.usage") {
+          events.push(`${event.model}:${event.usage.totalTokens}`);
+        }
+      },
+    });
+
+    expect(events).toEqual([`${TEST_MODEL}:13`]);
+  });
+
+  test("passes AbortSignal through chat requests and tool executions", async () => {
+    const chat = new ScriptedChatClient([
+      toolCallResponse([{ name: "Read", args: { file_path: "x" }, id: "c1" }]),
+      textResponse("done"),
+    ]);
+    const controller = new AbortController();
+    let seenChatSignal: AbortSignal | undefined;
+    let seenToolSignal: AbortSignal | undefined;
+    const tool: Tool = {
+      name: "Read",
+      schema: recordingTool("Read", []).tool.schema,
+      execute(_args, context) {
+        seenToolSignal = context?.signal;
+        return "file contents";
+      },
+    };
+    const registry = new ToolRegistry([tool]);
+
+    const originalChat = chat.chat.bind(chat);
+    chat.chat = async (request) => {
+      seenChatSignal = request.signal;
+      return originalChat(request);
+    };
+
+    await runAgent({
+      model: TEST_MODEL,
+      chat,
+      registry,
+      prompt: "go",
+      signal: controller.signal,
+    });
+
+    expect(seenChatSignal).toBe(controller.signal);
+    expect(seenToolSignal).toBe(controller.signal);
+  });
+
+  test("throws before the first request when already aborted", async () => {
+    const chat = new ScriptedChatClient([textResponse("unused")]);
+    const registry = new ToolRegistry();
+    const controller = new AbortController();
+    controller.abort(new Error("stop now"));
+
+    await expect(runAgent({
+      model: TEST_MODEL,
+      chat,
+      registry,
+      prompt: "go",
+      signal: controller.signal,
+    })).rejects.toThrow(/stop now/);
+    expect(chat.callCount).toBe(0);
+  });
+
+  test("stops before tool execution when aborted after the model reply", async () => {
+    const controller = new AbortController();
+    const { tool, calls } = recordingTool("Write", ["OK"]);
+    const chat = new ScriptedChatClient([
+      toolCallResponse([{ name: "Write", args: { file_path: "x" } }]),
+    ]);
+    const registry = new ToolRegistry([tool]);
+
+    await expect(runAgent({
+      model: TEST_MODEL,
+      chat,
+      registry,
+      prompt: "go",
+      signal: controller.signal,
+      onEvent(event) {
+        if (event.type === "assistant.message") {
+          controller.abort(new Error("user canceled"));
+        }
+      },
+    })).rejects.toThrow(/user canceled/);
+
+    expect(calls).toEqual([]);
+  });
 });

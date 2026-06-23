@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
 import { defineChatClientCapabilities } from "../agent/loop.ts";
 import type {
+  ChatUsage,
   ChatClient,
   ChatClientCapabilities,
   ChatRequest,
@@ -82,7 +83,11 @@ export function createAnthropicChatClient(
           return await streamAnthropicMessage(client, body, request);
         }
 
-        const response = await client.messages.create(body);
+        const response = await client.messages.create(
+          body,
+          request.signal ? { signal: request.signal } : undefined,
+        );
+        await emitAnthropicUsage(request, response.usage);
         return fromAnthropicMessage(response);
       } catch (e) {
         throw new Error(
@@ -99,7 +104,10 @@ async function streamAnthropicMessage(
   body: AnthropicRequestBody,
   request: ChatRequest,
 ): Promise<OpenAI.Chat.ChatCompletionMessage> {
-  const stream = client.messages.stream(body as Anthropic.Messages.MessageStreamParams);
+  const stream = client.messages.stream(
+    body as Anthropic.Messages.MessageStreamParams,
+    request.signal ? { signal: request.signal } : undefined,
+  );
 
   for await (const event of stream) {
     if (event.type !== "content_block_delta" || event.delta.type !== "text_delta") {
@@ -110,5 +118,27 @@ async function streamAnthropicMessage(
     }
   }
 
-  return fromAnthropicMessage(await stream.finalMessage());
+  const message = await stream.finalMessage();
+  await emitAnthropicUsage(request, message.usage);
+  return fromAnthropicMessage(message);
+}
+
+async function emitAnthropicUsage(
+  request: ChatRequest,
+  usage: Anthropic.Messages.Usage | undefined,
+): Promise<void> {
+  if (!usage) return;
+  await request.onUsage?.(anthropicUsageToChatUsage(usage));
+}
+
+function anthropicUsageToChatUsage(usage: Anthropic.Messages.Usage): ChatUsage {
+  const cacheRead = (usage as { cache_read_input_tokens?: number }).cache_read_input_tokens;
+  const cacheCreation = (usage as { cache_creation_input_tokens?: number }).cache_creation_input_tokens;
+  return {
+    inputTokens: usage.input_tokens,
+    outputTokens: usage.output_tokens,
+    totalTokens: usage.input_tokens + usage.output_tokens,
+    ...(cacheRead ? { cachedInputTokens: cacheRead } : {}),
+    ...(cacheCreation ? { cacheCreationInputTokens: cacheCreation } : {}),
+  };
 }
