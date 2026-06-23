@@ -20,16 +20,7 @@
 
 ## 1. 定位
 
-`vos` 是 VeriSpecOSLab 的统一命令入口，其实现实体记为 `VOS Runtime`。它的职责不是替学生实现 OS，也不是替学生定义项目构建真相，而是把：
-
-```text
-本地 spec/
-  + ToolchainSpec
-  + 云端课程约束投影
-  + 受控命令执行
-```
-
-编排成一个可审计、可复现、可验证的开发与验证闭环。
+`vos` 是 VeriSpecOSLab 的统一命令入口，其背后的实现叫 `VOS Runtime`。它不负责替学生写 OS，也不替学生定义项目该怎么构建，而是把本地 spec/、ToolchainSpec、云端课程约束投影和受控命令执行编排成一个可审计、可复现的开发与验证闭环。
 
 统一入口示例：
 
@@ -71,26 +62,22 @@ Spec -> Agent -> Patch -> Build -> Test -> Verify -> Evidence -> Feedback
 
 `VOS Runtime` 必须支持以下能力：
 
-```text
 1. 为 Agent、学生 CLI 和平台 CI 提供稳定、结构化、可审计的命令接口。
 2. 将 spec lint、arch lint、build、QEMU、test、verify、trace、debug、report 纳入统一执行模型。
 3. 将每次 patch、测试和诊断绑定到本地 spec、证据和阶段约束。
 4. 让课程平台、在线评测和本地 DevBox 复用同一入口。
 5. 防止 Agent 绕过规格、测试、权限和审计要求。
-```
 
 ## 4. 非目标
 
 `VOS Runtime` 明确不做：
 
-```text
 1. 不提供越过当前 StageGate 的完整系统生成。
 2. 不允许无 Spec 直接生成核心模块实现。
 3. 不暴露 hidden tests 源码、mutation 点和 anti-gaming 规则。
 4. 不替代教师评分策略。
 5. 不向学生暴露不受控 shell。
 6. 不把 LLM prompt 当作唯一开发依据。
-```
 
 ## 5. 与 `specfs` 的关系
 

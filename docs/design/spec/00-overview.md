@@ -2,19 +2,7 @@
 
 ## 1. 目标
 
-VeriSpecOSLab 的 Spec 标准服务于以下闭环：
-
-```text
-Architecture Design
-  -> Module / Operation Spec
-  -> Toolchain Binding
-  -> Patch
-  -> Build / Test / Verify
-  -> Evidence / Report
-  -> Spec Evolution
-```
-
-标准的核心目标是：
+VeriSpecOSLab 的 Spec 标准服务于以下闭环 — Architecture Design → Module/Operation Spec → Toolchain Binding → Patch → Build/Test/Verify → Evidence/Report → Spec Evolution — 并由此展开四个核心目标：
 
 1. 让学生仓库中的 `spec/` 成为项目设计真相，而不是附属说明文档。
 2. 让 Agent 的 patch、测试和解释都能追溯到明确的 Spec 条款。
@@ -52,18 +40,7 @@ VeriSpecOSLab 不只保留“模块级 Spec”，还正式引入“操作级 Spe
 - 操作级 Spec 适合表达一个函数或一次系统调用的前后置条件、锁规则、失败语义和测试义务。
 - LLM 驱动开发真正需要的是操作级上下文，而不是只有高层设计摘要。
 
-因此标准采用三层表达：
-
-```text
-Architecture
-  -> 为什么这样设计
-
-Module
-  -> 模块状态、接口、边界、不变量
-
-Operation
-  -> 某个具体操作依赖什么、修改什么、保证什么、如何验证
-```
+因此标准采用三层表达：Architecture（为什么这样设计）→ Module（模块状态、接口、边界、不变量）→ Operation（具体操作依赖什么、修改什么、保证什么、如何验证）。
 
 ## 4. 与 specfs / SYSSPEC 方法的关系
 

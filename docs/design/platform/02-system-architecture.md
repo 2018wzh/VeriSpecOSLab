@@ -129,18 +129,9 @@
 
 ## 3. 同步与异步边界
 
-同步调用适用于：
+同步调用用于：登录、读取项目、提交设计、发起评审、创建实验、更新课程规则、获取可见性投影。
 
-- 登录、读取项目、提交设计、发起评审
-- 创建实验、更新课程规则、获取可见性投影
-
-异步调用适用于：
-
-- 仓库创建
-- Pipeline 执行
-- Judge 执行
-- 批量 evidence 归档
-- 教学分析聚合
+异步调用用于：仓库创建、Pipeline 执行、Judge 执行、批量 evidence 归档、教学分析聚合。
 
 ## 4. 关键调用链
 
@@ -214,7 +205,7 @@ object manifest、恢复 `.vos/kb/`，再运行 authenticated `vos agent ask`。
 - Repo 创建失败必须可重试且不能产生重复项目。
 - Pipeline 与 Judge 必须能关联到唯一的冻结输入和证据输出。
 - 本地 Agent 或 `vos` 在无法确定项目/身份/阶段时不得回退到 Portal-audited 模式。
-- Artifact Store 不得成为主状态真相，只保存证据、KB snapshot、web snapshot、runner replay manifest 与只读产物。
+- Artifact Store 不承担主状态存储的角色，只保存证据、KB snapshot、web snapshot、runner replay manifest 与只读产物。
 
 ## 7. VeriSpecOSLab 特化说明
 

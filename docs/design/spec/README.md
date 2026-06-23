@@ -1,6 +1,6 @@
 # VeriSpecOSLab Spec 文档标准
 
-本目录定义 VeriSpecOSLab 的完整 Spec 标准，用于约束：
+本目录定义 VeriSpecOSLab 的完整 Spec 标准，回答以下问题：
 
 - 学生在本地仓库中维护哪些 Spec
 - Agent 在生成 patch 前后必须读取和更新哪些 Spec
@@ -20,4 +20,4 @@ Spec 标准的消费与执行编排见 [`../toolchain/README.md`](../toolchain/R
 7. [06-verification-and-evidence.md](./06-verification-and-evidence.md)
 8. [07-authoring-rules.md](./07-authoring-rules.md)
 
-这些文档共同替代“单一总文档式 Spec 说明”，将标准拆成若干可独立演化、可被工具消费的部分。
+这些文档共同替代“单一总文档式 Spec 说明”，把标准拆成若干可独立演化、可被工具消费的模块。

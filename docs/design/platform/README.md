@@ -1,9 +1,9 @@
 # SpecLab Platform 文档集
 
-本目录定义 `SpecLab Platform` 的实现设计，用于约束：
+本目录描述 `SpecLab Platform` 的实现设计，涵盖以下问题：
 
 - 课程平台如何管理课程、实验、项目、阶段门禁、评分与审计
-- 平台如何消费 authenticated `vos` 产出的结构化摘要、evidence 与 report，并驱动仓库创建、验证、评测与反馈
+- 平台如何消费 `vos` 产出的结构化摘要、evidence 与 report，驱动仓库创建、验证、评测与反馈
 - 本地 Agent、CI、Judge、Portal 与运维系统如何围绕统一领域模型协同工作
 
 边界说明：
@@ -14,7 +14,6 @@
 - [`../workflow/README.md`](../workflow/README.md) 定义课程递进式工作流与教学过程。
 
 本目录只描述“平台实现设计”，不是课程讲义，也不是学生仓库规范。
-
 建议阅读顺序：
 
 1. [00-overview.md](./00-overview.md)

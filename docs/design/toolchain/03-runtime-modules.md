@@ -19,7 +19,7 @@
 
 ## 1. Workspace 划分
 
-目标实现使用 Bun / TypeScript workspace，最少包含以下 package：
+这里使用 Bun / TypeScript workspace，最少包含以下 package：
 
 ```text
 vos/

@@ -1,6 +1,6 @@
 # VeriSpecOSLab VOS Runtime 文档集
 
-本目录定义 VeriSpecOSLab 的 `VOS Runtime` / `VOS CLI` / `VOS Orchestrator` 设计，用于约束：
+本目录描述 VeriSpecOSLab 的 `VOS Runtime` / `VOS CLI` / `VOS Orchestrator` 设计，回答以下问题：
 
 - `vos` 如何读取本地 `spec/`、消费云端约束投影并编排验证流程
 - Bun / TypeScript 实现中各 package、数据模型、adapter 和执行模型如何划分
@@ -10,6 +10,7 @@
 
 - `spec/toolchain/` 描述学生项目的构建 / 链接 / 镜像 / 运行契约。
 - `docs/design/toolchain/` 描述 `vos` 如何消费这些契约并编排验证、证据采集与 Agent 协作流程。
+
 
 建议阅读顺序：
 

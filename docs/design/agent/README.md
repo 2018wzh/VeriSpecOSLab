@@ -4,6 +4,7 @@ This directory is the single target-state Agent design for SpecLab and
 VeriSpecOSLab. The previous split-agent design was removed by
 [`ADR-001-agent-identity-capability-refactor`](../adr/ADR-001-agent-identity-capability-refactor.md).
 
+
 ## Core Model
 
 The runtime exposes one strong project Agent runner. A session chooses exactly

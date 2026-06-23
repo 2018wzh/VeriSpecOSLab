@@ -1,6 +1,6 @@
 # VeriSpecOSLab / SpecLab Workflow 文档集
 
-本目录定义 VeriSpecOSLab / SpecLab 的课程递进式工作流，用于约束：
+本目录描述 VeriSpecOSLab / SpecLab 的课程递进式工作流，回答以下问题：
 
 - 课程如何从建课、发实验、阶段审核、验证、评分一路运行到最终复盘
 - 教师、助教、学生、平台、Agent 如何围绕同一实验周期协作
@@ -14,7 +14,6 @@
 - [`../arch.md`](../arch.md) 定义 Agent Runtime、DevBox 和 OpenAI-compatible 接入实现。
 
 本目录只回答“课程过程如何运转、角色如何交接、证据如何在教学中流动”，不重复定义平台内部 API、`vos` 内部执行模型或学生本地 Spec 语义。
-
 建议阅读顺序：
 
 1. [00-overview.md](./00-overview.md)
