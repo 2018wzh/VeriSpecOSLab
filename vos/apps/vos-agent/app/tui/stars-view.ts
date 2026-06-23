@@ -6,6 +6,8 @@ import {
   sliceEndByDisplayWidth,
   stringDisplayWidth,
 } from "./display-width.ts";
+import { renderMarkdown, withPreservedNewLines, withWordWrap } from "../render/index.ts";
+import type { RenderLine } from "../render/index.ts";
 import { ScreenBuffer } from "./screen.ts";
 import {
   logoColumnsForHeight,
@@ -496,7 +498,7 @@ function renderTranscriptItemRows(
     case "assistant":
       return debugLabels
         ? prefixedRows("assistant", item.text, transcriptStyles.assistant, width)
-        : plainRows(item.text, transcriptStyles.assistant, width);
+        : markdownRows(item.text, width);
     case "command":
       return prefixedRows("command", item.text, transcriptStyles.command, width);
     case "error":
@@ -519,6 +521,28 @@ function plainRows(text: string, style: Style, width: number): RenderedTextRow[]
   }
 
   return lines.flatMap((line) => wrapPrefixedLine("", line, "", style, width));
+}
+
+function markdownRows(text: string, width: number): RenderedTextRow[] {
+  const lines = renderMarkdown(text, withWordWrap(width), withPreservedNewLines()).lines;
+  if (lines.length === 0) {
+    return wrapPrefixedLine("", "", "", transcriptStyles.assistant, width);
+  }
+
+  return lines.map(markdownLineToRow);
+}
+
+function markdownLineToRow(line: RenderLine): RenderedTextRow {
+  const cells: RenderedTextCell[] = [];
+  let text = "";
+  for (const segment of line.segments) {
+    text += segment.text;
+    for (const glyph of segment.text) {
+      cells.push({ glyph, style: segment.style });
+    }
+  }
+
+  return { text, cells };
 }
 
 function userRows(text: string, width: number): RenderedTextRow[] {
@@ -1091,7 +1115,7 @@ function writeCenteredRow(screen: ScreenBuffer, y: number, row: RenderedTextRow)
     return;
   }
 
-  const x = Math.max(0, Math.floor((screen.width - row.cells.length) / 2));
+  const x = Math.max(0, Math.floor((screen.width - cellLength(row.text)) / 2));
   writeCells(screen, x, y, row.cells);
 }
 
@@ -1105,18 +1129,17 @@ function writeCells(
     return;
   }
 
-  for (let index = 0; index < cells.length; index += 1) {
-    const targetX = x + index;
+  let offset = 0;
+  for (const cell of cells) {
+    const targetX = x + offset;
+    offset += displayCellWidth(cell.glyph);
     if (targetX < 0) {
       continue;
     }
     if (targetX >= screen.width) {
       break;
     }
-    const cell = cells[index];
-    if (cell) {
-      screen.writeCell(targetX, y, cell.glyph, cell.style);
-    }
+    screen.writeCell(targetX, y, cell.glyph, cell.style);
   }
 }
 

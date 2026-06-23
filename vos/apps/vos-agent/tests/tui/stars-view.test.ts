@@ -297,6 +297,33 @@ describe("Stars TUI view", () => {
     expect(screenRows(debug)[0]).toBe(row(32, "assistant: final answer"));
   });
 
+  test("renders assistant markdown with styled cells in release views", () => {
+    const screen = renderStarsView({
+      transcript: [{ type: "assistant", text: "Use **strong** and `code`." }],
+      prompt: { text: "" },
+    }, { width: 40, height: 6 });
+    const firstRow = screenRows(screen)[0] ?? "";
+    const strongX = firstRow.indexOf("strong");
+    const codeX = firstRow.indexOf("`code`");
+
+    expect(firstRow).toBe(row(40, "Use strong and `code`."));
+    expect(screen.getCell(strongX, 0).style).toEqual({ bold: true });
+    expect(screen.getCell(codeX, 0).style).toEqual({ fg: "yellow" });
+  });
+
+  test("renders wide assistant markdown cells without column drift", () => {
+    const screen = renderStarsView({
+      transcript: [{ type: "assistant", text: "**你好** ok" }],
+      prompt: { text: "" },
+    }, { width: 20, height: 6 });
+
+    expect(screenRows(screen)[0]).toBe("你 好  ok             ");
+    expect(screen.getCell(0, 0).style).toEqual({ bold: true });
+    expect(screen.getCell(2, 0).style).toEqual({ bold: true });
+    expect(screen.getCell(4, 0).char).toBe(" ");
+    expect(screen.getCell(5, 0).char).toBe("o");
+  });
+
   test("colors mode labels differently for smart and deep prompt borders", () => {
     const smart = renderStarsView({
       status: { mode: "smart" },
