@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { isReasoningEffort, type ReasoningEffort } from "../config.ts";
 import type { AgentGuidanceFileRef, StoredThread, ThreadSummary, TodoItem } from "./types.ts";
 import { THREAD_SCHEMA_VERSION } from "./types.ts";
+import { emptyThreadUsage, validateStoredThreadUsage } from "./usage.ts";
 
 const THREAD_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
@@ -62,6 +63,7 @@ export class ThreadStore {
       guidanceFiles: [...(input.guidanceFiles ?? [])],
       messages: [],
       todos: [...(input.todos ?? [])],
+      usage: emptyThreadUsage(),
     };
   }
 
@@ -110,6 +112,7 @@ export class ThreadStore {
       todos: cloneJson(source.todos),
     });
     fork.messages = cloneJson(source.messages);
+    fork.usage = cloneJson(source.usage);
     this.save(fork);
     return fork;
   }
@@ -137,6 +140,7 @@ export class ThreadStore {
           ...(thread.reasoningEffort ? { reasoningEffort: thread.reasoningEffort } : {}),
           ...(thread.archivedAt ? { archivedAt: thread.archivedAt } : {}),
           messageCount: thread.messages.length,
+          usage: cloneJson(thread.usage),
           path: this.pathFor(thread.id),
         });
       } catch {
@@ -227,6 +231,7 @@ function validateStoredThread(value: unknown, path: string): StoredThread {
   if (!Array.isArray(thread.guidanceFiles)) {
     thread.guidanceFiles = [];
   }
+  thread.usage = validateStoredThreadUsage(thread.usage, path);
   return thread;
 }
 

@@ -1,5 +1,6 @@
 import type OpenAI from "openai";
 import type { ReasoningEffort } from "../config.ts";
+import type { ModelProvider } from "../llm/model-registry.ts";
 
 export const THREAD_SCHEMA_VERSION = 1 as const;
 
@@ -16,6 +17,33 @@ export interface AgentGuidanceFileRef {
   scopeDir: string;
 }
 
+export interface StoredUsageTotals {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cachedInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  estimatedCostUsd?: number;
+}
+
+export interface StoredModelUsage extends StoredUsageTotals {
+  model: string;
+  provider?: ModelProvider;
+  contextWindowTokens?: number;
+  lastContextWindowUsage?: number;
+}
+
+export interface StoredThreadUsage extends StoredUsageTotals {
+  byModel: StoredModelUsage[];
+}
+
+export interface ModelUsageEvent extends StoredUsageTotals {
+  model: string;
+  provider?: ModelProvider;
+  contextWindowTokens?: number;
+  contextWindowUsage?: number;
+}
+
 export interface StoredThread {
   schemaVersion: typeof THREAD_SCHEMA_VERSION;
   id: string;
@@ -30,6 +58,7 @@ export interface StoredThread {
   guidanceFiles: AgentGuidanceFileRef[];
   messages: OpenAI.Chat.ChatCompletionMessageParam[];
   todos: TodoItem[];
+  usage: StoredThreadUsage;
 }
 
 export interface ThreadSummary {
@@ -43,6 +72,7 @@ export interface ThreadSummary {
   reasoningEffort?: ReasoningEffort;
   archivedAt?: string;
   messageCount: number;
+  usage: StoredThreadUsage;
   path: string;
 }
 
@@ -101,6 +131,11 @@ export type SessionEvent =
       id: string;
       content: string;
     }
+  | ({
+      type: "model.usage";
+      thread_id: string;
+      iteration: number;
+    } & ModelUsageEvent)
   | {
       type: "agent.done";
       thread_id: string;
