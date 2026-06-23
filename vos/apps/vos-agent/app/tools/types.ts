@@ -1,4 +1,5 @@
 import type OpenAI from "openai";
+import { isAbortError, throwIfAborted } from "../cancellation.ts";
 import { formatError } from "./common.ts";
 
 /**
@@ -91,17 +92,23 @@ export class ToolRegistry {
     argumentsJson: string,
     context: ToolExecutionContext = {},
   ): Promise<string> {
+    throwIfAborted(context.signal);
     const tool = this.tools.get(name);
     if (!tool) {
       return `Unknown tool: ${name}`;
     }
     const policyDecision = await this.evaluatePolicy({ name, argumentsJson });
+    throwIfAborted(context.signal);
     if (!policyDecision.allowed) {
       return formatPolicyDenied(name, policyDecision.reason);
     }
     try {
-      return await tool.execute(argumentsJson, context);
+      const result = await tool.execute(argumentsJson, context);
+      throwIfAborted(context.signal);
+      return result;
     } catch (e) {
+      throwIfAborted(context.signal);
+      if (isAbortError(e)) throw e;
       return `Error executing tool "${name}": ${formatError(e)}`;
     }
   }
@@ -134,6 +141,31 @@ export function createDisabledToolsPolicy(
     canExecute: ({ name }) => disabled.has(normalizeToolName(name))
       ? { allowed: false, reason: "disabled by settings" }
       : { allowed: true },
+  };
+}
+
+export function composeToolPolicies(
+  ...policies: Array<ToolPolicy | undefined>
+): ToolPolicy | undefined {
+  const activePolicies = policies.filter((policy): policy is ToolPolicy => Boolean(policy));
+  if (activePolicies.length === 0) {
+    return undefined;
+  }
+
+  return {
+    canAdvertise: (tool) => {
+      return activePolicies.every((policy) =>
+        !policy.canAdvertise || policy.canAdvertise(tool),
+      );
+    },
+    canExecute: async (request) => {
+      for (const policy of activePolicies) {
+        if (!policy.canExecute) continue;
+        const decision = await policy.canExecute(request);
+        if (!decision.allowed) return decision;
+      }
+      return { allowed: true };
+    },
   };
 }
 

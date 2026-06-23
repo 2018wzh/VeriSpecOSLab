@@ -1,4 +1,5 @@
 import type { SettingsInput, SettingsModeDefinition } from "./settings.ts";
+import type { PermissionRule } from "./tools/permissions.ts";
 
 /**
  * Built-in mode names. Modes are presets that resolve to a model
@@ -57,6 +58,7 @@ export interface AnthropicConfig {
 
 export interface ToolConfig {
   disabled: string[];
+  permissions?: PermissionRule[];
 }
 
 export interface ChatRetryConfig {
@@ -168,7 +170,10 @@ export function loadConfig(
   return {
     defaultMode: trimToUndefined(settings.defaultMode) ?? DEFAULT_MODE,
     modes,
-    tools: { disabled: uniqueStrings(settings.disabledTools ?? []) },
+    tools: {
+      disabled: uniqueStrings(settings.disabledTools ?? []),
+      permissions: [...(settings.permissionRules ?? [])],
+    },
     chatRetry: {
       maxRetries: readNonNegativeInteger(env, "VOS_LLM_MAX_RETRIES", 0),
       initialDelayMs: readNonNegativeInteger(

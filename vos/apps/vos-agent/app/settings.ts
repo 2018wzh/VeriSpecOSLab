@@ -2,6 +2,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { isReasoningEffort, type ReasoningEffort } from "./config.ts";
+import type {
+  PermissionAction,
+  PermissionMatcher,
+  PermissionRule,
+  PermissionTarget,
+} from "./tools/permissions.ts";
 
 export interface SettingsModeDefinition {
   model?: string;
@@ -12,12 +18,14 @@ export interface Settings {
   defaultMode?: string;
   modes: Record<string, SettingsModeDefinition>;
   disabledTools: string[];
+  permissionRules: PermissionRule[];
 }
 
 export interface SettingsInput {
   defaultMode?: string;
   modes?: Record<string, SettingsModeDefinition>;
   disabledTools?: readonly string[];
+  permissionRules?: readonly PermissionRule[];
 }
 
 export interface LoadSettingsOptions {
@@ -104,13 +112,21 @@ function validateSettings(value: unknown, path: string): Settings {
     if (!raw.tools || typeof raw.tools !== "object" || Array.isArray(raw.tools)) {
       throw invalid(path, "tools must be an object");
     }
-    const rawTools = raw.tools as { disabled?: unknown };
+    const rawTools = raw.tools as { disabled?: unknown; permissions?: unknown };
     if (rawTools.disabled !== undefined) {
       if (!Array.isArray(rawTools.disabled)) {
         throw invalid(path, "tools.disabled must be an array");
       }
       settings.disabledTools = rawTools.disabled.map((tool, index) =>
         requireNonEmptyString(tool, path, `tools.disabled[${index}]`)
+      );
+    }
+    if (rawTools.permissions !== undefined) {
+      if (!Array.isArray(rawTools.permissions)) {
+        throw invalid(path, "tools.permissions must be an array");
+      }
+      settings.permissionRules = rawTools.permissions.map((rule, index) =>
+        validatePermissionRule(rule, path, `tools.permissions[${index}]`)
       );
     }
   }
@@ -136,11 +152,89 @@ function mergeSettings(user: Settings, workspace: Settings): Settings {
       ...user.disabledTools,
       ...workspace.disabledTools,
     ]),
+    permissionRules: [
+      ...user.permissionRules,
+      ...workspace.permissionRules,
+    ],
   };
 }
 
 function emptySettings(): Settings {
-  return { modes: {}, disabledTools: [] };
+  return { modes: {}, disabledTools: [], permissionRules: [] };
+}
+
+function validatePermissionRule(
+  value: unknown,
+  path: string,
+  settingPath: string,
+): PermissionRule {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw invalid(path, `${settingPath} must be an object`);
+  }
+  const raw = value as {
+    action?: unknown;
+    tool?: unknown;
+    target?: unknown;
+    match?: unknown;
+    pattern?: unknown;
+    reason?: unknown;
+  };
+
+  const action = requireChoice<PermissionAction>(
+    raw.action,
+    path,
+    `${settingPath}.action`,
+    ["allow", "ask", "reject"],
+  );
+  const rule: PermissionRule = { action };
+  if (raw.tool !== undefined) {
+    rule.tool = requireNonEmptyString(raw.tool, path, `${settingPath}.tool`);
+  }
+  if (raw.target !== undefined) {
+    rule.target = requireChoice<PermissionTarget>(
+      raw.target,
+      path,
+      `${settingPath}.target`,
+      ["tool", "path", "command"],
+    );
+  }
+  if (raw.match !== undefined) {
+    rule.match = requireChoice<PermissionMatcher>(
+      raw.match,
+      path,
+      `${settingPath}.match`,
+      ["glob", "regex"],
+    );
+  }
+  if (raw.pattern !== undefined) {
+    rule.pattern = requireNonEmptyString(raw.pattern, path, `${settingPath}.pattern`);
+  }
+  if (raw.reason !== undefined) {
+    rule.reason = requireNonEmptyString(raw.reason, path, `${settingPath}.reason`);
+  }
+  if (rule.match !== undefined && rule.pattern === undefined) {
+    throw invalid(path, `${settingPath}.pattern is required when match is set`);
+  }
+  if (rule.match === "regex" && rule.pattern !== undefined) {
+    try {
+      new RegExp(rule.pattern);
+    } catch {
+      throw invalid(path, `${settingPath}.pattern must be a valid regex`);
+    }
+  }
+  return rule;
+}
+
+function requireChoice<T extends string>(
+  value: unknown,
+  path: string,
+  settingPath: string,
+  choices: readonly T[],
+): T {
+  if (typeof value !== "string" || !choices.includes(value as T)) {
+    throw invalid(path, `${settingPath} must be one of: ${choices.join(", ")}`);
+  }
+  return value as T;
 }
 
 function requireNonEmptyString(

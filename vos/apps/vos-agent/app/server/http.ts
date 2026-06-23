@@ -218,6 +218,7 @@ async function runAgentHttpTask(
     mode: modelSettings.mode,
     reasoningEffort: modelSettings.reasoningEffort,
     disabledTools: mergeDisabledTools(opts.config.tools.disabled, request.disabled_tools),
+    permissionRules: opts.config.tools.permissions,
     maxIterations: request.max_iterations,
     courseMode: request.course_mode ?? true,
     allowedVosCommands: resolveProfileVosCommands(profile, request.allowed_vos_commands),
@@ -276,6 +277,7 @@ async function chatCompletion(
     mode: modelSettings.mode,
     reasoningEffort: modelSettings.reasoningEffort,
     disabledTools: opts.config.tools.disabled,
+    permissionRules: opts.config.tools.permissions,
   });
   opts.portalStore?.recordAgentAudit({
     projectId: request.project_id,

@@ -7,13 +7,28 @@ import { createGrepTool } from "./grep.ts";
 import { createVosTool } from "./vos.ts";
 import { createTodoReadTool, createTodoWriteTool, type TodoState } from "./todo.ts";
 import { createTaskTool, type TaskToolOptions } from "./task.ts";
-import { createDisabledToolsPolicy, ToolRegistry, type Tool, type ToolPolicy } from "./types.ts";
+import {
+  composeToolPolicies,
+  createDisabledToolsPolicy,
+  ToolRegistry,
+  type Tool,
+  type ToolPolicy,
+} from "./types.ts";
+import {
+  createDefaultPermissionPolicy,
+  type PermissionRule,
+  type ToolApprovalHandler,
+} from "./permissions.ts";
 
 export interface BuiltinToolRegistryOptions {
   /** Workspace root for file tools and cwd for Bash. Defaults to process.cwd(). */
   rootDir?: string;
   /** Tool names to hide from the model and deny if called. */
   disabledTools?: readonly string[];
+  /** Ordered allow/ask/reject rules evaluated before built-in guarded patterns. */
+  permissionRules?: readonly PermissionRule[];
+  /** Optional approval hook for ask-rules. Without it, ask-rules deny safely. */
+  approveToolExecution?: ToolApprovalHandler;
   /** Optional externally supplied tools, e.g. plugin/MCP adapters. */
   extraTools?: readonly Tool[];
   /** Optional thread-scoped todo state. Enables TodoRead/TodoWrite tools. */
@@ -58,6 +73,8 @@ export function createBuiltinToolRegistry(
       registryFactory: () => createBuiltinToolRegistry({
         rootDir,
         disabledTools: opts.disabledTools,
+        permissionRules: opts.permissionRules,
+        approveToolExecution: opts.approveToolExecution,
         extraTools: opts.extraTools,
         toolPolicy: opts.toolPolicy,
         courseMode: opts.courseMode,
@@ -68,33 +85,12 @@ export function createBuiltinToolRegistry(
   const policy = composeToolPolicies(
     createDisabledToolsPolicy(opts.disabledTools ?? []),
     opts.toolPolicy,
+    createDefaultPermissionPolicy({
+      rules: opts.permissionRules ?? [],
+      approve: opts.approveToolExecution,
+    }),
   );
   return new ToolRegistry(tools, {
     policy,
   });
-}
-
-function composeToolPolicies(
-  ...policies: Array<ToolPolicy | undefined>
-): ToolPolicy | undefined {
-  const activePolicies = policies.filter((policy): policy is ToolPolicy => Boolean(policy));
-  if (activePolicies.length === 0) {
-    return undefined;
-  }
-
-  return {
-    canAdvertise: (tool) => {
-      return activePolicies.every((policy) =>
-        !policy.canAdvertise || policy.canAdvertise(tool),
-      );
-    },
-    canExecute: async (request) => {
-      for (const policy of activePolicies) {
-        if (!policy.canExecute) continue;
-        const decision = await policy.canExecute(request);
-        if (!decision.allowed) return decision;
-      }
-      return { allowed: true };
-    },
-  };
 }

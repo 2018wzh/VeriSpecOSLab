@@ -28,7 +28,7 @@ describe("loadSettings", () => {
         smart: { model: "user-smart" },
         rush: { reasoningEffort: "low" },
       },
-      tools: { disabled: ["Bash"] },
+      tools: { disabled: ["Vos"] },
     }), "utf8");
     writeFileSync(join(workspaceRoot, ".vos", "agent", "settings.json"), JSON.stringify({
       defaultMode: "deep",
@@ -36,7 +36,19 @@ describe("loadSettings", () => {
         smart: { model: "workspace-smart" },
         deep: { model: "workspace-deep" },
       },
-      tools: { disabled: ["Write", "Bash"] },
+      tools: {
+        disabled: ["Write", "Vos"],
+        permissions: [
+          {
+            action: "reject",
+            tool: "Vos",
+            target: "command",
+            match: "regex",
+            pattern: "(^|[;&|])\\s*sudo\\b",
+            reason: "no sudo",
+          },
+        ],
+      },
     }), "utf8");
 
     expect(loadSettings({ stateDir, workspaceRoot })).toEqual({
@@ -46,7 +58,17 @@ describe("loadSettings", () => {
         rush: { reasoningEffort: "low" },
         deep: { model: "workspace-deep" },
       },
-      disabledTools: ["Bash", "Write"],
+      disabledTools: ["Vos", "Write"],
+      permissionRules: [
+        {
+          action: "reject",
+          tool: "Vos",
+          target: "command",
+          match: "regex",
+          pattern: "(^|[;&|])\\s*sudo\\b",
+          reason: "no sudo",
+        },
+      ],
     });
   });
 
@@ -54,6 +76,7 @@ describe("loadSettings", () => {
     expect(loadSettings({ stateDir, workspaceRoot })).toEqual({
       modes: {},
       disabledTools: [],
+      permissionRules: [],
     });
   });
 
@@ -64,6 +87,34 @@ describe("loadSettings", () => {
 
     expect(() => loadSettings({ stateDir, workspaceRoot })).toThrow(
       /tools.disabled\[1\] must be a non-empty string/,
+    );
+  });
+
+  test("rejects invalid permission rules clearly", () => {
+    writeFileSync(join(workspaceRoot, ".vos", "agent", "settings.json"), JSON.stringify({
+      tools: { permissions: [{ action: "maybe", tool: "Vos" }] },
+    }), "utf8");
+
+    expect(() => loadSettings({ stateDir, workspaceRoot })).toThrow(
+      /tools.permissions\[0\].action must be one of: allow, ask, reject/,
+    );
+  });
+
+  test("rejects invalid regex permission patterns at load time", () => {
+    writeFileSync(join(workspaceRoot, ".vos", "agent", "settings.json"), JSON.stringify({
+      tools: {
+        permissions: [{
+          action: "reject",
+          tool: "Vos",
+          target: "command",
+          match: "regex",
+          pattern: "[",
+        }],
+      },
+    }), "utf8");
+
+    expect(() => loadSettings({ stateDir, workspaceRoot })).toThrow(
+      /tools.permissions\[0\].pattern must be a valid regex/,
     );
   });
 });

@@ -1,5 +1,6 @@
 import type { ChatClient } from "../agent/loop.ts";
 import type { ReasoningEffort } from "../config.ts";
+import type { PermissionRule } from "../tools/permissions.ts";
 import { runSessionTurn } from "./run-turn.ts";
 import type { SessionEvent, StoredThread } from "./types.ts";
 import type { ThreadStore } from "./thread-store.ts";
@@ -22,6 +23,7 @@ export interface RunStreamJsonInputSessionOptions {
   mode?: string;
   reasoningEffort?: ReasoningEffort;
   disabledTools?: readonly string[];
+  permissionRules?: readonly PermissionRule[];
   threadId?: string;
   startDir?: string;
   maxIterations?: number;
@@ -60,6 +62,7 @@ export async function runStreamJsonInputSession(
       mode: opts.mode,
       reasoningEffort: opts.reasoningEffort,
       disabledTools: opts.disabledTools,
+      permissionRules: opts.permissionRules,
       onEvent: opts.onEvent,
     });
     threadId = result.thread.id;

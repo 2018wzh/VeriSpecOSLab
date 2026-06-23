@@ -15,6 +15,7 @@ import type { SessionEvent, StoredThread } from "./types.ts";
 import type { ThreadStore } from "./thread-store.ts";
 import type { ToolPolicy } from "../tools/types.ts";
 import { addModelUsage, cloneThreadUsage } from "./usage.ts";
+import type { PermissionRule, ToolApprovalHandler } from "../tools/permissions.ts";
 
 export interface RunSessionTurnOptions {
   chat: ChatClient;
@@ -25,6 +26,8 @@ export interface RunSessionTurnOptions {
   mode?: string;
   reasoningEffort?: ReasoningEffort;
   disabledTools?: readonly string[];
+  permissionRules?: readonly PermissionRule[];
+  approveToolExecution?: ToolApprovalHandler;
   threadId?: string;
   startDir?: string;
   maxIterations?: number;
@@ -192,6 +195,8 @@ export async function runSessionTurn(
     const registry = createBuiltinToolRegistry({
       rootDir: resolvedWorkspaceRoot,
       disabledTools: opts.disabledTools,
+      permissionRules: opts.permissionRules,
+      approveToolExecution: opts.approveToolExecution,
       toolPolicy: opts.toolPolicy,
       courseMode: opts.courseMode,
       allowedVosCommands: opts.allowedVosCommands,

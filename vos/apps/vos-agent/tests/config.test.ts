@@ -166,14 +166,23 @@ describe("loadConfig", () => {
     expect(cfg.modes.rush.reasoningEffort).toBe("xhigh");
   });
 
-  test("settings configure default mode, model defaults, and disabled tools", () => {
+  test("settings configure default mode, model defaults, and tool policies", () => {
     const cfg = loadConfig({ ANTHROPIC_API_KEY: "ak" }, {
       defaultMode: "rush",
       modes: {
         smart: { model: "settings-smart", reasoningEffort: "low" },
         custom: { model: "settings-custom" },
       },
-      disabledTools: ["Bash"],
+      disabledTools: ["Vos"],
+      permissionRules: [
+        {
+          action: "reject",
+          tool: "Vos",
+          target: "command",
+          match: "regex",
+          pattern: "(^|[;&|])\\s*sudo\\b",
+        },
+      ],
     });
 
     expect(cfg.defaultMode).toBe("rush");
@@ -182,7 +191,16 @@ describe("loadConfig", () => {
       reasoningEffort: "low",
     });
     expect(cfg.modes.custom).toEqual({ model: "settings-custom" });
-    expect(cfg.tools.disabled).toEqual(["Bash"]);
+    expect(cfg.tools.disabled).toEqual(["Vos"]);
+    expect(cfg.tools.permissions).toEqual([
+      {
+        action: "reject",
+        tool: "Vos",
+        target: "command",
+        match: "regex",
+        pattern: "(^|[;&|])\\s*sudo\\b",
+      },
+    ]);
   });
 
   test("env model and reasoning overrides take precedence over settings", () => {

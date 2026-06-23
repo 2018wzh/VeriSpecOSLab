@@ -118,6 +118,7 @@ async function main(): Promise<void> {
         reasoningEffort: modelSettings?.reasoningEffort,
         mode: modelSettings?.mode,
         disabledTools: config.tools.disabled,
+        permissionRules: config.tools.permissions,
         onTurnStart: (turnPrompt) => {
           encoder.beginTurn(turnPrompt);
         },
@@ -156,6 +157,7 @@ async function main(): Promise<void> {
       reasoningEffort: modelSettings?.reasoningEffort,
       mode: modelSettings?.mode,
       disabledTools: config.tools.disabled,
+      permissionRules: config.tools.permissions,
       onEvent: encoder
         ? (event) => {
             writeStreamJsonEvents(encoder.encode(event));

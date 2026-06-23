@@ -349,6 +349,7 @@ export async function runInteractiveController(
         ? undefined
         : modeDef?.reasoningEffort,
       disabledTools: opts.config.tools.disabled,
+      permissionRules: opts.config.tools.permissions,
       mode: useStoredThreadModel || opts.model ? undefined : mode,
       streamAssistant: opts.streamAssistant ?? false,
       onEvent: async (event) => {
