@@ -56,6 +56,65 @@ type RenderContext = {
 };
 
 const defaultWidth = 80;
+const syntaxHighlightedLanguages = new Set([
+  "cjs",
+  "js",
+  "jsx",
+  "json",
+  "mjs",
+  "ts",
+  "tsx",
+  "javascript",
+  "typescript",
+]);
+const codeKeywords = new Set([
+  "as",
+  "async",
+  "await",
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "debugger",
+  "default",
+  "delete",
+  "do",
+  "else",
+  "export",
+  "extends",
+  "false",
+  "finally",
+  "for",
+  "from",
+  "function",
+  "if",
+  "import",
+  "in",
+  "instanceof",
+  "interface",
+  "let",
+  "new",
+  "null",
+  "of",
+  "return",
+  "satisfies",
+  "static",
+  "super",
+  "switch",
+  "this",
+  "throw",
+  "true",
+  "try",
+  "type",
+  "typeof",
+  "undefined",
+  "var",
+  "void",
+  "while",
+  "yield",
+]);
 
 export class TermRenderer {
   private readonly options: MutableTermRendererOptions;
@@ -278,13 +337,35 @@ function renderListItem(
   const markerStyle = primitiveStyle(ctx, ordered ? styles.enumeration : styles.item);
   const markerSegments = makeInlineSegments(`${" ".repeat(Math.max(0, ctx.listDepth - 1) * (styles.list?.levelIndent ?? 2))}${marker}${task}`, markerStyle);
   const continuation = makeInlineSegments(" ".repeat(segmentWidth(markerSegments)), markerStyle);
-  const childLines = renderBlocks(node.children ?? [], ctx).filter((line) => !isBlankLine(line));
+  const childLines: RenderLine[] = [];
+
+  for (const child of node.children ?? []) {
+    const blockLines = renderBlock(child, ctx).filter((line) => !isBlankLine(line));
+    if (blockLines.length === 0) {
+      continue;
+    }
+
+    if (childLines.length === 0) {
+      if (child.type === "list") {
+        childLines.push({ segments: markerSegments }, ...blockLines);
+      } else {
+        childLines.push(...blockLines.map((line, index) => addPrefix(line, index === 0 ? markerSegments : continuation)));
+      }
+      continue;
+    }
+
+    childLines.push(...(
+      child.type === "list"
+        ? blockLines
+        : blockLines.map((line) => addPrefix(line, continuation))
+    ));
+  }
 
   if (childLines.length === 0) {
     return [{ segments: markerSegments }];
   }
 
-  return childLines.map((line, index) => addPrefix(line, index === 0 ? markerSegments : continuation));
+  return childLines;
 }
 
 function renderCodeBlock(node: MarkdownNode, ctx: RenderContext): RenderLine[] {
@@ -294,12 +375,64 @@ function renderCodeBlock(node: MarkdownNode, ctx: RenderContext): RenderLine[] {
   const rawLines = (node.value ?? "").replace(/\n$/, "").split("\n");
   const indentSegments = makeInlineSegments(indent, terminalStyle);
   return wrapSegmentLines(
-    rawLines.map((line) => makeInlineSegments(line, terminalStyle)),
+    rawLines.map((line) => codeLineSegments(line, node.lang, ctx, terminalStyle)),
     ctx.options.wordWrap,
     indentSegments,
     indentSegments,
     true,
   );
+}
+
+function codeLineSegments(
+  line: string,
+  rawLanguage: string | null | undefined,
+  ctx: RenderContext,
+  baseStyle: Style | undefined,
+): RenderSegment[] {
+  if (!shouldHighlightCode(rawLanguage)) {
+    return makeInlineSegments(line, baseStyle);
+  }
+
+  const segments: RenderSegment[] = [];
+  let index = 0;
+  while (index < line.length) {
+    const rest = line.slice(index);
+    const comment = commentToken(rest);
+    if (comment !== undefined) {
+      segments.push(...makeInlineSegments(comment, codeTokenStyle(baseStyle, ctx.options.styles.codeComment)));
+      index += comment.length;
+      continue;
+    }
+
+    const string = stringToken(rest);
+    if (string !== undefined) {
+      segments.push(...makeInlineSegments(string, codeTokenStyle(baseStyle, ctx.options.styles.codeString)));
+      index += string.length;
+      continue;
+    }
+
+    const number = numberToken(rest);
+    if (number !== undefined) {
+      segments.push(...makeInlineSegments(number, codeTokenStyle(baseStyle, ctx.options.styles.codeNumber)));
+      index += number.length;
+      continue;
+    }
+
+    const word = identifierToken(rest);
+    if (word !== undefined) {
+      segments.push(...makeInlineSegments(
+        word,
+        codeKeywords.has(word) ? codeTokenStyle(baseStyle, ctx.options.styles.codeKeyword) : baseStyle,
+      ));
+      index += word.length;
+      continue;
+    }
+
+    segments.push(...makeInlineSegments(rest[0] ?? "", baseStyle));
+    index += 1;
+  }
+
+  return compactSegments(segments);
 }
 
 function renderTable(node: MarkdownNode, ctx: RenderContext): RenderLine[] {
@@ -457,6 +590,68 @@ function linkSegments(segments: readonly RenderSegment[], link: string | undefin
   }
 
   return segments.map((segment) => ({ ...segment, link }));
+}
+
+function shouldHighlightCode(rawLanguage: string | null | undefined): boolean {
+  if (!rawLanguage) {
+    return false;
+  }
+
+  const language = rawLanguage.toLocaleLowerCase().split(/[^a-z0-9+#-]/)[0] ?? "";
+  return syntaxHighlightedLanguages.has(language);
+}
+
+function codeTokenStyle(
+  baseStyle: Style | undefined,
+  primitive: StylePrimitive | undefined,
+): Style | undefined {
+  return mergeTerminalStyle(baseStyle, styleToTerminalStyle(primitive));
+}
+
+function commentToken(value: string): string | undefined {
+  if (value.startsWith("//")) {
+    return value;
+  }
+
+  if (value.startsWith("/*")) {
+    const end = value.indexOf("*/", 2);
+    return end >= 0 ? value.slice(0, end + 2) : value;
+  }
+
+  return undefined;
+}
+
+function stringToken(value: string): string | undefined {
+  const quote = value[0];
+  if (quote !== "\"" && quote !== "'" && quote !== "`") {
+    return undefined;
+  }
+
+  let escaped = false;
+  for (let index = 1; index < value.length; index += 1) {
+    const char = value[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === quote) {
+      return value.slice(0, index + 1);
+    }
+  }
+
+  return value;
+}
+
+function numberToken(value: string): string | undefined {
+  return /^(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/.exec(value)?.[0];
+}
+
+function identifierToken(value: string): string | undefined {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*/.exec(value)?.[0];
 }
 
 function primitiveStyle(ctx: RenderContext, primitive: StylePrimitive | undefined): Style | undefined {

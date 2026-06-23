@@ -71,6 +71,10 @@ export const starsDarkStyle: StyleConfig = {
   h6: {},
   horizontalRule: { prefix: "────────", faint: true },
   linkText: { color: "cyan" },
+  codeKeyword: { color: "magenta", bold: true },
+  codeString: { color: "green" },
+  codeComment: { faint: true },
+  codeNumber: { color: "yellow" },
 };
 
 export const starsLightStyle: StyleConfig = {
@@ -80,6 +84,7 @@ export const starsLightStyle: StyleConfig = {
   linkText: { color: "blue" },
   code: { blockPrefix: "`", blockSuffix: "`", color: "blue" },
   codeBlock: { color: "blue", margin: 1 },
+  codeNumber: { color: "blue" },
 };
 
 export const defaultStyleName = "dark";

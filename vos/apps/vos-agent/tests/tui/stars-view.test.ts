@@ -362,6 +362,22 @@ describe("Stars TUI view", () => {
     expect(screen.getCell(8, 0).style).toBe(defaultStyle);
   });
 
+  test("renders syntax-aware assistant code fence styling", () => {
+    const screen = renderStarsView({
+      transcript: [{ type: "assistant", text: "```ts\nconst answer = \"ok\"; // ready\n```" }],
+      prompt: { text: "" },
+    }, { width: 48, height: 6 });
+    const firstRow = screenRows(screen)[0] ?? "";
+    const keywordX = firstRow.indexOf("const");
+    const stringX = firstRow.indexOf("\"ok\"");
+    const commentX = firstRow.indexOf("// ready");
+
+    expect(firstRow).toContain(" const answer = \"ok\"; // ready");
+    expect(screen.getCell(keywordX, 0).style).toEqual({ bold: true, fg: "magenta" });
+    expect(screen.getCell(stringX, 0).style).toEqual({ fg: "green" });
+    expect(screen.getCell(commentX, 0).style).toEqual({ dim: true, fg: "cyan" });
+  });
+
   test("renders wide assistant markdown cells without column drift", () => {
     const screen = renderStarsView({
       transcript: [{ type: "assistant", text: "**你好** ok" }],

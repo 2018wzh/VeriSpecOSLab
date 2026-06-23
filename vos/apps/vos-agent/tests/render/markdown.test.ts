@@ -67,7 +67,43 @@ describe("markdown renderer", () => {
       "TUI  | ready ",
       "",
       "• [✓] ship markdown",
-      "        • [ ] tune links",
+      "  • [ ] tune links",
     ]);
+  });
+
+  test("highlights common TypeScript tokens inside code fences", () => {
+    const rendered = renderMarkdown(
+      "```ts\nconst count = 42; // ok\nreturn \"done\";\n```",
+      withStyles(starsDarkStyle),
+      withWordWrap(80),
+    );
+
+    const firstLine = rendered.lines[0];
+    const secondLine = rendered.lines[1];
+
+    expect(firstLine ? segmentsToText(firstLine.segments) : "").toBe(" const count = 42; // ok");
+    expect(secondLine ? segmentsToText(secondLine.segments) : "").toBe(" return \"done\";");
+    expect(firstLine?.segments).toContainEqual({ text: "const", style: { bold: true, fg: "magenta" } });
+    expect(firstLine?.segments).toContainEqual({ text: "42", style: { fg: "yellow" } });
+    expect(firstLine?.segments).toContainEqual({ text: "// ok", style: { dim: true, fg: "cyan" } });
+    expect(secondLine?.segments).toContainEqual({ text: "return", style: { bold: true, fg: "magenta" } });
+    expect(secondLine?.segments).toContainEqual({ text: "\"done\"", style: { fg: "green" } });
+  });
+
+  test("keeps code block base color when token styles omit their own color", () => {
+    const rendered = renderMarkdown(
+      "```ts\nconst value = 1;\n```",
+      withStyles({
+        text: { color: "red" },
+        codeBlock: { color: "cyan", margin: 1 },
+        codeKeyword: { bold: true },
+      }),
+      withWordWrap(80),
+    );
+
+    expect(rendered.lines[0]?.segments).toContainEqual({
+      text: "const",
+      style: { bold: true, fg: "cyan" },
+    });
   });
 });

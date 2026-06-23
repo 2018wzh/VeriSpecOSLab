@@ -67,6 +67,10 @@ export type StyleConfig = Readonly<{
   imageText?: StylePrimitive;
   code?: StyleBlock;
   codeBlock?: StyleBlock;
+  codeKeyword?: StylePrimitive;
+  codeString?: StylePrimitive;
+  codeComment?: StylePrimitive;
+  codeNumber?: StylePrimitive;
   table?: StyleBlock;
   htmlBlock?: StyleBlock;
   htmlSpan?: StyleBlock;
