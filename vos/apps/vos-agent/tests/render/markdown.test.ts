@@ -9,6 +9,15 @@ import {
 import { stringDisplayWidth } from "../../app/tui/display-width.ts";
 
 describe("markdown renderer", () => {
+  test("accepts plain renderer options objects", () => {
+    const rendered = renderMarkdown("Use **strong** text", {
+      styles: starsDarkStyle,
+      wordWrap: 80,
+    });
+
+    expect(rendered.lines[0]?.segments).toContainEqual({ text: "strong", style: { bold: true } });
+  });
+
   test("keeps visible URL fallbacks while marking link text as clickable", () => {
     const rendered = renderMarkdown(
       "Read [docs](https://example.com/docs).",

@@ -12,9 +12,6 @@ import {
   renderMarkdown,
   starsDarkStyle,
   starsLightStyle,
-  withPreservedNewLines,
-  withStyles,
-  withWordWrap,
 } from "../render/index.ts";
 import type { RenderCell, RenderLine } from "../render/index.ts";
 import { ScreenBuffer } from "./screen.ts";
@@ -548,9 +545,11 @@ function markdownRows(text: string, width: number, theme: StarsTuiTheme): Render
 
   const lines = renderMarkdown(
     text,
-    withStyles(theme === "light" ? starsLightStyle : starsDarkStyle),
-    withWordWrap(width),
-    withPreservedNewLines(),
+    {
+      styles: theme === "light" ? starsLightStyle : starsDarkStyle,
+      wordWrap: width,
+      preserveNewLines: true,
+    },
   ).lines;
   if (lines.length === 0) {
     return wrapPrefixedLine("", "", "", transcriptStyles.assistant, width);

@@ -33,6 +33,7 @@ import type {
   RenderedMarkdown,
   StyleConfig,
   StylePrimitive,
+  TermRendererOptionInput,
   TermRendererOption,
   TermRendererOptions,
 } from "./types.ts";
@@ -120,10 +121,10 @@ const codeKeywords = new Set([
 export class TermRenderer {
   private readonly options: MutableTermRendererOptions;
 
-  constructor(...options: TermRendererOption[]) {
+  constructor(...options: TermRendererOptionInput[]) {
     this.options = createDefaultOptions();
     for (const option of options) {
-      option(this.options);
+      applyRendererOption(this.options, option);
     }
   }
 
@@ -146,21 +147,21 @@ export class TermRenderer {
   }
 }
 
-export function newTermRenderer(...options: TermRendererOption[]): TermRenderer {
+export function newTermRenderer(...options: TermRendererOptionInput[]): TermRenderer {
   return new TermRenderer(...options);
 }
 
-export function renderMarkdown(markdown: string, ...options: TermRendererOption[]): RenderedMarkdown {
+export function renderMarkdown(markdown: string, ...options: TermRendererOptionInput[]): RenderedMarkdown {
   return newTermRenderer(...options).render(markdown);
 }
 
-export function renderMarkdownText(markdown: string, ...options: TermRendererOption[]): string {
+export function renderMarkdownText(markdown: string, ...options: TermRendererOptionInput[]): string {
   return newTermRenderer(...options).renderText(markdown);
 }
 
 export function withWordWrap(wordWrap: number): TermRendererOption {
   return (options) => {
-    options.wordWrap = Math.max(0, Math.trunc(wordWrap));
+    options.wordWrap = normalizeWordWrap(wordWrap);
   };
 }
 
@@ -209,14 +210,35 @@ export function withStylePath(pathOrName: string): TermRendererOption {
   return withStylesFromJson(readFileSync(pathOrName, "utf8"));
 }
 
-export function optionsFromObject(input: TermRendererOptions = {}): TermRendererOption {
-  return (options) => {
-    options.baseUrl = input.baseUrl ?? options.baseUrl;
-    options.wordWrap = input.wordWrap ?? options.wordWrap;
-    options.preserveNewLines = input.preserveNewLines ?? options.preserveNewLines;
-    options.inlineLinks = input.inlineLinks ?? options.inlineLinks;
-    options.styles = input.styles ?? options.styles;
-  };
+function applyRendererOption(options: MutableTermRendererOptions, option: TermRendererOptionInput): void {
+  if (typeof option === "function") {
+    option(options);
+    return;
+  }
+
+  applyRendererOptionsObject(options, option);
+}
+
+function applyRendererOptionsObject(options: MutableTermRendererOptions, input: TermRendererOptions): void {
+  if (input.baseUrl !== undefined) {
+    options.baseUrl = input.baseUrl;
+  }
+  if (input.wordWrap !== undefined) {
+    options.wordWrap = normalizeWordWrap(input.wordWrap);
+  }
+  if (input.preserveNewLines !== undefined) {
+    options.preserveNewLines = input.preserveNewLines;
+  }
+  if (input.inlineLinks !== undefined) {
+    options.inlineLinks = input.inlineLinks;
+  }
+  if (input.styles !== undefined) {
+    options.styles = normalizeStyleConfig(input.styles);
+  }
+}
+
+function normalizeWordWrap(wordWrap: number): number {
+  return Math.max(0, Math.trunc(wordWrap));
 }
 
 function createDefaultOptions(): MutableTermRendererOptions {

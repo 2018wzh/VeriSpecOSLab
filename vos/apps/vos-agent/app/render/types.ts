@@ -94,6 +94,8 @@ export type TermRendererOptions = Readonly<{
 
 export type TermRendererOption = (options: MutableTermRendererOptions) => void;
 
+export type TermRendererOptionInput = TermRendererOption | TermRendererOptions;
+
 export type MutableTermRendererOptions = {
   baseUrl: string;
   wordWrap: number;

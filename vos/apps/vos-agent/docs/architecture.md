@@ -159,7 +159,11 @@ GFM, block rendering, list/table layout decisions, visible URL
 fallbacks, and lightweight TypeScript/JavaScript/JSON fenced-code
 highlighting. Code highlighting is stateful across physical lines so
 block comments and template literals keep their style until the token
-actually closes.
+actually closes. Product call sites configure the renderer with a
+plain `TermRendererOptions` object (`styles`, `wordWrap`,
+`preserveNewLines`, `inlineLinks`, `baseUrl`) so rendering policy is
+visible at the call site; the older `with*` functional options remain
+available for tests and compatibility.
 
 `app/render/layout.ts` owns terminal layout over render segments:
 wrapping, hard line breaks, padding, segment compaction, link

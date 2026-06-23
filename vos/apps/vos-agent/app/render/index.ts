@@ -1,7 +1,6 @@
 export {
   TermRenderer,
   newTermRenderer,
-  optionsFromObject,
   renderMarkdown,
   renderMarkdownText,
   withBaseUrl,
@@ -36,5 +35,6 @@ export type {
   StylePrimitive,
   StyleTask,
   TermRendererOption,
+  TermRendererOptionInput,
   TermRendererOptions,
 } from "./types.ts";
