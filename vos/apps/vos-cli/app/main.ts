@@ -80,11 +80,12 @@ import {
   progressUpdateFromAgentEvent,
 } from "./progress/agent.ts";
 import { runBuildCommand } from "./runtime/build.ts";
+import { probeRequiredTools } from "./runtime/environment.ts";
 import { createSubmitPack } from "./submit/pack.ts";
 import { runQemuCommand } from "./runtime/qemu.ts";
 import { runTestCommand } from "./runtime/test.ts";
 import { runVerifyCommand, type BehaviorTestRunner } from "./runtime/verify.ts";
-import { loadToolchainManifest, parseToolchainManifest } from "./runtime/manifest.ts";
+import { loadToolchainManifest, parseToolchainManifest, type RequiredToolV2, type ToolchainManifestV2 } from "./runtime/manifest.ts";
 import {
   buildDebugTraceInput,
   ensureCleanGitWorktree,
@@ -688,19 +689,90 @@ export async function executeInit(
 
 export async function executeDoctor(
   _command: DoctorCommand,
+  projectRoot: string,
 ): Promise<CommandOutcome> {
-  const checks = [
-    { name: "bun", ok: typeof Bun !== "undefined" },
-    { name: "git", ok: commandExists("git") },
-    { name: "node", ok: commandExists("node") },
+  const checks: DoctorCheck[] = [
+    doctorCommandCheck("bun", "base", typeof Bun !== "undefined"),
+    doctorCommandCheck("git", "base"),
+    doctorCommandCheck("node", "base"),
   ];
-  const missing = checks.filter((check) => !check.ok).map((check) => check.name);
+  const requiredCommands = new Set(["bun", "git", "node"]);
+  const suggested = new Set<string>();
+
+  const projectPath = path.join(projectRoot, ".vos", "project.yaml");
+  const policyPath = path.join(projectRoot, ".vos", "policy.yaml");
+  checks.push(doctorFileCheck("project-config", "project", projectPath, "run `vos init` to create project metadata"));
+  checks.push(doctorFileCheck("policy-config", "project", policyPath, "run `vos init` to create default policy metadata"));
+  try {
+    const project = await loadProjectConfig(projectRoot);
+    const specRoot = project.spec_root ?? "spec";
+    checks.push(doctorFileCheck("spec-root", "project", path.resolve(projectRoot, specRoot), "create the configured spec root or update .vos/project.yaml"));
+  } catch (error) {
+    checks.push({
+      name: "spec-root",
+      category: "project",
+      required: true,
+      ok: false,
+      message: errorMessage(error),
+      hint: "run `vos init` to create project metadata",
+    });
+  }
+
+  let manifest: ToolchainManifestV2 | undefined;
+  try {
+    const loaded = await loadToolchainManifest({ projectRoot });
+    manifest = loaded.manifest;
+    checks.push({
+      name: "toolchain-manifest",
+      category: "toolchain",
+      required: true,
+      ok: true,
+      message: path.relative(projectRoot, loaded.path),
+    });
+  } catch (error) {
+    checks.push({
+      name: "toolchain-manifest",
+      category: "toolchain",
+      required: true,
+      ok: false,
+      message: errorMessage(error),
+      hint: "run `vos build generate` to create .vos/toolchain.json",
+    });
+    suggested.add("vos build generate");
+  }
+
+  if (manifest) {
+    for (const tool of manifest.environment.required_tools) {
+      requiredCommands.add(tool.command);
+      checks.push(probeRequiredToolCheck(tool));
+    }
+    for (const command of manifestCommandEntrypoints(manifest)) {
+      requiredCommands.add(command);
+      checks.push(doctorCommandCheck(command, "toolchain-command"));
+    }
+  }
+
+  for (const command of OPTIONAL_DEVBOX_COMMANDS) {
+    if (!requiredCommands.has(command)) {
+      checks.push(doctorCommandCheck(command, "devbox", undefined, false));
+    }
+  }
+
+  const missing = checks.filter((check) => check.required && !check.ok).map((check) => check.name);
+  const warnings = checks
+    .filter((check) => !check.required && !check.ok)
+    .map((check) => check.name);
+  if (missing.length > 0) {
+    suggested.add("install missing tools, then rerun `vos doctor`");
+  }
   return {
     status: missing.length === 0 ? "passed" : "failed",
     details: {
       checks,
       missing,
-      message: missing.length === 0 ? "environment ok" : "missing tools",
+      warnings,
+      suggested_next_commands: [...suggested],
+      message: missing.length === 0 ? "environment ok" : "missing required tools/configuration",
     },
   };
 }
@@ -3214,6 +3286,116 @@ function commandExists(cmd: string): boolean {
   return envPath.some((dir) => {
     return candidates.some((candidate) => existsSync(path.join(dir, candidate)));
   });
+}
+
+type DoctorCategory = "base" | "project" | "toolchain" | "toolchain-command" | "devbox";
+
+interface DoctorCheck {
+  name: string;
+  category: DoctorCategory;
+  required: boolean;
+  ok: boolean;
+  command?: string;
+  message?: string;
+  hint?: string;
+}
+
+const OPTIONAL_DEVBOX_COMMANDS = [
+  "clang",
+  "gcc",
+  "make",
+  "cmake",
+  "ninja",
+  "python3",
+  "jq",
+  "yq",
+  "gdb-multiarch",
+  "qemu-system-riscv64",
+  "qemu-system-x86_64",
+  "qemu-system-aarch64",
+];
+
+function doctorCommandCheck(
+  command: string,
+  category: DoctorCategory,
+  ok = commandExists(command),
+  required = true,
+): DoctorCheck {
+  return {
+    name: command,
+    category,
+    required,
+    ok,
+    command,
+    ...(!ok ? { hint: installHint(command) } : {}),
+  };
+}
+
+function doctorFileCheck(name: string, category: DoctorCategory, filePath: string, hint: string): DoctorCheck {
+  const ok = existsSync(filePath);
+  return {
+    name,
+    category,
+    required: true,
+    ok,
+    message: path.relative(path.dirname(filePath), filePath),
+    ...(!ok ? { hint } : {}),
+  };
+}
+
+function probeRequiredToolCheck(tool: RequiredToolV2): DoctorCheck {
+  try {
+    const [probe] = probeRequiredTools([tool]);
+    return {
+      name: tool.name,
+      category: "toolchain",
+      required: true,
+      ok: true,
+      command: tool.command,
+      message: `${probe.detected_version} satisfies ${tool.version_constraint}`,
+    };
+  } catch (error) {
+    return {
+      name: tool.name,
+      category: "toolchain",
+      required: true,
+      ok: false,
+      command: tool.command,
+      message: errorMessage(error),
+      hint: installHint(tool.command),
+    };
+  }
+}
+
+function manifestCommandEntrypoints(manifest: ToolchainManifestV2): string[] {
+  const commands = new Set<string>();
+  for (const variant of manifest.build.variants) {
+    for (const command of variant.commands) {
+      const entrypoint = typeof command === "string" ? firstCommandToken(command) : command.command[0];
+      if (entrypoint) commands.add(entrypoint);
+    }
+  }
+  for (const suite of manifest.test.suites) {
+    if (suite.kind === "command") commands.add(suite.command[0]);
+  }
+  for (const profile of manifest.run.profiles) {
+    commands.add(profile.command);
+  }
+  return [...commands].sort();
+}
+
+function firstCommandToken(command: string): string | undefined {
+  return command.match(/"([^"]*)"|'([^']*)'|\S+/)?.[0]?.replace(/^"|"$|^'|'$/g, "");
+}
+
+function installHint(command: string): string {
+  if (command.startsWith("qemu-system-")) return "Install QEMU system emulator with your OS package manager.";
+  if (command.startsWith("riscv64-unknown-elf-")) return "Install the RISC-V cross toolchain with your OS package manager.";
+  return `Install ${command} with your OS package manager.`;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function discoverSpecFiles(root: string): Promise<string[]> {

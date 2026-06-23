@@ -20,7 +20,7 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
       return handlers.executeInit(command, context);
 
     case "doctor":
-      return handlers.executeDoctor(command);
+      return handlers.executeDoctor(command, projectRoot);
 
     case "stage_show":
       return handlers.executeStageShow(command, projectRoot);

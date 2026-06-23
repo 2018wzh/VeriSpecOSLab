@@ -974,6 +974,95 @@ describe("xv6-spec offline runtime flow", () => {
     expect(lint.details.manifestPath).toBeUndefined();
   });
 
+  test("doctor fails when toolchain manifest is missing", async () => {
+    const projectRoot = makeXv6Fixture({ toolchainManifest: false });
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["doctor"],
+      args: [],
+    });
+
+    const result = await executeCommand({ kind: "doctor" }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.details.missing).toContain("toolchain-manifest");
+    expect(result.details.suggested_next_commands).toContain("vos build generate");
+  });
+
+  test("doctor reports missing required manifest tools", async () => {
+    const projectRoot = makeXv6Fixture();
+    writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify({
+      ...manifestV2(),
+      environment: {
+        required_tools: [{
+          name: "missing-tool",
+          command: "vos-doctor-missing-tool",
+          version_args: ["--version"],
+          version_constraint: ">=0",
+          kind: "utility",
+        }],
+      },
+    }, null, 2));
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["doctor"],
+      args: [],
+    });
+
+    const result = await executeCommand({ kind: "doctor" }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.details.missing).toContain("missing-tool");
+    expect(JSON.stringify(result.details.checks)).toContain("vos-doctor-missing-tool");
+  });
+
+  test("doctor checks manifest command entrypoints without failing on optional devbox tools", async () => {
+    const projectRoot = makeXv6Fixture();
+    writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify(manifestV2({
+      buildCommands: ["true"],
+      suites: [{ name: "static", kind: "command", command: ["true"] }],
+      runProfiles: [{
+        id: "default",
+        command: "true",
+        args: [],
+        artifacts: [],
+        timeout_ms: 1000,
+      }],
+    }), null, 2));
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["doctor"],
+      args: [],
+    });
+
+    const result = await executeCommand({ kind: "doctor" }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence,
+    });
+    const checks = result.details.checks as Array<{ name: string; category: string; required: boolean; ok: boolean }>;
+
+    expect(result.status).toBe("passed");
+    expect(checks).toContainEqual(expect.objectContaining({
+      name: "true",
+      category: "toolchain-command",
+      required: true,
+      ok: true,
+    }));
+    expect(checks.filter((check) => check.category === "devbox").every((check) => check.required === false)).toBe(true);
+  });
+
   test("rejects manifest files that were not generated in the project root", async () => {
     const projectRoot = makeXv6Fixture();
     rmSync(join(projectRoot, "Makefile"), { force: true });
