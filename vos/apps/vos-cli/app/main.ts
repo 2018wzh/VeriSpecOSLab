@@ -80,6 +80,7 @@ import {
   progressUpdateFromAgentEvent,
 } from "./progress/agent.ts";
 import { runBuildCommand } from "./runtime/build.ts";
+import { createSubmitPack } from "./submit/pack.ts";
 import { runQemuCommand } from "./runtime/qemu.ts";
 import { runTestCommand } from "./runtime/test.ts";
 import { runVerifyCommand, type BehaviorTestRunner } from "./runtime/verify.ts";
@@ -1133,18 +1134,16 @@ export async function executeSubmitPack(
   projectRoot: string,
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
-  const reportPath = path.join(projectRoot, ".vos", "submit", "pack.json");
-  const runs = await collectRunManifestSummaries(projectRoot);
-  const pack = {
-    generated_at: new Date().toISOString(),
-    command_root: projectRoot,
-    evidence_runs: runs,
-  };
-  await writeFile(reportPath, `${JSON.stringify(pack, null, 2)}\n`);
-  evidence.addArtifact("submit", path.relative(projectRoot, reportPath), "submission payload");
+  const pack = await createSubmitPack({ projectRoot, evidence });
+  evidence.addArtifact("submit-pack", path.relative(projectRoot, pack.archivePath), "submission archive");
+  evidence.addArtifact("submit-manifest", path.relative(projectRoot, pack.manifestPath), "submission manifest");
   return {
     status: "passed",
-    details: { pack_path: path.relative(projectRoot, reportPath), run_count: runs.length },
+    details: {
+      pack_path: path.relative(projectRoot, pack.archivePath),
+      manifest_path: path.relative(projectRoot, pack.manifestPath),
+      ...pack.manifest,
+    },
   };
 }
 
@@ -1506,7 +1505,7 @@ export async function executeBuildGenerate(
   });
   const draft = normalizeToolchainDraft(parseAgentJson(agentResult.resultText, "build_generate"));
   const specHash = hashString(JSON.stringify(spec));
-  validateToolchainDraft(draft, spec.allowedOutputPaths);
+  validateToolchainDraftPaths(draft, spec.allowedOutputPaths);
 
   for (const file of draft.files) {
     const target = path.join(projectRoot, file.path);
@@ -1523,7 +1522,13 @@ export async function executeBuildGenerate(
       name: ((draft.manifest.generator as { name?: unknown } | undefined)?.name as string | undefined) ?? "vos-agent",
       version: ((draft.manifest.generator as { version?: unknown } | undefined)?.version as string | undefined) ?? "toolchain-draft-v1",
     },
+    environment: normalizeToolchainEnvironment(draft.manifest, spec.environment),
   };
+  try {
+    parseToolchainManifest(manifest);
+  } catch (error) {
+    throw new AgentOutputError(error instanceof Error ? error.message : String(error));
+  }
   const manifestPath = path.join(projectRoot, ".vos", "toolchain.json");
   await mkdir(path.dirname(manifestPath), { recursive: true });
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
@@ -1718,6 +1723,7 @@ export async function executeBuild(command: BuildCommand, context: ExecContext, 
       output: result.output,
       artifacts: result.artifacts,
       failedStep: result.failedStep,
+      toolchain_environment: result.toolVersions,
     },
   };
 }
@@ -3511,6 +3517,7 @@ async function loadToolchainGenerationSpec(projectRoot: string): Promise<{
   profileSpec?: unknown;
   runSpec?: unknown;
   allowedOutputPaths: string[];
+  environment: { required_tools: Array<Record<string, unknown>> };
 }> {
   const toolchainPath = path.join(projectRoot, "spec", "toolchain", "toolchain.yaml");
   const buildPath = path.join(projectRoot, "spec", "toolchain", "build.yaml");
@@ -3521,12 +3528,14 @@ async function loadToolchainGenerationSpec(projectRoot: string): Promise<{
   const buildSpec = parseTopLevelYaml(await readFile(buildPath, "utf8"));
   const profilePath = path.join(projectRoot, "spec", "toolchain", "profile.yaml");
   const runPath = path.join(projectRoot, "spec", "toolchain", "run.yaml");
+  const profileSpec = existsSync(profilePath) ? parseTopLevelYaml(await readFile(profilePath, "utf8")) : undefined;
   return {
     toolchainIndex,
     buildSpec,
-    profileSpec: existsSync(profilePath) ? parseTopLevelYaml(await readFile(profilePath, "utf8")) : undefined,
+    profileSpec,
     runSpec: existsSync(runPath) ? parseTopLevelYaml(await readFile(runPath, "utf8")) : undefined,
     allowedOutputPaths: collectStringListByKey(buildSpec, "allowed_output_path"),
+    environment: normalizeProfileEnvironment(profileSpec),
   };
 }
 
@@ -3561,7 +3570,7 @@ function normalizeToolchainDraft(raw: unknown): ToolchainGenerationDraft {
   };
 }
 
-function validateToolchainDraft(draft: ToolchainGenerationDraft, allowedOutputPaths: string[]): void {
+function validateToolchainDraftPaths(draft: ToolchainGenerationDraft, allowedOutputPaths: string[]): void {
   if (allowedOutputPaths.length === 0) {
     throw new CliError("policy_blocked: toolchain allowed_output_path is empty", "policy_blocked", {
       reason: "path_denied",
@@ -3585,11 +3594,57 @@ function validateToolchainDraft(draft: ToolchainGenerationDraft, allowedOutputPa
   if (missing.length > 0) {
     throw new AgentOutputError(`toolchain manifest references files not in draft: ${missing.join(", ")}`);
   }
-  try {
-    parseToolchainManifest(draft.manifest);
-  } catch (error) {
-    throw new AgentOutputError(error instanceof Error ? error.message : String(error));
+}
+
+function normalizeToolchainEnvironment(
+  manifest: Record<string, unknown>,
+  fallback: { required_tools: Array<Record<string, unknown>> },
+): { required_tools: Array<Record<string, unknown>> } {
+  const existing = manifest.environment && typeof manifest.environment === "object" && !Array.isArray(manifest.environment)
+    ? (manifest.environment as { required_tools?: unknown }).required_tools
+    : undefined;
+  const tools = Array.isArray(existing) && existing.length > 0 ? existing : fallback.required_tools;
+  if (!Array.isArray(tools) || tools.length === 0) {
+    throw new AgentOutputError("toolchain environment.required_tools is required");
   }
+  return { required_tools: tools.filter((tool): tool is Record<string, unknown> => Boolean(tool) && typeof tool === "object" && !Array.isArray(tool)) };
+}
+
+function normalizeProfileEnvironment(profileSpec: unknown): { required_tools: Array<Record<string, unknown>> } {
+  const env = profileSpec && typeof profileSpec === "object" && !Array.isArray(profileSpec)
+    ? (profileSpec as { environment?: unknown }).environment
+    : undefined;
+  if (!env || typeof env !== "object" || Array.isArray(env)) return { required_tools: [] };
+  const out = new Map<string, Record<string, unknown>>();
+  for (const item of Array.isArray((env as { required_tools?: unknown }).required_tools) ? (env as { required_tools: unknown[] }).required_tools : []) {
+    if (item && typeof item === "object" && !Array.isArray(item)) {
+      for (const [name, constraint] of Object.entries(item)) {
+        if (typeof constraint === "string") out.set(name, requiredTool(name, constraint));
+      }
+    }
+  }
+  for (const line of stringArrayValue((env as { allowed_versions?: unknown }).allowed_versions)) {
+    const match = /^(\S+)\s+(.+)$/.exec(line.trim());
+    if (match && !out.has(match[1])) out.set(match[1], requiredTool(match[1], match[2]));
+  }
+  return { required_tools: [...out.values()] };
+}
+
+function requiredTool(name: string, constraint: string): Record<string, unknown> {
+  return {
+    name,
+    command: name,
+    version_args: ["--version"],
+    version_regex: "(\\d+(?:\\.\\d+){0,3})",
+    version_constraint: constraint,
+    kind: toolKind(name),
+  };
+}
+
+function toolKind(name: string): string {
+  if (name.includes("qemu")) return "emulator";
+  if (name.includes("objcopy") || name.includes("objdump") || name === "ld" || name === "ar") return "binutils";
+  return "compiler";
 }
 
 function isAllowedToolchainOutput(candidate: string, allowedOutputPaths: string[]): boolean {

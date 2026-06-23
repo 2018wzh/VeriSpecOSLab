@@ -138,6 +138,7 @@ async function makePortalBoundProject(options: { longBuild?: boolean } = {}): Pr
     chmodSync(script, 0o755);
     writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify({
       manifest_version: 2,
+      environment: { required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }] },
       files: [],
       build: { variants: [{ id: "baseline", commands: [{ name: "slow", command: [script], timeout_ms: 10_000 }], artifacts: [] }] },
       run: { profiles: [{ id: "default", command: "printf", args: ["ok"], artifacts: [] }], cases: [{ id: "smoke", profile: "default", success_regex: "ok" }] },
@@ -146,6 +147,7 @@ async function makePortalBoundProject(options: { longBuild?: boolean } = {}): Pr
   } else {
     writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify({
       manifest_version: 2,
+      environment: { required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }] },
       files: [],
       build: { variants: [{ id: "baseline", commands: ["printf ok"], artifacts: [] }] },
       run: { profiles: [{ id: "default", command: "printf", args: ["ok"], artifacts: [] }], cases: [{ id: "smoke", profile: "default", success_regex: "ok" }] },

@@ -14,6 +14,15 @@ const toolchainCommandSchema = z.object({
   timeout_ms: z.number().nonnegative().optional(),
 });
 
+const requiredToolSchema = z.object({
+  name: z.string().min(1),
+  command: z.string().min(1),
+  version_args: z.array(z.string()).default(["--version"]),
+  version_regex: z.string().optional(),
+  version_constraint: z.string().min(1),
+  kind: z.string().min(1),
+});
+
 const buildVariantSchema = z.object({
   id: z.string().min(1),
   purpose: z.string().optional(),
@@ -96,6 +105,9 @@ const manifestSchema = z.object({
     name: z.string().optional(),
     version: z.string().optional(),
   }).optional(),
+  environment: z.object({
+    required_tools: z.array(requiredToolSchema).min(1),
+  }),
   build: z.object({
     variants: z.array(buildVariantSchema).min(1),
   }),
@@ -117,6 +129,7 @@ const manifestSchema = z.object({
 
 export type ToolchainManifestV2 = z.infer<typeof manifestSchema>;
 export type ToolchainCommandV2 = z.infer<typeof toolchainCommandSchema>;
+export type RequiredToolV2 = z.infer<typeof requiredToolSchema>;
 export type BuildVariantV2 = z.infer<typeof buildVariantSchema>;
 export type RunProfileV2 = z.infer<typeof runProfileSchema>;
 export type RunCaseV2 = z.infer<typeof runCaseSchema>;

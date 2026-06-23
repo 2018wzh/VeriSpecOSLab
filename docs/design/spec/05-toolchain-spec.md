@@ -107,6 +107,28 @@ environment:
   disallowed_tools:
 ```
 
+生成后的 `.vos/toolchain.json` v2 必须保留结构化环境约束：
+
+```json
+{
+  "environment": {
+    "required_tools": [
+      {
+        "name": "gcc",
+        "command": "gcc",
+        "version_args": ["--version"],
+        "version_regex": "(\\d+(?:\\.\\d+){0,3})",
+        "version_constraint": ">=9.0",
+        "kind": "compiler"
+      }
+    ]
+  }
+}
+```
+
+`vos build` 执行前必须探测这些工具的实际版本，并把结果写入 build
+evidence。版本不满足约束时命令失败；不得回退到未声明的本机工具链。
+
 ## 5. BuildContract 最小字段
 
 ```yaml

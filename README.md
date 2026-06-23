@@ -106,6 +106,11 @@ vos submit pack
 evidence 时命令失败。成功后 VOS 自动提交报告产物并为新 `HEAD` 追加 ledger
 记录。
 
+`vos submit pack` 生成 commit-bound `tar.gz` 提交包：只包含源码、spec、
+公开测试、报告、ledger、toolchain 环境约束和 evidence refs，不包含本地
+build/image 产物。云端 runner 以包内 `commit_sha` checkout 后重新执行
+`vos build && vos verify public`。
+
 ### 3. Agent
 
 Agent 不是自由执行的聊天机器人，而是受规格和验证约束的协作组件。设计里强调：

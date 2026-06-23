@@ -27,6 +27,7 @@ function manifestV2(options: {
   return {
     manifest_version: 2,
     files: ["Makefile"],
+    environment: { required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }] },
     build: {
       variants: [{
         id: "baseline",
@@ -1390,10 +1391,13 @@ function makeAgentGeneratePatch(): string {
     "index 0000000..2222222",
     "--- /dev/null",
     "+++ b/.vos/toolchain.json",
-    "@@ -0,0 +1,31 @@",
+    "@@ -0,0 +1,34 @@",
     "+{",
     "+  \"manifest_version\": 2,",
     "+  \"files\": [\"Makefile\"],",
+    "+  \"environment\": {",
+    "+    \"required_tools\": [{ \"name\": \"true\", \"command\": \"true\", \"version_args\": [\"--version\"], \"version_constraint\": \">=0\", \"kind\": \"utility\" }]",
+    "+  },",
     "+  \"build\": {",
     "+    \"variants\": [{",
     "+      \"id\": \"baseline\",",

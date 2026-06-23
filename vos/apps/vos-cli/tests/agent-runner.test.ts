@@ -852,6 +852,7 @@ describe("vos-cli package agent runner", () => {
     writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify({
       manifest_version: 2,
       files: ["Makefile"],
+      environment: { required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }] },
       build: { variants: [{ id: "baseline", commands: ["make all"], artifacts: ["build/kernel.bin"] }] },
       run: {
         profiles: [{ id: "default", command: "sh", args: ["-c", "echo XV6_BOOT_OK", "-kernel", "build/kernel.bin"], artifacts: ["build/kernel.bin"], timeout_ms: 1000 }],

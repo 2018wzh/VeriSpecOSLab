@@ -4,6 +4,9 @@ import { parseToolchainManifest } from "../app/runtime/manifest.ts";
 const validManifest = {
   manifest_version: 2,
   files: ["Makefile"],
+  environment: {
+    required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }],
+  },
   build: {
     variants: [{ id: "baseline", commands: ["make all"], artifacts: ["build/kernel.bin"] }],
   },

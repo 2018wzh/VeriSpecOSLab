@@ -224,6 +224,14 @@ function makeGitProject(options: { manifest: boolean }): string {
     "",
   ].join("\n"));
   writeFileSync(join(root, "spec", "toolchain", "toolchain.yaml"), "includes:\n  - build.yaml\n  - run.yaml\n");
+  writeFileSync(join(root, "spec", "toolchain", "profile.yaml"), [
+    "environment:",
+    "  required_tools:",
+    "    - true: \">=0\"",
+    "  allowed_versions:",
+    "    - true >= 0",
+    "",
+  ].join("\n"));
   writeFileSync(join(root, "spec", "toolchain", "build.yaml"), [
     "build:",
     "  allowed_output_path:",
@@ -246,6 +254,7 @@ function makeGitProject(options: { manifest: boolean }): string {
       manifest_version: 2,
       generator: { name: "test", version: "1" },
       files: ["Makefile"],
+      environment: { required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }] },
       build: { variants: [{ id: "baseline", commands: ["make all"], artifacts: ["build/kernel.bin"] }] },
       run: { profiles: [{ id: "default", command: "printf", args: ["boot ok"], artifacts: ["build/kernel.bin"] }], cases: [{ id: "smoke", profile: "default", success_regex: "boot ok" }] },
       test: { suites: [] },

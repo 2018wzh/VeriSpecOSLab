@@ -6,6 +6,7 @@
     "cli-progress": "^3.12.0",
     "handlebars": "^4.7.9",
     "ora": "^9.4.0",
+    "tar": "^7.5.16",
     "vos-agent": "workspace:*",
     "vos-agent-session": "workspace:*",
     "vos-adapter": "workspace:*",

@@ -4,6 +4,7 @@ import { lstat, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { EvidenceWriter } from "../evidence/index.ts";
 import { runCommand } from "./executor.ts";
+import { probeRequiredTools, type ToolVersionProbe } from "./environment.ts";
 import { collectStringListByKey, parseTopLevelYaml } from "../utils/yaml.ts";
 import { withResourceLock } from "./locks.ts";
 import { getBuildVariant, loadToolchainManifest, type ToolchainCommandV2, type ToolchainManifestV2 } from "./manifest.ts";
@@ -46,6 +47,7 @@ interface BuildResult {
   artifacts: string[];
   output: string;
   failedStep?: string;
+  toolVersions?: ToolVersionProbe[];
 }
 
 export async function runBuildCommand(params: {
@@ -78,6 +80,11 @@ async function runBuildCommandUnlocked(params: {
   enforceManifestFilesExist(manifest, params.projectRoot);
   const allowedOutputPaths = await loadAllowedOutputPaths(params.projectRoot);
   enforceManifestPathGuard(manifest, allowedOutputPaths);
+  const toolVersions = probeRequiredTools(manifest.environment.required_tools);
+  const envPath = path.join(params.evidence.artifacts_root, "build", "environment.json");
+  mkdirSync(path.dirname(envPath), { recursive: true });
+  await writeFile(envPath, `${JSON.stringify({ required_tools: toolVersions }, null, 2)}\n`);
+  params.evidence.addArtifactFromPath("toolchain-environment", envPath, "required tool versions");
   const variant = getBuildVariant(manifest, params.variant ?? "baseline");
   const steps = normalizeCommands(manifest, params.projectRoot, variant.id);
 
@@ -91,6 +98,7 @@ async function runBuildCommandUnlocked(params: {
       status: "ok",
       artifacts: [path.relative(params.projectRoot, planPath)],
       output: dryPlan.join("\n"),
+      toolVersions,
     };
   }
 
@@ -163,7 +171,7 @@ async function runBuildCommandUnlocked(params: {
 
   await writeFile(buildLog, `${output}\n`);
   params.evidence.addArtifactFromPath("build", buildLog, "aggregate build log");
-  return { status: "ok", artifacts, output: output || "build completed" };
+  return { status: "ok", artifacts, output: output || "build completed", toolVersions };
 }
 
 async function loadAllowedOutputPaths(projectRoot: string): Promise<string[]> {

@@ -309,6 +309,7 @@ function makeTraceProject(): string {
   writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify({
     manifest_version: 2,
     files: ["Makefile"],
+    environment: { required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }] },
     build: { variants: [{ id: "baseline", commands: ["make all"], artifacts: ["build/kernel.bin"] }] },
     run: {
       profiles: [{ id: "default", command: "./fake-qemu.sh", args: [], artifacts: ["build/kernel.bin"], timeout_ms: 1000 }],
