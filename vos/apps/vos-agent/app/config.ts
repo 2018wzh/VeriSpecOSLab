@@ -59,6 +59,12 @@ export interface ToolConfig {
   disabled: string[];
 }
 
+export interface ChatRetryConfig {
+  maxRetries: number;
+  initialDelayMs: number;
+  maxDelayMs: number;
+}
+
 export interface Config {
   /** Mode used when nothing more specific is set. */
   defaultMode: string;
@@ -66,6 +72,8 @@ export interface Config {
   modes: Record<string, ModeDefinition>;
   /** Tool policy selected from settings. */
   tools: ToolConfig;
+  /** Provider-neutral retry policy wrapped around the routed ChatClient. */
+  chatRetry?: ChatRetryConfig;
   /** Present iff OPENAI_API_KEY is set. */
   openai?: OpenAIConfig;
   /** Present iff ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN is set. */
@@ -90,6 +98,7 @@ export interface Config {
  *   SMART_REASONING_EFFORT optional reasoning effort for 'smart'
  *   DEEP_REASONING_EFFORT  optional reasoning effort for 'deep'
  *   RUSH_REASONING_EFFORT  optional reasoning effort for 'rush' (default medium)
+ *   VOS_LLM_MAX_RETRIES    provider-neutral retries above routing (default 0)
  *
  * Throws if no provider is configured.
  */
@@ -160,6 +169,19 @@ export function loadConfig(
     defaultMode: trimToUndefined(settings.defaultMode) ?? DEFAULT_MODE,
     modes,
     tools: { disabled: uniqueStrings(settings.disabledTools ?? []) },
+    chatRetry: {
+      maxRetries: readNonNegativeInteger(env, "VOS_LLM_MAX_RETRIES", 0),
+      initialDelayMs: readNonNegativeInteger(
+        env,
+        "VOS_LLM_RETRY_INITIAL_DELAY_MS",
+        200,
+      ),
+      maxDelayMs: readNonNegativeInteger(
+        env,
+        "VOS_LLM_RETRY_MAX_DELAY_MS",
+        2_000,
+      ),
+    },
     openai,
     anthropic,
   };
@@ -258,6 +280,20 @@ function readReasoningEffort(
   }
   const known = Array.from(REASONING_EFFORTS).join(", ");
   throw new Error(`invalid ${key}: "${value}". known reasoning efforts: ${known}`);
+}
+
+function readNonNegativeInteger(
+  env: Record<string, string | undefined>,
+  key: string,
+  defaultValue: number,
+): number {
+  const value = trimToUndefined(env[key]);
+  if (!value) return defaultValue;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`invalid ${key}: expected a non-negative integer`);
+  }
+  return parsed;
 }
 
 export function isReasoningEffort(value: string): value is ReasoningEffort {

@@ -8,6 +8,7 @@ import {
   stripPrefix,
   type Route,
 } from "./router.ts";
+import { withRetryingChatClient } from "./retry.ts";
 
 const ANTHROPIC_PREFIXES = [
   "claude",
@@ -71,10 +72,11 @@ export function createChatClientFromConfig(config: Config): ChatClient {
     });
   }
 
-  return createRoutedChatClient({
+  const routed = createRoutedChatClient({
     routes,
     fallback: onlyConfiguredClient,
   });
+  return withRetryingChatClient(routed, config.chatRetry);
 }
 
 function missingProviderClient(provider: string, envVar: string): ChatClient {

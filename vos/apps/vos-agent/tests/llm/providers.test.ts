@@ -156,6 +156,51 @@ describe("createChatClientFromConfig", () => {
     }
   });
 
+  test("applies provider-neutral retry above routing", async () => {
+    const openaiBodies: unknown[] = [];
+    const openaiServer = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        openaiBodies.push(await req.json());
+        if (openaiBodies.length === 1) {
+          return Response.json({ error: { message: "temporary" } }, { status: 500 });
+        }
+        return Response.json({
+          id: "chatcmpl-test",
+          object: "chat.completion",
+          created: 0,
+          model: "gpt5.5",
+          choices: [{
+            index: 0,
+            finish_reason: "stop",
+            message: { role: "assistant", content: "ok" },
+          }],
+        });
+      },
+    });
+
+    try {
+      const chat = createChatClientFromConfig({
+        defaultMode: "smart",
+        modes: { smart: { model: "gpt5.5" }, deep: { model: "gpt5.5" } },
+        tools: { disabled: [] },
+        chatRetry: { maxRetries: 1, initialDelayMs: 0, maxDelayMs: 0 },
+        openai: {
+          apiKey: "fake",
+          baseURL: `http://127.0.0.1:${openaiServer.port}/v1`,
+          maxRetries: 0,
+        },
+      });
+
+      await expect(chat.chat(emptyRequest("gpt5.5"))).resolves.toMatchObject({
+        content: "ok",
+      });
+      expect(openaiBodies).toHaveLength(2);
+    } finally {
+      await openaiServer.stop(true);
+    }
+  });
+
   test("with only Anthropic configured, an unknown model falls back to it", async () => {
     const chat = createChatClientFromConfig({
       defaultMode: "smart", modes: { smart: { model: "x" }, deep: { model: "y" } },

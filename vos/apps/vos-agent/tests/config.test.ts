@@ -56,6 +56,30 @@ describe("loadConfig", () => {
     expect(cfg.openai).toBeDefined();
   });
 
+  test("configures provider-neutral chat retries from env", () => {
+    const cfg = loadConfig({
+      OPENAI_API_KEY: "ok",
+      VOS_LLM_MAX_RETRIES: "3",
+      VOS_LLM_RETRY_INITIAL_DELAY_MS: "10",
+      VOS_LLM_RETRY_MAX_DELAY_MS: "99",
+    });
+
+    expect(cfg.chatRetry).toEqual({
+      maxRetries: 3,
+      initialDelayMs: 10,
+      maxDelayMs: 99,
+    });
+  });
+
+  test("rejects invalid provider-neutral chat retry env", () => {
+    expect(() =>
+      loadConfig({
+        OPENAI_API_KEY: "ok",
+        VOS_LLM_MAX_RETRIES: "-1",
+      }),
+    ).toThrow(/invalid VOS_LLM_MAX_RETRIES/);
+  });
+
   test("default mode is 'smart' and points at the built-in smart model", () => {
     const cfg = loadConfig({ ANTHROPIC_API_KEY: "ak" });
     expect(cfg.defaultMode).toBe(DEFAULT_MODE);
