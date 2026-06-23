@@ -18,6 +18,10 @@ import type { ThreadStore } from "./thread-store.ts";
 import type { ToolPolicy } from "../tools/types.ts";
 import { addModelUsage, cloneThreadUsage } from "./usage.ts";
 import type { PermissionRule, ToolApprovalHandler } from "../tools/permissions.ts";
+import {
+  compactHistoryIfNeeded,
+  type ContextCompactionSetting,
+} from "./compaction.ts";
 
 export interface RunSessionTurnOptions {
   chat: ChatClient;
@@ -39,6 +43,8 @@ export interface RunSessionTurnOptions {
   extraMcpServers?: readonly McpServerConfig[];
   streamAssistant?: boolean;
   fixedSystemPrompt?: string;
+  contextCompaction?: ContextCompactionSetting;
+  signal?: AbortSignal;
   onEvent?: (event: SessionEvent) => void | Promise<void>;
 }
 
@@ -197,8 +203,22 @@ export async function runSessionTurn(
         await recordModelUsage(event.iteration, event.model, event.usage);
       }
     };
-    const historyForRun = threadId
-      ? prependSystemMessage(stripInstructionMessages(thread.messages), system)
+    let history = threadId ? stripInstructionMessages(thread.messages) : undefined;
+    let compactionUsageEvents: ChatUsage[] = [];
+    if (history) {
+      const compaction = await compactHistoryIfNeeded({
+        chat,
+        model: turnModel,
+        messages: history,
+        usage,
+        options: opts.contextCompaction,
+        signal: opts.signal,
+      });
+      history = compaction.messages;
+      compactionUsageEvents = compaction.usageEvents;
+    }
+    const historyForRun = history
+      ? prependSystemMessage(history, system)
       : undefined;
     const registry = createBuiltinToolRegistry({
       rootDir: resolvedWorkspaceRoot,
@@ -228,6 +248,9 @@ export async function runSessionTurn(
       mcpServers: mcpProvider.serverNames,
       cwd: startDir,
     });
+    for (const chatUsage of compactionUsageEvents) {
+      await recordModelUsage(0, turnModel, chatUsage);
+    }
     const result = await runAgent({
       chat,
       registry,
@@ -237,6 +260,7 @@ export async function runSessionTurn(
       maxIterations: opts.maxIterations,
       streamAssistant,
       ...(historyForRun ? { history: historyForRun } : { system }),
+      signal: opts.signal,
       onEvent: handleAgentEvent,
     });
 

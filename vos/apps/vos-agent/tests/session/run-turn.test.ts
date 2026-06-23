@@ -244,6 +244,175 @@ describe("runSessionTurn", () => {
     expect(second.thread.guidanceFiles).toHaveLength(1);
   });
 
+  test("compacts old history when prior context usage crosses the threshold", async () => {
+    const thread = store.create({ prompt: "seed", model: "sonnet4.6" });
+    thread.messages = [
+      { role: "user", content: "old question 1" },
+      { role: "assistant", content: "old answer 1" },
+      { role: "user", content: "old question 2" },
+      { role: "assistant", content: "old answer 2" },
+      { role: "user", content: "recent question" },
+      { role: "assistant", content: "recent answer" },
+    ];
+    thread.usage.byModel.push({
+      model: "sonnet4.6",
+      provider: "anthropic",
+      inputTokens: 180_000,
+      outputTokens: 1_000,
+      totalTokens: 181_000,
+      contextWindowTokens: 200_000,
+      lastContextWindowUsage: 0.9,
+    });
+    store.save(thread);
+
+    const chat = new CallbackChatClient((request, index) => {
+      if (index === 0) {
+        expect(request.tools).toEqual([]);
+        expect(String(request.messages[0].content)).toContain("old question 1");
+        expect(String(request.messages[0].content)).toContain("old answer 2");
+        expect(String(request.messages[0].content)).not.toContain("recent question");
+        return textResponse("Older work established the project context.");
+      }
+
+      expect(request.messages.map((m) => m.role)).toEqual([
+        "system",
+        "user",
+        "assistant",
+        "user",
+      ]);
+      expect(String(request.messages[1].content)).toContain("[Compacted conversation summary]");
+      expect(String(request.messages[1].content)).toContain("Older work established the project context.");
+      expect(String(request.messages[1].content)).toContain("recent question");
+      expect(request.messages[2]).toMatchObject({ role: "assistant", content: "recent answer" });
+      expect(request.messages[3]).toMatchObject({ role: "user", content: "continue" });
+      return textResponse("continued");
+    });
+
+    const result = await runSessionTurn({
+      chat,
+      store,
+      workspaceRoot: tmp,
+      threadId: thread.id,
+      prompt: "continue",
+      contextCompaction: { threshold: 0.8, protectLastMessages: 2 },
+    });
+
+    expect(result.thread.messages[0]).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("[Compacted conversation summary]"),
+    });
+    expect(result.content).toBe("continued");
+  });
+
+  test("omits image payloads from compaction summary prompts", async () => {
+    const imagePayload = "A".repeat(512);
+    const thread = store.create({ prompt: "seed", model: "sonnet4.6" });
+    thread.messages = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "old image context" },
+          { type: "image_url", image_url: { url: `data:image/png;base64,${imagePayload}` } },
+        ],
+      },
+      { role: "assistant", content: "old image answer" },
+      { role: "user", content: "recent question" },
+      { role: "assistant", content: "recent answer" },
+    ];
+    thread.usage.byModel.push({
+      model: "sonnet4.6",
+      inputTokens: 190_000,
+      outputTokens: 1_000,
+      totalTokens: 191_000,
+      lastContextWindowUsage: 0.95,
+    });
+    store.save(thread);
+
+    const chat = new CallbackChatClient((request, index) => {
+      if (index === 0) {
+        const summaryPrompt = String(request.messages[0].content);
+        expect(summaryPrompt).toContain("old image context");
+        expect(summaryPrompt).toContain("[Image omitted]");
+        expect(summaryPrompt).not.toContain(imagePayload);
+        return textResponse("Earlier work involved an image.");
+      }
+      return textResponse("continued after image");
+    });
+
+    const result = await runSessionTurn({
+      chat,
+      store,
+      workspaceRoot: tmp,
+      threadId: thread.id,
+      prompt: "continue",
+      contextCompaction: { threshold: 0.8, protectLastMessages: 2 },
+    });
+
+    expect(result.content).toBe("continued after image");
+  });
+
+  test("tracks usage from compaction summary calls", async () => {
+    const thread = store.create({ prompt: "seed", model: "sonnet4.6" });
+    thread.messages = [
+      { role: "user", content: "old question" },
+      { role: "assistant", content: "old answer" },
+      { role: "user", content: "recent question" },
+      { role: "assistant", content: "recent answer" },
+    ];
+    thread.usage = {
+      inputTokens: 180_000,
+      outputTokens: 1_000,
+      totalTokens: 181_000,
+      byModel: [{
+        model: "sonnet4.6",
+        provider: "anthropic",
+        inputTokens: 180_000,
+        outputTokens: 1_000,
+        totalTokens: 181_000,
+        contextWindowTokens: 200_000,
+        lastContextWindowUsage: 0.9,
+      }],
+    };
+    store.save(thread);
+
+    const chat = new CallbackChatClient(async (request, index) => {
+      if (index === 0) {
+        await request.onUsage?.({ inputTokens: 1_000, outputTokens: 100, totalTokens: 1_100 });
+        return textResponse("Summary of old work.");
+      }
+      await request.onUsage?.({ inputTokens: 20, outputTokens: 5, totalTokens: 25 });
+      return textResponse("continued");
+    });
+    const usageEvents: number[] = [];
+
+    const result = await runSessionTurn({
+      chat,
+      store,
+      workspaceRoot: tmp,
+      threadId: thread.id,
+      prompt: "continue",
+      contextCompaction: { threshold: 0.8, protectLastMessages: 2 },
+      onEvent: (event) => {
+        if (event.type === "model.usage") {
+          usageEvents.push(event.totalTokens);
+        }
+      },
+    });
+
+    expect(usageEvents).toEqual([1_100, 25]);
+    expect(result.thread.usage).toMatchObject({
+      inputTokens: 181_020,
+      outputTokens: 1_105,
+      totalTokens: 182_125,
+    });
+    expect(result.thread.usage.byModel[0]).toMatchObject({
+      model: "sonnet4.6",
+      inputTokens: 181_020,
+      outputTokens: 1_105,
+      totalTokens: 182_125,
+    });
+  });
+
   test("continues with the stored model and mode unless overridden", async () => {
     const first = await runSessionTurn({
       chat: new CallbackChatClient(() => textResponse("first")),
