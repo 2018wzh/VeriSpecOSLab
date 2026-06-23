@@ -101,6 +101,29 @@ describe("terminal TUI renderer", () => {
     expect(lines).toContain("final answer");
   });
 
+  test("renders model usage summaries", () => {
+    const state = createTerminalRenderState();
+
+    const lines = renderSessionEvent({
+      type: "model.usage",
+      thread_id: "T-session",
+      iteration: 1,
+      model: "sonnet4.6",
+      provider: "anthropic",
+      inputTokens: 1000,
+      outputTokens: 200,
+      totalTokens: 1200,
+      contextWindowTokens: 200000,
+      contextWindowUsage: 0.005,
+      estimatedCostUsd: 0.006,
+    }, state).join("\n");
+
+    expect(lines).toContain("usage: sonnet4.6");
+    expect(lines).toContain("1000 in");
+    expect(lines).toContain("0.5% of 200000 context");
+    expect(lines).toContain("est. $0.006000");
+  });
+
   test("renders assistant labels when debug labels are enabled", () => {
     const state = createTerminalRenderState({ debugLabels: true });
 

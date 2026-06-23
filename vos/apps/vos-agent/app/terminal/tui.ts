@@ -1,4 +1,5 @@
 import type { SessionEvent } from "../session/types.ts";
+import { formatModelUsage } from "../session/usage.ts";
 
 export interface TerminalRenderState {
   activeTools: Map<string, string>;
@@ -122,6 +123,10 @@ export function renderSessionEvent(
     const active = activeToolsSummary(state);
     if (active) lines.push(`active tools: ${active}`);
     return lines;
+  }
+
+  if (event.type === "model.usage") {
+    return [formatModelUsage(event)];
   }
 
   if (event.type === "agent.done") {

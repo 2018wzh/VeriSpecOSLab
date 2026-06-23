@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { join } from "node:path";
 import {
@@ -27,6 +28,18 @@ function testConfig() {
       rush: { model: "rush-model", reasoningEffort: "medium" as const },
     },
     tools: { disabled: [] },
+  };
+}
+
+function testConfigWithPermissions() {
+  return {
+    ...testConfig(),
+    tools: {
+      disabled: [],
+      permissions: [
+        { action: "ask" as const, tool: "Write", target: "path" as const, pattern: "secrets/*" },
+      ],
+    },
   };
 }
 
@@ -164,6 +177,78 @@ describe("runInteractive", () => {
       'unknown mode "bogus". known modes: rush, smart',
       "unknown command: /wat",
     ]);
+  });
+
+  test("controller asks before executing ask-rule tools and runs approved calls", async () => {
+    const view = new RecordingInteractiveView();
+    const chat = new CallbackChatClient((_request, index) => {
+      if (index === 0) {
+        return toolCallResponse([
+          {
+            id: "write-secret",
+            name: "Write",
+            args: { file_path: "secrets/token.txt", content: "TOKEN=ok\n" },
+          },
+        ]);
+      }
+      return textResponse("wrote secret");
+    });
+
+    await runInteractiveController({
+      chat,
+      config: testConfigWithPermissions(),
+      store,
+      workspaceRoot: tmp,
+      input: new FakeInteractiveInput(["write secret", "yes", "/quit"]),
+      view,
+    });
+
+    expect(view.commands).toContain(
+      'approval required: Write on secrets/token.txt. Type "yes" to allow.',
+    );
+    expect(view.commands).toContain("approved: Write on secrets/token.txt");
+    expect(readFileSync(join(tmp, "secrets/token.txt"), "utf8")).toBe("TOKEN=ok\n");
+    expect(view.sessionEvents).toContainEqual(expect.objectContaining({
+      type: "tool.result",
+      name: "Write",
+      content: "OK",
+    }));
+  });
+
+  test("controller denies ask-rule tools when approval is not explicit", async () => {
+    const view = new RecordingInteractiveView();
+    const chat = new CallbackChatClient((_request, index) => {
+      if (index === 0) {
+        return toolCallResponse([
+          {
+            id: "write-secret",
+            name: "Write",
+            args: { file_path: "secrets/token.txt", content: "TOKEN=ok\n" },
+          },
+        ]);
+      }
+      return textResponse("did not write secret");
+    });
+
+    await runInteractiveController({
+      chat,
+      config: testConfigWithPermissions(),
+      store,
+      workspaceRoot: tmp,
+      input: new FakeInteractiveInput(["write secret", "no", "/quit"]),
+      view,
+    });
+
+    expect(view.commands).toContain(
+      'approval required: Write on secrets/token.txt. Type "yes" to allow.',
+    );
+    expect(view.commands).toContain("denied: Write on secrets/token.txt");
+    expect(existsSync(join(tmp, "secrets/token.txt"))).toBe(false);
+    expect(view.sessionEvents).toContainEqual(expect.objectContaining({
+      type: "tool.result",
+      name: "Write",
+      content: expect.stringContaining('Tool "Write" denied by policy'),
+    }));
   });
 
   test("controller propagates view failures instead of reporting them as command errors", async () => {

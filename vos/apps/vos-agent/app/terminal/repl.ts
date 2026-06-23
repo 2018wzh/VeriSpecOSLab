@@ -350,6 +350,7 @@ export async function runInteractiveController(
         : modeDef?.reasoningEffort,
       disabledTools: opts.config.tools.disabled,
       permissionRules: opts.config.tools.permissions,
+      approveToolExecution,
       mode: useStoredThreadModel || opts.model ? undefined : mode,
       streamAssistant: opts.streamAssistant ?? false,
       onEvent: async (event) => {
@@ -357,6 +358,24 @@ export async function runInteractiveController(
       },
     });
     return result;
+  }
+
+  async function approveToolExecution(request: {
+    toolName: string;
+    targetValue: string;
+    reason?: string;
+  }): Promise<boolean> {
+    const target = ` on ${request.targetValue}`;
+    const reason = request.reason ? ` (${request.reason})` : "";
+    await render(() =>
+      view.command(`approval required: ${request.toolName}${target}${reason}. Type "yes" to allow.`)
+    );
+    const answer = await opts.input.readLine();
+    const approved = isApprovalYes(answer);
+    await render(() =>
+      view.command(`${approved ? "approved" : "denied"}: ${request.toolName}${target}`)
+    );
+    return approved;
   }
 }
 
@@ -384,6 +403,11 @@ function terminalSize(output: TuiOutputStream): StarsViewSize {
 
 function positiveIntegerOrDefault(value: number | undefined, fallback: number): number {
   return Number.isInteger(value) && value !== undefined && value > 0 ? value : fallback;
+}
+
+function isApprovalYes(value: string | undefined): boolean {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "yes" || normalized === "y";
 }
 
 function captureCleanupError(current: unknown, action: () => void): unknown {
