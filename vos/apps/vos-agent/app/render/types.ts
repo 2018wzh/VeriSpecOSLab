@@ -1,3 +1,4 @@
+import type { DisplayCellWidth } from "../tui/display-width.ts";
 import type { Style } from "../tui/style.ts";
 
 export type RenderSegment = Readonly<{
@@ -8,6 +9,13 @@ export type RenderSegment = Readonly<{
 
 export type RenderLine = Readonly<{
   segments: readonly RenderSegment[];
+}>;
+
+export type RenderCell = Readonly<{
+  glyph: string;
+  width: DisplayCellWidth;
+  style?: Style;
+  link?: string;
 }>;
 
 export type RenderedMarkdown = Readonly<{

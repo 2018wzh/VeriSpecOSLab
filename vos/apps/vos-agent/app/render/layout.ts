@@ -1,10 +1,11 @@
 import { displayCellWidth, stringDisplayWidth, stringGraphemes } from "../tui/display-width.ts";
-import type { Style } from "../tui/style.ts";
-import type { RenderLine, RenderSegment } from "./types.ts";
+import type { DisplayCellWidth } from "../tui/display-width.ts";
+import { stylesEqual, type Style } from "../tui/style.ts";
+import type { RenderCell, RenderLine, RenderSegment } from "./types.ts";
 
 type StyledChar = Readonly<{
   char: string;
-  width: number;
+  width: DisplayCellWidth;
   style?: Style;
   link?: string;
 }>;
@@ -106,6 +107,15 @@ export function padSegmentLine(line: RenderLine, width: number): RenderLine {
 
 export function segmentWidth(segments: readonly RenderSegment[]): number {
   return segments.reduce((width, segment) => width + stringDisplayWidth(segment.text), 0);
+}
+
+export function renderLineCells(line: RenderLine): RenderCell[] {
+  return flattenSegments(line.segments).map((char) => ({
+    glyph: char.char,
+    width: char.width,
+    style: char.style,
+    ...(char.link === undefined ? {} : { link: char.link }),
+  }));
 }
 
 export function compactSegments(segments: readonly RenderSegment[]): RenderSegment[] {
@@ -223,12 +233,4 @@ function charsWidth(chars: readonly StyledChar[]): number {
 
 function isBreakableSpace(char: string): boolean {
   return char === " " || char === "\t";
-}
-
-function stylesEqual(left: Style | undefined, right: Style | undefined): boolean {
-  return Boolean(left?.bold) === Boolean(right?.bold)
-    && Boolean(left?.dim) === Boolean(right?.dim)
-    && Boolean(left?.italic) === Boolean(right?.italic)
-    && (left?.fg ?? "default") === (right?.fg ?? "default")
-    && (left?.bg ?? "default") === (right?.bg ?? "default");
 }

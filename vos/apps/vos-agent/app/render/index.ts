@@ -24,8 +24,9 @@ export {
   starsLightStyle,
   styleToTerminalStyle,
 } from "./styles.ts";
-export { renderedMarkdownToText, segmentsToText } from "./layout.ts";
+export { renderedMarkdownToText, renderLineCells, segmentsToText } from "./layout.ts";
 export type {
+  RenderCell,
   RenderLine,
   RenderSegment,
   RenderedMarkdown,

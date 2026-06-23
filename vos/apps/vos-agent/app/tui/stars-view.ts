@@ -5,10 +5,10 @@ import {
   padStartDisplay,
   sliceByDisplayWidth,
   sliceEndByDisplayWidth,
-  stringGraphemes,
   stringDisplayWidth,
 } from "./display-width.ts";
 import {
+  renderLineCells,
   renderMarkdown,
   starsDarkStyle,
   starsLightStyle,
@@ -16,7 +16,7 @@ import {
   withStyles,
   withWordWrap,
 } from "../render/index.ts";
-import type { RenderLine } from "../render/index.ts";
+import type { RenderCell, RenderLine } from "../render/index.ts";
 import { ScreenBuffer } from "./screen.ts";
 import {
   logoColumnsForHeight,
@@ -113,17 +113,11 @@ export type StarsTranscriptViewportMetrics = Readonly<{
 
 type RenderedTextRow = Readonly<{
   text: string;
-  cells?: readonly RenderedTextCell[];
+  cells?: readonly RenderCell[];
   style?: Style;
   prefixStyleLength?: number;
   prefixStyle?: Style;
   spacer?: boolean;
-}>;
-
-type RenderedTextCell = Readonly<{
-  glyph: string;
-  style?: Style;
-  link?: string;
 }>;
 
 type PromptContentLayout = Readonly<{
@@ -365,6 +359,7 @@ function logoRowToRenderedRow(row: readonly LogoCell[]): RenderedTextRow {
     text: row.map((cell) => cell.glyph).join(""),
     cells: row.map((cell) => ({
       glyph: cell.glyph,
+      width: displayCellWidth(cell.glyph),
       style: cell.glyph === " " ? undefined : {
         fg: cell.color,
         bold: cell.bold,
@@ -577,16 +572,10 @@ function markdownRowsCacheKey(text: string, width: number, theme: StarsTuiTheme)
 }
 
 function markdownLineToRow(line: RenderLine): RenderedTextRow {
-  const cells: RenderedTextCell[] = [];
-  let text = "";
-  for (const segment of line.segments) {
-    text += segment.text;
-    for (const glyph of stringGraphemes(segment.text)) {
-      cells.push({ glyph, style: segment.style, link: segment.link });
-    }
-  }
-
-  return { text, cells };
+  return {
+    text: line.segments.map((segment) => segment.text).join(""),
+    cells: renderLineCells(line),
+  };
 }
 
 function userRows(text: string, width: number): RenderedTextRow[] {
@@ -1167,7 +1156,7 @@ function writeCells(
   screen: ScreenBuffer,
   x: number,
   y: number,
-  cells: readonly RenderedTextCell[],
+  cells: readonly RenderCell[],
 ): void {
   if (y < 0 || y >= screen.height) {
     return;
@@ -1176,7 +1165,7 @@ function writeCells(
   let offset = 0;
   for (const cell of cells) {
     const targetX = x + offset;
-    offset += displayCellWidth(cell.glyph);
+    offset += cell.width;
     if (targetX < 0) {
       continue;
     }
