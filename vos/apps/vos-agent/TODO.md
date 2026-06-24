@@ -9,9 +9,8 @@ then mark the checkbox.
 
 - [ ] Add the TypeScript `vos` package boundary described in
       `docs/design/toolchain/03-runtime-modules.md`.
-  - [ ] Scaffold target packages for `vos-core`, `vos-spec`, `vos-policy`,
-        `vos-evidence`, `vos-runtime`, `vos-adapter`, `vos-agent-core`, and
-        `vos-cli`.
+  - [ ] Keep the shared package set limited to `vos-core`, `vos-runtime`,
+        `vos-kb`, `vos-spec`, and `vos-server`.
   - [ ] Keep shared contracts such as `RunManifest`, `CommandOutcome`,
         `ContextBundle`, `PlanDraft`, and `AICollaborationLog` in
         `vos-core`.

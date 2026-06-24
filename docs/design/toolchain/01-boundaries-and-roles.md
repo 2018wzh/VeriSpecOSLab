@@ -13,7 +13,7 @@
 
 下游消费者：
 
-- `vos-policy`
+- `vos-core` policy
 - `vos-agent`
 - 课程平台权限控制
 
@@ -163,7 +163,7 @@ ci:
 
 ## 6. Policy 模型
 
-`vos-policy` 负责执行命令白名单、路径白名单和可见性规则。Portal-bound repo
+`vos-core` policy 负责执行命令白名单、路径白名单和可见性规则。Portal-bound repo
 中，Portal policy snapshot 是权限上限，本地 policy 只能收窄。示例：
 
 ```yaml

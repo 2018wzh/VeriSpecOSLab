@@ -11,7 +11,7 @@ production platform:
   Gateway and the Portal REST API with a demo in-memory store.
 - `vos/apps/vos-web` (current `vos-portal` prototype): React/Vite portal UI for
   student and teacher workflows.
-- Target shared packages such as `vos-core`, `vos-evidence`, `vos-policy`, and
+- Target shared packages such as `vos-core`, `vos-core` evidence, `vos-core` policy, and
   `vos-runtime` are described in `docs/design/toolchain/03-runtime-modules.md`
   and should be introduced as the course runtime matures.
 

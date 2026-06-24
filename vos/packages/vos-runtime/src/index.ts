@@ -1,4 +1,25 @@
-import type { CommandOutcome, RunId } from "vos-core";
+export type RunId = `run-${string}`;
+
+export type CommandStatus =
+  | "passed"
+  | "ok"
+  | "partial"
+  | "agent_output_error"
+  | "planned"
+  | "not_implemented"
+  | "policy_blocked"
+  | "validation_failed"
+  | "cancelled"
+  | "timed_out"
+  | "failed";
+
+export interface CommandOutcome {
+  run_id: RunId;
+  status: CommandStatus;
+  message?: string;
+  code?: number;
+  details?: Record<string, unknown>;
+}
 
 export interface RunEvent {
   run_id: RunId;
@@ -47,7 +68,7 @@ export interface VosCommand {
 export interface ExecutionResult {
   run_id: RunId;
   plan_id: string;
-  status: CommandOutcome["status"];
+  status: CommandStatus;
   started_at: string;
   finished_at: string;
   event_count: number;
@@ -83,5 +104,63 @@ export class InMemoryExecutionEngine implements ExecutionEngine {
       status: node.node_id ? "ok" : "failed",
       code: node.timeout ? 0 : undefined,
     };
+  }
+}
+
+export type AdapterKind = "build" | "run" | "test" | "debug" | "trace" | "verify";
+
+export interface ToolchainSpec {
+  id: string;
+  kind: AdapterKind;
+  command: string;
+  args?: string[];
+  stage?: string;
+  options?: Record<string, unknown>;
+}
+
+export interface AdapterContext {
+  projectRoot: string;
+  command: string;
+  profile?: string;
+  stage?: string;
+}
+
+export interface AdapterCommand {
+  command: string;
+  args: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+  timeout?: number;
+}
+
+export interface AdapterPlan {
+  command: AdapterCommand;
+}
+
+export interface ToolchainAdapter {
+  name: string;
+  kind: AdapterKind;
+  supports(spec: ToolchainSpec): boolean;
+  prepare(spec: ToolchainSpec, context?: AdapterContext): AdapterPlan;
+}
+
+export interface AdapterRegistry {
+  register(adapter: ToolchainAdapter): void;
+  resolve(spec: ToolchainSpec): ToolchainAdapter;
+}
+
+export class InMemoryAdapterRegistry implements AdapterRegistry {
+  private readonly adapters: ToolchainAdapter[] = [];
+
+  register(adapter: ToolchainAdapter): void {
+    this.adapters.push(adapter);
+  }
+
+  resolve(spec: ToolchainSpec): ToolchainAdapter {
+    const match = this.adapters.find((adapter) => adapter.supports(spec));
+    if (!match) {
+      throw new Error(`No adapter found for spec kind ${spec.kind}`);
+    }
+    return match;
   }
 }

@@ -5,6 +5,17 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "dependencies": {
+    "handlebars": "^4.7.9",
+    "ora": "^9.4.0",
+    "tar": "^7.5.16",
+    "vos-agent": "workspace:*",
+    "vos-kb": "workspace:*",
+    "vos-runtime": "workspace:*",
+    "vos-spec": "workspace:*",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test"

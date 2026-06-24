@@ -15,11 +15,11 @@
 
 - `vos-core`
 - `vos-spec`
-- `vos-policy`
+- `vos-core` policy
 - `vos-runtime`
-- `vos-adapter`
-- `vos-evidence`
-- `vos-agent-session`
+- `vos-runtime`
+- `vos-core` evidence
+- `vos-core agent session`
 
 ## 1. `NormalizedSpecBundle`
 
@@ -147,7 +147,7 @@
 
 来源：
 
-- `vos-evidence`
+- `vos-core` evidence
 
 消费者：
 
@@ -203,7 +203,7 @@ trace 作为 suite 映射。
 
 来源：
 
-- `vos-agent-session`
+- `vos-core agent session`
 
 消费者：
 

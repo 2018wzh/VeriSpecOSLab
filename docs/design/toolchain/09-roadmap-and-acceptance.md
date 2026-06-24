@@ -26,8 +26,8 @@
 - `vos-core`
 - `vos-spec`
 - `vos-runtime`
-- `vos-evidence`
-- 最小 `vos-adapter`
+- `vos-core` evidence
+- 最小 `vos-runtime`
 
 覆盖命令：
 
@@ -92,7 +92,7 @@
 范围：
 
 - `vos-agent`
-- `vos-policy`
+- `vos-core` policy
 - Portal policy snapshot 集成
 - `vos serve`
 

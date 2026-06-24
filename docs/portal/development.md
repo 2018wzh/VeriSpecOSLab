@@ -53,6 +53,19 @@ The current backend lives in `vos/apps/vos-agent` and serves both:
 - OpenAI-compatible Agent endpoints under `/v1`
 - Portal APIs under `/api/v1`
 
+## Sandbox VOS Server
+
+`vos serve` starts `vos-server` for a single bound project:
+
+```powershell
+cd vos
+bun run vos -- --project-root ../examples/xv6-spec serve --portal-url http://127.0.0.1:8787 --project-id project-demo-student
+```
+
+The sandbox API exposes typed endpoints such as `POST /api/v1/build/runs`,
+`POST /api/v1/verify/runs`, `GET /api/v1/runs/{run_id}/events`, and
+`GET /api/v1/openapi.json`. It does not accept old command RPC bodies.
+
 ## PostgreSQL Runtime
 
 PostgreSQL is the target production data path, but it should be introduced as a
@@ -92,8 +105,8 @@ implemented.
 ## Editing Rules
 
 - Keep shared course/platform entities in target `vos-core` package types.
-- Keep evidence persistence in target `vos-evidence`.
-- Keep policy and visibility checks in target `vos-policy`.
+- Keep evidence persistence in target `vos-core` evidence.
+- Keep policy and visibility checks in target `vos-core` policy.
 - Keep Portal HTTP handlers in `apps/vos-agent` until they are extracted.
 - Keep OS-specific behavior behind an `ExperimentAdapter`.
 - Do not expose hidden verification rules through student or Agent projections.

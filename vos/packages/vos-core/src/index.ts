@@ -117,3 +117,54 @@ export class CoreError extends Error {
     this.details = error.details;
   }
 }
+
+export {
+  commandToArray,
+  executeCliInvocation,
+  executeCommand,
+  executeVosCommand,
+  isVosCommand,
+  printHelp,
+  startAgentServer,
+} from "./main.ts";
+export type { ExecuteVosCommandOptions } from "./main.ts";
+export { parseArgs } from "./cli.ts";
+export { CliError, AgentOutputError } from "./errors.ts";
+export { EvidenceWriter } from "./evidence/index.ts";
+export { runProgressMcpServer } from "./progress/mcp-server.ts";
+export {
+  appendAgentProgressInstructions,
+  createProgressMcpServerConfig,
+  progressUpdateFromAgentEvent,
+  PROGRESS_MCP_SERVER_NAME,
+  PROGRESS_MCP_TOOL_NAME,
+} from "./progress/agent.ts";
+export {
+  assertCommandAllowed,
+  mergeEffectivePolicy,
+} from "./policy/effective-policy.ts";
+export { createKbEmbedder } from "./kb/embedding.ts";
+export type {
+  BaseCommandResult,
+  CliCommand,
+  EffectivePolicy,
+  GlobalOptions,
+  ParsedInvocation,
+  ProgressMode,
+  RunAuthContext,
+  VerifyScope,
+  VosCommand,
+} from "./types.ts";
+export type {
+  CommandProgress,
+  ProgressEnvironment,
+  ProgressStatus,
+  ProgressUpdate,
+} from "./progress/types.ts";
+export type {
+  CommandOutcome as CoreCommandOutcome,
+  ExecContext,
+  ExecuteCliOptions,
+} from "./bootstrap.ts";
+export type { RunEvent as CoreRunEvent } from "./evidence/events.ts";
+export type { PortalClient } from "./auth/portal-client.ts";

@@ -60,6 +60,6 @@
 ---
 
 ## 任务关联与依赖
-1. **依赖 `vos-core` / `vos-spec` / `vos-evidence`**：后端必须引入 TypeScript package 以解析规格、验证证据并共享数据契约。
+1. **依赖 `vos-core` / `vos-spec` / `vos-core` evidence**：后端必须引入 TypeScript package 以解析规格、验证证据并共享数据契约。
 2. **依赖 Gitea**：用于托管学生代码并运行 CI。
 3. **依赖 vLLM**：提供本地模型推理能力。

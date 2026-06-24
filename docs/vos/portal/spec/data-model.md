@@ -2,7 +2,7 @@
 
 > Historical note: this file is a legacy Rust/SQLx-oriented blueprint kept for
 > reference. The active implementation direction is Bun / TypeScript, with
-> shared contracts moving toward `vos-core`, `vos-evidence`, `vos-policy`, and
+> shared contracts moving toward `vos-core`, `vos-core` evidence, `vos-core` policy, and
 > the Portal API hosted by `apps/vos-agent`. Do not treat the Rust snippets
 > below as the current implementation target.
 

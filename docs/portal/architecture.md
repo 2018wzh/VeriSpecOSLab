@@ -8,11 +8,11 @@ vos-core
   -> pure workflow functions
   -> shared JSON contracts for CLI, backend, and `vos-portal` frontend
 
-vos-evidence
+vos-core
   -> RunManifest and events.jsonl persistence
   -> evidence indexes and report inputs
 
-vos-policy
+vos-core
   -> role, stage, visibility, path, and tool policies
 
 apps/vos-agent
@@ -21,6 +21,12 @@ apps/vos-agent
   -> Portal REST API
   -> demo in-memory store
   -> future storage adapter host
+
+packages/vos-server
+  -> sandbox-local typed VOS HTTP API
+  -> SSE run progress
+  -> generated OpenAPI contract
+  -> read-only run manifest/artifact access
 
 apps/vos-portal（prototype: vos-web）
   -> React/Vite app
@@ -32,6 +38,11 @@ The current implementation keeps Portal handlers and the demo store inside
 `apps/vos-agent`. Shared packages should be introduced incrementally as the
 course runtime becomes real, using the target boundaries in
 `docs/design/toolchain/03-runtime-modules.md`.
+
+Portal runners call `vos-server` inside a single-project sandbox for VOS
+toolchain operations. `vos-server` does not proxy `vos-agent` chat endpoints;
+VOS agent subcommands exposed through HTTP still execute through `vos-core` and
+produce evidence/progress like CLI runs.
 
 ## Adapter Boundary
 

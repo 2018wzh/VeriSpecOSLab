@@ -14,8 +14,8 @@
 下游消费者：
 
 - `vos-runtime`
-- `vos-adapter`
-- `vos-evidence`
+- `vos-runtime`
+- `vos-core` evidence
 
 ## 1. 执行模型
 
@@ -101,7 +101,7 @@ student-facing 输出泄露 staff-only 或 hidden 信息。
 
 - 未启动节点：标记 skipped
 - 已启动节点：先发送 graceful terminate，再在超时后强制 kill
-- `vos-evidence` 必须照常写出 `manifest.json`，状态记为 cancelled 或 timed_out
+- `vos-core` evidence 必须照常写出 `manifest.json`，状态记为 cancelled 或 timed_out
 
 所有 timeout 都应在 `ExecutionNode` 或 adapter profile 中可追溯，不能隐藏在 prompt 或任意脚本里。
 

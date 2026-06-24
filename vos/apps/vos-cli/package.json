@@ -3,22 +3,9 @@
   "version": "0.1.0",
   "type": "module",
   "dependencies": {
-    "cli-progress": "^3.12.0",
-    "handlebars": "^4.7.9",
-    "ora": "^9.4.0",
-    "tar": "^7.5.16",
-    "vos-agent": "workspace:*",
-    "vos-agent-session": "workspace:*",
-    "vos-adapter": "workspace:*",
     "vos-core": "workspace:*",
-    "vos-evidence": "workspace:*",
-    "vos-policy": "workspace:*",
-    "vos-runtime": "workspace:*",
     "vos-server": "workspace:*",
-    "vos-kb": "workspace:*",
-    "vos-spec": "workspace:*",
-    "yaml": "^2.9.0",
-    "zod": "^4.4.3"
+    "vos-kb": "workspace:*"
   },
   "bin": {
     "vos": "./app/main.ts"

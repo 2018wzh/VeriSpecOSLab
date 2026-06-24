@@ -16,7 +16,7 @@
 
 - `vos-cli`
 - `vos-runtime`
-- `vos-adapter`
+- `vos-runtime`
 - `vos-agent`
 
 ## 1. 通用命令约定
@@ -96,14 +96,21 @@ Portal-bound run 的 manifest 还必须记录：
 vos serve --project-root . --portal-url https://portal.example --project-id <project-id> --host 127.0.0.1 --port 8788
 ```
 
-最小 HTTP API：
+`vos-server` 暴露 typed HTTP API，而不是 shell command RPC。短操作同步返回 JSON，长操作创建 run 并通过 SSE 暴露进度。
 
 ```http
-POST /api/v1/vos/runs
-GET  /api/v1/vos/runs/{id}
-GET  /api/v1/vos/runs/{id}/events
-POST /api/v1/vos/runs/{id}/cancel
+GET  /api/v1/openapi.json
+POST /api/v1/build/runs
+POST /api/v1/run/qemu-runs
+POST /api/v1/test/runs
+POST /api/v1/verify/runs
+POST /api/v1/agent/generate-runs
+GET  /api/v1/runs/{id}
+GET  /api/v1/runs/{id}/events
+POST /api/v1/runs/{id}/cancel
 ```
+
+请求 body 使用 typed JSON 字段，例如 `dry_run`、`timeout_ms`、`scope`、`target`、`suites`、`agent_session_id`。`project_root`、`portal_url` 和 `project_id` 由单项目 server binding 提供，请求不能覆盖。
 
 `POST /runs` 使用命令 RPC 形状，至少包含 `command`、`args`、`requested_by`
 和可选 `agent_session_id` / `reason`。`GET /events` 使用 SSE，并复用

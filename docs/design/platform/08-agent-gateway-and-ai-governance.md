@@ -42,7 +42,7 @@ GET  /api/agent/sessions/{id}
 POST /api/agent/sessions/{id}/close
 GET  /api/projects/{projectId}/agent-audit
 POST /api/projects/{projectId}/agent-policy/recompute
-GET  /api/projects/{projectId}/vos-policy
+GET  /api/projects/{projectId}/vos-core
 POST /api/projects/{projectId}/agent-audit
 ```
 

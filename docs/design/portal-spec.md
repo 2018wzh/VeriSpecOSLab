@@ -151,7 +151,7 @@ CREATE TABLE scores (
 *   `POST /api/v1/auth/login`: 用户登录
 *   `POST /api/v1/auth/logout`: 用户登出
 *   `GET /api/v1/auth/me`: 获取当前用户信息
-*   `GET /api/v1/projects/{id}/vos-policy`: 获取当前用户、项目、阶段绑定的 `vos` policy snapshot
+*   `GET /api/v1/projects/{id}/vos-core`: 获取当前用户、项目、阶段绑定的 `vos` policy snapshot
 
 ### 3.2 学生端接口
 *   `GET /api/v1/projects`: 获取当前学生的所有实验项目

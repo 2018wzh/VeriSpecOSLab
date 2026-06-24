@@ -15,8 +15,8 @@
 
 - `vos-core`
 - `vos-runtime`
-- `vos-adapter`
-- `vos-evidence`
+- `vos-runtime`
+- `vos-core` evidence
 - `vos-agent`
 
 ## 1. 总体结构

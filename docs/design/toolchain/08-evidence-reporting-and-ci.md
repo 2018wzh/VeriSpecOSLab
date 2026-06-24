@@ -14,7 +14,7 @@
 
 下游消费者：
 
-- `vos-evidence`
+- `vos-core` evidence
 - `report generate`
 - `submit pack`
 - 平台 CI / OJ
