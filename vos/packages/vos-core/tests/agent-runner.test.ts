@@ -10,6 +10,8 @@ import {
   buildAgentBehaviorTestPlanPrompt,
   buildAgentDebugPrompt,
   buildAgentGeneratePrompt,
+  buildAgentPlanPrompt,
+  buildToolchainGeneratePrompt,
 } from "../src/agent/prompt.ts";
 import { buildContextBundle, loadAgentAllowedPaths } from "../src/agent/context.ts";
 import { parseDebugOutput } from "../src/agent/schemas.ts";
@@ -238,6 +240,48 @@ describe("vos-cli package agent runner", () => {
     expect(prompt).toContain("verify.fuzz");
     expect(prompt).toContain("XV6_BOOT_OK");
     expect(prompt).toContain("staff-visible external mapping");
+  });
+
+  test("agent plan prompt spells out the exact PlanDraft JSON contract", () => {
+    const prompt = buildAgentPlanPrompt({
+      bundle: {
+        resolved_specs: ["spec/architecture/timeline.yaml"],
+        recent_evidence: [],
+        allowed_paths: ["spec", "kernel"],
+        policy_flags: ["visibility:public"],
+      },
+      requestedScope: "boot",
+      task: "plan boot stage",
+    });
+
+    expect(prompt).toContain("PLAN OUTPUT CONTRACT");
+    expect(prompt).toContain("task: string");
+    expect(prompt).toContain("related_specs: string[]");
+    expect(prompt).toContain("suspected_files: string[]");
+    expect(prompt).toContain("required_validations: string[]");
+    expect(prompt).toContain("notes: string[]");
+    expect(prompt).toContain("spec_patch_required?: boolean");
+    expect(prompt).toContain("\"task\": \"plan boot stage\"");
+  });
+
+  test("toolchain generate prompt spells out object-form files and manifest v2", () => {
+    const prompt = buildToolchainGeneratePrompt({
+      toolchainIndex: { includes: ["build.yaml"] },
+      buildSpec: { build: { allowed_output_path: ["Makefile"] } },
+      environment: { required_tools: [{ name: "make" }] },
+      allowedOutputPaths: ["Makefile"],
+    });
+
+    expect(prompt).toContain("TOOLCHAIN OUTPUT CONTRACT");
+    expect(prompt).toContain("files: Array<{ path: string; content: string }>");
+    expect(prompt).toContain("\"files\": [{ \"path\": \"Makefile\", \"content\":");
+    expect(prompt).toContain("manifest_version: 2");
+    expect(prompt).toContain("environment.required_tools");
+    expect(prompt).toContain("build.variants");
+    expect(prompt).toContain("run.profiles");
+    expect(prompt).toContain("run.cases");
+    expect(prompt).toContain("test.suites");
+    expect(prompt).toContain("manifest.files must exactly reference paths present in files[].path");
   });
 
   test("agent debug prompt explains verify behavior evidence", () => {

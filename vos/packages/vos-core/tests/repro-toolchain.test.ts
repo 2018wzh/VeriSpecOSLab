@@ -190,6 +190,73 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
     expect(git(projectRoot, ["log", "-1", "--pretty=%s"]).stdout.trim()).toBe("[vos][toolchain] Generate build system");
   });
 
+  test("agent plan records raw output when PlanDraft schema is invalid", async () => {
+    const projectRoot = makeGitProject({ manifest: false });
+    await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
+    const badPlan = JSON.stringify({
+      task: { title: "inspect boot" },
+      related_specs: [],
+      suspected_files: [],
+      required_validations: [],
+      notes: [],
+    });
+
+    const result = await executeCliInvocation([
+      "bun",
+      "vos",
+      "--project-root",
+      projectRoot,
+      "--json",
+      "agent",
+      "plan",
+      "--stage",
+      "boot",
+    ], {
+      print: false,
+      agentRunner: async () => ({ content: badPlan, events: [] }),
+    });
+
+    expect(result.status).toBe("agent_output_error");
+    expect(result.message).toContain("PlanDraft.task must be string");
+    expect(readFileSync(join(projectRoot, ".vos", "runs", result.run_id, "artifacts", "agent", "agent-plan-raw.txt"), "utf8")).toBe(badPlan);
+  });
+
+  test("build generate records raw output when files are not objects", async () => {
+    const projectRoot = makeGitProject({ manifest: false });
+    await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
+    const badDraft = JSON.stringify({
+      files: ["Makefile"],
+      manifest: {
+        manifest_version: 2,
+        files: ["Makefile"],
+        environment: { required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }] },
+        build: { variants: [{ id: "baseline", commands: ["make all"], artifacts: [] }] },
+        run: { profiles: [{ id: "default", command: "printf", args: ["ok"], artifacts: [] }], cases: [{ id: "smoke", profile: "default", success_regex: "ok" }] },
+        test: { suites: [] },
+      },
+      build_instructions: "bad files",
+      spec_refs: ["spec/toolchain/build.yaml"],
+      changed_targets: ["Makefile"],
+    });
+
+    const result = await executeCliInvocation([
+      "bun",
+      "vos",
+      "--project-root",
+      projectRoot,
+      "--json",
+      "build",
+      "generate",
+    ], {
+      print: false,
+      agentRunner: async () => ({ content: badDraft, events: [] }),
+    });
+
+    expect(result.status).toBe("agent_output_error");
+    expect(result.message).toContain("toolchain draft file must be an object");
+    expect(readFileSync(join(projectRoot, ".vos", "runs", result.run_id, "artifacts", "toolchain", "build-generate-raw.txt"), "utf8")).toBe(badDraft);
+  });
+
   test("build generate rejects drafts missing manifest required tools", async () => {
     const projectRoot = makeGitProject({ manifest: false });
     await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
@@ -280,6 +347,7 @@ function makeGitProject(options: { manifest: boolean; policy?: boolean }): strin
       "allowed_commands:",
       "  - build",
       "  - build generate",
+      "  - agent plan",
       "  - ledger record",
       "allowed_paths:",
       "  - .vos",

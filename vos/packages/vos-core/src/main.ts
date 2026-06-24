@@ -99,6 +99,7 @@ import {
   buildAgentDebugPrompt,
   buildAgentGeneratePrompt,
   buildAgentPlanPrompt,
+  buildToolchainGeneratePrompt,
   resolvePromptProfileEnvelope,
 } from "./agent/prompt.ts";
 import {
@@ -1342,9 +1343,17 @@ export async function executeAgentPlan(
     onEvent: agentProgress.onEvent,
     runner: context.agentRunner,
   });
-  const parsed = parsePlanDraft(
-    parseAgentJson(agentResult.resultText, "agent_plan"),
-  );
+  let parsed;
+  try {
+    parsed = parsePlanDraft(
+      parseAgentJson(agentResult.resultText, "agent_plan"),
+    );
+  } catch (error) {
+    await recordRawAgentOutput(evidence, "agent", "agent-plan-raw.txt", agentResult.resultText);
+    throw error instanceof AgentOutputError
+      ? error
+      : new AgentOutputError(error instanceof Error ? error.message : String(error));
+  }
   const logPath = await recordAICollaboration({
     projectRoot,
     event: {
@@ -1636,12 +1645,7 @@ export async function executeBuildGenerate(
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
   const spec = await loadToolchainGenerationSpec(projectRoot);
-  const prompt = [
-    "Generate a VOS toolchain draft as JSON only.",
-    "Return { files, manifest, build_instructions, spec_refs, changed_targets }.",
-    "All file paths must be relative to the project root.",
-    JSON.stringify(spec, null, 2),
-  ].join("\n\n");
+  const prompt = buildToolchainGeneratePrompt(spec);
   const agentResult = await runAgentWithPrompt({
     projectRoot,
     taskPrompt: prompt,
@@ -1651,7 +1655,15 @@ export async function executeBuildGenerate(
     courseMode: true,
     runner: context.agentRunner,
   });
-  const draft = normalizeToolchainDraft(parseAgentJson(agentResult.resultText, "build_generate"));
+  let draft;
+  try {
+    draft = normalizeToolchainDraft(parseAgentJson(agentResult.resultText, "build_generate"));
+  } catch (error) {
+    if (error instanceof AgentOutputError) {
+      await recordRawAgentOutput(evidence, "toolchain", "build-generate-raw.txt", agentResult.resultText);
+    }
+    throw error;
+  }
   const specHash = hashString(JSON.stringify(spec));
   validateToolchainDraftPaths(draft, spec.allowedOutputPaths);
 
@@ -1675,6 +1687,7 @@ export async function executeBuildGenerate(
   try {
     parseToolchainManifest(manifest);
   } catch (error) {
+    await recordRawAgentOutput(evidence, "toolchain", "build-generate-raw.txt", agentResult.resultText);
     throw new AgentOutputError(error instanceof Error ? error.message : String(error));
   }
   const manifestPath = path.join(projectRoot, ".vos", "toolchain.json");
@@ -3762,6 +3775,19 @@ function parseAgentJson(raw: string, source: string): unknown {
     throw new AgentOutputError(`agent output for ${source} is not parseable JSON`);
   }
   return parsed;
+}
+
+async function recordRawAgentOutput(
+  evidence: EvidenceWriter,
+  kind: string,
+  fileName: string,
+  content: string,
+): Promise<string> {
+  const rawPath = path.join(evidence.artifacts_root, kind, fileName);
+  await mkdir(path.dirname(rawPath), { recursive: true });
+  await writeFile(rawPath, content);
+  evidence.addArtifactFromPath(kind, rawPath, "raw agent response");
+  return rawPath;
 }
 
 function contextSessionId(context: ExecContext): string {

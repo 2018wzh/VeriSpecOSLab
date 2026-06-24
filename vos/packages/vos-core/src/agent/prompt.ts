@@ -43,6 +43,15 @@ interface PromptBundle {
   }>;
 }
 
+export interface ToolchainGeneratePromptSpec {
+  toolchainIndex: unknown;
+  buildSpec: unknown;
+  profileSpec?: unknown;
+  runSpec?: unknown;
+  allowedOutputPaths: string[];
+  environment: { required_tools: Array<Record<string, unknown>> };
+}
+
 export function buildPromptEnvelope(args: {
   taskKind: string;
   requestedScope: string;
@@ -112,7 +121,7 @@ export function buildAgentPlanPrompt(args: {
   requestedScope: string;
   task?: string;
 }): string {
-  return formatPrompt(buildPromptEnvelope({
+  const basePrompt = formatPrompt(buildPromptEnvelope({
     taskKind: "plan",
     requestedScope: args.requestedScope,
     specBindings: args.bundle.resolved_specs,
@@ -123,6 +132,66 @@ export function buildAgentPlanPrompt(args: {
     policyFlags: args.bundle.policy_flags,
     task: args.task,
   }));
+  const planContract = [
+    "PLAN OUTPUT CONTRACT:",
+    "Return exactly one JSON object and nothing else.",
+    "Do not use markdown, tables, bullets, or prose.",
+    "The JSON object must contain:",
+    "  - task: string",
+    "  - related_specs: string[]",
+    "  - suspected_files: string[]",
+    "  - required_validations: string[]",
+    "  - notes: string[]",
+    "  - spec_patch_required?: boolean",
+    "The task field must be a single string, not an object, array, or nested plan.",
+    "Minimal valid example:",
+    JSON.stringify({
+      task: args.task ?? `plan ${args.requestedScope}`,
+      related_specs: [],
+      suspected_files: [],
+      required_validations: [],
+      notes: [],
+    }, null, 2),
+  ].join("\n");
+  return `${basePrompt}\n\n${planContract}`;
+}
+
+export function buildToolchainGeneratePrompt(spec: ToolchainGeneratePromptSpec): string {
+  const contract = [
+    "Generate a VOS toolchain draft as JSON only.",
+    "TOOLCHAIN OUTPUT CONTRACT:",
+    "Return exactly one JSON object and nothing else.",
+    "Do not use markdown, tables, bullets, or prose.",
+    "Return { files, manifest, build_instructions, spec_refs, changed_targets }.",
+    "files: Array<{ path: string; content: string }>",
+    "Every file path must be relative to the project root.",
+    "manifest_version: 2",
+    "manifest.files must exactly reference paths present in files[].path.",
+    "manifest.environment.required_tools is required.",
+    "manifest.build.variants is required.",
+    "manifest.run.profiles is required.",
+    "manifest.run.cases is required.",
+    "manifest.test.suites is required.",
+    "Example files entry: \"files\": [{ \"path\": \"Makefile\", \"content\": \"all:\\n\\ttrue\\n\" }]",
+    "Compact valid example:",
+    JSON.stringify({
+      files: [{ path: "Makefile", content: "all:\n\ttrue\n" }],
+      manifest: {
+        manifest_version: 2,
+        files: ["Makefile"],
+        environment: { required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }] },
+        build: { variants: [{ id: "baseline", commands: ["make all"], artifacts: [] }] },
+        run: { profiles: [{ id: "default", command: "printf", args: ["ok"], artifacts: [] }], cases: [{ id: "smoke", profile: "default", success_regex: "ok" }] },
+        test: { suites: [] },
+      },
+      build_instructions: "Run `vos build` after generation.",
+      spec_refs: ["spec/toolchain/build.yaml"],
+      changed_targets: ["Makefile", ".vos/toolchain.json"],
+    }, null, 2),
+    "Toolchain generation input:",
+    JSON.stringify(spec, null, 2),
+  ].join("\n\n");
+  return contract;
 }
 
 export function buildAgentDebugPrompt(args: {
