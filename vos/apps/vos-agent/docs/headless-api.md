@@ -5,8 +5,7 @@ VOS Agent has two headless surfaces:
 - A package API from `vos-agent/headless`, used by `vos-cli` and local
   TypeScript integrations.
 - A VOS-native HTTP API served by `vos-agent serve` or
-  `startAgentHttpServer(...)`, used by the `vos-portal` frontend (prototype:
-  `vos-web`) and local tools.
+  `startAgentHttpServer(...)`, used by frontend clients and local tools.
 
 The public API deliberately does **not** expose VOS Role objects.
 Task-to-profile resolution is VOS-owned and may change without breaking
@@ -86,7 +85,9 @@ Import from `vos-agent/headless`:
 import {
   resolveAgentTaskProfile,
   runAgentTask,
+  runControlledTuiAgentTask,
   runHeadlessAgentPrompt,
+  startControlledTuiAgentTask,
   startAgentHttpServer,
 } from "vos-agent/headless";
 ```
@@ -163,7 +164,10 @@ Request fields:
 | `threadId`                     | Continue an existing local thread.                                                 |
 | `courseMode`                   | Defaults to `true`; hides direct write/edit tools in profile-based runs.           |
 | `allowedVosCommands`           | Project policy whitelist. Intersected with internal tool policy.                   |
+| `extraMcpServers`              | Additional stdio MCP servers for this run.                                         |
 | `toolPolicy`                   | Additional caller-supplied tool policy. Composed with the internal profile policy. |
+| `streamAssistant`              | Emit assistant token deltas through `onEvent`. Defaults to `false`.                |
+| `signal`                       | Cancels model requests and tool execution.                                         |
 | `onEvent`                      | Receives session events from `runSessionTurn`.                                     |
 
 Result fields:
@@ -177,6 +181,82 @@ Result fields:
 | `agentProfile`                       | Public profile used for the run.                                                                     |
 | `model` / `mode` / `reasoningEffort` | Concrete model settings used for the run.                                                            |
 | `prompt`                             | Final user prompt/envelope sent to the session layer.                                                |
+
+### `startControlledTuiAgentTask(request)`
+
+Starts a display-only alternate-screen TUI for a fixed task profile. This is
+for embeddings that want to show the agent's progress, tool calls, streaming
+assistant output, usage summaries, and final answer without letting the viewer
+type prompts or slash commands.
+
+The default `taskKind` is `knowledgebase_qa`, so a caller can use it directly
+as a knowledge-base agent display. The resolved profile supplies the default
+skills, MCP intent, readonly tool policy, and mode; callers can still pass
+`agentProfile`, `extraMcpServers`, and `toolPolicy` to bind a concrete
+knowledge-base backend.
+
+```ts
+import { startControlledTuiAgentTask } from "vos-agent/headless";
+
+const handle = startControlledTuiAgentTask({
+  projectRoot: "/path/to/project",
+  task: "Explain page tables using the course knowledge base.",
+  extraMcpServers: [{
+    name: "vos-kb",
+    command: "vos-kb-mcp",
+    args: ["--project", "/path/to/project"],
+  }],
+  input: false,
+});
+
+const result = await handle.result;
+console.log(result.content);
+```
+
+Controlled TUI behavior:
+
+| Behavior                         | Meaning                                                                                  |
+|----------------------------------|------------------------------------------------------------------------------------------|
+| Display-only transcript          | The prompt box and cursor are hidden; the transcript uses the full terminal.             |
+| User input is banned             | If `input` is provided, bytes are consumed and ignored. They are never sent as prompts.   |
+| Slash commands are unavailable   | The interactive controller is not used, so `/quit`, `/mode`, and `/thread` do nothing.   |
+| Programmatic cancellation        | `handle.abort(reason)` or the passed `signal` cancels the agent run.                     |
+| Keyboard interrupt               | Ctrl-C aborts by default; set `allowKeyboardInterrupt: false` to ignore it too.           |
+| Streaming is enabled by default  | `streamAssistant` defaults to `true` so the display shows incremental assistant output.  |
+| Close policy                     | The TUI closes when the task completes unless `closeOnComplete: false` is set.            |
+
+The returned handle is:
+
+```ts
+type ControlledTuiAgentTaskHandle = {
+  readonly result: Promise<AgentTaskResult>;
+  readonly signal: AbortSignal;
+  abort(reason?: unknown): void;
+  close(): void;
+};
+```
+
+Use `input: false` when the embedding app owns keyboard input elsewhere. If an
+input stream is provided, VOS Agent switches it to raw mode when possible only
+to consume and suppress user operations, and restores it during cleanup.
+
+### `runControlledTuiAgentTask(request)`
+
+Convenience wrapper around `startControlledTuiAgentTask(request).result`:
+
+```ts
+import { runControlledTuiAgentTask } from "vos-agent/headless";
+
+await runControlledTuiAgentTask({
+  projectRoot: "/path/to/project",
+  task: "Compare copy-on-write and eager page copying.",
+  taskKind: "knowledgebase_qa",
+  input: false,
+});
+```
+
+Use `startControlledTuiAgentTask()` when the caller needs an abort handle or
+wants to keep the TUI open after completion.
 
 ### `runHeadlessAgentPrompt(request)`
 
@@ -336,22 +416,39 @@ GET /api/v1/agent/sessions/{sessionId}
 This returns title, timestamps, model/mode metadata, message count, and
 thread todos. It does not return the full transcript.
 
-## `vos-portal` Frontend Usage
+## Frontend Usage
 
-`vos-portal` frontend (`vos-web` prototype) exposes typed helpers in
-[src/api/client.ts](../../vos-web/src/api/client.ts):
+Frontend clients should call the VOS-native HTTP API by task/profile contract.
+The shape is intentionally small enough that a plain `fetch` wrapper is enough:
 
 ```ts
-const profile = await portalApi.resolveAgentProfile({
-  task_kind: "explain_concept",
-});
+const baseUrl = "http://127.0.0.1:8787";
 
-const response = await portalApi.runAgentTask({
-  project_id: projectId,
-  user_id: user.id,
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`${response.status} ${await response.text()}`);
+  }
+  return await response.json() as T;
+}
+
+const profile = await postJson<{ agent_profile: AgentTaskProfile }>(
+  "/api/v1/agent/profile",
+  { task_kind: "explain_concept" },
+);
+
+const response = await postJson<{
+  content: string | null;
+  structured_output?: unknown;
+  agent_profile: AgentTaskProfile;
+}>("/api/v1/agent/tasks", {
   task_kind: "explain_concept",
   task: "Explain how trap return differs from syscall dispatch.",
-  agent_profile: profile,
+  agent_profile: profile.agent_profile,
 });
 
 console.log(response.agent_profile.skills);
