@@ -26,6 +26,7 @@ export type StarsTuiInteractiveViewOptions = Readonly<{
   size: () => StarsViewSize;
   maxTranscriptItems?: number;
   debugLabels?: boolean;
+  displayOnly?: boolean;
   theme?: StarsTuiTheme;
   welcomeAnimation?: boolean;
   welcomeAnimationFrameDelayMs?: number;
@@ -46,6 +47,7 @@ export class StarsTuiInteractiveView implements InteractiveView {
   private readonly activeTools = new Map<string, string>();
   private readonly maxTranscriptItems: number;
   private readonly debugLabels: boolean;
+  private readonly displayOnly: boolean;
   private readonly welcomeAnimation: boolean;
   private readonly welcomeAnimationFrameDelayMs: number;
   private currentStatus: StarsTuiStatus = {};
@@ -65,6 +67,7 @@ export class StarsTuiInteractiveView implements InteractiveView {
   constructor(private readonly opts: StarsTuiInteractiveViewOptions) {
     this.maxTranscriptItems = Math.max(1, Math.trunc(opts.maxTranscriptItems ?? defaultMaxTranscriptItems));
     this.debugLabels = opts.debugLabels === true;
+    this.displayOnly = opts.displayOnly === true;
     this.welcomeAnimation = opts.welcomeAnimation === true;
     this.welcomeAnimationFrameDelayMs = Math.max(
       1,
@@ -289,6 +292,7 @@ export class StarsTuiInteractiveView implements InteractiveView {
       busy: this.busy,
       running: this.running,
       debugLabels: this.debugLabels,
+      displayOnly: this.displayOnly,
       welcomeFrame: this.welcomeFrame,
       inputHint: this.inputHint,
       commandPalette: this.commandPalette,

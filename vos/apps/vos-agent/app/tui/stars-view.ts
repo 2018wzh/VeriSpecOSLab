@@ -87,6 +87,7 @@ export type StarsTuiState = Readonly<{
   busy?: boolean;
   running?: boolean;
   debugLabels?: boolean;
+  displayOnly?: boolean;
   welcomeFrame?: number;
   inputHint?: string;
   commandPalette?: StarsCommandPalette;
@@ -203,13 +204,20 @@ export function measureStarsTranscriptViewport(
 /**
  * Pure Stars TUI renderer. It does not write to the terminal; it only maps
  * semantic agent state into an Amp-inspired transcript viewport plus a
- * bottom prompt box and optional cursor for TerminalDriver to present.
+ * bottom prompt box and optional cursor for TerminalDriver to present. In
+ * display-only mode, the transcript uses the full screen and no input cursor is
+ * exposed.
  */
 export function renderStarsViewFrame(state: StarsTuiState, size: StarsViewSize): StarsViewFrame {
   const screen = new ScreenBuffer(size.width, size.height);
 
   if (size.height < 3 || size.width < 4) {
     return renderCompactFrame(screen, state);
+  }
+
+  if (state.displayOnly === true) {
+    renderTranscriptArea(screen, state, screen.height);
+    return { screen };
   }
 
   const promptBox = renderPromptBox(state, screen.width, screen.height);
@@ -235,6 +243,31 @@ export function renderStarsViewFrame(state: StarsTuiState, size: StarsViewSize):
 }
 
 function renderCompactFrame(screen: ScreenBuffer, state: StarsTuiState): StarsViewFrame {
+  if (state.displayOnly === true) {
+    const transcriptRows = renderTranscriptRows(
+      state.transcript ?? [],
+      screen.width,
+      state.debugLabels === true,
+      state.theme ?? "dark",
+    );
+    if (transcriptRows.length === 0) {
+      renderWelcome(screen, screen.height, state.welcomeFrame, true);
+    } else {
+      const visibleRows = transcriptViewportRows(
+        transcriptRows,
+        screen.height,
+        state.transcriptScrollOffset,
+      );
+      for (let index = 0; index < visibleRows.length; index += 1) {
+        const row = visibleRows[index];
+        if (row) {
+          writeRow(screen, index, row);
+        }
+      }
+    }
+    return { screen };
+  }
+
   if (screen.height > 1) {
     const transcriptRows = renderTranscriptRows(
       state.transcript ?? [],
@@ -280,7 +313,7 @@ function renderTranscriptArea(screen: ScreenBuffer, state: StarsTuiState, height
     state.theme ?? "dark",
   );
   if (transcriptRows.length === 0) {
-    renderWelcome(screen, height, state.welcomeFrame);
+    renderWelcome(screen, height, state.welcomeFrame, state.displayOnly === true);
     return;
   }
 
@@ -298,6 +331,9 @@ function renderTranscriptArea(screen: ScreenBuffer, state: StarsTuiState, height
 }
 
 function transcriptVisibleHeight(state: StarsTuiState, size: StarsViewSize): number {
+  if (state.displayOnly === true) {
+    return size.height;
+  }
   if (size.height < 3 || size.width < 4) {
     return size.height > 2 ? size.height - 1 : 0;
   }
@@ -306,7 +342,12 @@ function transcriptVisibleHeight(state: StarsTuiState, size: StarsViewSize): num
   return Math.max(0, size.height - promptBox.rows.length);
 }
 
-function renderWelcome(screen: ScreenBuffer, height: number, frame: number | undefined): void {
+function renderWelcome(
+  screen: ScreenBuffer,
+  height: number,
+  frame: number | undefined,
+  displayOnly = false,
+): void {
   const logoSize = welcomeLogoSize(screen.width, Math.max(0, height - 3));
   const logo = logoSize.height > 0
     ? renderShaderLogo({ width: logoSize.width, height: logoSize.height, time: welcomeLogoTime(frame) })
@@ -315,7 +356,10 @@ function renderWelcome(screen: ScreenBuffer, height: number, frame: number | und
     ...logo.map(logoRowToRenderedRow),
     { text: "", style: welcomeHintStyle },
     { text: "Welcome to VOS Agent", style: welcomeTitleStyle },
-    { text: "Ctrl-C Ctrl-C to exit, /help for commands", style: welcomeHintStyle },
+    {
+      text: displayOnly ? "Controlled agent display" : "Ctrl-C Ctrl-C to exit, /help for commands",
+      style: welcomeHintStyle,
+    },
   ];
   const visibleRows = rows.slice(-height);
   const startY = Math.max(0, Math.floor((height - visibleRows.length) / 2));

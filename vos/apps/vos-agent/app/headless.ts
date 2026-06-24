@@ -1,3 +1,4 @@
+import { stdin as defaultStdin, stdout as defaultStdout } from "node:process";
 import { resolve } from "node:path";
 import type { ToolPolicy } from "./tools/types.ts";
 import type { McpServerConfig } from "./plugins/manifest.ts";
@@ -6,10 +7,12 @@ import { resolveActiveModelSettings } from "./resolve-model.ts";
 import { runSessionTurn, type RunSessionTurnOptions } from "./session/run-turn.ts";
 import { createThreadStore } from "./session/thread-store.ts";
 import { createChatClientFromConfig } from "./llm/providers.ts";
+import type { ChatClient } from "./agent/loop.ts";
 import { loadSettings } from "./settings.ts";
 import type { SessionEvent } from "./session/types.ts";
 import type { Config, ReasoningEffort } from "./config.ts";
 import { serveAgentHttp } from "./server/http.ts";
+import { linkAbortSignal } from "./cancellation.ts";
 import {
   buildAgentTaskSystemPrompt,
   buildAgentTaskUserPrompt,
@@ -21,6 +24,11 @@ import {
   type AgentTaskProfileInput,
 } from "./agent/profiles.ts";
 import { resolveBuiltInSkills } from "./skills/index.ts";
+import { StarsTuiInteractiveView } from "./tui/interactive-view.ts";
+import type { StarsViewSize } from "./tui/stars-view.ts";
+import { TerminalDriver } from "./tui/terminal.ts";
+import { resolveStarsTuiTheme } from "./tui/theme.ts";
+import { formatError } from "./tools/common.ts";
 
 export interface HeadlessAgentOptions {
   projectRoot: string;
@@ -68,7 +76,10 @@ export interface AgentTaskRequest {
   allowedVosCommands?: readonly string[];
   extraMcpServers?: readonly McpServerConfig[];
   toolPolicy?: ToolPolicy;
+  chat?: ChatClient;
   env?: Record<string, string | undefined>;
+  streamAssistant?: boolean;
+  signal?: AbortSignal;
   onEvent?: (event: SessionEvent) => void | Promise<void>;
 }
 
@@ -82,6 +93,42 @@ export interface AgentTaskResult {
   mode?: string;
   reasoningEffort?: ReasoningEffort;
   prompt: string;
+}
+
+export type ControlledTuiOutputStream = NodeJS.WritableStream & {
+  columns?: number;
+  rows?: number;
+  on?(event: "resize", listener: () => void): unknown;
+  off?(event: "resize", listener: () => void): unknown;
+};
+
+export type ControlledTuiInputStream = NodeJS.ReadableStream & {
+  setEncoding?(encoding: BufferEncoding): unknown;
+  setRawMode?: (enabled: boolean) => unknown;
+  resume?(): unknown;
+  pause?(): unknown;
+  on(event: "data" | "end" | "error", listener: (...args: any[]) => void): unknown;
+  off(event: "data" | "end" | "error", listener: (...args: any[]) => void): unknown;
+};
+
+export interface ControlledTuiAgentTaskOptions extends AgentTaskRequest {
+  output?: ControlledTuiOutputStream;
+  /**
+   * Input is consumed and ignored so users cannot submit prompts or slash
+   * commands. Pass false when the embedding app owns input elsewhere.
+   */
+  input?: ControlledTuiInputStream | false;
+  debugLabels?: boolean;
+  welcomeAnimation?: boolean;
+  closeOnComplete?: boolean;
+  allowKeyboardInterrupt?: boolean;
+}
+
+export interface ControlledTuiAgentTaskHandle {
+  readonly result: Promise<AgentTaskResult>;
+  readonly signal: AbortSignal;
+  abort(reason?: unknown): void;
+  close(): void;
 }
 
 export interface ResolveAgentTaskProfileOptions {
@@ -103,7 +150,7 @@ export interface AgentHttpPackageServerResult {
   url: string;
 }
 
-export type { Config, SessionEvent, ToolPolicy };
+export type { ChatClient, Config, SessionEvent, ToolPolicy };
 export type { AgentTaskProfile, AgentTaskProfileInput };
 export type { McpServerConfig };
 
@@ -170,7 +217,7 @@ export async function runAgentTask(
   const env = options.env ?? process.env;
   const settings = loadSettings({ workspaceRoot, env });
   const config = loadConfig(env, settings);
-  const chat = createChatClientFromConfig(config);
+  const chat = options.chat ?? createChatClientFromConfig(config);
   const profile = resolveInternalAgentTaskProfile({
     taskKind: options.taskKind,
   }, options.agentProfile);
@@ -215,6 +262,8 @@ export async function runAgentTask(
     toolPolicy: composeToolPolicies(createProfileToolPolicy(profile), options.toolPolicy),
     startDir: workspaceRoot,
     fixedSystemPrompt: buildAgentTaskSystemPrompt(profile),
+    streamAssistant: options.streamAssistant ?? false,
+    signal: options.signal,
     onEvent: async (event) => {
       events.push(event);
       await options.onEvent?.(event);
@@ -232,6 +281,106 @@ export async function runAgentTask(
     reasoningEffort: modelSettings.reasoningEffort,
     prompt,
   };
+}
+
+export function startControlledTuiAgentTask(
+  options: ControlledTuiAgentTaskOptions,
+): ControlledTuiAgentTaskHandle {
+  const workspaceRoot = resolve(options.projectRoot);
+  const taskKind = options.taskKind ?? "knowledgebase_qa";
+  const profile = resolveInternalAgentTaskProfile({ taskKind }, options.agentProfile);
+  const output = options.output ?? defaultStdout as ControlledTuiOutputStream;
+  const driver = new TerminalDriver(output);
+  const view = new StarsTuiInteractiveView({
+    presenter: driver,
+    size: () => controlledTuiSize(output),
+    debugLabels: options.debugLabels,
+    displayOnly: true,
+    theme: resolveStarsTuiTheme(),
+    welcomeAnimation: options.welcomeAnimation ?? false,
+  });
+  const controller = new AbortController();
+  const unlinkAbortSignal = linkAbortSignal(options.signal, controller);
+  const inputBlocker = options.input === false
+    ? undefined
+    : new ControlledTuiInputBlocker({
+        input: (options.input ?? defaultStdin) as ControlledTuiInputStream,
+        controller,
+        allowKeyboardInterrupt: options.allowKeyboardInterrupt ?? true,
+      });
+  const onResize = (): void => view.refresh();
+  let resizeAttached = false;
+  let closed = false;
+
+  const close = (): void => {
+    if (closed) return;
+    closed = true;
+    if (resizeAttached) {
+      output.off?.("resize", onResize);
+      resizeAttached = false;
+    }
+    inputBlocker?.close();
+    view.close();
+    driver.close();
+    unlinkAbortSignal();
+  };
+
+  driver.start();
+  try {
+    if (output.on) {
+      output.on("resize", onResize);
+      resizeAttached = true;
+    }
+    inputBlocker?.start();
+    view.welcome({
+      mode: options.mode ?? profile.mode,
+      model: options.model,
+      cwd: workspaceRoot,
+    });
+    view.prompt(options.task);
+  } catch (e) {
+    close();
+    throw e;
+  }
+
+  const result = (async (): Promise<AgentTaskResult> => {
+    try {
+      return await runAgentTask({
+        ...options,
+        projectRoot: workspaceRoot,
+        taskKind,
+        signal: controller.signal,
+        streamAssistant: options.streamAssistant ?? true,
+        onEvent: async (event) => {
+          view.onSessionEvent(event);
+          await options.onEvent?.(event);
+        },
+      });
+    } catch (e) {
+      view.error(formatError(e));
+      throw e;
+    } finally {
+      if (options.closeOnComplete !== false) {
+        close();
+      } else {
+        inputBlocker?.close();
+        unlinkAbortSignal();
+      }
+    }
+  })();
+
+  return {
+    result,
+    signal: controller.signal,
+    abort: (reason?: unknown) => controller.abort(reason),
+    close,
+  };
+}
+
+export async function runControlledTuiAgentTask(
+  options: ControlledTuiAgentTaskOptions,
+): Promise<AgentTaskResult> {
+  return await startControlledTuiAgentTask(options).result;
 }
 
 export function startAgentHttpServer(
@@ -264,6 +413,81 @@ function readPortEnv(value: string | undefined): number | undefined {
     throw new Error("VOS_AGENT_PORT must be a TCP port from 1 to 65535");
   }
   return parsed;
+}
+
+function controlledTuiSize(output: ControlledTuiOutputStream): StarsViewSize {
+  return {
+    width: Math.max(1, Math.trunc(output.columns ?? 80)),
+    height: Math.max(1, Math.trunc(output.rows ?? 24)),
+  };
+}
+
+class ControlledTuiInputBlocker {
+  private started = false;
+  private closed = false;
+  private rawModeEnabled = false;
+
+  constructor(
+    private readonly opts: {
+      input: ControlledTuiInputStream;
+      controller: AbortController;
+      allowKeyboardInterrupt: boolean;
+    },
+  ) {}
+
+  start(): void {
+    if (this.started) return;
+    this.started = true;
+    this.closed = false;
+    const { input } = this.opts;
+    input.setEncoding?.("utf8");
+    if (input.setRawMode) {
+      input.setRawMode(true);
+      this.rawModeEnabled = true;
+    }
+    input.on("data", this.onData);
+    input.on("end", this.onEnd);
+    input.on("error", this.onError);
+    input.resume?.();
+  }
+
+  close(): void {
+    if (!this.started && this.closed) return;
+    this.closed = true;
+    const { input } = this.opts;
+    input.off("data", this.onData);
+    input.off("end", this.onEnd);
+    input.off("error", this.onError);
+    if (this.rawModeEnabled) {
+      input.setRawMode?.(false);
+      this.rawModeEnabled = false;
+    }
+    input.pause?.();
+    this.started = false;
+  }
+
+  private readonly onData = (chunk: string | Buffer | Uint8Array): void => {
+    if (this.closed || !this.opts.allowKeyboardInterrupt) return;
+    const text = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    if (text.includes("\u0003")) {
+      this.opts.controller.abort(abortError("controlled TUI interrupted"));
+    }
+  };
+
+  private readonly onEnd = (): void => {
+    // EOF is not a user prompt in controlled mode. Keep the agent run alive until
+    // the model finishes or the caller aborts it.
+  };
+
+  private readonly onError = (error: unknown): void => {
+    this.opts.controller.abort(error);
+  };
+}
+
+function abortError(message: string): Error {
+  const error = new Error(message);
+  error.name = "AbortError";
+  return error;
 }
 
 function mergeDisabledTools(

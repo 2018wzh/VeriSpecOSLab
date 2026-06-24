@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -7,9 +8,12 @@ import packageJson from "../package.json";
 import {
   resolveAgentTaskProfile,
   runAgentTask,
+  runControlledTuiAgentTask,
   runHeadlessAgentPrompt,
+  startControlledTuiAgentTask,
   startAgentHttpServer,
 } from "vos-agent/headless";
+import { CallbackChatClient, textResponse } from "./helpers/stub-chat.ts";
 
 const tmpRoots: string[] = [];
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -38,8 +42,65 @@ describe("package metadata", () => {
     });
     expect(typeof resolveAgentTaskProfile).toBe("function");
     expect(typeof runAgentTask).toBe("function");
+    expect(typeof runControlledTuiAgentTask).toBe("function");
+    expect(typeof startControlledTuiAgentTask).toBe("function");
     expect(typeof runHeadlessAgentPrompt).toBe("function");
     expect(typeof startAgentHttpServer).toBe("function");
+  });
+
+  test("starts a controlled display-only TUI task without accepting user prompts", async () => {
+    const projectRoot = makeProject();
+    const input = new PassThrough() as PassThrough & {
+      setRawMode(enabled: boolean): typeof input;
+    };
+    const output = new PassThrough() as PassThrough & {
+      columns: number;
+      rows: number;
+    };
+    const rawModeValues: boolean[] = [];
+    const readOutput = capture(output);
+    output.columns = 80;
+    output.rows = 14;
+    input.setRawMode = (enabled: boolean) => {
+      rawModeValues.push(enabled);
+      return input;
+    };
+    let streamingHookSeen = false;
+    const chat = new CallbackChatClient(async (request) => {
+      streamingHookSeen = request.onEvent !== undefined;
+      await delay(1);
+      await request.onEvent?.({ type: "text.delta", delta: "kb " });
+      await request.onEvent?.({ type: "text.delta", delta: "answer" });
+      return textResponse("kb answer");
+    });
+
+    const handle = startControlledTuiAgentTask({
+      projectRoot,
+      task: "Explain page tables from the course notes",
+      chat,
+      input,
+      output,
+      env: {
+        OPENAI_API_KEY: "test-key",
+        SMART_MODEL: "openai:gpt-test",
+      },
+    });
+    input.write("/quit\rhello\r");
+    const result = await handle.result;
+
+    expect(result.content).toBe("kb answer");
+    expect(result.agentProfile.promptId).toBe("knowledgebase.v1");
+    expect(chat.requests).toHaveLength(1);
+    expect(streamingHookSeen).toBe(true);
+    expect(rawModeValues).toEqual([true, false]);
+    const text = readOutput();
+    const visibleText = stripAnsi(text);
+    expect(text).toContain("\x1b[?1049h");
+    expect(visibleText).toContain("Explain page tables from the course notes");
+    expect(visibleText).toMatch(/kb\s*answer/);
+    expect(visibleText).not.toContain("╭");
+    input.destroy();
+    output.destroy();
   });
 
   test("starts package HTTP server with explicit host and ephemeral port", () => {
@@ -107,4 +168,20 @@ function makeProject(): string {
   const root = mkdtempSync(join(tmpdir(), "vos-agent-package-"));
   tmpRoots.push(root);
   return root;
+}
+
+function capture(stream: PassThrough): () => string {
+  const chunks: Buffer[] = [];
+  stream.on("data", (chunk) => {
+    chunks.push(Buffer.from(chunk));
+  });
+  return () => Buffer.concat(chunks).toString("utf8");
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 }

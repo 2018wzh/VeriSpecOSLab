@@ -201,6 +201,26 @@ describe("Stars TUI interactive view", () => {
     expect(presenter.latestText()).toContain("assistant: final answer");
   });
 
+  test("can render as a display-only transcript with no prompt cursor", () => {
+    const presenter = new RecordingPresenter();
+    const view = new StarsTuiInteractiveView({
+      presenter,
+      size: () => ({ width: 48, height: 9 }),
+      displayOnly: true,
+    });
+
+    view.prompt("answer this from the course notes");
+    view.onSessionEvent({ type: "done", thread_id: "T-session", content: "controlled answer" });
+
+    const frame = presenter.frames.at(-1);
+    const text = presenter.latestText();
+    expect(text).toContain("│ answer this from the course notes");
+    expect(text).toContain("controlled answer");
+    expect(text).not.toContain("╭");
+    expect(text).not.toContain("╰");
+    expect(frame?.cursor).toBeUndefined();
+  });
+
   test("passes the configured theme to assistant markdown rendering", () => {
     const presenter = new RecordingPresenter();
     const view = new StarsTuiInteractiveView({
