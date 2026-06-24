@@ -124,6 +124,32 @@ describe("Stars TUI interactive view", () => {
     expect(countOccurrences(complete, "final answer")).toBe(1);
   });
 
+  test("renders model usage events in the full-screen transcript", () => {
+    const presenter = new RecordingPresenter();
+    const view = new StarsTuiInteractiveView({ presenter, size: () => ({ width: 96, height: 10 }) });
+
+    view.onSessionEvent({
+      type: "model.usage",
+      thread_id: "T-session",
+      iteration: 1,
+      model: "sonnet4.6",
+      provider: "anthropic",
+      inputTokens: 1000,
+      outputTokens: 200,
+      totalTokens: 1200,
+      contextWindowTokens: 200000,
+      contextWindowUsage: 0.005,
+      estimatedCostUsd: 0.006,
+    });
+
+    const text = presenter.latestText();
+    expect(text).toContain("usage: sonnet4.6");
+    expect(text).toContain("1000 in");
+    expect(text).toContain("0.5% of 200000 context");
+    expect(text).toContain("est. $0.006000");
+    expect(text).not.toContain("status: usage");
+  });
+
   test("streams assistant deltas into one transcript entry without final duplication", () => {
     const presenter = new RecordingPresenter();
     const view = new StarsTuiInteractiveView({ presenter, size: () => ({ width: 64, height: 10 }) });

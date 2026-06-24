@@ -1,4 +1,5 @@
 import type { SessionEvent } from "../session/types.ts";
+import { formatModelUsage } from "../session/usage.ts";
 import { builtinSlashCommandPaletteEntries } from "../terminal/slash-commands.ts";
 import type { InteractiveStatus, InteractiveView } from "../terminal/repl.ts";
 import {
@@ -174,6 +175,9 @@ export class StarsTuiInteractiveView implements InteractiveView {
           name: event.name,
           text: summarize(event.content) || "(empty)",
         });
+        break;
+      case "model.usage":
+        this.appendTranscript({ type: "usage", text: formatModelUsage(event) });
         break;
       case "agent.done":
         this.busy = false;

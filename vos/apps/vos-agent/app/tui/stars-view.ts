@@ -39,7 +39,7 @@ export type StarsTuiStatus = Readonly<{
 
 export type StarsTranscriptItem =
   | Readonly<{
-    type: "user" | "assistant" | "command" | "error" | "system" | "status";
+    type: "user" | "assistant" | "command" | "error" | "system" | "status" | "usage";
     text: string;
   }>
   | Readonly<{
@@ -136,6 +136,7 @@ const transcriptStyles = {
   error: { bold: true, fg: "red" },
   system: { fg: "blue" },
   status: { fg: "cyan" },
+  usage: { fg: "cyan" },
   toolCall: {},
   toolResult: {},
 } satisfies Record<string, Style>;
@@ -518,6 +519,8 @@ function renderTranscriptItemRows(
       return prefixedRows("system", item.text, transcriptStyles.system, width);
     case "status":
       return prefixedRows("status", item.text, transcriptStyles.status, width);
+    case "usage":
+      return wrapPrefixedLine("", item.text, "", transcriptStyles.usage, width);
     case "tool-call":
       return toolCallRows(item.name, item.text ?? "", width);
     case "tool-result":
