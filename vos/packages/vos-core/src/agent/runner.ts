@@ -138,16 +138,22 @@ export function startAgentServer(
 
 export function parseJsonFromText(text: string): unknown | undefined {
   if (!text.trim()) return undefined;
+  // Strip markdown fences (```json / ```) that LLMs often wrap around JSON
+  let cleaned = text.trim();
+  const fenceMatch = cleaned.match(/^```(?:json)?\s*\n([\s\S]*?)\n```\s*$/);
+  if (fenceMatch) {
+    cleaned = fenceMatch[1].trim();
+  }
   try {
-    return JSON.parse(text);
+    return JSON.parse(cleaned);
   } catch {
-    const firstBrace = text.indexOf("{");
-    const lastBrace = text.lastIndexOf("}");
+    const firstBrace = cleaned.indexOf("{");
+    const lastBrace = cleaned.lastIndexOf("}");
     if (firstBrace === -1 || lastBrace === -1) {
       return undefined;
     }
     try {
-      return JSON.parse(text.slice(firstBrace, lastBrace + 1));
+      return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
     } catch {
       return undefined;
     }

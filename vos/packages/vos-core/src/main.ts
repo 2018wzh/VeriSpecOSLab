@@ -2231,7 +2231,19 @@ export async function executeAgentAsk(
   const kbManifest = await exportKbManifest(projectRoot);
   const prompt = [
     "Answer this VOS lab design question as knowledgebase.v1.",
-    "Return JSON only with { answer, stage_key, design_goal_alignment, citations, suggested_next_steps, allowed_snippets }.",
+    "Return exactly one JSON object and nothing else. Do not use markdown, tables, or prose.",
+    "Fields: answer (string), stage_key (string|null), design_goal_alignment (string[]), citations (object[]), suggested_next_steps (string[]), allowed_snippets (string[]).",
+    "design_goal_alignment, suggested_next_steps, allowed_snippets, and citations MUST be arrays, even if only one item.",
+    "Each citation has: source_id (string), title (string). Optionally include object_ref (string) and chunk_id (string). Omit null fields entirely — do not set them to null.",
+    "Minimal valid example:",
+    JSON.stringify({
+      answer: "SBI ecall provides hardware abstraction.",
+      stage_key: "boot",
+      design_goal_alignment: ["platform independence"],
+      citations: [{ source_id: "kb-abc123", title: "console_putchar.yaml", chunk_id: "kb-abc123:3" }],
+      suggested_next_steps: ["read spec/modules/kernel/boot/ops/console_putchar.yaml"],
+      allowed_snippets: ["// example code here"],
+    }, null, 2),
     "Use current stage/spec context, public evidence, and KB citations.",
     "Small illustrative snippets are allowed; do not return a full patch or full module.",
     JSON.stringify({

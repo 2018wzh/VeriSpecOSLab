@@ -67,10 +67,17 @@ function providerConfig(value: unknown): ProviderConfig | undefined {
 
 function openAICompatible(config: ProviderConfig | undefined): ProviderConfig | undefined {
   const provider = config?.provider?.toLowerCase();
-  return provider === "openai" || provider === "openai-compatible" || provider === "deepseek" ? {
-    ...config,
-    model: "text-embedding-3-small",
-  } : undefined;
+  if (provider === "openai" || provider === "openai-compatible") {
+    return { ...config, model: config.model ?? "text-embedding-3-small" };
+  }
+  if (provider === "deepseek") {
+    throw new Error(
+      "DeepSeek does not provide an embeddings API. " +
+      "Add a [kb.embedding] section to .vos/config.toml with an OpenAI-compatible embedding provider, " +
+      "or set provider = \"openai\" and provide OPENAI_API_KEY.",
+    );
+  }
+  return undefined;
 }
 
 function stringValue(value: unknown): string | undefined {

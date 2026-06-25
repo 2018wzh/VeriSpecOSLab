@@ -5,7 +5,7 @@ import path from "node:path";
 import { Database } from "bun:sqlite";
 import * as cheerio from "cheerio";
 import mime from "mime";
-import { OfficeParser } from "officeparser";
+import officeparser from "officeparser";
 import * as sqliteVec from "sqlite-vec";
 import { z } from "zod";
 
@@ -366,7 +366,7 @@ async function readSource(projectRoot: string, source: string): Promise<{ conten
   const resolved = path.resolve(projectRoot, source);
   const type = mime.getType(resolved) ?? "text/plain";
   if (isOfficeFile(resolved, type)) {
-    const ast = await OfficeParser.parseOffice(resolved, { ocr: false });
+    const ast = await officeparser.parseOffice(resolved, { ocr: false });
     const content = ast.toText().replace(/\s+/g, " ").trim();
     if (!content) throw new Error(`KB source has no extractable text: ${source}`);
     return { content, contentType: type };
@@ -399,14 +399,29 @@ async function hydrateChunks(projectRoot: string, sources: KbSource[]): Promise<
 
 function chunkText(source: KbSource, content: string): KbChunk[] {
   const parts = content.split(/\n{2,}|(?=^#\s+)/m).map((part) => part.trim()).filter(Boolean);
-  const chunks = (parts.length ? parts : [content]).map((part, index) => ({
-    id: `${source.id}:${index + 1}`,
+  const MAX_CHUNK = 8000; // characters per chunk to stay within embedding token limits
+  const chunks: KbChunk[] = [];
+  let index = 0;
+  for (const part of parts.length ? parts : [content]) {
+    if (part.length <= MAX_CHUNK) {
+      chunks.push(makeChunk(source, part, ++index));
+    } else {
+      for (let offset = 0; offset < part.length; offset += MAX_CHUNK) {
+        chunks.push(makeChunk(source, part.slice(offset, offset + MAX_CHUNK), ++index));
+      }
+    }
+  }
+  return chunks;
+}
+
+function makeChunk(source: KbSource, content: string, index: number): KbChunk {
+  return {
+    id: `${source.id}:${index}`,
     source_id: source.id,
     title: source.title,
-    content: part,
+    content,
     stage_scope: source.stage_scope,
-  }));
-  return chunks;
+  };
 }
 
 function indexPath(projectRoot: string): string {
