@@ -15,6 +15,7 @@ import {
   runAgentDebugTrace,
   validateInstrumentationPatch,
 } from "../src/runtime/debug-trace.ts";
+import { buildAgentDebugTracePrompt } from "../src/main.ts";
 
 const tmpRoots: string[] = [];
 
@@ -188,6 +189,25 @@ describe("DebugAgent trace helpers", () => {
         expected_trace_events: ["boot"],
       }],
     }))).toThrow(/success_regex must validate non-trace serial output/);
+  });
+
+  test("agent debug trace prompt keeps contract while relying on profile skill for instrumentation discipline", async () => {
+    const projectRoot = makeTraceProject();
+    const input = await buildDebugTraceInput({
+      projectRoot,
+      target: "kernel/syscall",
+      recentEvidence: [{ run_id: "run-1", status: "failed" }],
+    });
+
+    const prompt = buildAgentDebugTracePrompt(input);
+
+    expect(prompt).toContain("Return exactly one JSON object and nothing else.");
+    expect(prompt).toContain("instrumentation_patch");
+    expect(prompt).toContain("Validation input:");
+    expect(prompt).toContain("\"target\": \"kernel/syscall\"");
+    expect(prompt).not.toContain("For broad targets, aim for at most 3 touched files");
+    expect(prompt).not.toContain("Do not place trace printing inside hot per-character");
+    expect(prompt).not.toContain("When repairing case failures after a successful build");
   });
 
   test("runs debug trace instrumentation in a temporary branch worktree with per-case evidence", async () => {

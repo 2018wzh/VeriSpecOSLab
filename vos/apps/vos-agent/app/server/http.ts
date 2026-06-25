@@ -11,16 +11,20 @@ import {
   buildAgentTaskUserPrompt,
   createProfileToolPolicy,
   publicAgentTaskProfile,
+  resolveBuiltInProfileMcpServers,
   resolveAgentTaskProfile,
   resolveProfileVosCommands,
   type AgentTaskProfileInput,
 } from "../agent/profiles.ts";
+import { resolveBuiltInSkills } from "../skills/index.ts";
 import {
   createSeededPortalStore,
   handlePortalApiRequest,
   portalCorsHeaders,
   type PortalStore,
 } from "./portal.ts";
+import { outputSchemaForId } from "../agent/output-schemas.ts";
+import { createStructuredOutputTool } from "../tools/structured-output.ts";
 
 export interface AgentHttpServerOptions {
   chat: ChatClient;
@@ -204,9 +208,11 @@ async function runAgentHttpTask(
     allowedPaths: asStringArray(request.allowed_paths),
     requiredValidations: asStringArray(request.required_validations),
     policyFlags: asStringArray(request.policy_flags),
-    promptOverride: request.prompt && !request.task ? request.prompt : undefined,
   });
   const events: SessionEvent[] = [];
+  const outputSchema = outputSchemaForId(profile.outputSchema);
+  const builtInSkills = resolveBuiltInSkills(profile.skills, { workspaceRoot: opts.workspaceRoot });
+  let structuredOutput: unknown;
   const result = await runSessionTurn({
     chat: opts.chat,
     store: opts.store,
@@ -222,13 +228,33 @@ async function runAgentHttpTask(
     maxIterations: request.max_iterations,
     courseMode: request.course_mode ?? true,
     allowedVosCommands: resolveProfileVosCommands(profile, request.allowed_vos_commands),
+    extraMcpServers: [
+      ...resolveBuiltInProfileMcpServers(profile.mcpServers, opts.workspaceRoot),
+      ...builtInSkills.mcpServers,
+    ],
+    extraTools: [createStructuredOutputTool({
+      schema: outputSchema,
+      onStructuredOutput: (value) => {
+        structuredOutput = value;
+      },
+    })],
     toolPolicy: createProfileToolPolicy(profile),
     fixedSystemPrompt: buildAgentTaskSystemPrompt(profile),
+    responseFormat: {
+      type: "json_schema",
+      json_schema: {
+        name: outputSchema.id.replace(/[^A-Za-z0-9_-]/g, "_"),
+        strict: true,
+        schema: outputSchema.schema,
+      },
+    },
     onEvent: (event) => {
       events.push(event);
     },
   });
-  const structuredOutput = parseJsonFromText(result.content ?? "");
+  if (structuredOutput === undefined) {
+    throw new Error(`agent task ${profile.promptId} did not return accepted StructuredOutput for ${profile.outputSchema}`);
+  }
   opts.portalStore.recordAgentAudit({
     projectId: request.project_id,
     userId: request.user_id,

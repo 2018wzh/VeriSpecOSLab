@@ -1,11 +1,27 @@
 import type { McpServerConfig } from "../plugins/manifest.ts";
+import { auditReviewSkill } from "./audit-review.ts";
 import { bretVictorTutorSkill } from "./bret-victor-tutor.ts";
+import { evidenceReportingSkill } from "./evidence-reporting.ts";
 import { gdbDebugSkill } from "./gdb-debug.ts";
+import { instrumentationTestingSkill } from "./instrumentation-testing.ts";
+import { operationCodegenSkill } from "./operation-codegen.ts";
+import { osSpecAuthoringSkill } from "./os-spec-authoring.ts";
 import { qemuMonitorSkill } from "./qemu-monitor.ts";
+import { referencePolicySkill } from "./reference-policy.ts";
+import { teachingExplanationSkill } from "./teaching-explanation.ts";
+import { toolchainAuthoringSkill } from "./toolchain-authoring.ts";
 import { verificationDiagnosisSkill } from "./verification-diagnosis.ts";
 import type { BuiltInSkill, BuiltInSkillResolution } from "./types.ts";
 
 const BUILT_IN_SKILLS: Record<string, BuiltInSkill> = {
+  "os-spec-authoring": osSpecAuthoringSkill,
+  "audit-review": auditReviewSkill,
+  "operation-codegen": operationCodegenSkill,
+  "toolchain-authoring": toolchainAuthoringSkill,
+  "evidence-reporting": evidenceReportingSkill,
+  "instrumentation-testing": instrumentationTestingSkill,
+  "reference-policy": referencePolicySkill,
+  "teaching-explanation": teachingExplanationSkill,
   "gdb-debug": gdbDebugSkill,
   "qemu-monitor": qemuMonitorSkill,
   "bret-victor-tutor": bretVictorTutorSkill,

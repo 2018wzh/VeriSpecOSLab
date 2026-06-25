@@ -7,7 +7,7 @@ import type { EvidenceWriter } from "../evidence/index.ts";
 import type { RunManifest } from "../evidence/manifest.ts";
 import { CliError, AgentOutputError } from "../errors.ts";
 import { appendLogEntry, readLogEntries } from "../agent/helpers.ts";
-import { parseJsonFromText, runAgentWithPrompt, type HeadlessAgentRunner } from "../agent/runner.ts";
+import { parseJsonFromText, runAgentWithPrompt, type HeadlessAgentTaskRunner } from "../agent/runner.ts";
 import { currentStageForProject } from "../utils/project.ts";
 import { parseTopLevelYaml } from "../utils/yaml.ts";
 import {
@@ -96,7 +96,7 @@ export async function generateCourseReport(params: {
   final: boolean;
   visibilityScope?: string;
   evidence: EvidenceWriter;
-  agentRunner?: HeadlessAgentRunner;
+  agentRunner?: HeadlessAgentTaskRunner;
 }): Promise<ReportGenerateResult> {
   const projectRoot = params.projectRoot;
   const bundle = await buildNormalizedSpecBundle({ projectRoot });
@@ -412,22 +412,17 @@ async function generateAgentNarrative(params: {
   projectRoot: string;
   draft: unknown;
   evidence: EvidenceWriter;
-  agentRunner?: HeadlessAgentRunner;
+  agentRunner?: HeadlessAgentTaskRunner;
 }): Promise<z.infer<typeof narrativeSchema>> {
-  const prompt = [
-    "You are reporter.v2 for VeriSpecOSLab.",
-    "Return exactly one JSON object with keys: summary, risks, recommended_next_steps, limitations.",
-    "Use only the provided deterministic report draft. Do not change pass/fail facts. Do not invent evidence.",
-    JSON.stringify(params.draft, null, 2),
-  ].join("\n\n");
   const result = await runAgentWithPrompt({
     projectRoot: params.projectRoot,
-    taskPrompt: prompt,
-    taskKind: "report",
+    taskPrompt: "Summarize the deterministic course report draft without changing pass/fail facts or inventing evidence.",
+    taskKind: "report_narrative",
     requestedScope: "report.generate",
+    context: params.draft,
     courseMode: true,
     disabledTools: ["bash", "edit", "write"],
-    runner: params.agentRunner,
+    taskRunner: params.agentRunner,
   });
   const parsed = result.parsedResult ?? parseJsonFromText(result.resultText);
   if (!parsed) {

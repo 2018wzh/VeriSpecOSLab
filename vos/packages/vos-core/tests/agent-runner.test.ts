@@ -19,7 +19,6 @@ import { buildContextBundle, loadAgentAllowedPaths } from "../src/agent/context.
 import { parseDebugOutput } from "../src/agent/schemas.ts";
 import { executeCommand } from "../src/main.ts";
 import { EvidenceWriter } from "../src/evidence/index.ts";
-import type { HeadlessAgentOptions } from "vos-agent/headless";
 import type { AgentTaskRequest } from "vos-agent/headless";
 import type { InteractiveAgentTaskOptions } from "vos-agent/headless";
 import type { ReadonlyAgentDisplayHandle, ReadonlyAgentDisplayOptions } from "vos-agent/headless";
@@ -33,13 +32,14 @@ afterEach(() => {
 });
 
 describe("vos-cli package agent runner", () => {
-  test("calls vos-agent headless package API through injectable runner", async () => {
+  test("calls vos-agent task package API through injectable runner", async () => {
     const projectRoot = makeProject();
-    let captured: HeadlessAgentOptions | undefined;
-    const runner = async (options: HeadlessAgentOptions) => {
+    let captured: AgentTaskRequest | undefined;
+    const runner = async (options: AgentTaskRequest) => {
       captured = options;
       return {
         content: "{\"task\":\"demo\",\"related_specs\":[],\"suspected_files\":[],\"required_validations\":[],\"notes\":[]}",
+        structuredOutput: { task: "demo", related_specs: [], suspected_files: [], required_validations: [], notes: [] },
         events: [],
       };
     };
@@ -49,13 +49,13 @@ describe("vos-cli package agent runner", () => {
       taskPrompt: "hello from vos-cli",
       courseMode: true,
       allowedVosCommands: ["build"],
-      runner,
+      taskRunner: runner,
     });
 
     expect(result.exitCode).toBe(0);
-    expect(result.resultText).toContain("\"task\"");
+    expect(result.parsedResult).toMatchObject({ task: "demo" });
     expect(captured?.projectRoot).toBe(projectRoot);
-    expect(captured?.prompt).toBe("hello from vos-cli");
+    expect(captured?.task).toBe("hello from vos-cli");
     expect(captured?.courseMode).toBe(true);
     expect(captured?.allowedVosCommands).toEqual(["build"]);
     expect(Object.keys(captured ?? {})).not.toContain("binary");
@@ -85,7 +85,7 @@ describe("vos-cli package agent runner", () => {
     expect(result.exitCode).toBe(0);
     expect(result.parsedResult).toEqual({ ok: true });
     expect(captured?.task).toBe("debug this log");
-    expect(captured?.promptOverride).toBe("debug this log");
+    expect(Object.keys(captured ?? {})).not.toContain("promptOverride");
     expect(Object.keys(captured ?? {})).not.toContain("roleId");
     expect(captured?.taskKind).toBe("debug");
     expect(captured?.courseMode).toBe(true);
@@ -186,7 +186,7 @@ describe("vos-cli package agent runner", () => {
       args: ["agent", "plan", "-i"],
     });
     const display = makeReadonlyDisplay();
-    const runner = async (options: HeadlessAgentOptions) => {
+    const runner = async (options: AgentTaskRequest) => {
       await options.onEvent?.({
         type: "assistant.message",
         thread_id: "T-display",
@@ -202,6 +202,13 @@ describe("vos-cli package agent runner", () => {
           required_validations: [],
           notes: ["display fake runner"],
         }),
+        structuredOutput: {
+          task: "inspect syscall",
+          related_specs: [],
+          suspected_files: [],
+          required_validations: [],
+          notes: ["display fake runner"],
+        },
         events: [],
       };
     };
@@ -284,8 +291,8 @@ describe("vos-cli package agent runner", () => {
       command: ["agent", "plan"],
       args: ["agent", "plan"],
     });
-    let captured: HeadlessAgentOptions | undefined;
-    const runner = async (options: HeadlessAgentOptions) => {
+    let captured: AgentTaskRequest | undefined;
+    const runner = async (options: AgentTaskRequest) => {
       captured = options;
       return {
         content: JSON.stringify({
@@ -314,7 +321,9 @@ describe("vos-cli package agent runner", () => {
     expect(captured?.courseMode).toBe(true);
     expect(captured?.allowedVosCommands).toEqual(["build --dry-run"]);
     expect(captured && "binary" in captured).toBe(false);
-    expect(captured?.prompt).not.toContain(["agent", "role"].join("_"));
+    expect(captured?.task).toBe("inspect syscall");
+    expect(captured?.taskKind).toBe("plan");
+    expect(Object.keys(captured ?? {})).not.toContain("prompt");
   });
 
   test("maps xv6 DeepSeek config to OpenAI-compatible agent env", () => {
@@ -517,8 +526,8 @@ describe("vos-cli package agent runner", () => {
       command: ["agent", "debug", "--run", "failed-run"],
       args: [],
     });
-    let captured: HeadlessAgentOptions | undefined;
-    const runner = async (options: HeadlessAgentOptions) => {
+    let captured: AgentTaskRequest | undefined;
+    const runner = async (options: AgentTaskRequest) => {
       captured = options;
       return {
         content: JSON.stringify({
@@ -562,17 +571,10 @@ describe("vos-cli package agent runner", () => {
     });
 
     expect(result.status).toBe("passed");
-    expect(captured?.prompt).toContain("failed-run");
-    expect(captured?.prompt).toContain("panic: allocator reused page");
-    expect(captured?.prompt).toContain("Built-in DebugAgent skills available inside vos-agent");
-    expect(captured?.prompt).toContain("gdb-debug");
-    expect(captured?.prompt).toContain("qemu-monitor");
-    expect(captured?.prompt).toContain("bret-victor-tutor");
-    expect(captured?.prompt).toContain("target remote");
-    expect(captured?.prompt).toContain("QEMU monitor");
-    expect(captured?.prompt).toContain("qmp_endpoint");
-    expect(captured?.prompt).toContain("visualization_html");
-    expect(captured?.prompt).not.toContain(".tmp/skills");
+    expect(JSON.stringify(captured?.context)).toContain("failed-run");
+    expect(JSON.stringify(captured?.context)).toContain("panic: allocator reused page");
+    expect(captured?.taskKind).toBe("debug");
+    expect(Object.keys(captured ?? {})).not.toContain("prompt");
     expect(result.details.artifact).toMatch(/agent-debug\/debug\.json$/);
     expect(result.details.visualization).toMatch(/agent-debug\/visualization\.html$/);
     expect(result.details.gdb_summary).toMatch(/agent-debug\/gdb\/summary\.json$/);
@@ -1170,8 +1172,8 @@ describe("vos-cli package agent runner", () => {
       command: ["agent", "generate"],
       args: ["agent", "generate"],
     });
-    let captured: HeadlessAgentOptions | undefined;
-    const runner = async (options: HeadlessAgentOptions) => {
+    let captured: AgentTaskRequest | undefined;
+    const runner = async (options: AgentTaskRequest) => {
       captured = options;
       return {
       content: JSON.stringify({
@@ -1290,8 +1292,8 @@ describe("vos-cli package agent runner", () => {
       command: ["agent", "ask"],
       args: ["agent", "ask"],
     });
-    let captured: HeadlessAgentOptions | undefined;
-    const runner = async (options: HeadlessAgentOptions) => {
+    let captured: AgentTaskRequest | undefined;
+    const runner = async (options: AgentTaskRequest) => {
       captured = options;
       return {
         content: JSON.stringify({

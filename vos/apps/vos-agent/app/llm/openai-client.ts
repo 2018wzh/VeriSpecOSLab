@@ -52,12 +52,14 @@ export function createOpenAIChatClient(
 
       let response: OpenAI.Chat.ChatCompletion;
       try {
-        response = await client.chat.completions.create({
+        const body = {
           model: request.model,
           ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
           messages: request.messages,
           tools: request.tools,
-        }, request.signal ? { signal: request.signal } : undefined);
+          ...(request.responseFormat ? { response_format: request.responseFormat } : {}),
+        } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming;
+        response = await client.chat.completions.create(body, request.signal ? { signal: request.signal } : undefined);
       } catch (e) {
         throw new Error(
           `OpenAI chat request failed for model "${request.model}": ${formatError(e)}`,
@@ -85,14 +87,16 @@ async function streamChatCompletion(
   let usage: ChatUsage | undefined;
 
   try {
-    const stream = await client.chat.completions.create({
+    const body = {
       model: request.model,
       ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
       messages: request.messages,
       tools: request.tools,
+      ...(request.responseFormat ? { response_format: request.responseFormat } : {}),
       stream: true,
       ...(request.onUsage ? { stream_options: { include_usage: true } } : {}),
-    }, request.signal ? { signal: request.signal } : undefined);
+    } as OpenAI.Chat.ChatCompletionCreateParamsStreaming;
+    const stream = await client.chat.completions.create(body, request.signal ? { signal: request.signal } : undefined);
 
     for await (const chunk of stream) {
       usage = openAIUsageToChatUsage(chunk.usage) ?? usage;

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { executeCliInvocation } from "../src/main.ts";
-import type { HeadlessAgentOptions } from "vos-agent/headless";
+import type { AgentTaskRequest } from "vos-agent/headless";
 
 const tmpRoots: string[] = [];
 
@@ -140,8 +140,8 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
   test("agent-assisted build generate gates draft, writes ledger, and creates a commit", async () => {
     const projectRoot = makeGitProject({ manifest: false });
     await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
-    let captured: HeadlessAgentOptions | undefined;
-    const agentRunner = async (options: HeadlessAgentOptions) => {
+    let captured: AgentTaskRequest | undefined;
+    const agentRunner = async (options: AgentTaskRequest) => {
       captured = options;
       return {
         content: JSON.stringify({
@@ -183,7 +183,8 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
 
     expect(result.status).toBe("passed");
     expect(captured?.courseMode).toBe(true);
-    expect(captured?.prompt).toContain("toolchain draft");
+    expect(captured?.taskKind).toBe("toolchain_generate");
+    expect(captured?.task).toContain("toolchain draft");
     expect(readFileSync(join(projectRoot, "Makefile"), "utf8")).toContain("printf generated");
     expect(JSON.parse(readFileSync(join(projectRoot, ".vos", "toolchain.json"), "utf8")).spec_hash).toBeTruthy();
     expect(readFileSync(join(projectRoot, ".vos", "commit-ledger.jsonl"), "utf8")).toContain("toolchain-generate");

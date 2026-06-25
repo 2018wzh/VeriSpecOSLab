@@ -15,7 +15,7 @@ import { createBuiltinToolRegistry } from "../tools/builtin.ts";
 import { TodoState } from "../tools/todo.ts";
 import type { SessionEvent, StoredThread } from "./types.ts";
 import type { ThreadStore } from "./thread-store.ts";
-import type { ToolPolicy } from "../tools/types.ts";
+import type { Tool, ToolPolicy } from "../tools/types.ts";
 import { addModelUsage, cloneThreadUsage } from "./usage.ts";
 import type { PermissionRule, ToolApprovalHandler } from "../tools/permissions.ts";
 import {
@@ -41,8 +41,10 @@ export interface RunSessionTurnOptions {
   courseMode?: boolean;
   allowedVosCommands?: readonly string[];
   extraMcpServers?: readonly McpServerConfig[];
+  extraTools?: readonly Tool[];
   streamAssistant?: boolean;
   fixedSystemPrompt?: string;
+  responseFormat?: unknown;
   contextCompaction?: ContextCompactionSetting;
   signal?: AbortSignal;
   onEvent?: (event: SessionEvent) => void | Promise<void>;
@@ -228,7 +230,7 @@ export async function runSessionTurn(
       toolPolicy: opts.toolPolicy,
       courseMode: opts.courseMode,
       allowedVosCommands: opts.allowedVosCommands,
-      extraTools: mcpProvider.tools,
+      extraTools: [...mcpProvider.tools, ...(opts.extraTools ?? [])],
       todos,
       task: {
         chat,
@@ -259,6 +261,7 @@ export async function runSessionTurn(
       reasoningEffort: turnReasoningEffort,
       maxIterations: opts.maxIterations,
       streamAssistant,
+      responseFormat: opts.responseFormat,
       ...(historyForRun ? { history: historyForRun } : { system }),
       signal: opts.signal,
       onEvent: handleAgentEvent,

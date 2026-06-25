@@ -201,6 +201,73 @@ describe("createChatClientFromConfig", () => {
     }
   });
 
+  test("passes optional JSON schema response format to OpenAI-compatible provider", async () => {
+    const bodies: unknown[] = [];
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        bodies.push(await req.json());
+        return Response.json({
+          id: "chatcmpl-test",
+          object: "chat.completion",
+          created: 0,
+          model: "gpt5.5",
+          choices: [{
+            index: 0,
+            finish_reason: "stop",
+            message: { role: "assistant", content: "ok" },
+          }],
+        });
+      },
+    });
+
+    try {
+      const chat = createChatClientFromConfig({
+        defaultMode: "deep",
+        modes: { deep: { model: "gpt5.5" } },
+        tools: { disabled: [] },
+        openai: {
+          apiKey: "fake",
+          baseURL: `http://127.0.0.1:${server.port}/v1`,
+          maxRetries: 0,
+        },
+      });
+
+      await chat.chat({
+        ...emptyRequest("gpt5.5"),
+        responseFormat: {
+          type: "json_schema",
+          json_schema: {
+            name: "report_narrative_v1",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: { summary: { type: "string" } },
+              required: ["summary"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      expect((bodies[0] as { response_format?: unknown }).response_format).toEqual({
+        type: "json_schema",
+        json_schema: {
+          name: "report_narrative_v1",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: { summary: { type: "string" } },
+            required: ["summary"],
+            additionalProperties: false,
+          },
+        },
+      });
+    } finally {
+      await server.stop(true);
+    }
+  });
+
   test("with only Anthropic configured, an unknown model falls back to it", async () => {
     const chat = createChatClientFromConfig({
       defaultMode: "smart", modes: { smart: { model: "x" }, deep: { model: "y" } },

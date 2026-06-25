@@ -108,7 +108,7 @@ import {
   runAgentInteractiveTask,
   startAgentReadonlyDisplay,
   startAgentServer,
-  type HeadlessAgentRunner,
+  type HeadlessAgentTaskRunner,
   type InteractiveAgentTaskRunner,
   type ReadonlyAgentDisplayHandle,
   type ReadonlyAgentDisplayStarter,
@@ -315,7 +315,7 @@ export interface ExecuteVosCommandOptions {
   reportPath?: string;
   evidenceDir?: string;
   portalClient?: PortalClient;
-  agentRunner?: HeadlessAgentRunner;
+  agentRunner?: HeadlessAgentTaskRunner;
   interactiveAgentRunner?: InteractiveAgentTaskRunner;
   readonlyDisplayStarter?: ReadonlyAgentDisplayStarter;
   serveBinding?: {
@@ -1378,29 +1378,27 @@ export async function executeAgentPlan(
   const projectRoot = context.projectRoot;
   updateProgress(context, { stage: "agent plan", status: "running", message: "building context" });
   const bundle = await buildContextBundle({ projectRoot, requestedScope, effectivePolicy: context.effectivePolicy });
-  const prompt = buildAgentPlanPrompt({
-    bundle,
-    requestedScope,
-    task: command.task,
-  });
   updateProgress(context, { stage: "agent plan", status: "running", message: "waiting for agent" });
   const agentProgress = createAgentProgressParams(context, "agent plan");
   const agentResult = await runAgentWithPrompt({
     projectRoot,
-    taskPrompt: agentProgress.taskPrompt(prompt),
+    taskPrompt: agentProgress.taskPrompt(command.task ?? `Plan the next VOS work for ${requestedScope}.`),
     taskKind: "plan",
     requestedScope,
     context: bundle,
+    allowedPaths: bundle.allowed_paths,
+    evidenceRefs: bundle.recent_evidence.map((entry) => entry.run_id),
+    policyFlags: bundle.policy_flags,
     courseMode: true,
     allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
     extraMcpServers: agentProgress.extraMcpServers,
     onEvent: agentProgress.onEvent,
-    runner: context.agentRunner,
+    taskRunner: context.agentRunner,
   });
   let parsed;
   try {
     parsed = parsePlanDraft(
-      parseAgentJson(agentResult.resultText, "agent_plan"),
+      agentStructuredOutput(agentResult, "agent_plan"),
     );
   } catch (error) {
     await recordRawAgentOutput(evidence, "agent", "agent-plan-raw.txt", agentResult.resultText);
@@ -1699,19 +1697,19 @@ export async function executeBuildGenerate(
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
   const spec = await loadToolchainGenerationSpec(projectRoot);
-  const prompt = buildToolchainGeneratePrompt(spec);
   const agentResult = await runAgentWithPrompt({
     projectRoot,
-    taskPrompt: prompt,
-    taskKind: "toolchain-generate",
+    taskPrompt: "Generate the minimum VOS toolchain draft from the provided toolchain specs and allowed output paths.",
+    taskKind: "toolchain_generate",
     requestedScope: "toolchain.generate",
     context: spec,
+    allowedPaths: spec.allowedOutputPaths,
     courseMode: true,
-    runner: context.agentRunner,
+    taskRunner: context.agentRunner,
   });
   let draft;
   try {
-    draft = normalizeToolchainDraft(parseAgentJson(agentResult.resultText, "build_generate"));
+    draft = normalizeToolchainDraft(agentStructuredOutput(agentResult, "build_generate"));
   } catch (error) {
     if (error instanceof AgentOutputError) {
       await recordRawAgentOutput(evidence, "toolchain", "build-generate-raw.txt", agentResult.resultText);
@@ -2043,7 +2041,7 @@ function createVerifyBehaviorTestRunner(context: ExecContext, projectRoot: strin
       allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
-      runner: context.agentRunner,
+      taskRunner: context.agentRunner,
     });
     return result.resultText;
   };
@@ -2090,31 +2088,27 @@ export async function executeAgentGenerate(
     effectivePolicy: context.effectivePolicy,
   });
   const task = command.task ?? command.target ?? bundle.current_stage;
-  const taskPrompt = buildAgentGeneratePrompt({
-    bundle,
-    task,
-    buildRequested: command.build,
-    runRequested: command.run,
-  });
   updateProgress(context, { stage: "agent generate", status: "running", message: "waiting for agent" });
   const agentProgress = createAgentProgressParams(context, "agent generate");
   let agentResult = await runAgentWithPrompt({
     projectRoot,
-    taskPrompt: agentProgress.taskPrompt(taskPrompt),
+    taskPrompt: agentProgress.taskPrompt(`Generate a spec-bound patch for ${task}.`),
     taskKind: "codegen",
     requestedScope: "agent.generate",
-    context: bundle,
+    context: { bundle, build_requested: command.build, run_requested: command.run },
     allowedPaths: bundle.allowed_paths,
+    evidenceRefs: bundle.recent_evidence.map((entry) => entry.run_id),
+    policyFlags: bundle.policy_flags,
     courseMode: true,
     allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
     extraMcpServers: agentProgress.extraMcpServers,
     onEvent: agentProgress.onEvent,
-    runner: context.agentRunner,
+    taskRunner: context.agentRunner,
   });
   const rawResponsePath = path.join(projectRoot, ".vos", "agent-generate-raw.txt");
   let parsed;
   try {
-    parsed = parsePatchProposal(parseAgentJson(agentResult.resultText, "agent_generate"));
+    parsed = parsePatchProposal(agentStructuredOutput(agentResult, "agent_generate"));
   } catch (error) {
     await mkdir(path.dirname(rawResponsePath), { recursive: true });
     await writeFile(rawResponsePath, `${agentResult.resultText}\n`);
@@ -2317,39 +2311,16 @@ export async function executeAgentAsk(
   if (!command.question) {
     throw new CliError("agent ask requires a question unless interactive mode is enabled", "failed");
   }
-  const prompt = [
-    "Answer this VOS lab design question as knowledgebase.v1.",
-    "Return exactly one JSON object and nothing else. Do not use markdown, tables, or prose.",
-    "Fields: answer (string), stage_key (string|null), design_goal_alignment (string[]), citations (object[]), suggested_next_steps (string[]), allowed_snippets (string[]).",
-    "design_goal_alignment, suggested_next_steps, allowed_snippets, and citations MUST be arrays, even if only one item.",
-    "Each citation has: source_id (string), title (string). Optionally include object_ref (string) and chunk_id (string). Omit null fields entirely — do not set them to null.",
-    "Minimal valid example:",
-    JSON.stringify({
-      answer: "SBI ecall provides hardware abstraction.",
-      stage_key: "boot",
-      design_goal_alignment: ["platform independence"],
-      citations: [{ source_id: "kb-abc123", title: "console_putchar.yaml", chunk_id: "kb-abc123:3" }],
-      suggested_next_steps: ["read spec/modules/kernel/boot/ops/console_putchar.yaml"],
-      allowed_snippets: ["// example code here"],
-    }, null, 2),
-    "Use current stage/spec context, public evidence, and KB citations.",
-    "Small illustrative snippets are allowed; do not return a full patch or full module.",
-    JSON.stringify({
-      question: command.question,
-      requested_scope: requestedScope,
-      context: bundle,
-      kb_hits: kbHits,
-      object_manifest: kbManifest,
-    }, null, 2),
-  ].join("\n\n");
   updateProgress(context, { stage: "agent ask", status: "running", message: "waiting for agent" });
   const agentProgress = createAgentProgressParams(context, "agent ask");
   const response = await runAgentWithPrompt({
     projectRoot,
-    taskPrompt: agentProgress.taskPrompt(prompt),
+    taskPrompt: agentProgress.taskPrompt(command.question),
     taskKind: "knowledgebase_qa",
     requestedScope,
-    context: { bundle, kb_hits: kbHits },
+    context: { bundle, kb_hits: kbHits, object_manifest: kbManifest },
+    evidenceRefs: bundle.recent_evidence.map((entry) => entry.run_id),
+    policyFlags: bundle.policy_flags,
     courseMode: true,
     allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
     extraMcpServers: [
@@ -2357,11 +2328,11 @@ export async function executeAgentAsk(
       kbMcpServer,
     ],
     onEvent: agentProgress.onEvent,
-    runner: context.agentRunner,
+    taskRunner: context.agentRunner,
   });
   let parsed: ReturnType<typeof parseKnowledgebaseAnswer>;
   try {
-    parsed = parseKnowledgebaseAnswer(parseJsonFromText(response.resultText));
+    parsed = parseKnowledgebaseAnswer(agentStructuredOutput(response, "agent_ask"));
   } catch (error) {
     throw new AgentOutputError(`knowledgebase answer does not match knowledgebase_answer.v1: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -2439,17 +2410,17 @@ async function executeDebugTrace(params: {
     const agentResult = await runAgentWithPrompt({
       projectRoot,
       taskPrompt: agentProgress.taskPrompt(prompt),
-      taskKind: "debug",
+      taskKind: "debug_trace",
       requestedScope: params.requestedScope,
       context: traceInput,
       courseMode: true,
       allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
-      runner: context.agentRunner,
+      taskRunner: context.agentRunner,
     });
     rawEvents.push(...agentResult.rawEvents);
-    lastAgentOutput = agentResult.resultText;
+    lastAgentOutput = agentTracePlanText(agentResult);
     try {
       const result = await runAgentDebugTrace({
         projectRoot,
@@ -2457,7 +2428,7 @@ async function executeDebugTrace(params: {
         target: params.target,
         patchFile: params.patchFile,
         keepWorktree: params.keepWorktree,
-        agentPlanText: agentResult.resultText,
+        agentPlanText: lastAgentOutput,
         recentEvidence,
       });
 
@@ -2483,7 +2454,7 @@ async function executeDebugTrace(params: {
 
       prompt = buildAgentDebugTraceRepairPrompt({
         input: traceInput,
-        previousOutput: agentResult.resultText,
+        previousOutput: lastAgentOutput,
         errorMessage: debugTraceFailureSummary(result),
         patchAlreadyBuilt: true,
       });
@@ -2550,45 +2521,33 @@ export async function executeAgentDebug(
     return { status: "failed", details: { message: "log path required" } };
   }
   const text = await readFile(logPath, "utf8");
-  const prompt = buildAgentDebugPrompt({
-    logText: runContext
-      ? [
-        `Debug VOS run ${runContext.runId}.`,
-        `Run status: ${runContext.status}`,
-        `Command: ${runContext.command.join(" ")}`,
-        "Artifact snippets:",
-        ...runContext.artifacts.map((artifact) => [
-          `- ${artifact.path}`,
-          artifact.snippet,
-        ].join("\n")),
-        "",
-        "Built-in DebugAgent skills available inside vos-agent: gdb-debug, qemu-monitor, bret-victor-tutor, verification-diagnosis.",
-        "Use GDB MCP autonomously through the built-in gdb-debug skill when the adapter contract is present.",
-        "Use QEMU monitor MCP as supplemental readonly evidence through the built-in qemu-monitor skill; inspect qmp_endpoint and hmp_endpoint from the adapter contract.",
-        "For xv6/QEMU-system use target remote; do not use qemu-user-gdb or gdb_attach for QEMU.",
-        "QEMU monitor is readonly in this flow; do not use quit, stop, cont, system_reset, system_powerdown, device_add, or device_del.",
-        traceEvidence ? `Trace evidence summary: ${traceEvidence.summary}` : "Trace evidence summary: not observed",
-        traceEvidence?.summaryPath ? `Trace summary artifact: ${path.relative(projectRoot, traceEvidence.summaryPath)}` : "",
-        adapterContractPath ? `GDB adapter contract: ${path.relative(projectRoot, adapterContractPath)}` : "GDB adapter contract: not available",
-        debugTarget ? `Debug target: ${debugTarget}` : "Debug target: full-syscall",
-      ].join("\n")
-      : text,
-    logRef: path.basename(logPath),
-  });
   updateProgress(context, { stage: "agent debug", status: "running", message: "waiting for agent" });
   const agentProgress = createAgentProgressParams(context, "agent debug");
   let response: Awaited<ReturnType<typeof runAgentWithPrompt>>;
   try {
     response = await runAgentWithPrompt({
       projectRoot,
-      taskPrompt: agentProgress.taskPrompt(prompt),
+      taskPrompt: agentProgress.taskPrompt(`Diagnose VOS run failure from ${path.basename(logPath)}.`),
       taskKind: "debug",
       requestedScope: "agent.debug",
+      context: {
+        log_ref: path.basename(logPath),
+        log_text: text,
+        run_context: runContext,
+        trace_evidence: traceEvidence,
+        gdb_adapter_contract: adapterContractPath ? path.relative(projectRoot, adapterContractPath) : undefined,
+        debug_target: debugTarget,
+      },
+      evidenceRefs: [
+        ...(command.runId ? [command.runId] : []),
+        ...(traceEvidence?.summaryPath ? [path.relative(projectRoot, traceEvidence.summaryPath)] : []),
+        ...(adapterContractPath ? [path.relative(projectRoot, adapterContractPath)] : []),
+      ],
       courseMode: true,
       allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
-      runner: context.agentRunner,
+      taskRunner: context.agentRunner,
     });
   } catch (error) {
     if (!command.runId) throw error;
@@ -2603,7 +2562,7 @@ export async function executeAgentDebug(
       },
     };
   }
-  const debugOutput = parseDebugOutput(parseAgentJson(response.resultText, "agent_debug"));
+  const debugOutput = parseDebugOutput(agentStructuredOutput(response, "agent_debug"));
   const gdbSummaryPath = await writeGdbSummaryArtifact(projectRoot, evidence, debugRoot, debugOutput, adapterContractPath);
   const artifact = path.join(debugRoot, "debug.json");
   const markdown = path.join(debugRoot, "debug.md");
@@ -2661,21 +2620,21 @@ async function prepareAgentDebugTraceEvidence(params: {
     const agentResult = await runAgentWithPrompt({
       projectRoot: params.projectRoot,
       taskPrompt: agentProgress.taskPrompt(buildAgentDebugTracePrompt(traceInput)),
-      taskKind: "debug",
+      taskKind: "debug_trace",
       requestedScope: "agent.debug.trace",
       context: traceInput,
       courseMode: true,
       allowedVosCommands: await loadAgentAllowedCommands(params.projectRoot, params.context.effectivePolicy),
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
-      runner: params.context.agentRunner,
+      taskRunner: params.context.agentRunner,
     });
     const result = await runAgentDebugTrace({
       projectRoot: params.projectRoot,
       evidence: params.evidence,
       target: params.target,
       keepWorktree: params.keepWorktree,
-      agentPlanText: agentResult.resultText,
+      agentPlanText: agentTracePlanText(agentResult),
       recentEvidence,
     });
     return {
@@ -3154,9 +3113,9 @@ async function runDefaultAgentSpecReview(params: {
       allowedVosCommands: await loadAgentAllowedCommands(params.context.projectRoot, params.context.effectivePolicy),
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
-      runner: params.context.agentRunner,
+      taskRunner: params.context.agentRunner,
     });
-    const review = parseAgentSpecReview(parseAgentJson(response.resultText, "agent_review_spec"), response.resultText);
+    const review = parseAgentSpecReview(agentStructuredOutput(response, "agent_review_spec"), response.resultText);
     await writeAgentReviewArtifact(params.context.projectRoot, params.evidence, review);
     return review;
   } catch (error) {
@@ -3730,7 +3689,7 @@ async function collectRunManifestSummaries(projectRoot: string): Promise<Array<{
   return out;
 }
 
-function buildAgentDebugTracePrompt(input: DebugTraceInput): string {
+export function buildAgentDebugTracePrompt(input: DebugTraceInput): string {
   return [
     "You are producing a VOS agent debug trace plan for an xv6-style project.",
     "Return exactly one JSON object and nothing else.",
@@ -3739,29 +3698,6 @@ function buildAgentDebugTracePrompt(input: DebugTraceInput): string {
     "Use the validation input as the source of truth: target, public requirements, module test surfaces, coverage hints, project tree, toolchain, and recent evidence.",
     "Before writing the final JSON, use available file-reading tools to inspect every source file you modify and any spec file that names the mapped requirement.",
     "If target names a specific module or requirement, every case must map to that target through requirement_id, related_specs, and expected_trace_events.",
-    "For a module-specific target, do not select unrelated public requirements just because they are easier to exercise from the shell.",
-    "You may use boot or shell commands as carriers only when the trace event directly observes the target module behavior; keep requirement_id and related_specs tied to the target module.",
-    "Choose a validation plan that is representative of every target-relevant module, not a hard-coded file or case.",
-    "Use coverageHints to select cases: when coverageHints has N modules, include at least min(N, 6) validation cases unless fewer modules are actually runnable from the current toolchain.",
-    "Prefer one high-signal QEMU case per coverageHints module. If one case naturally covers multiple modules, keep it, but explain the coverage through requirement_id, related_specs, and expected_trace_events in the JSON fields.",
-    "For broad targets such as full-syscall, prefer 4 to 6 focused cases covering distinct behavior families such as boot/process/syscall/filesystem/pipe or comparable modules present in coverageHints.",
-    "Map each case to a public requirement whose related specs or required tests are relevant to the covered module.",
-    "Select instrumentation locations from the inspected source and spec bindings. Do not assume a particular file such as kernel/main.c.",
-    "Coverage is measured by validation cases and mapped requirements, not by adding one instrumentation hunk per module.",
-    "Prefer a small shared instrumentation patch with stable central trace points that several cases can reuse, such as dispatch, exec, open, or lifecycle boundaries already present in the inspected code.",
-    "For broad targets, aim for at most 3 touched files and at most 4 hunks. If more instrumentation seems necessary, reduce instrumentation and keep the extra coverage in cases that reuse existing trace events.",
-    "Instrument only behavior that the selected case directly stimulates and observes. Do not add trace points for extra lifecycle paths just because they are listed in the public matrix.",
-    "For example, a case driven by `echo hi` may validate syscall dispatch or write behavior, but it should not also instrument fork/exit/wait unless the case explicitly runs a program whose visible output depends on those operations.",
-    "Every expected_trace_events entry must name an event that the instrumentation_patch explicitly emits and that the case stimulus directly reaches on a normal successful path.",
-    "Do not list an event in expected_trace_events merely because a different case or boot sequence may emit it.",
-    "For shell-driven cases, choose commands from user programs present in projectTree and make success_regex match literal output guaranteed by that command or by the boot shell prompt.",
-    "Avoid cases whose only visible success is an assumed filename, directory listing order, or command that may continue until timeout.",
-    "Touch the smallest set of source files needed to cover the selected modules; prefer one small hunk per file and avoid unrelated instrumentation.",
-    "Prefer stable trace points next to existing observable behavior for the requirement, such as boot banners, syscall dispatch, trap handling, process lifecycle, file system operations, pipe operations, or user program output.",
-    "Do not place trace printing inside hot per-character or per-byte output paths when the case success_regex depends on serial text; trace output must not break strings such as boot banners, shell prompts, echo output, or user command output.",
-    "Avoid instrumenting sys_write, filewrite, consolewrite, consputc, uartputc, printf, or printk loops unless the trace is guarded so it emits at most once for a case.",
-    "For shell-driven cases, send complete commands ending in newlines and choose success_regex values that remain robust when diagnostic trace lines appear elsewhere in the serial log.",
-    "Keep instrumentation side-effect free except for diagnostic trace output.",
     "The JSON object must contain:",
     "- instrumentation_patch: a git unified diff that applies with git apply",
     "- trace_format: { \"prefix\": \"VOS_TRACE \" }",
@@ -3774,7 +3710,7 @@ function buildAgentDebugTracePrompt(input: DebugTraceInput): string {
     "- success_regex: string",
     "- failure_regex: optional string",
     "- expected_trace_events: string[] containing event names only, for example [\"boot_ok\"], not full trace lines",
-    "success_regex must validate non-trace serial output such as XV6_BOOT_OK, a shell prompt, or command output. Do not put VOS_TRACE in success_regex; expected_trace_events validates trace output separately.",
+    "success_regex must validate non-trace serial output. Do not put VOS_TRACE in success_regex; expected_trace_events validates trace output separately.",
     "Instrumentation may only touch kernel/, user/, mkfs/, Makefile, or .vos/toolchain.json.",
     "Instrumentation must emit trace lines as: VOS_TRACE {\"event\":\"name\",...}.",
     "Use existing kernel/user printing facilities already present in the inspected file, such as printk/printf, instead of adding new dependencies.",
@@ -3782,14 +3718,8 @@ function buildAgentDebugTracePrompt(input: DebugTraceInput): string {
     "Unified diff requirements:",
     "- instrumentation_patch must be a git-style patch: every file section starts with `diff --git a/<path> b/<path>`.",
     "- Every file diff must use exact current file paths and real surrounding context.",
-    "- Hunk headers must have correct old/new line numbers and line counts.",
-    "- For one inserted line with two unchanged context lines, use counts like `@@ -20,2 +20,3 @@`: old count 2, new count 3.",
-    "- For one inserted line with five unchanged context lines, use counts like `@@ -20,5 +20,6 @@`: old count 5, new count 6.",
-    "- Every added line inside a hunk must start with `+`; every context line must start with a single space.",
-    "- Do not invent index hashes; omit index lines if unsure.",
     "- Do not include prose, markdown fences, or abbreviated hunks inside instrumentation_patch.",
     "- The patch must pass `git apply --check` exactly, without recounting or repair.",
-    "If exact patch generation is uncertain, reduce instrumentation breadth first, but keep multiple runnable cases and preserve module coverage where possible.",
     "Validation input:",
     JSON.stringify(input, null, 2),
   ].join("\n");
@@ -3809,26 +3739,13 @@ function buildAgentDebugTraceRepairPrompt(args: {
     "Do not explain the failure in prose.",
     "Use the same source-of-truth validation input, but fix every schema or patch issue reported below.",
     args.patchAlreadyBuilt
-      ? "The previous instrumentation_patch already applied and the kernel build completed. Reuse the previous instrumentation_patch byte-for-byte unless a failed case proves that a required trace event is impossible with that patch."
-      : "",
-    args.patchAlreadyBuilt
-      ? "When repairing case failures after a successful build, prefer editing cases only: remove impossible expected_trace_events, replace brittle success_regex values, adjust stdin, or drop/replace a flaky case."
+      ? "The previous instrumentation_patch already applied and the kernel build completed. Prefer repairing cases and expected trace events before changing the patch."
       : "",
     args.patchAlreadyBuilt
       ? "Do not add new instrumentation hunks or new files in a repair response just to broaden coverage; first make the already-built plan pass with the strongest runnable subset."
       : "",
-    args.patchAlreadyBuilt
-      ? "When trace_events_satisfied is false but success_matched is true, expected_trace_events is usually too broad for that case; narrow it to events directly emitted by the already-built patch on that case path."
-      : "",
-    args.patchAlreadyBuilt
-      ? "When trace_events_satisfied is true but success_matched is false, prefer fixing stdin timing assumptions, success_regex, or case selection instead of rewriting the patch."
-      : "",
     "If the failure is a git patch error, regenerate the entire instrumentation_patch from exact current file contents.",
     "If a validation case failed, update the instrumentation and cases so success_regex and expected_trace_events can both pass without trace output corrupting the observed serial text.",
-    "For every hunk, compute old/new line counts exactly:",
-    "- old count = context lines plus removed lines",
-    "- new count = context lines plus added lines",
-    "- a pure insertion with N context lines and M added lines uses old count N and new count N+M",
     "Keep hunks small and avoid touching extra files just to preserve the prior plan.",
     "Validation error:",
     args.errorMessage,
@@ -3896,6 +3813,16 @@ function parseAgentJson(raw: string, source: string): unknown {
     throw new AgentOutputError(`agent output for ${source} is not parseable JSON`);
   }
   return parsed;
+}
+
+function agentStructuredOutput(result: Awaited<ReturnType<typeof runAgentWithPrompt>>, source: string): unknown {
+  return result.parsedResult ?? parseAgentJson(result.resultText, source);
+}
+
+function agentTracePlanText(result: Awaited<ReturnType<typeof runAgentWithPrompt>>): string {
+  return result.parsedResult
+    ? `${JSON.stringify(result.parsedResult, null, 2)}\n`
+    : result.resultText;
 }
 
 async function recordRawAgentOutput(

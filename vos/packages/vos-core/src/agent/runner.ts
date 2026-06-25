@@ -4,10 +4,9 @@ import { readFileSync } from "node:fs";
 import type {
   AgentHttpPackageServerOptions,
   AgentHttpPackageServerResult,
+  AgentTaskResult,
   AgentTaskProfileInput,
   AgentTaskRequest,
-  HeadlessAgentOptions,
-  HeadlessAgentResult,
   InteractiveAgentTaskOptions,
   McpServerConfig,
   ReadonlyAgentDisplayHandle,
@@ -16,7 +15,6 @@ import type {
 } from "vos-agent/headless";
 import {
   runAgentTask,
-  runHeadlessAgentPrompt,
   runInteractiveAgentTask,
   startReadonlyAgentDisplay,
   startAgentHttpServer,
@@ -27,14 +25,15 @@ export interface AgentRunResult {
   resultText: string;
   parsedResult?: unknown;
   rawEvents: Array<Record<string, unknown>>;
+  agentProfile?: AgentTaskResult["agentProfile"];
   exitCode: number | null;
 }
 
-export type HeadlessAgentRunner = (options: HeadlessAgentOptions) => Promise<HeadlessAgentResult>;
 export type HeadlessAgentTaskRunner = (options: AgentTaskRequest) => Promise<{
   content: string | null;
   structuredOutput?: unknown;
   events: unknown[];
+  agentProfile?: AgentTaskResult["agentProfile"];
 }>;
 export type InteractiveAgentTaskRunner = (options: InteractiveAgentTaskOptions) => Promise<void>;
 export type ReadonlyAgentDisplayStarter = (options: ReadonlyAgentDisplayOptions) => ReadonlyAgentDisplayHandle;
@@ -62,7 +61,6 @@ export async function runAgentWithPrompt(params: {
   allowedVosCommands?: readonly string[];
   extraMcpServers?: readonly McpServerConfig[];
   onEvent?: (event: Record<string, unknown>) => void | Promise<void>;
-  runner?: HeadlessAgentRunner;
   taskRunner?: HeadlessAgentTaskRunner;
 }): Promise<AgentRunResult> {
   const bootstrap = buildAgentEnv({
@@ -70,63 +68,40 @@ export async function runAgentWithPrompt(params: {
     env: process.env,
   });
 
-  const result = params.runner
-    ? await params.runner({
-      projectRoot: params.projectRoot,
-      prompt: params.taskPrompt,
-      model: params.model ?? bootstrap.model,
-      mode: params.mode,
-      threadId: params.threadId,
-      maxIterations: params.maxIterations,
-      disabledTools: params.disabledTools,
-      allowedPaths: params.allowedPaths,
-      requiredValidations: params.requiredValidations,
-      policyFlags: params.policyFlags,
-      courseMode: params.courseMode,
-      toolPolicy: params.toolPolicy,
-      allowedVosCommands: params.allowedVosCommands,
-      extraMcpServers: params.extraMcpServers,
-      env: bootstrap.env,
-      onEvent: async (event) => {
-        if (event) {
-          await (params.onEvent?.(event as Record<string, unknown>));
-        }
-      },
-    })
-    : await (params.taskRunner ?? runAgentTask)({
-      projectRoot: params.projectRoot,
-      task: params.taskPrompt,
-      promptOverride: params.taskPrompt,
-      taskKind: params.taskKind,
-      requestedScope: params.requestedScope,
-      agentProfile: params.agentProfile,
-      context: params.context,
-      contextRefs: params.contextRefs,
-      evidenceRefs: params.evidenceRefs,
-      allowedPaths: params.allowedPaths,
-      requiredValidations: params.requiredValidations,
-      policyFlags: params.policyFlags,
-      model: params.model ?? bootstrap.model,
-      mode: params.mode,
-      threadId: params.threadId,
-      maxIterations: params.maxIterations,
-      disabledTools: params.disabledTools,
-      courseMode: params.courseMode,
-      toolPolicy: params.toolPolicy,
-      allowedVosCommands: params.allowedVosCommands,
-      extraMcpServers: params.extraMcpServers,
-      env: bootstrap.env,
-      onEvent: async (event) => {
-        if (event) {
-          await (params.onEvent?.(event as Record<string, unknown>));
-        }
-      },
-    });
+  const result = await (params.taskRunner ?? runAgentTask)({
+    projectRoot: params.projectRoot,
+    task: params.taskPrompt,
+    taskKind: params.taskKind,
+    requestedScope: params.requestedScope,
+    agentProfile: params.agentProfile,
+    context: params.context,
+    contextRefs: params.contextRefs,
+    evidenceRefs: params.evidenceRefs,
+    allowedPaths: params.allowedPaths,
+    requiredValidations: params.requiredValidations,
+    policyFlags: params.policyFlags,
+    model: params.model ?? bootstrap.model,
+    mode: params.mode,
+    threadId: params.threadId,
+    maxIterations: params.maxIterations,
+    disabledTools: params.disabledTools,
+    courseMode: params.courseMode,
+    toolPolicy: params.toolPolicy,
+    allowedVosCommands: params.allowedVosCommands,
+    extraMcpServers: params.extraMcpServers,
+    env: bootstrap.env,
+    onEvent: async (event) => {
+      if (event) {
+        await (params.onEvent?.(event as Record<string, unknown>));
+      }
+    },
+  });
 
   return {
     resultText: result.content ?? "",
     parsedResult: "structuredOutput" in result ? result.structuredOutput : undefined,
     rawEvents: result.events.map((event) => event as Record<string, unknown>),
+    agentProfile: result.agentProfile,
     exitCode: 0,
   };
 }

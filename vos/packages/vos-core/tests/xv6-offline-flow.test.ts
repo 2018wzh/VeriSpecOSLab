@@ -6,7 +6,7 @@ import { executeCommand } from "../src/main.ts";
 import { runBuildCommand } from "../src/runtime/build.ts";
 import { parseQmpMessages, runQemuCommand } from "../src/runtime/qemu.ts";
 import { runVerifyCommand } from "../src/runtime/verify.ts";
-import type { HeadlessAgentOptions } from "vos-agent/headless";
+import type { AgentTaskRequest } from "vos-agent/headless";
 
 const tmpRoots: string[] = [];
 
@@ -1091,8 +1091,8 @@ describe("xv6-spec offline runtime flow", () => {
       command: ["agent", "generate", "--apply", "--build", "--run"],
       args: [],
     });
-    let captured: HeadlessAgentOptions | undefined;
-    const runner = async (options: HeadlessAgentOptions) => {
+    let captured: AgentTaskRequest | undefined;
+    const runner = async (options: AgentTaskRequest) => {
       captured = options;
       return {
         content: JSON.stringify({
@@ -1124,7 +1124,8 @@ describe("xv6-spec offline runtime flow", () => {
 
     expect(result.status).toBe("passed");
     expect(captured?.courseMode).toBe(true);
-    expect(captured?.prompt.includes('"task": "syscall"')).toBe(true);
+    expect(captured?.task).toContain("syscall");
+    expect(JSON.stringify(captured?.context)).toContain('"current_stage":"syscall"');
     expect(readFileSync(join(projectRoot, "Makefile"), "utf8")).toContain("spec: syscall");
     expect(readFileSync(join(projectRoot, ".vos", "toolchain.json"), "utf8")).toContain("offline-build");
     expect(result.details.applyStatus).toBe("ok");

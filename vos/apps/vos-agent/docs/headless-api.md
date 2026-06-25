@@ -60,11 +60,16 @@ Default public profiles are resolved from `taskKind`:
 
 | Task kind examples                       | Default prompt id        | Mode    | Skills                                     | MCP servers                    | Output schema             |
 |------------------------------------------|--------------------------|---------|--------------------------------------------|--------------------------------|---------------------------|
-| `plan`, `design_review`, `spec_revision` | `spec-assistant.v1`      | `deep`  | `os-spec-authoring`                        | `spec-index`, `course-kb`      | `spec_revision_draft.v1`  |
+| `plan`                                  | `planning-agent.v1`      | `deep`  | `os-spec-authoring`                        | `spec-index`, `course-kb`      | `plan_draft.v1`           |
+| `design_review`, `spec_review`, `arch_review` | `review-agent.v1` | `deep`  | `os-spec-authoring`, `audit-review`        | `spec-index`, `course-kb`      | `spec_review.v1`          |
+| `spec_revision`, `spec_patch`            | `spec-assistant.v1`      | `deep`  | `os-spec-authoring`                        | `spec-index`, `course-kb`      | `spec_revision_draft.v1`  |
 | `codegen`, `skeleton_generation`         | `spec-compiler.v1`       | `deep`  | `operation-codegen`                        | `spec-index`                   | `spec_compiler_output.v1` |
-| `debug`, `explain_log`, `failure_triage` | `debug-agent.v1`         | `smart` | `verification-diagnosis`                   | `evidence-store`, `spec-index` | `debug_output.v1`         |
-| `knowledgebase_qa`, `reference_lookup`   | `knowledgebase.v1`       | `smart` | `reference-policy`, `teaching-explanation` | `vos-kb`, `course-kb`, `spec-index` | `knowledgebase_answer.v1` |
+| `toolchain_generate`                     | `toolchain-agent.v1`     | `deep`  | `toolchain-authoring`                      | `spec-index`                   | `toolchain_generation_draft.v1` |
 | `validate`, `review_patch`               | `spec-validator.v1`      | `deep`  | `verification-diagnosis`, `audit-review`   | `spec-index`, `evidence-store` | `validator_feedback.v1`   |
+| `debug`, `explain_log`, `failure_triage` | `debug-agent.v1`         | `smart` | `gdb-debug`, `qemu-monitor`, `bret-victor-tutor`, `verification-diagnosis` | `evidence-store`, `spec-index` | `debug_output.v1` |
+| `debug_trace`                            | `debug-trace-agent.v1`   | `smart` | `gdb-debug`, `qemu-monitor`, `verification-diagnosis`, `instrumentation-testing` | `evidence-store`, `spec-index` | `debug_trace_plan.v1` |
+| `report_narrative`                       | `report-agent.v1`        | `smart` | `verification-diagnosis`, `evidence-reporting` | `evidence-store`, `spec-index` | `report_narrative.v1` |
+| `knowledgebase_qa`, `reference_lookup`   | `knowledgebase.v1`       | `smart` | `reference-policy`, `teaching-explanation` | `vos-kb`, `course-kb`, `spec-index` | `knowledgebase_answer.v1` |
 
 Callers can override public profile fields with `agentProfile` /
 `agent_profile`. Overrides do not expose or mutate the internal role.
@@ -77,6 +82,19 @@ server reads the project `.vos/kb/` registry and sqlite-vec index, exposes
 `kb_remove_source`, and `kb_clear`, and keeps Portal as a control plane rather
 than a workspace tool runtime.
 
+Profile `mcpServers` are public intent names. The current built-in resolver
+binds `spec-index` and `evidence-store` to a local read-only `project-context`
+stdio MCP server, exposing bounded `spec_summary` and `evidence_summary` tools.
+`course-kb` remains an intent name; concrete course knowledge-base access still
+comes from `vos-kb` or caller-supplied MCP servers. Actual tool exposure is
+always intersected with the internal profile tool policy.
+
+Built-in prompt skills are: `os-spec-authoring`, `audit-review`,
+`operation-codegen`, `toolchain-authoring`, `evidence-reporting`,
+`instrumentation-testing`, `reference-policy`, `teaching-explanation`,
+`gdb-debug`, `qemu-monitor`, `bret-victor-tutor`, and
+`verification-diagnosis`.
+
 ## Package API
 
 Import from `vos-agent/headless`:
@@ -86,7 +104,6 @@ import {
   resolveAgentTaskProfile,
   runAgentTask,
   runControlledTuiAgentTask,
-  runHeadlessAgentPrompt,
   runInteractiveAgentTask,
   startControlledTuiAgentTask,
   startAgentHttpServer,
@@ -161,7 +178,6 @@ Request fields:
 | `allowedPaths`                 | Paths the outer runtime allows this task to discuss or propose changes for.        |
 | `requiredValidations`          | Validation names expected before accepting output.                                 |
 | `policyFlags`                  | Policy snapshot markers for audit and prompt context.                              |
-| `promptOverride`               | Compatibility escape hatch. Uses an already-built prompt as the user prompt.       |
 | `model` / `mode`               | Optional model override. If omitted, the resolved profile mode is used.            |
 | `threadId`                     | Continue an existing local thread.                                                 |
 | `courseMode`                   | Defaults to `true`; hides direct write/edit tools in profile-based runs.           |
@@ -177,7 +193,7 @@ Result fields:
 | Field                                | Purpose                                                                                              |
 |--------------------------------------|------------------------------------------------------------------------------------------------------|
 | `content`                            | Final assistant text.                                                                                |
-| `structuredOutput`                   | Best-effort JSON parsed from `content`. Schema validation remains the caller/runtime responsibility. |
+| `structuredOutput`                   | Schema-valid JSON captured through the provider-neutral `StructuredOutput` tool. Deterministic VOS gates still perform final acceptance. |
 | `events`                             | Raw `SessionEvent[]`.                                                                                |
 | `threadId`                           | Local VOS thread id.                                                                                 |
 | `agentProfile`                       | Public profile used for the run.                                                                     |
@@ -315,21 +331,6 @@ display.close();
 Use this for readonly observability around an existing command. It must not
 be used as a substitute for `runInteractiveAgentTask()` because it never
 accepts follow-up prompts.
-
-### `runHeadlessAgentPrompt(request)`
-
-Compatibility API. It runs a prompt without resolving a task profile.
-
-```ts
-const result = await runHeadlessAgentPrompt({
-  projectRoot: "/path/to/project",
-  prompt: "Summarize README.md",
-  mode: "smart",
-});
-```
-
-Use this for older integrations or simple local automation. New
-course-aware wrappers should use `runAgentTask()`.
 
 ### `startAgentHttpServer(options)`
 
@@ -561,6 +562,11 @@ Course mode:
 - Uses `Vos` instead of free shell execution.
 - Intersects project policy commands with internal command intent.
 - Blocks recursive `vos agent ...` calls through the `Vos` tool.
+- Exposes built-in `project-context` MCP tools only as bounded read-only
+  `spec/**` and `.vos/runs/**/manifest.json` summaries.
+- Blocks dangerous raw GDB command forms in the debug profile, including
+  `shell`, `pipe`, `source`, `python`, `guile`, `compile`, `dump`, `restore`,
+  `set logging`, and `set auto-load`.
 
 Examples:
 
@@ -590,23 +596,21 @@ The audit record includes:
 - `risk_flags`
 - derived `risk_level`
 
-Risk flags are collected from `structured_output.risk_flags` when the
-model returns JSON. The platform can later harden this into schema
-validation per `outputSchema`; the current API deliberately keeps
-parsing best-effort and leaves final acceptance to deterministic gates.
+Risk flags are collected from `structured_output.risk_flags` when present.
+Profile tasks return structured output through `StructuredOutput`; deterministic
+runtime gates remain the authority for accepting patches, reports, and evidence.
 
 ## Compatibility
 
-Existing callers can keep using:
+Prompt-level callers can keep using:
 
-- `runHeadlessAgentPrompt(...)`
 - `vos-agent -p "..."`.
 - `vos-agent --stream-json -p "..."`.
 - `/v1/chat/completions`.
 
-Those surfaces are prompt-level compatibility APIs. They do not resolve
-an `AgentTaskProfile` and should not be used for new course-aware task
-features.
+Those surfaces do not resolve an `AgentTaskProfile` and should not be used for
+new course-aware task features. Use `runAgentTask()` for CLI, portal, and local
+teaching integrations.
 
 ## Common Patterns
 

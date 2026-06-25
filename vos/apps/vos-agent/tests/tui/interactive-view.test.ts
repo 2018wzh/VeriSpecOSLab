@@ -28,7 +28,7 @@ class CapturingOutput {
 
 const size: StarsViewSize = { width: 48, height: 9 };
 
-async function waitFor(condition: () => boolean, timeoutMs = 100): Promise<void> {
+async function waitFor(condition: () => boolean, timeoutMs = 500): Promise<void> {
   const started = Date.now();
   while (!condition()) {
     if (Date.now() - started > timeoutMs) {

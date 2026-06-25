@@ -9,13 +9,12 @@ import {
   resolveAgentTaskProfile,
   runAgentTask,
   runControlledTuiAgentTask,
-  runHeadlessAgentPrompt,
   runInteractiveAgentTask,
   startControlledTuiAgentTask,
   startAgentHttpServer,
   startReadonlyAgentDisplay,
 } from "vos-agent/headless";
-import { CallbackChatClient, textResponse } from "./helpers/stub-chat.ts";
+import { CallbackChatClient, textResponse, toolCallResponse } from "./helpers/stub-chat.ts";
 
 const tmpRoots: string[] = [];
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -48,7 +47,6 @@ describe("package metadata", () => {
     expect(typeof startControlledTuiAgentTask).toBe("function");
     expect(typeof runInteractiveAgentTask).toBe("function");
     expect(typeof startReadonlyAgentDisplay).toBe("function");
-    expect(typeof runHeadlessAgentPrompt).toBe("function");
     expect(typeof startAgentHttpServer).toBe("function");
   });
 
@@ -95,11 +93,23 @@ describe("package metadata", () => {
       return input;
     };
     let streamingHookSeen = false;
-    const chat = new CallbackChatClient(async (request) => {
+    const chat = new CallbackChatClient(async (request, callIndex) => {
       streamingHookSeen = request.onEvent !== undefined;
       await delay(1);
       await request.onEvent?.({ type: "text.delta", delta: "kb " });
       await request.onEvent?.({ type: "text.delta", delta: "answer" });
+      if (callIndex === 0) {
+        return toolCallResponse([{
+          name: "StructuredOutput",
+          args: {
+            answer: "kb answer",
+            design_goal_alignment: [],
+            citations: [],
+            suggested_next_steps: [],
+            allowed_snippets: [],
+          },
+        }]);
+      }
       return textResponse("kb answer");
     });
 
@@ -119,7 +129,7 @@ describe("package metadata", () => {
 
     expect(result.content).toBe("kb answer");
     expect(result.agentProfile.promptId).toBe("knowledgebase.v1");
-    expect(chat.requests).toHaveLength(1);
+    expect(chat.requests).toHaveLength(2);
     expect(streamingHookSeen).toBe(true);
     expect(rawModeValues).toEqual([true, false]);
     const text = readOutput();

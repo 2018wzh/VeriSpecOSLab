@@ -10,6 +10,8 @@ export interface ChatRequest {
   reasoningEffort?: ReasoningEffort;
   messages: OpenAI.Chat.ChatCompletionMessageParam[];
   tools: OpenAI.Chat.ChatCompletionFunctionTool[];
+  /** Optional provider-native structured-output response format hint. */
+  responseFormat?: unknown;
   /** Optional provider text streaming hook. Final messages are still returned by chat(). */
   onEvent?: (event: ChatStreamEvent) => void | Promise<void>;
   /** Optional provider token-usage hook. */
@@ -94,6 +96,8 @@ export interface RunAgentOptions {
   maxIterations?: number;
   /** Optional system prompt prepended to the conversation. */
   system?: string;
+  /** Optional provider-native structured-output response format hint. */
+  responseFormat?: unknown;
   /** Existing transcript to continue. Copied before mutation. */
   history?: OpenAI.Chat.ChatCompletionMessageParam[];
   /** When true, ask capable providers to emit assistant text deltas. */
@@ -162,6 +166,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     reasoningEffort,
     maxIterations = 50,
     system,
+    responseFormat,
     history,
     streamAssistant = false,
     onEvent,
@@ -193,6 +198,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       reasoningEffort,
       messages,
       tools,
+      responseFormat,
       ...(signal ? { signal } : {}),
       ...(streamAssistant && onEvent
         ? {

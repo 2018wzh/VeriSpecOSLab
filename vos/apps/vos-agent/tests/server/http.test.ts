@@ -4,7 +4,7 @@ import type { Config } from "../../app/config.ts";
 import { serveAgentHttp } from "../../app/server/http.ts";
 import { ThreadStore } from "../../app/session/thread-store.ts";
 import { makeTmpDir, removeTmpDir } from "../helpers/tmp.ts";
-import { ScriptedChatClient, textResponse } from "../helpers/stub-chat.ts";
+import { ScriptedChatClient, textResponse, toolCallResponse } from "../helpers/stub-chat.ts";
 
 const config: Config = {
   defaultMode: "smart",
@@ -158,14 +158,24 @@ describe("vos-agent HTTP server", () => {
 
   test("runs a VOS-native profile-based agent task", async () => {
     const chat = new ScriptedChatClient([
-      textResponse(JSON.stringify({
-        failure_class: "impl_gap",
-        summary: "boot log is missing expected output",
-        suspected_clauses: ["boot.console"],
-        related_specs: ["spec/boot.yaml"],
-        suggested_next_commands: ["build"],
-        risk_flags: ["large_patch_proposal"],
-      })),
+      toolCallResponse([{
+        name: "StructuredOutput",
+        args: {
+          failure_class: "impl_gap",
+          summary: "boot log is missing expected output",
+          suspected_clauses: ["boot.console"],
+          related_specs: ["spec/boot.yaml"],
+          suspected_concepts: [],
+          evidence_chain: [],
+          visualization_steps: [],
+          visualization_html: "<main data-agent-generated=\"true\"><script>const states=[];</script></main>",
+          next_diagnostic_commands: ["build"],
+          student_visible_limitations: [],
+          suggested_next_commands: ["build"],
+          risk_flags: ["large_patch_proposal"],
+        },
+      }]),
+      textResponse("debug output captured"),
     ]);
     server = startServer(chat);
 
@@ -198,20 +208,24 @@ describe("vos-agent HTTP server", () => {
     expect(response.agent_profile.skills).toContain("qemu-monitor");
     expect(response.agent_profile.skills).toContain("bret-victor-tutor");
     expect(response.agent_profile.skills).toContain("verification-diagnosis");
+    expect(response.agent_profile.mcpServers).toContain("evidence-store");
+    expect(response.agent_profile.mcpServers).toContain("spec-index");
     expect(Object.keys(response)).not.toContain("role_id");
     expect(Object.keys(response)).not.toContain("runtime_role");
     expect(response.model).toBe("test-smart");
     expect(response.structured_output?.failure_class).toBe("impl_gap");
     expect(chat.requests[0].model).toBe("test-smart");
-    expect(String(chat.requests[0].messages[0].content)).toContain("fixed VOS task profile");
-    expect(chat.requests[0].tools.map((tool) => tool.function.name).sort()).toEqual([
-      "Glob",
-      "Grep",
-      "Read",
-      "Task",
-      "TodoRead",
-      "Vos",
-    ]);
+    expect(String(chat.requests[0].messages[0].content)).toContain("fixed VeriSpecOSLab teaching task profile");
+    const toolNames = chat.requests[0].tools.map((tool) => tool.function.name);
+    expect(toolNames).toContain("Read");
+    expect(toolNames).toContain("Vos");
+    expect(toolNames).toContain("StructuredOutput");
+    expect(toolNames).toContain("mcp__project-context__spec_summary");
+    expect(toolNames).toContain("mcp__project-context__evidence_summary");
+    expect(toolNames).toContain("mcp__gdb__gdb_command");
+    expect(toolNames).toContain("mcp__qemu-monitor__hmp_info");
+    expect(toolNames).not.toContain("Write");
+    expect(toolNames).not.toContain("Edit");
 
     const login = await fetchJson("/api/v1/auth/login", {
       method: "POST",

@@ -4,7 +4,7 @@ import type { ToolPolicy } from "./tools/types.ts";
 import type { McpServerConfig } from "./plugins/manifest.ts";
 import { loadConfig } from "./config.ts";
 import { resolveActiveModelSettings } from "./resolve-model.ts";
-import { runSessionTurn, type RunSessionTurnOptions } from "./session/run-turn.ts";
+import { runSessionTurn } from "./session/run-turn.ts";
 import { createThreadStore } from "./session/thread-store.ts";
 import { createChatClientFromConfig } from "./llm/providers.ts";
 import type { ChatClient } from "./agent/loop.ts";
@@ -18,42 +18,21 @@ import {
   buildAgentTaskUserPrompt,
   createProfileToolPolicy,
   publicAgentTaskProfile,
+  resolveBuiltInProfileMcpServers,
   resolveAgentTaskProfile as resolveInternalAgentTaskProfile,
   resolveProfileVosCommands,
   type AgentTaskProfile,
   type AgentTaskProfileInput,
 } from "./agent/profiles.ts";
 import { resolveBuiltInSkills } from "./skills/index.ts";
+import { outputSchemaForId } from "./agent/output-schemas.ts";
+import { createStructuredOutputTool } from "./tools/structured-output.ts";
 import { StarsTuiInteractiveView } from "./tui/interactive-view.ts";
 import type { StarsViewSize } from "./tui/stars-view.ts";
 import { TerminalDriver } from "./tui/terminal.ts";
 import { resolveStarsTuiTheme } from "./tui/theme.ts";
 import { formatError } from "./tools/common.ts";
 import { runInteractive } from "./terminal/repl.ts";
-
-export interface HeadlessAgentOptions {
-  projectRoot: string;
-  prompt: string;
-  model?: string;
-  mode?: string;
-  threadId?: string;
-  maxIterations?: number;
-  disabledTools?: readonly string[];
-  allowedPaths?: readonly string[];
-  requiredValidations?: readonly string[];
-  policyFlags?: readonly string[];
-  courseMode?: boolean;
-  allowedVosCommands?: readonly string[];
-  extraMcpServers?: readonly McpServerConfig[];
-  toolPolicy?: ToolPolicy;
-  env?: Record<string, string | undefined>;
-  onEvent?: (event: SessionEvent) => void | Promise<void>;
-}
-
-export interface HeadlessAgentResult {
-  content: string | null;
-  events: SessionEvent[];
-}
 
 export interface AgentTaskRequest {
   projectRoot: string;
@@ -67,7 +46,6 @@ export interface AgentTaskRequest {
   allowedPaths?: readonly string[];
   requiredValidations?: readonly string[];
   policyFlags?: readonly string[];
-  promptOverride?: string;
   model?: string;
   mode?: string;
   threadId?: string;
@@ -224,59 +202,13 @@ export function resolveAgentTaskProfile(
   );
 }
 
-export async function runHeadlessAgentPrompt(
-  options: HeadlessAgentOptions,
-): Promise<HeadlessAgentResult> {
-  const workspaceRoot = resolve(options.projectRoot);
-  const settings = loadSettings({ workspaceRoot, env: options.env ?? process.env });
-  const config = loadConfig(options.env ?? process.env, settings);
-  const chat = createChatClientFromConfig(config);
-  const modelSettings = options.model
-    ? { model: options.model, mode: options.mode }
-    : resolveActiveModelSettings(config, {
-      model: undefined,
-      mode: options.mode,
-    });
-
-  const store = createThreadStore({ workspaceRoot });
-  const events: SessionEvent[] = [];
-  const runOptions: RunSessionTurnOptions = {
-    chat,
-    store,
-    workspaceRoot,
-    prompt: options.prompt,
-    model: modelSettings.model,
-    mode: modelSettings.mode,
-    reasoningEffort: modelSettings.reasoningEffort,
-    disabledTools: options.disabledTools,
-    permissionRules: config.tools.permissions,
-    threadId: options.threadId,
-    maxIterations: options.maxIterations,
-    courseMode: options.courseMode,
-    allowedVosCommands: options.allowedVosCommands,
-    extraMcpServers: options.extraMcpServers,
-    toolPolicy: options.toolPolicy,
-    startDir: workspaceRoot,
-    onEvent: async (event) => {
-      events.push(event);
-      await options.onEvent?.(event);
-    },
-  };
-
-  const result = await runSessionTurn(runOptions);
-  return {
-    content: result.content,
-    events,
-  };
-}
-
 export async function runAgentTask(
   options: AgentTaskRequest,
 ): Promise<AgentTaskResult> {
   const workspaceRoot = resolve(options.projectRoot);
   const env = options.env ?? process.env;
   const settings = loadSettings({ workspaceRoot, env });
-  const config = loadConfig(env, settings);
+  const config = options.chat && options.model ? injectedChatConfig(options.model, options.mode) : loadConfig(env, settings);
   const chat = options.chat ?? createChatClientFromConfig(config);
   const profile = resolveInternalAgentTaskProfile({
     taskKind: options.taskKind,
@@ -300,7 +232,14 @@ export async function runAgentTask(
     allowedPaths: options.allowedPaths,
     requiredValidations: options.requiredValidations,
     policyFlags: options.policyFlags,
-    promptOverride: options.promptOverride,
+  });
+  const outputSchema = outputSchemaForId(profile.outputSchema);
+  let structuredOutput: unknown;
+  const structuredOutputTool = createStructuredOutputTool({
+    schema: outputSchema,
+    onStructuredOutput: (value) => {
+      structuredOutput = value;
+    },
   });
   const store = createThreadStore({ workspaceRoot });
   const events: SessionEvent[] = [];
@@ -318,10 +257,16 @@ export async function runAgentTask(
     maxIterations: options.maxIterations,
     courseMode: options.courseMode ?? true,
     allowedVosCommands: resolveProfileVosCommands(profile, options.allowedVosCommands),
-    extraMcpServers: [...builtInSkills.mcpServers, ...(options.extraMcpServers ?? [])],
+    extraMcpServers: [
+      ...resolveBuiltInProfileMcpServers(profile.mcpServers, workspaceRoot),
+      ...builtInSkills.mcpServers,
+      ...(options.extraMcpServers ?? []),
+    ],
+    extraTools: [structuredOutputTool],
     toolPolicy: composeToolPolicies(createProfileToolPolicy(profile), options.toolPolicy),
     startDir: workspaceRoot,
     fixedSystemPrompt: buildAgentTaskSystemPrompt(profile),
+    responseFormat: jsonSchemaResponseFormat(outputSchema.id, outputSchema.schema),
     streamAssistant: options.streamAssistant ?? false,
     signal: options.signal,
     onEvent: async (event) => {
@@ -329,10 +274,13 @@ export async function runAgentTask(
       await options.onEvent?.(event);
     },
   });
+  if (structuredOutput === undefined) {
+    throw new Error(`agent task ${profile.promptId} did not return accepted StructuredOutput for ${profile.outputSchema}`);
+  }
 
   return {
     content: result.content,
-    structuredOutput: parseJsonFromText(result.content ?? ""),
+    structuredOutput,
     events,
     threadId: result.thread.id,
     agentProfile: publicAgentTaskProfile(profile),
@@ -340,6 +288,25 @@ export async function runAgentTask(
     mode: modelSettings.mode,
     reasoningEffort: modelSettings.reasoningEffort,
     prompt,
+  };
+}
+
+function injectedChatConfig(model: string, mode: string | undefined): Config {
+  return {
+    defaultMode: mode ?? "smart",
+    modes: { [mode ?? "smart"]: { model } },
+    tools: { disabled: [], permissions: [] },
+  };
+}
+
+function jsonSchemaResponseFormat(id: string, schema: unknown): unknown {
+  return {
+    type: "json_schema",
+    json_schema: {
+      name: id.replace(/[^A-Za-z0-9_-]/g, "_"),
+      strict: true,
+      schema,
+    },
   };
 }
 
@@ -478,7 +445,7 @@ export async function runInteractiveAgentTask(
     debugLabels: options.debugLabels,
     welcomeAnimation: options.welcomeAnimation,
     initialPrompt: options.initialTask,
-    fixedSystemPrompt: buildAgentTaskSystemPrompt(profile),
+    fixedSystemPrompt: buildAgentTaskSystemPrompt(profile, { structuredOutput: false }),
     promptBuilder: (task) => buildAgentTaskUserPrompt({
       profile,
       task,
@@ -494,7 +461,11 @@ export async function runInteractiveAgentTask(
     toolPolicy: composeToolPolicies(createProfileToolPolicy(profile), options.toolPolicy),
     courseMode: options.courseMode ?? true,
     allowedVosCommands: resolveProfileVosCommands(profile, options.allowedVosCommands),
-    extraMcpServers: [...builtInSkills.mcpServers, ...(options.extraMcpServers ?? [])],
+    extraMcpServers: [
+      ...resolveBuiltInProfileMcpServers(profile.mcpServers, workspaceRoot),
+      ...builtInSkills.mcpServers,
+      ...(options.extraMcpServers ?? []),
+    ],
     allowedSlashCommands: ["help", "quit", "new", "thread-show", "thread-switch", "todos"],
   });
 }

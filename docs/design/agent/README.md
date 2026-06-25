@@ -83,6 +83,22 @@ Rules:
 5. All writes, generated build systems, validation results, and audit entries
    are produced or accepted by deterministic VOS runtime gates.
 
+## Local CLI Wrapper Boundary
+
+`vos-cli` calls `vos-agent/headless` through profile-based task APIs. The CLI
+does not construct role prompts or profile envelopes. It supplies only:
+
+- `taskKind` and `requestedScope`
+- user-visible task text
+- deterministic context bundles, evidence refs, allowed paths, validations,
+  and policy flags
+- local MCP bindings such as `vos-kb` for knowledge-base questions
+
+`vos-agent` owns the system prompt, tool profile, skill/MCP intent, output
+schema, and provider-neutral `StructuredOutput` contract. CLI handlers parse
+`structuredOutput` and then apply deterministic VOS gates before accepting any
+patch, report, toolchain draft, debug diagnosis, or knowledge-base answer.
+
 ## Code Generation Boundary
 
 The target-state spec schema uses `codegen.targets`; source marker regions are
