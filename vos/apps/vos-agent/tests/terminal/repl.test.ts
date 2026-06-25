@@ -179,6 +179,40 @@ describe("runInteractive", () => {
     ]);
   });
 
+  test("controller keeps fixed task profile across turns and blocks mode commands", async () => {
+    const view = new RecordingInteractiveView();
+    const chat = new CallbackChatClient(() => textResponse("fixed profile answer"));
+
+    await runInteractiveController({
+      chat,
+      config: testConfig(),
+      store,
+      workspaceRoot: tmp,
+      initialPrompt: "Explain page tables",
+      input: new FakeInteractiveInput(["/mode rush", "/new", "follow up", "/quit"]),
+      view,
+      fixedSystemPrompt: "Prompt id: knowledgebase.v1",
+      promptBuilder: (prompt) => JSON.stringify({ task: prompt }),
+      toolPolicy: {
+        canAdvertise: (tool) => !["Write", "Edit"].includes(tool.name),
+        canExecute: ({ name }) => ["Write", "Edit"].includes(name)
+          ? { allowed: false, reason: "fixed profile" }
+          : { allowed: true },
+      },
+      courseMode: true,
+      allowedSlashCommands: ["help", "quit", "new", "thread-show", "thread-switch", "todos"],
+    });
+
+    expect(chat.requests).toHaveLength(1);
+    for (const request of chat.requests) {
+      expect(JSON.stringify(request.messages)).toContain("Prompt id: knowledgebase.v1");
+      expect(request.tools.map((tool) => tool.function.name)).not.toContain("Write");
+      expect(request.tools.map((tool) => tool.function.name)).not.toContain("Edit");
+    }
+    expect(view.errors).toContain("command is disabled in fixed task profile");
+    expect(view.commands).toContain("new thread");
+  });
+
   test("controller asks before executing ask-rule tools and runs approved calls", async () => {
     const view = new RecordingInteractiveView();
     const chat = new CallbackChatClient((_request, index) => {

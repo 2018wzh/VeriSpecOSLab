@@ -65,7 +65,7 @@ Vector rows are local runtime artifacts. Object manifests export sources and cac
 ## 6. CLI Surface
 
 ```sh
-vos agent ask [--stage <stage>] [--scope <scope>] <question>
+vos agent ask [-i|--interactive] [--stage <stage>] [--scope <scope>] [question]
 vos kb add <path-or-url> [--source-kind course|project|external] [--stage <stage>] [--title <title>] [--recursive] [--manifest <path>]
 vos kb list
 vos kb search <query>
@@ -89,7 +89,11 @@ env = "OPENAI_API_KEY"
 
 If `[kb.embedding]` is absent, `vos-cli` may reuse an OpenAI-compatible `[agent]` provider. `vos-kb` receives an explicit embedder/config from `vos-cli`; it does not discover credentials itself.
 
-`vos agent ask` builds the normal Agent context bundle, adds the current stage/spec projection, attaches KB search hints and object manifest, injects the local `vos-kb` MCP server, and calls `vos-agent` with task kind `knowledgebase_qa`. Its output is validated against `knowledgebase_answer.v1`.
+`vos agent ask <question>` builds the normal Agent context bundle, adds the current stage/spec projection, attaches KB search hints and object manifest, injects the local `vos-kb` MCP server, and calls `vos-agent` with task kind `knowledgebase_qa`. Its output is validated against `knowledgebase_answer.v1`.
+
+`vos agent ask` without a question starts a controlled teaching REPL. `vos agent ask -i <question>` answers the first question and then stays open for follow-up turns. The REPL keeps the `knowledgebase.v1` profile fixed across turns, disables `/mode` and project slash commands, and keeps only `/help`, `/quit`, `/new`, `/thread`, and `/todos`.
+
+This is intentionally different from finite `vos agent ... -i` commands such as `agent plan -i`, where `-i` means readonly TUI flow display rather than a prompt-accepting REPL.
 
 The `vos kb` commands manage only the local project KB. They do not change course-global KB state.
 

@@ -8,12 +8,17 @@ import type {
   AgentTaskRequest,
   HeadlessAgentOptions,
   HeadlessAgentResult,
+  InteractiveAgentTaskOptions,
   McpServerConfig,
+  ReadonlyAgentDisplayHandle,
+  ReadonlyAgentDisplayOptions,
   ToolPolicy,
 } from "vos-agent/headless";
 import {
   runAgentTask,
   runHeadlessAgentPrompt,
+  runInteractiveAgentTask,
+  startReadonlyAgentDisplay,
   startAgentHttpServer,
 } from "vos-agent/headless";
 import { readProjectEnv } from "../utils/dotenv.ts";
@@ -31,6 +36,9 @@ export type HeadlessAgentTaskRunner = (options: AgentTaskRequest) => Promise<{
   structuredOutput?: unknown;
   events: unknown[];
 }>;
+export type InteractiveAgentTaskRunner = (options: InteractiveAgentTaskOptions) => Promise<void>;
+export type ReadonlyAgentDisplayStarter = (options: ReadonlyAgentDisplayOptions) => ReadonlyAgentDisplayHandle;
+export type { ReadonlyAgentDisplayHandle, ReadonlyAgentDisplayOptions };
 
 export async function runAgentWithPrompt(params: {
   projectRoot: string;
@@ -134,6 +142,32 @@ export function startAgentServer(
     ...params,
     env: bootstrap.env,
   });
+}
+
+export async function runAgentInteractiveTask(
+  params: InteractiveAgentTaskOptions & {
+    runner?: InteractiveAgentTaskRunner;
+  },
+): Promise<void> {
+  const bootstrap = buildAgentEnv({
+    projectRoot: params.projectRoot,
+    env: process.env,
+  });
+  const { runner, ...options } = params;
+  await (runner ?? runInteractiveAgentTask)({
+    ...options,
+    model: options.model ?? bootstrap.model,
+    env: bootstrap.env,
+  });
+}
+
+export function startAgentReadonlyDisplay(
+  params: ReadonlyAgentDisplayOptions & {
+    starter?: ReadonlyAgentDisplayStarter;
+  },
+): ReadonlyAgentDisplayHandle {
+  const { starter, ...options } = params;
+  return (starter ?? startReadonlyAgentDisplay)(options);
 }
 
 export function parseJsonFromText(text: string): unknown | undefined {

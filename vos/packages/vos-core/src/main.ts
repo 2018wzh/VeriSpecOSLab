@@ -105,8 +105,13 @@ import {
 import {
   parseJsonFromText,
   runAgentWithPrompt,
+  runAgentInteractiveTask,
+  startAgentReadonlyDisplay,
   startAgentServer,
   type HeadlessAgentRunner,
+  type InteractiveAgentTaskRunner,
+  type ReadonlyAgentDisplayHandle,
+  type ReadonlyAgentDisplayStarter,
 } from "./agent/runner.ts";
 import { isRecord, parseDebugOutput, parseKnowledgebaseAnswer, parsePatchProposal, parsePlanDraft } from "./agent/schemas.ts";
 import { applyPatchText, readPatchFromStdin } from "./agent/apply-patch.ts";
@@ -220,6 +225,11 @@ export async function executeCliInvocation(
       gitRev: currentHead(projectRoot),
       parentSha: parentSha(projectRoot),
     });
+    const readonlyDisplay = startReadonlyDisplayForCommand(
+      parsed.command,
+      projectRoot,
+      options.readonlyDisplayStarter,
+    );
     progress.start(commandLabel(parsed.command), "starting");
 
     try {
@@ -246,6 +256,8 @@ export async function executeCliInvocation(
         effectivePolicy: auth.effectivePolicy,
         signal: options.signal,
         agentRunner: options.agentRunner,
+        interactiveAgentRunner: options.interactiveAgentRunner,
+        readonlyDisplay,
         portalClient: options.portalClient ?? defaultPortalClient,
       });
       if (options.signal?.aborted) {
@@ -256,6 +268,7 @@ export async function executeCliInvocation(
         evidence,
         outcome,
         progress,
+        readonlyDisplay,
       });
       if (options.print ?? true) {
         printResult(finalOutput as unknown as Record<string, unknown>, parsed.global.json);
@@ -264,6 +277,8 @@ export async function executeCliInvocation(
     } catch (error) {
       const status = options.signal?.aborted ? "cancelled" : classifyErrorStatus(error);
       const message = error instanceof Error ? error.message : "unknown error";
+      readonlyDisplay?.error(message);
+      readonlyDisplay?.close();
       const manifest = await evidence.finalize(status, { message });
       const finalOutput: BaseCommandResult = {
         ok: false,
@@ -301,6 +316,8 @@ export interface ExecuteVosCommandOptions {
   evidenceDir?: string;
   portalClient?: PortalClient;
   agentRunner?: HeadlessAgentRunner;
+  interactiveAgentRunner?: InteractiveAgentTaskRunner;
+  readonlyDisplayStarter?: ReadonlyAgentDisplayStarter;
   serveBinding?: {
     portalUrl: string;
     projectId: string;
@@ -317,6 +334,25 @@ export function isVosCommand(command: CliCommand): command is VosCommand {
     command.kind !== "whoami" &&
     command.kind !== "serve" &&
     command.kind !== "agent_serve";
+}
+
+function startReadonlyDisplayForCommand(
+  command: CliCommand,
+  projectRoot: string,
+  starter: ReadonlyAgentDisplayStarter | undefined,
+): ReadonlyAgentDisplayHandle | undefined {
+  if (!usesReadonlyDisplay(command)) return undefined;
+  return startAgentReadonlyDisplay({
+    projectRoot,
+    title: commandToArray(command).join(" "),
+    starter,
+  });
+}
+
+function usesReadonlyDisplay(command: CliCommand): boolean {
+  if (!("display" in command) || command.display !== true) return false;
+  if (command.kind === "agent_debug" && !command.logPath && !command.runId) return false;
+  return true;
 }
 
 export async function executeVosCommand(
@@ -356,6 +392,11 @@ export async function executeVosCommand(
       gitRev: currentHead(projectRoot),
       parentSha: parentSha(projectRoot),
     });
+    const readonlyDisplay = startReadonlyDisplayForCommand(
+      command,
+      projectRoot,
+      options.readonlyDisplayStarter,
+    );
 
     try {
       if (auth.blocked) {
@@ -380,15 +421,19 @@ export async function executeVosCommand(
         effectivePolicy: auth.effectivePolicy,
         signal: options.signal,
         agentRunner: options.agentRunner,
+        interactiveAgentRunner: options.interactiveAgentRunner,
+        readonlyDisplay,
         portalClient: options.portalClient ?? defaultPortalClient,
       });
       if (options.signal?.aborted) {
         throw new CliError("cancelled", "cancelled", { reason: "cancelled" });
       }
-      return await finalizeRun({ parsed, evidence, outcome, progress });
+      return await finalizeRun({ parsed, evidence, outcome, progress, readonlyDisplay });
     } catch (error) {
       const status = options.signal?.aborted ? "cancelled" : classifyErrorStatus(error);
       const message = error instanceof Error ? error.message : "unknown error";
+      readonlyDisplay?.error(message);
+      readonlyDisplay?.close();
       const manifest = await evidence.finalize(status, { message });
       progress.finish(status, message);
       return {
@@ -425,6 +470,7 @@ async function finalizeRun(params: {
   evidence: EvidenceWriter;
   outcome: CommandOutcome;
   progress: CommandProgress;
+  readonlyDisplay?: ReadonlyAgentDisplayHandle;
 }): Promise<BaseCommandResult> {
   const manifest = await params.evidence.finalize(params.outcome.status, {
     message: typeof params.outcome.details.message === "string" ? params.outcome.details.message : undefined,
@@ -462,6 +508,13 @@ async function finalizeRun(params: {
     await writeFile(params.parsed.global.reportPath, `${JSON.stringify(finalOutput, null, 2)}\n`);
   }
   params.progress.finish(params.outcome.status, typeof params.outcome.details.message === "string" ? params.outcome.details.message : undefined);
+  params.readonlyDisplay?.progress({
+    stage: commandLabel(params.parsed.command),
+    status: isSuccessStatus(params.outcome.status) ? "completed" : params.outcome.status,
+    message: finalOutput.message,
+    percent: 100,
+  });
+  params.readonlyDisplay?.close();
   return finalOutput;
 }
 
@@ -1301,6 +1354,7 @@ export async function executeAgentContext(
   projectRoot: string,
   context: ExecContext,
 ): Promise<CommandOutcome> {
+  updateProgress(context, { stage: "agent context", status: "running", message: "building context" });
   const bundle = await buildContextBundle({
     projectRoot,
     requestedScope: command.scope,
@@ -2227,8 +2281,42 @@ export async function executeAgentAsk(
     effectivePolicy: context.effectivePolicy,
   });
   const embedder = createKbEmbedder(projectRoot);
-  const kbHits = await searchKb(projectRoot, command.question, { limit: 5, embedder });
+  const kbHits = command.question
+    ? await searchKb(projectRoot, command.question, { limit: 5, embedder })
+    : [];
   const kbManifest = await exportKbManifest(projectRoot);
+  const kbMcpServer = {
+    name: "vos-kb",
+    command: process.execPath,
+    args: [path.resolve(import.meta.dir, "../../../packages/vos-kb/src/mcp.ts")],
+    cwd: projectRoot,
+    env: { VOS_PROJECT_ROOT: projectRoot, ...kbEmbeddingEnv(projectRoot) },
+  };
+  if (command.interactive) {
+    updateProgress(context, { stage: "agent ask", status: "running", message: "starting interactive repl" });
+    await runAgentInteractiveTask({
+      projectRoot,
+      taskKind: "knowledgebase_qa",
+      requestedScope,
+      initialTask: command.question,
+      context: { bundle, kb_hits: kbHits, object_manifest: kbManifest },
+      courseMode: true,
+      allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      extraMcpServers: [kbMcpServer],
+      runner: context.interactiveAgentRunner,
+    });
+    return {
+      status: "passed",
+      details: {
+        interactive: true,
+        scope: requestedScope,
+        initial_question: command.question,
+      },
+    };
+  }
+  if (!command.question) {
+    throw new CliError("agent ask requires a question unless interactive mode is enabled", "failed");
+  }
   const prompt = [
     "Answer this VOS lab design question as knowledgebase.v1.",
     "Return exactly one JSON object and nothing else. Do not use markdown, tables, or prose.",
@@ -2266,13 +2354,7 @@ export async function executeAgentAsk(
     allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
     extraMcpServers: [
       ...agentProgress.extraMcpServers,
-      {
-        name: "vos-kb",
-        command: process.execPath,
-        args: [path.resolve(import.meta.dir, "../../../packages/vos-kb/src/mcp.ts")],
-        cwd: projectRoot,
-        env: { VOS_PROJECT_ROOT: projectRoot, ...kbEmbeddingEnv(projectRoot) },
-      },
+      kbMcpServer,
     ],
     onEvent: agentProgress.onEvent,
     runner: context.agentRunner,
@@ -2427,13 +2509,20 @@ export async function executeAgentDebug(
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
   if (!command.logPath && !command.runId) {
-    const recentFailedRuns = await findRecentFailedRunIds(projectRoot);
+    updateProgress(context, { stage: "agent debug", status: "running", message: "starting interactive repl" });
+    await runAgentInteractiveTask({
+      projectRoot,
+      taskKind: "debug",
+      requestedScope: "agent.debug",
+      courseMode: true,
+      allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      runner: context.interactiveAgentRunner,
+    });
     return {
-      status: "planned",
+      status: "passed",
       details: {
-        repl: "not_implemented",
-        message: "Debug REPL is reserved for a future vos-agent API. Use `vos agent debug --run <run-id>`.",
-        recent_failed_runs: recentFailedRuns,
+        interactive: true,
+        profile: "debug",
       },
     };
   }
@@ -3123,6 +3212,7 @@ function isAllowedModelVosCommand(command: string): boolean {
 
 function updateProgress(context: ExecContext, update: ProgressUpdate): void {
   context.progress?.update(update);
+  context.readonlyDisplay?.progress(update);
   void context.evidence.appendEvent({
     type: "progress",
     visibility: "agent-only",
@@ -3145,7 +3235,7 @@ function createAgentProgressParams(context: ExecContext, stage: string): {
   extraMcpServers: ReturnType<typeof createProgressMcpServerConfig>[];
   onEvent: (event: Record<string, unknown>) => Promise<void>;
 } {
-  if (!context.progress?.enabled) {
+  if (!context.progress?.enabled && !context.readonlyDisplay) {
     return {
       taskPrompt: (prompt) => prompt,
       extraMcpServers: [],
@@ -3156,6 +3246,7 @@ function createAgentProgressParams(context: ExecContext, stage: string): {
     taskPrompt: appendAgentProgressInstructions,
     extraMcpServers: [createProgressMcpServerConfig(context.projectRoot)],
     onEvent: async (event) => {
+      context.readonlyDisplay?.onSessionEvent(event as never);
       const update = progressUpdateFromAgentEvent(event, stage);
       if (update) {
         updateProgress(context, { ...update, stage: update.stage || stage });
@@ -3264,17 +3355,29 @@ export function commandToArray(command: CliCommand): string[] {
       return [
         "agent",
         "serve",
+        ...(command.display ? ["-i"] : []),
         ...(command.host ? ["--host", command.host] : []),
         ...(command.port ? ["--port", String(command.port)] : []),
       ];
     case "agent_context":
-      return command.scope ? ["agent", "context", "--scope", command.scope] : ["agent", "context"];
+      return [
+        "agent",
+        "context",
+        ...(command.display ? ["-i"] : []),
+        ...(command.scope ? ["--scope", command.scope] : []),
+      ];
     case "agent_plan":
-      return command.task ? ["agent", "plan", "--task", command.task] : ["agent", "plan"];
+      return [
+        "agent",
+        "plan",
+        ...(command.display ? ["-i"] : []),
+        ...(command.task ? ["--task", command.task] : []),
+      ];
     case "agent_generate":
       return [
         "agent",
         "generate",
+        ...(command.display ? ["-i"] : []),
         ...(command.target ? [command.target] : command.task ? ["--task", command.task] : []),
         ...(command.apply ? ["--apply"] : []),
         ...(command.build ? ["--build"] : []),
@@ -3284,6 +3387,7 @@ export function commandToArray(command: CliCommand): string[] {
       return [
         "agent",
         "apply-patch",
+        ...(command.display ? ["-i"] : []),
         ...(command.patchFile ? ["--patch-file", command.patchFile] : []),
         ...(command.requireSpec ? [] : ["--no-require-spec"]),
         ...(command.runValidation ? ["--run-validation"] : []),
@@ -3292,6 +3396,7 @@ export function commandToArray(command: CliCommand): string[] {
       return [
         "agent",
         "validate-generated",
+        ...(command.display ? ["-i"] : []),
         "--target",
         command.target,
         ...(command.patchFile ? ["--patch-file", command.patchFile] : []),
@@ -3301,6 +3406,7 @@ export function commandToArray(command: CliCommand): string[] {
       return [
         "agent",
         "debug",
+        ...(command.display ? ["-i"] : []),
         ...(command.logPath ? ["--log", command.logPath] : []),
         ...(command.runId ? ["--run", command.runId] : []),
         ...(command.keepWorktree ? ["--keep-worktree"] : []),
@@ -3309,6 +3415,7 @@ export function commandToArray(command: CliCommand): string[] {
       return [
         "agent",
         "log",
+        ...(command.display ? ["-i"] : []),
         ...(command.append ? ["--append"] : []),
         ...(command.inputPath ? [command.inputPath] : []),
       ];
@@ -3316,14 +3423,16 @@ export function commandToArray(command: CliCommand): string[] {
       return [
         "agent",
         "review-spec",
+        ...(command.display ? ["-i"] : []),
         ...(command.target ? ["--target", command.target] : []),
       ];
     case "agent_ask":
       return [
         "agent",
         "ask",
+        ...(command.interactive && command.question ? ["-i"] : []),
         ...(command.scope ? ["--stage", command.scope] : []),
-        command.question,
+        ...(command.question ? [command.question] : []),
       ];
     case "kb_add":
       return [
@@ -4022,16 +4131,18 @@ export function printHelp(topic?: string): void {
     "  kb clear",
     "  kb export-manifest [--out <path>]",
     "  kb import-manifest <path>",
-    "  agent serve [--host --port]",
-    "  agent context [--scope <scope>]",
-    "  agent plan [--scope <scope>|--stage <stage>] [--task <task>]",
-    "  agent ask [--stage <stage>] <question>",
-    "  agent generate [target] [--target <target>] [--apply] [--build] [--run]",
-    "  agent apply-patch [--patch-file <file>] [--run-validation] [--no-require-spec]",
-    "  agent validate-generated --target <value> [--patch-file <file>] [--keep-worktree]",
-    "  agent review-spec [--target <path|stage|patch>]",
-    "  agent debug [--run <run-id>] [--log <path>] [--keep-worktree]",
-    "  agent log [--append] [entry-path]",
+    "  agent serve [-i] [--host --port]",
+    "  agent context [-i] [--scope <scope>]",
+    "  agent plan [-i] [--scope <scope>|--stage <stage>] [--task <task>]",
+    "  agent ask [-i|--interactive] [--stage <stage>|--scope <scope>] [question]",
+    "  agent generate [-i] [target] [--target <target>] [--apply] [--build] [--run]",
+    "  agent apply-patch [-i] [--patch-file <file>] [--run-validation] [--no-require-spec]",
+    "  agent validate-generated [-i] --target <value> [--patch-file <file>] [--keep-worktree]",
+    "  agent review-spec [-i] [--target <path|stage|patch>]",
+    "  agent debug [-i] [--run <run-id>] [--log <path>] [--keep-worktree]  # no args starts fixed debug REPL",
+    "  agent log [-i] [--append] [entry-path]",
+    "",
+    "  -i on finite agent commands opens a readonly TUI flow display; ask -i and empty debug keep their fixed-profile REPLs.",
   ];
   console.log(globalHelp.join("\n"));
   if (topic) {

@@ -10,8 +10,10 @@ import {
   runAgentTask,
   runControlledTuiAgentTask,
   runHeadlessAgentPrompt,
+  runInteractiveAgentTask,
   startControlledTuiAgentTask,
   startAgentHttpServer,
+  startReadonlyAgentDisplay,
 } from "vos-agent/headless";
 import { CallbackChatClient, textResponse } from "./helpers/stub-chat.ts";
 
@@ -44,8 +46,35 @@ describe("package metadata", () => {
     expect(typeof runAgentTask).toBe("function");
     expect(typeof runControlledTuiAgentTask).toBe("function");
     expect(typeof startControlledTuiAgentTask).toBe("function");
+    expect(typeof runInteractiveAgentTask).toBe("function");
+    expect(typeof startReadonlyAgentDisplay).toBe("function");
     expect(typeof runHeadlessAgentPrompt).toBe("function");
     expect(typeof startAgentHttpServer).toBe("function");
+  });
+
+  test("starts a readonly agent display for progress and events", () => {
+    const projectRoot = makeProject();
+    const output = new PassThrough() as PassThrough & {
+      columns: number;
+      rows: number;
+    };
+    output.columns = 80;
+    output.rows = 14;
+    const readOutput = capture(output);
+
+    const display = startReadonlyAgentDisplay({
+      projectRoot,
+      title: "agent plan -i",
+      output,
+    });
+    display.progress({ stage: "agent plan", status: "running", message: "waiting for agent" });
+    display.command("internal flow visible");
+    display.close();
+
+    const text = readOutput();
+    expect(text).toContain("\x1b[?1049h");
+    expect(stripAnsi(text)).toContain("internal flow visible");
+    output.destroy();
   });
 
   test("starts a controlled display-only TUI task without accepting user prompts", async () => {

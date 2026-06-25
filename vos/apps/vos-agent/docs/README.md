@@ -23,8 +23,8 @@ each one stands on its own as a reference.
 7. [**Stream JSON automation**](stream-json.md) — JSONL output/input
    schemas for scripted integrations.
 8. [**Headless profile API**](headless-api.md) — profile-based package and
-   HTTP APIs, including controlled display-only TUI tasks for local
-   integrations.
+   HTTP APIs, including controlled display-only TUI tasks, readonly command
+   flow displays, and fixed-profile interactive REPLs for local integrations.
 9. [**Error logbook**](error-log.md) — implementation errors and fixes
    recorded during agent build loops.
 10. [**Testing**](testing.md) — strategy, the four test layers, and the

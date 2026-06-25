@@ -1,6 +1,11 @@
 import type { CommandStatus, ParsedInvocation, EffectivePolicy, RunAuthContext } from "./types.ts";
 import type { EvidenceWriter } from "./evidence/index.ts";
-import type { HeadlessAgentRunner } from "./agent/runner.ts";
+import type {
+  HeadlessAgentRunner,
+  InteractiveAgentTaskRunner,
+  ReadonlyAgentDisplayHandle,
+  ReadonlyAgentDisplayStarter,
+} from "./agent/runner.ts";
 import type { PortalClient } from "./auth/portal-client.ts";
 import type { RunEvent } from "./evidence/events.ts";
 
@@ -14,6 +19,8 @@ export interface ExecContext {
   global: ParsedInvocation["global"];
   evidence: EvidenceWriter;
   agentRunner?: HeadlessAgentRunner;
+  interactiveAgentRunner?: InteractiveAgentTaskRunner;
+  readonlyDisplay?: ReadonlyAgentDisplayHandle;
   progress?: import("./progress/types.ts").CommandProgress;
   auth?: RunAuthContext;
   effectivePolicy?: EffectivePolicy;
@@ -25,6 +32,8 @@ export interface ExecuteCliOptions {
   print?: boolean;
   portalClient?: PortalClient;
   agentRunner?: HeadlessAgentRunner;
+  interactiveAgentRunner?: InteractiveAgentTaskRunner;
+  readonlyDisplayStarter?: ReadonlyAgentDisplayStarter;
   serveBinding?: {
     portalUrl: string;
     projectId: string;

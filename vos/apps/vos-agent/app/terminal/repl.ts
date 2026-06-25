@@ -5,6 +5,8 @@ import { resolveMode, resolveModeDefinition, type Config } from "../config.ts";
 import { assertThreadCanContinue, runSessionTurn } from "../session/run-turn.ts";
 import type { ThreadStore } from "../session/thread-store.ts";
 import type { SessionEvent } from "../session/types.ts";
+import type { McpServerConfig } from "../plugins/manifest.ts";
+import type { ToolPolicy } from "../tools/types.ts";
 import {
   expandProjectCommand,
   loadProjectCommands,
@@ -21,6 +23,13 @@ import type { StarsTranscriptItem, StarsViewSize } from "../tui/stars-view.ts";
 import { resolveStarsTuiTheme } from "../tui/theme.ts";
 
 export type InteractiveStatus = WelcomeInput;
+export type AllowedSlashCommandKind =
+  | "help"
+  | "quit"
+  | "new"
+  | "thread-show"
+  | "thread-switch"
+  | "todos";
 
 export interface InteractiveInput {
   readLine(): Promise<string | undefined>;
@@ -49,6 +58,16 @@ interface InteractiveSessionOptions {
   mode?: string;
   model?: string;
   threadId?: string;
+  maxIterations?: number;
+  disabledTools?: readonly string[];
+  initialPrompt?: string;
+  fixedSystemPrompt?: string;
+  promptBuilder?: (prompt: string) => string;
+  toolPolicy?: ToolPolicy;
+  courseMode?: boolean;
+  allowedVosCommands?: readonly string[];
+  extraMcpServers?: readonly McpServerConfig[];
+  allowedSlashCommands?: readonly AllowedSlashCommandKind[];
 }
 
 export interface RunInteractiveOptions extends InteractiveSessionOptions {
@@ -203,7 +222,12 @@ export async function runInteractiveController(
   let mode = opts.mode ?? currentThreadMode ?? opts.config.defaultMode;
   let useStoredThreadModel = Boolean(opts.threadId && !opts.model && !modePinned);
   const projectCommands = loadProjectCommands({ workspaceRoot: opts.workspaceRoot });
-  const projectNames = projectCommandNames(projectCommands);
+  const allowedSlashKinds = opts.allowedSlashCommands
+    ? new Set(opts.allowedSlashCommands)
+    : undefined;
+  const projectNames = allowedSlashKinds
+    ? []
+    : projectCommandNames(projectCommands);
   const view = opts.view;
 
   const currentStatus = (): InteractiveStatus => ({
@@ -211,13 +235,21 @@ export async function runInteractiveController(
     mode: opts.model ? undefined : useStoredThreadModel ? currentThreadMode : mode,
     model: opts.model ?? (useStoredThreadModel ? currentThreadModel : undefined),
     cwd: opts.startDir ?? opts.workspaceRoot,
-    disabledTools: opts.config.tools.disabled,
+    disabledTools: [...opts.config.tools.disabled, ...(opts.disabledTools ?? [])],
   });
 
   if (initialThread) {
     await render(() => view.restoreTranscript?.(transcriptItemsFromMessages(initialThread.messages)));
   }
   await render(() => view.welcome(currentStatus()));
+  if (opts.initialPrompt?.trim()) {
+    const result = await runPrompt(opts.initialPrompt);
+    threadId = result.thread.id;
+    currentThreadModel = result.thread.model;
+    currentThreadMode = result.thread.mode;
+    mode = result.thread.mode ?? mode;
+    useStoredThreadModel = Boolean(threadId && !opts.model && !modePinned);
+  }
 
   while (true) {
     const line = await opts.input.readLine();
@@ -227,8 +259,12 @@ export async function runInteractiveController(
     const command = parseSlashCommand(line);
     try {
       if (command.kind === "quit") break;
+      if (!slashAllowed(command.kind)) {
+        await render(() => view.error("command is disabled in fixed task profile"));
+        continue;
+      }
       if (command.kind === "help") {
-        await render(() => view.command(slashHelp(projectNames)));
+        await render(() => view.command(slashHelp(projectNames, allowedSlashKinds)));
         continue;
       }
       if (command.kind === "new") {
@@ -287,6 +323,10 @@ export async function runInteractiveController(
         continue;
       }
       if (command.kind === "error") {
+        if (allowedSlashKinds) {
+          await render(() => view.error("command is disabled in fixed task profile"));
+          continue;
+        }
         const projectCommand = expandProjectCommand(line, projectCommands);
         if (!projectCommand) {
           await render(() => view.error(command.message));
@@ -343,21 +383,31 @@ export async function runInteractiveController(
       workspaceRoot: opts.workspaceRoot,
       startDir: opts.startDir ?? opts.workspaceRoot,
       threadId,
-      prompt,
+      prompt: opts.promptBuilder?.(prompt) ?? prompt,
       model,
       reasoningEffort: useStoredThreadModel || opts.model
         ? undefined
         : modeDef?.reasoningEffort,
-      disabledTools: opts.config.tools.disabled,
+      disabledTools: [...opts.config.tools.disabled, ...(opts.disabledTools ?? [])],
       permissionRules: opts.config.tools.permissions,
       approveToolExecution,
       mode: useStoredThreadModel || opts.model ? undefined : mode,
       streamAssistant: opts.streamAssistant ?? false,
+      maxIterations: opts.maxIterations,
+      fixedSystemPrompt: opts.fixedSystemPrompt,
+      toolPolicy: opts.toolPolicy,
+      courseMode: opts.courseMode,
+      allowedVosCommands: opts.allowedVosCommands,
+      extraMcpServers: opts.extraMcpServers,
       onEvent: async (event) => {
         await render(() => view.onSessionEvent(event));
       },
     });
     return result;
+  }
+
+  function slashAllowed(kind: string): boolean {
+    return !allowedSlashKinds || allowedSlashKinds.has(kind as AllowedSlashCommandKind);
   }
 
   async function approveToolExecution(request: {

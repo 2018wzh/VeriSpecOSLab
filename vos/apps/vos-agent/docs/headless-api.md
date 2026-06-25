@@ -87,8 +87,10 @@ import {
   runAgentTask,
   runControlledTuiAgentTask,
   runHeadlessAgentPrompt,
+  runInteractiveAgentTask,
   startControlledTuiAgentTask,
   startAgentHttpServer,
+  startReadonlyAgentDisplay,
 } from "vos-agent/headless";
 ```
 
@@ -257,6 +259,62 @@ await runControlledTuiAgentTask({
 
 Use `startControlledTuiAgentTask()` when the caller needs an abort handle or
 wants to keep the TUI open after completion.
+
+### `runInteractiveAgentTask(request)`
+
+Starts an interactive REPL for a fixed task profile. Unlike the normal
+`vos-agent` REPL, the profile owns the system prompt, default mode, skills,
+MCP servers, readonly tool policy, and allowed VOS commands for every turn.
+
+```ts
+import { runInteractiveAgentTask } from "vos-agent/headless";
+
+await runInteractiveAgentTask({
+  projectRoot: "/path/to/project",
+  taskKind: "knowledgebase_qa",
+  requestedScope: "memory",
+  initialTask: "Explain the allocator invariant.",
+  extraMcpServers: [{
+    name: "vos-kb",
+    command: "vos-kb-mcp",
+    args: ["--project", "/path/to/project"],
+  }],
+});
+```
+
+Interactive profile REPL behavior:
+
+| Behavior                  | Meaning                                                                  |
+|---------------------------|--------------------------------------------------------------------------|
+| Fixed task profile        | `/mode` and project slash commands are disabled.                         |
+| Thread management allowed | `/new`, `/thread`, `/help`, `/todos`, and `/quit` remain available.       |
+| Profile tool policy       | Direct write/edit tools stay hidden unless the fixed profile allows them. |
+| Initial task              | `initialTask` runs once, then the REPL remains open for follow-up turns.  |
+| Teaching default          | `knowledgebase_qa` is suitable for course Q&A; `debug` for diagnosis.    |
+
+### `startReadonlyAgentDisplay(options)`
+
+Starts a display-only flow view for deterministic wrappers such as
+`vos agent plan -i` or `vos agent generate -i`. It does not run a model,
+read input, accept prompts, or execute slash commands. Callers push progress
+and session events into the returned handle:
+
+```ts
+import { startReadonlyAgentDisplay } from "vos-agent/headless";
+
+const display = startReadonlyAgentDisplay({
+  projectRoot: "/path/to/project",
+  title: "agent plan -i",
+});
+
+display.progress({ stage: "agent plan", status: "running", message: "building context" });
+display.command("waiting for agent");
+display.close();
+```
+
+Use this for readonly observability around an existing command. It must not
+be used as a substitute for `runInteractiveAgentTask()` because it never
+accepts follow-up prompts.
 
 ### `runHeadlessAgentPrompt(request)`
 
@@ -475,6 +533,10 @@ Current command mapping:
 | `vos agent plan`     | `plan`    |
 | `vos agent generate` | `codegen` |
 | `vos agent debug`    | `debug`   |
+
+Finite commands may pass `-i` to show the same package-level flow in a
+readonly TUI. `vos agent ask -i` and no-argument `vos agent debug` keep their
+fixed-profile REPL behavior instead.
 
 The deterministic CLI wrapper still owns:
 

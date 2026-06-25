@@ -808,8 +808,13 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
     if (second === "serve") {
       let host: string | undefined;
       let port: number | undefined;
+      let display = false;
       for (let i = 1; i < rest.length; i++) {
         const arg = rest[i];
+        if (isInteractiveDisplayFlag(arg)) {
+          display = true;
+          continue;
+        }
         if (arg === "--host") {
           host = resolveRequiredValue(rest, i, arg);
           i++;
@@ -838,17 +843,36 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
           throw new Error(`unknown flag for agent serve: ${arg}`);
         }
       }
-      return { kind: "agent_serve", host, port } satisfies AgentServeCommand;
+      return { kind: "agent_serve", host, port, ...displayFlag(display) } satisfies AgentServeCommand;
     }
     if (second === "context") {
+      let display = false;
+      for (let i = 1; i < rest.length; i++) {
+        const arg = rest[i];
+        if (isInteractiveDisplayFlag(arg)) {
+          display = true;
+          continue;
+        }
+        if (arg === "--scope" || arg === "--stage") {
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--scope=") || arg.startsWith("--stage=")) continue;
+        throw new Error(`unknown flag for agent context: ${arg}`);
+      }
       const scopeArg = parseOptionalStringValue(rest, "--scope") ?? parseOptionalStringValue(rest, "--stage");
-      return { kind: "agent_context", scope: scopeArg } satisfies AgentContextCommand;
+      return { kind: "agent_context", scope: scopeArg, ...displayFlag(display) } satisfies AgentContextCommand;
     }
     if (second === "plan") {
       let task: string | undefined;
+      let display = false;
       let scope = parseOptionalStringValue(rest, "--scope") ?? parseOptionalStringValue(rest, "--stage");
       for (let i = 1; i < rest.length; i++) {
         const arg = rest[i];
+        if (isInteractiveDisplayFlag(arg)) {
+          display = true;
+          continue;
+        }
         if (arg === "--scope") {
           i++;
           continue;
@@ -876,7 +900,7 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
           task = arg;
           for (let j = i + 1; j < rest.length; j++) {
             const next = rest[j];
-            if (next.startsWith("--")) {
+            if (next.startsWith("-")) {
               break;
             }
             task = `${task} ${next}`.trim();
@@ -884,7 +908,7 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
           }
         }
       }
-      return { kind: "agent_plan", task, scope } satisfies AgentPlanCommand;
+      return { kind: "agent_plan", task, scope, ...displayFlag(display) } satisfies AgentPlanCommand;
     }
     if (second === "generate") {
       let target: string | undefined;
@@ -892,8 +916,13 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       let build = false;
       let run = false;
       let task: string | undefined;
+      let display = false;
       for (let i = 1; i < rest.length; i++) {
         const arg = rest[i];
+        if (isInteractiveDisplayFlag(arg)) {
+          display = true;
+          continue;
+        }
         if (arg === "--target") {
           target = resolveRequiredValue(rest, i, arg);
           i++;
@@ -938,14 +967,19 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       if (build && !apply) {
         throw new Error("`agent generate --build` requires `--apply`");
       }
-      return { kind: "agent_generate", target, apply, build, run, task } satisfies AgentGenerateCommand;
+      return { kind: "agent_generate", target, apply, build, run, task, ...displayFlag(display) } satisfies AgentGenerateCommand;
     }
     if (second === "apply-patch") {
       let patchFile: string | undefined;
       let requireSpec = true;
       let runValidation = false;
+      let display = false;
       for (let i = 1; i < rest.length; i++) {
         const arg = rest[i];
+        if (isInteractiveDisplayFlag(arg)) {
+          display = true;
+          continue;
+        }
         if (arg === "--patch-file") {
           patchFile = resolveRequiredValue(rest, i, arg);
           i++;
@@ -976,14 +1010,20 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
         patchFile,
         requireSpec,
         runValidation,
+        ...displayFlag(display),
       } satisfies AgentApplyPatchCommand;
     }
     if (second === "validate-generated") {
       let target: string | undefined;
       let patchFile: string | undefined;
       let keepWorktree = false;
+      let display = false;
       for (let i = 1; i < rest.length; i++) {
         const arg = rest[i];
+        if (isInteractiveDisplayFlag(arg)) {
+          display = true;
+          continue;
+        }
         if (arg === "--target") {
           target = resolveRequiredValue(rest, i, arg);
           i++;
@@ -1023,14 +1063,20 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
         target,
         patchFile,
         keepWorktree,
+        ...displayFlag(display),
       } satisfies AgentValidateGeneratedCommand;
     }
     if (second === "debug") {
       let logPath: string | undefined;
       let runId: string | undefined;
       let keepWorktree = false;
+      let display = false;
       for (let i = 1; i < rest.length; i++) {
         const arg = rest[i];
+        if (isInteractiveDisplayFlag(arg)) {
+          display = true;
+          continue;
+        }
         if (arg === "--log") {
           logPath = resolveRequiredValue(rest, i, arg);
           i++;
@@ -1058,13 +1104,18 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       if (logPath && runId) {
         throw new Error("agent debug accepts either --log or --run, not both");
       }
-      return { kind: "agent_debug", logPath, runId, keepWorktree } satisfies AgentDebugCommand;
+      return { kind: "agent_debug", logPath, runId, keepWorktree, ...displayFlag(display) } satisfies AgentDebugCommand;
     }
     if (second === "log") {
       let append = false;
       let inputPath: string | undefined;
+      let display = false;
       for (let i = 1; i < rest.length; i++) {
         const arg = rest[i];
+        if (isInteractiveDisplayFlag(arg)) {
+          display = true;
+          continue;
+        }
         if (arg === "--append") {
           append = true;
           continue;
@@ -1091,12 +1142,17 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
         }
         throw new Error(`unexpected positional value for agent log: ${arg}`);
       }
-      return { kind: "agent_log", append, inputPath } satisfies AgentLogCommand;
+      return { kind: "agent_log", append, inputPath, ...displayFlag(display) } satisfies AgentLogCommand;
     }
     if (second === "review-spec") {
       let target: string | undefined;
+      let display = false;
       for (let i = 1; i < rest.length; i++) {
         const arg = rest[i];
+        if (isInteractiveDisplayFlag(arg)) {
+          display = true;
+          continue;
+        }
         if (arg === "--target") {
           target = resolveRequiredValue(rest, i, arg);
           i++;
@@ -1115,13 +1171,18 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
         }
         throw new Error(`unexpected positional value for agent review-spec: ${arg}`);
       }
-      return { kind: "agent_review_spec", target } satisfies AgentReviewSpecCommand;
+      return { kind: "agent_review_spec", target, ...displayFlag(display) } satisfies AgentReviewSpecCommand;
     }
     if (second === "ask") {
       let question: string | undefined;
+      let interactive = false;
       const scope = parseOptionalStringValue(rest, "--scope") ?? parseOptionalStringValue(rest, "--stage");
       for (let i = 1; i < rest.length; i++) {
         const arg = rest[i];
+        if (arg === "-i" || arg === "--interactive") {
+          interactive = true;
+          continue;
+        }
         if (arg === "--scope" || arg === "--stage") {
           i++;
           continue;
@@ -1139,8 +1200,13 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
         if (arg.startsWith("--")) throw new Error(`unknown flag for agent ask: ${arg}`);
         question = [question, arg].filter(Boolean).join(" ");
       }
-      if (!question?.trim()) throw new Error("agent ask requires a question");
-      return { kind: "agent_ask", question: question.trim(), scope } satisfies AgentAskCommand;
+      const trimmedQuestion = question?.trim();
+      return {
+        kind: "agent_ask",
+        question: trimmedQuestion || undefined,
+        scope,
+        interactive: interactive || !trimmedQuestion,
+      } satisfies AgentAskCommand;
     }
 
     throw new Error(`unknown agent subcommand: ${second}`);
@@ -1167,6 +1233,14 @@ function isVerifyScope(value: string): value is VerifyScope {
 function parseKbSourceKind(value: string): KbAddCommand["sourceKind"] {
   if (value === "course" || value === "project" || value === "external") return value;
   throw new Error("--source-kind must be one of: course, project, external");
+}
+
+function isInteractiveDisplayFlag(value: string): boolean {
+  return value === "-i" || value === "--interactive";
+}
+
+function displayFlag(display: boolean): { display?: true } {
+  return display ? { display: true } : {};
 }
 
 function parseOptionalStringValue(args: string[], flag: string): string | undefined {

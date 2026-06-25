@@ -35,6 +35,7 @@ type SlashCommandUsage = Readonly<{
 
 type BuiltinSlashCommandDefinition = Readonly<{
   names: readonly [string, ...string[]];
+  kinds: readonly ParsedBuiltinSlashCommand["kind"][];
   usages: readonly SlashCommandUsage[];
   paletteEntries: readonly SlashCommandPaletteEntry[];
   parse: (arg: string) => ParsedBuiltinSlashCommand;
@@ -43,6 +44,7 @@ type BuiltinSlashCommandDefinition = Readonly<{
 const BUILTIN_SLASH_COMMANDS: readonly BuiltinSlashCommandDefinition[] = [
   {
     names: ["help"],
+    kinds: ["help"],
     usages: [{ text: "/help", hint: "Show this help" }],
     paletteEntries: [{
       group: "vos",
@@ -54,6 +56,7 @@ const BUILTIN_SLASH_COMMANDS: readonly BuiltinSlashCommandDefinition[] = [
   },
   {
     names: ["new"],
+    kinds: ["new"],
     usages: [{ text: "/new", hint: "Start a new local thread" }],
     paletteEntries: [{
       group: "vos",
@@ -65,6 +68,7 @@ const BUILTIN_SLASH_COMMANDS: readonly BuiltinSlashCommandDefinition[] = [
   },
   {
     names: ["thread"],
+    kinds: ["thread-show", "thread-switch"],
     usages: [
       { text: "/thread", hint: "Show current thread id" },
       { text: "/thread <id>", hint: "Switch to a saved thread" },
@@ -89,6 +93,7 @@ const BUILTIN_SLASH_COMMANDS: readonly BuiltinSlashCommandDefinition[] = [
   },
   {
     names: ["mode"],
+    kinds: ["mode-show", "mode-set"],
     usages: [
       { text: "/mode", hint: "Show current mode" },
       { text: "/mode <name>", hint: "Switch mode (smart, deep, rush)" },
@@ -113,6 +118,7 @@ const BUILTIN_SLASH_COMMANDS: readonly BuiltinSlashCommandDefinition[] = [
   },
   {
     names: ["todos"],
+    kinds: ["todos"],
     usages: [{ text: "/todos", hint: "Show current thread todos" }],
     paletteEntries: [{
       group: "vos",
@@ -124,6 +130,7 @@ const BUILTIN_SLASH_COMMANDS: readonly BuiltinSlashCommandDefinition[] = [
   },
   {
     names: ["quit", "exit"],
+    kinds: ["quit"],
     usages: [{ text: "/quit, /exit", hint: "Leave VOS Agent" }],
     paletteEntries: [{
       group: "vos",
@@ -153,10 +160,18 @@ export function parseSlashCommand(input: string): SlashCommand {
   return { kind: "error", message: `unknown command: ${command}` };
 }
 
-export function slashHelp(projectCommands: readonly string[] = []): string {
+export function slashHelp(
+  projectCommands: readonly string[] = [],
+  allowedKinds?: ReadonlySet<ParsedBuiltinSlashCommand["kind"]>,
+): string {
+  const commands = allowedKinds
+    ? BUILTIN_SLASH_COMMANDS.filter((command) =>
+        command.kinds.some((kind) => allowedKinds.has(kind))
+      )
+    : BUILTIN_SLASH_COMMANDS;
   const lines = [
     "VOS Agent commands:",
-    ...BUILTIN_SLASH_COMMANDS.flatMap((command) =>
+    ...commands.flatMap((command) =>
       command.usages.map(formatSlashCommandUsage)
     ),
   ];

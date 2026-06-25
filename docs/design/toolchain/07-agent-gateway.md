@@ -182,6 +182,12 @@
 - `evidence_ref`
 - `result`
 
+## 6.1 Agent 命令只读 TUI
+
+有限生命周期的 `vos agent ...` 子命令可带 `-i` / `--interactive` 打开只读 TUI，展示 context 构建、agent event、工具调用、验证和最终状态。该 TUI 不接收 prompt、不执行 slash command，也不改变命令原本的副作用；例如 `agent generate --apply -i` 仍会照常 apply。
+
+例外：`vos agent ask -i` 和无参数 `vos agent debug` 保留固定 profile REPL 语义。
+
 ## 7. `vos agent ask`
 
 职责：
@@ -193,12 +199,15 @@
 输入：
 
 - question
+- `-i` / `--interactive` 或空 question 进入受控教学 REPL
 - `--stage` / `--scope`
 - 当前 project policy 与 stage gate
 
 约束：
 
 - 不写 workspace
+- 交互式 REPL 固定 `knowledgebase.v1` profile，禁用 `/mode` 和项目 slash command
+- 交互式 REPL 只保留 `/help`、`/quit`、`/new`、`/thread`、`/todos`
 - 不返回完整 patch 或完整模块实现
 - 小代码片段只能用于解释设计点，不能替代学生实现
 - 每次回答记录 KB source ids、object refs、web refs、risk flags 和 evidence refs

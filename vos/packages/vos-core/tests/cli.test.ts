@@ -244,6 +244,53 @@ describe("vos-cli agent command parsing", () => {
     });
   });
 
+  test("parses readonly display flag for finite agent commands", () => {
+    expect(parseArgs(["bun", "vos", "agent", "context", "-i"]).command)
+      .toEqual({ kind: "agent_context", scope: undefined, display: true });
+    expect(parseArgs(["bun", "vos", "agent", "plan", "-i", "inspect memory"]).command)
+      .toEqual({ kind: "agent_plan", task: "inspect memory", scope: undefined, display: true });
+    expect(parseArgs(["bun", "vos", "agent", "generate", "memory", "--apply", "--build", "-i"]).command)
+      .toEqual({
+        kind: "agent_generate",
+        target: "memory",
+        task: undefined,
+        apply: true,
+        build: true,
+        run: false,
+        display: true,
+      });
+    expect(parseArgs(["bun", "vos", "agent", "apply-patch", "-i", "--run-validation"]).command)
+      .toEqual({
+        kind: "agent_apply_patch",
+        patchFile: undefined,
+        requireSpec: true,
+        runValidation: true,
+        display: true,
+      });
+    expect(parseArgs(["bun", "vos", "agent", "validate-generated", "-i", "--target", "full-syscall"]).command)
+      .toEqual({
+        kind: "agent_validate_generated",
+        target: "full-syscall",
+        patchFile: undefined,
+        keepWorktree: false,
+        display: true,
+      });
+    expect(parseArgs(["bun", "vos", "agent", "debug", "--run", "run-1", "-i"]).command)
+      .toEqual({
+        kind: "agent_debug",
+        logPath: undefined,
+        runId: "run-1",
+        keepWorktree: false,
+        display: true,
+      });
+    expect(parseArgs(["bun", "vos", "agent", "log", "-i"]).command)
+      .toEqual({ kind: "agent_log", append: false, inputPath: undefined, display: true });
+    expect(parseArgs(["bun", "vos", "agent", "review-spec", "-i", "--target", "memory"]).command)
+      .toEqual({ kind: "agent_review_spec", target: "memory", display: true });
+    expect(parseArgs(["bun", "vos", "agent", "serve", "-i", "--port", "8787"]).command)
+      .toEqual({ kind: "agent_serve", host: undefined, port: 8787, display: true });
+  });
+
   test("parses verify full staff policy", () => {
     const parsed = parseArgs([
       "bun",
@@ -302,6 +349,21 @@ describe("vos-cli agent command parsing", () => {
         kind: "agent_ask",
         question: "How should I design kalloc?",
         scope: "memory",
+        interactive: false,
+      });
+    expect(parseArgs(["bun", "vos", "agent", "ask"]).command)
+      .toEqual({
+        kind: "agent_ask",
+        question: undefined,
+        scope: undefined,
+        interactive: true,
+      });
+    expect(parseArgs(["bun", "vos", "agent", "ask", "-i", "How should I design kalloc?"]).command)
+      .toEqual({
+        kind: "agent_ask",
+        question: "How should I design kalloc?",
+        scope: undefined,
+        interactive: true,
       });
 
     expect(parseArgs([

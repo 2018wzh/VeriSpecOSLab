@@ -112,7 +112,7 @@ describe(".env loading", () => {
     });
   });
 
-  test("falls back to OpenAI-compatible agent config for KB embeddings", () => {
+  test("rejects DeepSeek agent config fallback for KB embeddings", () => {
     const projectRoot = makeProject();
     mkdirSync(join(projectRoot, ".vos"), { recursive: true });
     writeFileSync(join(projectRoot, ".vos", "config.toml"), [
@@ -127,11 +127,9 @@ describe(".env loading", () => {
     ].join("\n"));
     writeFileSync(join(projectRoot, ".env"), "DEEPSEEK_API_KEY=agent-key\n");
 
-    expect(buildKbEmbeddingConfig(projectRoot, {} as NodeJS.ProcessEnv)).toEqual({
-      baseUrl: "https://api.deepseek.com/v1",
-      model: "text-embedding-3-small",
-      apiKey: "agent-key",
-    });
+    expect(() => buildKbEmbeddingConfig(projectRoot, {} as NodeJS.ProcessEnv)).toThrow(
+      /DeepSeek does not provide an embeddings API/,
+    );
   });
 
   test("rejects missing KB embedding provider config", () => {

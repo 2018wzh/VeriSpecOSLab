@@ -205,17 +205,20 @@ export interface AgentServeCommand extends BaseCommand {
   kind: "agent_serve";
   host?: string;
   port?: number;
+  display?: boolean;
 }
 
 export interface AgentContextCommand extends BaseCommand {
   kind: "agent_context";
   scope?: string;
+  display?: boolean;
 }
 
 export interface AgentPlanCommand extends BaseCommand {
   kind: "agent_plan";
   task?: string;
   scope?: string;
+  display?: boolean;
 }
 
 export interface AgentGenerateCommand extends BaseCommand {
@@ -225,6 +228,7 @@ export interface AgentGenerateCommand extends BaseCommand {
   apply: boolean;
   build: boolean;
   run: boolean;
+  display?: boolean;
 }
 
 export interface AgentApplyPatchCommand extends BaseCommand {
@@ -232,6 +236,7 @@ export interface AgentApplyPatchCommand extends BaseCommand {
   patchFile?: string;
   requireSpec: boolean;
   runValidation: boolean;
+  display?: boolean;
 }
 
 export interface AgentValidateGeneratedCommand extends BaseCommand {
@@ -239,6 +244,7 @@ export interface AgentValidateGeneratedCommand extends BaseCommand {
   target: string;
   patchFile?: string;
   keepWorktree: boolean;
+  display?: boolean;
 }
 
 export interface AgentDebugCommand extends BaseCommand {
@@ -246,23 +252,27 @@ export interface AgentDebugCommand extends BaseCommand {
   logPath?: string;
   runId?: string;
   keepWorktree: boolean;
+  display?: boolean;
 }
 
 export interface AgentLogCommand extends BaseCommand {
   kind: "agent_log";
   append: boolean;
   inputPath?: string;
+  display?: boolean;
 }
 
 export interface AgentReviewSpecCommand extends BaseCommand {
   kind: "agent_review_spec";
   target?: string;
+  display?: boolean;
 }
 
 export interface AgentAskCommand extends BaseCommand {
   kind: "agent_ask";
-  question: string;
+  question?: string;
   scope?: string;
+  interactive: boolean;
 }
 
 export interface KbAddCommand extends BaseCommand {

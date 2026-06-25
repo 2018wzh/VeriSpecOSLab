@@ -66,7 +66,8 @@ function providerConfig(value: unknown): ProviderConfig | undefined {
 }
 
 function openAICompatible(config: ProviderConfig | undefined): ProviderConfig | undefined {
-  const provider = config?.provider?.toLowerCase();
+  if (!config) return undefined;
+  const provider = config.provider?.toLowerCase();
   if (provider === "openai" || provider === "openai-compatible") {
     return { ...config, model: config.model ?? "text-embedding-3-small" };
   }

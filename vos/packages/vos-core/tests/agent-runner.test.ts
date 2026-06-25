@@ -3,7 +3,9 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import {
   buildAgentEnv,
+  runAgentInteractiveTask,
   runAgentWithPrompt,
+  startAgentReadonlyDisplay,
 } from "../src/agent/runner.ts";
 import {
   buildAgentBehaviorTestPatchPrompt,
@@ -19,6 +21,8 @@ import { executeCommand } from "../src/main.ts";
 import { EvidenceWriter } from "../src/evidence/index.ts";
 import type { HeadlessAgentOptions } from "vos-agent/headless";
 import type { AgentTaskRequest } from "vos-agent/headless";
+import type { InteractiveAgentTaskOptions } from "vos-agent/headless";
+import type { ReadonlyAgentDisplayHandle, ReadonlyAgentDisplayOptions } from "vos-agent/headless";
 
 const tmpRoots: string[] = [];
 
@@ -86,6 +90,174 @@ describe("vos-cli package agent runner", () => {
     expect(captured?.taskKind).toBe("debug");
     expect(captured?.courseMode).toBe(true);
     expect(captured?.allowedVosCommands).toEqual(["build"]);
+  });
+
+  test("calls vos-agent interactive package API through injectable runner", async () => {
+    const projectRoot = makeProject();
+    let captured: InteractiveAgentTaskOptions | undefined;
+    const runner = async (options: InteractiveAgentTaskOptions) => {
+      captured = options;
+    };
+
+    await runAgentInteractiveTask({
+      projectRoot,
+      taskKind: "debug",
+      requestedScope: "agent.debug",
+      allowedVosCommands: ["build"],
+      extraMcpServers: [{ name: "progress", command: "progress-mcp" }],
+      runner,
+    });
+
+    expect(captured?.projectRoot).toBe(projectRoot);
+    expect(captured?.taskKind).toBe("debug");
+    expect(captured?.requestedScope).toBe("agent.debug");
+    expect(captured?.allowedVosCommands).toEqual(["build"]);
+    expect(captured?.extraMcpServers?.map((server) => server.name)).toEqual(["progress"]);
+    expect(captured && "binary" in captured).toBe(false);
+  });
+
+  test("calls vos-agent readonly display package API through injectable starter", () => {
+    const projectRoot = makeProject();
+    let captured: ReadonlyAgentDisplayOptions | undefined;
+    const handle = makeReadonlyDisplay();
+
+    const result = startAgentReadonlyDisplay({
+      projectRoot,
+      title: "agent plan -i",
+      starter: (options) => {
+        captured = options;
+        return handle;
+      },
+    });
+    result.progress({ stage: "agent plan", status: "running", message: "waiting" });
+    result.close();
+
+    expect(captured?.projectRoot).toBe(projectRoot);
+    expect(captured?.title).toBe("agent plan -i");
+    expect(handle.progresses).toContainEqual(expect.objectContaining({ stage: "agent plan" }));
+    expect(handle.closed).toBe(true);
+  });
+
+  test("executes empty agent debug through command-level interactive runner", async () => {
+    const projectRoot = makeProject();
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["agent", "debug"],
+      args: ["agent", "debug"],
+    });
+    let captured: InteractiveAgentTaskOptions | undefined;
+    const interactiveAgentRunner = async (options: InteractiveAgentTaskOptions) => {
+      captured = options;
+    };
+
+    const result = await executeCommand({
+      kind: "agent_debug",
+      logPath: undefined,
+      runId: undefined,
+      keepWorktree: false,
+    }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence,
+      interactiveAgentRunner,
+    });
+
+    expect(result.status).toBe("passed");
+    expect(result.details).toMatchObject({ interactive: true, profile: "debug" });
+    expect(captured?.taskKind).toBe("debug");
+    expect(captured?.initialTask).toBeUndefined();
+  });
+
+  test("agent plan readonly display receives progress and agent events", async () => {
+    const projectRoot = makeProject();
+    mkdirSync(join(projectRoot, "spec"), { recursive: true });
+    writeFileSync(join(projectRoot, ".vos", "project.yaml"), [
+      "project_id: display-plan-test",
+      "spec_root: spec",
+      "current_stage: syscall",
+      "",
+    ].join("\n"));
+    writeFileSync(join(projectRoot, "spec", "syscall.yaml"), "stage: syscall\n");
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["agent", "plan", "-i"],
+      args: ["agent", "plan", "-i"],
+    });
+    const display = makeReadonlyDisplay();
+    const runner = async (options: HeadlessAgentOptions) => {
+      await options.onEvent?.({
+        type: "assistant.message",
+        thread_id: "T-display",
+        iteration: 1,
+        content: "planning",
+        toolCalls: [],
+      });
+      return {
+        content: JSON.stringify({
+          task: "inspect syscall",
+          related_specs: [],
+          suspected_files: [],
+          required_validations: [],
+          notes: ["display fake runner"],
+        }),
+        events: [],
+      };
+    };
+
+    const result = await executeCommand({
+      kind: "agent_plan",
+      task: "inspect syscall",
+      scope: undefined,
+      display: true,
+    }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence,
+      agentRunner: runner,
+      readonlyDisplay: display,
+    });
+
+    expect(result.status).toBe("passed");
+    expect(display.progresses.map((item) => item.stage)).toContain("agent plan");
+    expect(display.events.map((event) => event.type)).toContain("assistant.message");
+  });
+
+  test("agent context readonly display does not call the model", async () => {
+    const projectRoot = makeProject();
+    mkdirSync(join(projectRoot, "spec"), { recursive: true });
+    writeFileSync(join(projectRoot, ".vos", "project.yaml"), [
+      "project_id: display-context-test",
+      "spec_root: spec",
+      "current_stage: memory",
+      "",
+    ].join("\n"));
+    writeFileSync(join(projectRoot, "spec", "memory.yaml"), "stage: memory\n");
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["agent", "context", "-i"],
+      args: ["agent", "context", "-i"],
+    });
+    const display = makeReadonlyDisplay();
+
+    const result = await executeCommand({
+      kind: "agent_context",
+      scope: undefined,
+      display: true,
+    }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence,
+      readonlyDisplay: display,
+      agentRunner: async () => {
+        throw new Error("agent context should not call the model");
+      },
+    });
+
+    expect(result.status).toBe("passed");
+    expect(display.progresses.map((item) => item.stage)).toContain("agent context");
   });
 
   test("executes agent plan through command-level fake package runner", async () => {
@@ -290,9 +462,8 @@ describe("vos-cli package agent runner", () => {
       logRef: ".vos/runs/run-1/artifacts/verify-behavior/fuzz-cases/case-1/result.json",
     });
 
-    expect(prompt).toContain("VERIFY DEBUG CONTRACT");
+    expect(prompt).toContain("DEBUG OUTPUT CONTRACT");
     expect(prompt).toContain("verify-behavior");
-    expect(prompt).toContain("obligation -> suite -> behavior case -> oracle -> observed output -> suspected failure");
     expect(prompt).not.toContain("verify-trace");
   });
 
@@ -464,22 +635,15 @@ describe("vos-cli package agent runner", () => {
     })).rejects.toThrow("DebugOutput.visualization_html must be string");
   });
 
-  test("agent debug without inputs returns recent failed runs and REPL placeholder", async () => {
+  test("agent debug without inputs starts the interactive debug profile", async () => {
     const projectRoot = makeProject();
-    mkdirSync(join(projectRoot, ".vos", "runs", "failed-run"), { recursive: true });
-    writeFileSync(join(projectRoot, ".vos", "runs", "failed-run", "manifest.json"), JSON.stringify({
-      run_id: "failed-run",
-      command: ["verify", "public"],
-      status: "validation_failed",
-      artifacts: [],
-      evidence_refs: [],
-    }, null, 2));
     const evidence = await EvidenceWriter.create({
       projectRoot,
       evidenceDir: ".vos",
       command: ["agent", "debug"],
       args: [],
     });
+    let captured: InteractiveAgentTaskOptions | undefined;
 
     const result = await executeCommand({
       kind: "agent_debug",
@@ -488,11 +652,15 @@ describe("vos-cli package agent runner", () => {
       projectRoot,
       global: { projectRoot, json: false },
       evidence,
+      interactiveAgentRunner: async (options) => {
+        captured = options;
+      },
     });
 
-    expect(result.status).toBe("planned");
-    expect(result.details.repl).toBe("not_implemented");
-    expect(result.details.recent_failed_runs).toEqual(["failed-run"]);
+    expect(result.status).toBe("passed");
+    expect(result.details).toMatchObject({ interactive: true, profile: "debug" });
+    expect(captured?.taskKind).toBe("debug");
+    expect(captured?.initialTask).toBeUndefined();
   });
 
   test("agent debug run writes GDB failure evidence when MCP setup fails", async () => {
@@ -940,11 +1108,13 @@ describe("vos-cli package agent runner", () => {
       apply: true,
       build: false,
       run: false,
+      display: true,
     }, {
       projectRoot,
       global: { projectRoot, json: false },
       evidence,
       agentRunner: runner,
+      readonlyDisplay: makeReadonlyDisplay(),
     });
 
     expect(result.status).toBe("passed");
@@ -1140,6 +1310,7 @@ describe("vos-cli package agent runner", () => {
       kind: "agent_ask",
       question: "How should I design allocator ownership?",
       scope: "memory",
+      interactive: false,
     }, {
       projectRoot,
       global: { projectRoot, json: false },
@@ -1162,6 +1333,7 @@ describe("vos-cli package agent runner", () => {
       kind: "agent_ask",
       question: "bad schema?",
       scope: "memory",
+      interactive: false,
     }, {
       projectRoot,
       global: { projectRoot, json: false },
@@ -1177,4 +1349,35 @@ function makeProject(): string {
   mkdirSync(join(root, ".vos"), { recursive: true });
   tmpRoots.push(root);
   return root;
+}
+
+function makeReadonlyDisplay(): ReadonlyAgentDisplayHandle & {
+  commands: string[];
+  errors: string[];
+  progresses: Array<{ stage: string; status?: string; message?: string }>;
+  events: Array<{ type: string }>;
+  closed: boolean;
+} {
+  return {
+    commands: [],
+    errors: [],
+    progresses: [],
+    events: [],
+    closed: false,
+    command(message: string): void {
+      this.commands.push(message);
+    },
+    error(message: string): void {
+      this.errors.push(message);
+    },
+    progress(update: { stage: string; status?: string; message?: string }): void {
+      this.progresses.push(update);
+    },
+    onSessionEvent(event: { type: string }): void {
+      this.events.push(event);
+    },
+    close(): void {
+      this.closed = true;
+    },
+  };
 }

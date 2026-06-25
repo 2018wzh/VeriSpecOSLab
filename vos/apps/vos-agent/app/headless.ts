@@ -29,6 +29,7 @@ import type { StarsViewSize } from "./tui/stars-view.ts";
 import { TerminalDriver } from "./tui/terminal.ts";
 import { resolveStarsTuiTheme } from "./tui/theme.ts";
 import { formatError } from "./tools/common.ts";
+import { runInteractive } from "./terminal/repl.ts";
 
 export interface HeadlessAgentOptions {
   projectRoot: string;
@@ -128,6 +129,65 @@ export interface ControlledTuiAgentTaskHandle {
   readonly result: Promise<AgentTaskResult>;
   readonly signal: AbortSignal;
   abort(reason?: unknown): void;
+  close(): void;
+}
+
+export interface InteractiveAgentTaskOptions {
+  projectRoot: string;
+  taskKind: string;
+  requestedScope?: string;
+  initialTask?: string;
+  agentProfile?: AgentTaskProfileInput;
+  context?: unknown;
+  contextRefs?: readonly string[];
+  evidenceRefs?: readonly string[];
+  allowedPaths?: readonly string[];
+  requiredValidations?: readonly string[];
+  policyFlags?: readonly string[];
+  model?: string;
+  mode?: string;
+  threadId?: string;
+  maxIterations?: number;
+  disabledTools?: readonly string[];
+  courseMode?: boolean;
+  allowedVosCommands?: readonly string[];
+  extraMcpServers?: readonly McpServerConfig[];
+  toolPolicy?: ToolPolicy;
+  chat?: ChatClient;
+  env?: Record<string, string | undefined>;
+  input?: NodeJS.ReadableStream;
+  output?: NodeJS.WritableStream;
+  error?: NodeJS.WritableStream;
+  debugLabels?: boolean;
+  welcomeAnimation?: boolean;
+}
+
+export interface ReadonlyAgentDisplayProgress {
+  stage: string;
+  status?: string;
+  message?: string;
+  phase?: string;
+  step?: string;
+  current?: number;
+  total?: number;
+  percent?: number;
+}
+
+export interface ReadonlyAgentDisplayOptions {
+  projectRoot: string;
+  title?: string;
+  mode?: string;
+  model?: string;
+  output?: ControlledTuiOutputStream;
+  debugLabels?: boolean;
+  welcomeAnimation?: boolean;
+}
+
+export interface ReadonlyAgentDisplayHandle {
+  command(message: string): void;
+  error(message: string): void;
+  progress(update: ReadonlyAgentDisplayProgress): void;
+  onSessionEvent(event: SessionEvent): void;
   close(): void;
 }
 
@@ -383,6 +443,119 @@ export async function runControlledTuiAgentTask(
   return await startControlledTuiAgentTask(options).result;
 }
 
+export async function runInteractiveAgentTask(
+  options: InteractiveAgentTaskOptions,
+): Promise<void> {
+  const workspaceRoot = resolve(options.projectRoot);
+  const env = options.env ?? process.env;
+  const settings = loadSettings({ workspaceRoot, env });
+  const config = loadConfig(env, settings);
+  const chat = options.chat ?? createChatClientFromConfig(config);
+  const profile = resolveInternalAgentTaskProfile({
+    taskKind: options.taskKind,
+  }, options.agentProfile);
+  const builtInSkills = resolveBuiltInSkills(profile.skills, { workspaceRoot });
+  const modelSettings = options.model
+    ? { model: options.model, mode: options.mode }
+    : resolveActiveModelSettings(config, {
+      model: undefined,
+      mode: options.mode ?? profile.mode,
+    });
+
+  await runInteractive({
+    chat,
+    config,
+    store: createThreadStore({ workspaceRoot }),
+    workspaceRoot,
+    mode: modelSettings.mode,
+    model: options.model,
+    threadId: options.threadId,
+    maxIterations: options.maxIterations,
+    disabledTools: options.disabledTools,
+    input: options.input,
+    output: options.output,
+    error: options.error,
+    debugLabels: options.debugLabels,
+    welcomeAnimation: options.welcomeAnimation,
+    initialPrompt: options.initialTask,
+    fixedSystemPrompt: buildAgentTaskSystemPrompt(profile),
+    promptBuilder: (task) => buildAgentTaskUserPrompt({
+      profile,
+      task,
+      taskKind: options.taskKind,
+      requestedScope: options.requestedScope,
+      context: options.context,
+      contextRefs: options.contextRefs,
+      evidenceRefs: options.evidenceRefs,
+      allowedPaths: options.allowedPaths,
+      requiredValidations: options.requiredValidations,
+      policyFlags: options.policyFlags,
+    }),
+    toolPolicy: composeToolPolicies(createProfileToolPolicy(profile), options.toolPolicy),
+    courseMode: options.courseMode ?? true,
+    allowedVosCommands: resolveProfileVosCommands(profile, options.allowedVosCommands),
+    extraMcpServers: [...builtInSkills.mcpServers, ...(options.extraMcpServers ?? [])],
+    allowedSlashCommands: ["help", "quit", "new", "thread-show", "thread-switch", "todos"],
+  });
+}
+
+export function startReadonlyAgentDisplay(
+  options: ReadonlyAgentDisplayOptions,
+): ReadonlyAgentDisplayHandle {
+  const workspaceRoot = resolve(options.projectRoot);
+  const output = options.output ?? defaultStdout as ControlledTuiOutputStream;
+  const driver = new TerminalDriver(output);
+  const view = new StarsTuiInteractiveView({
+    presenter: driver,
+    size: () => controlledTuiSize(output),
+    debugLabels: options.debugLabels,
+    displayOnly: true,
+    theme: resolveStarsTuiTheme(),
+    welcomeAnimation: options.welcomeAnimation ?? false,
+  });
+  const onResize = (): void => view.refresh();
+  let resizeAttached = false;
+  let closed = false;
+
+  driver.start();
+  try {
+    if (output.on) {
+      output.on("resize", onResize);
+      resizeAttached = true;
+    }
+    view.welcome({
+      mode: options.mode,
+      model: options.model,
+      cwd: workspaceRoot,
+    });
+    if (options.title) {
+      view.command(options.title);
+    }
+  } catch (e) {
+    close();
+    throw e;
+  }
+
+  function close(): void {
+    if (closed) return;
+    closed = true;
+    if (resizeAttached) {
+      output.off?.("resize", onResize);
+      resizeAttached = false;
+    }
+    view.close();
+    driver.close();
+  }
+
+  return {
+    command: (message) => view.command(message),
+    error: (message) => view.error(message),
+    progress: (update) => view.command(formatReadonlyProgress(update)),
+    onSessionEvent: (event) => view.onSessionEvent(event),
+    close,
+  };
+}
+
 export function startAgentHttpServer(
   options: AgentHttpPackageServerOptions,
 ): AgentHttpPackageServerResult {
@@ -420,6 +593,23 @@ function controlledTuiSize(output: ControlledTuiOutputStream): StarsViewSize {
     width: Math.max(1, Math.trunc(output.columns ?? 80)),
     height: Math.max(1, Math.trunc(output.rows ?? 24)),
   };
+}
+
+function formatReadonlyProgress(update: ReadonlyAgentDisplayProgress): string {
+  const parts = [
+    update.stage,
+    update.phase,
+    update.step,
+    update.status,
+    update.message,
+  ].filter((value): value is string => Boolean(value));
+  const counters = [
+    typeof update.current === "number" && typeof update.total === "number"
+      ? `${update.current}/${update.total}`
+      : undefined,
+    typeof update.percent === "number" ? `${Math.round(update.percent)}%` : undefined,
+  ].filter((value): value is string => Boolean(value));
+  return [...parts, ...counters].join(" · ");
 }
 
 class ControlledTuiInputBlocker {
