@@ -1,0 +1,374 @@
+{
+  "question": "console_putchar 为什么使用 SBI ecall 而不是直接写 UART 寄存器？",
+  "answer": {
+    "answer": "console_putchar 使用 SBI ecall 而非直接写 UART 寄存器的根本原因有四层：\n\n1. **平台无关性 (Platform Independence)**：不同 RISC-V 平台（QEMU virt、SiFive Unleashed 等）的 UART 硬件不同，其 MMIO 基地址、寄存器布局各异。SBI (Supervisor Binary Interface) 作为 M-mode 固件层，封装了这些平台差异，使得运行在 S-mode 的 xv6 内核无需关心底层具体是哪一种 UART 控制器。module.yaml 明确将此约束写为模块不变量：\"all console output goes through SBI ecall #1\"。\n\n2. **特权级隔离 (Privilege Separation)**：内核运行在 S-mode，而硬件设备（包括 UART）的直接访问权限属于 M-mode。OpenSBI 在 M-mode 初始化硬件后，通过 ecall 机制向 S-mode 暴露一组标准化的服务接口。entry.yaml 的 state_assumptions 明确记载：\"hart 0 enters in S-mode via OpenSBI\"，即内核被 OpenSBI 带入 S-mode，此后所有硬件访问应通过 SBI ecall 委托给 M-mode。\n\n3. **设计简洁性 (Design Simplicity)**：直接写 UART 需要知道物理地址、配置 MMIO 映射、处理发送 FIFO 满等状态。而 SBI console_putchar (EID #1) 只需一条 ecall 指令即可完成字节输出，console_putchar.yaml 在 concurrency.atomicity 中指出 \"single instruction (ecall) is atomic\"，且 invariants_preserved 保证 \"no kernel memory is touched\"。这极大简化了 boot 阶段的实现。\n\n4. **xv6 架构一致性 (Architectural Consistency)**：xv6 的设计传统上将 console I/O 作为 SBI 服务消费，而非直接驱动硬件。module.yaml 在 owned_state 中声明 \"console output contract (SBI ecall)\"，表明整个 console 输出的契约建立在 SBI 之上，后续阶段可以无缝继承这一抽象。",
+    "stage_key": "boot",
+    "design_goal_alignment": [
+      "platform independence — 通过 SBI 标准接口屏蔽不同平台 UART 的硬件差异",
+      "hardware abstraction — SBI 作为 M-mode 固件抽象层，统一硬件访问方式",
+      "privilege separation — S-mode 内核通过 ecall 委托 M-mode 固件操作硬件",
+      "code simplicity — 单条 ecall 指令替代复杂的 MMIO 编程模型",
+      "xv6 architectural consistency — 遵循 xv6 将 console I/O 构建在 SBI 之上的设计传统"
+    ],
+    "citations": [
+      {
+        "source_id": "kb-feb8ef735415",
+        "title": "console_putchar.yaml",
+        "chunk_id": "kb-feb8ef735415:3"
+      },
+      {
+        "source_id": "kb-feb8ef735415",
+        "title": "console_putchar.yaml",
+        "chunk_id": "kb-feb8ef735415:6"
+      },
+      {
+        "source_id": "kb-feb8ef735415",
+        "title": "console_putchar.yaml",
+        "chunk_id": "kb-feb8ef735415:7"
+      },
+      {
+        "source_id": "kb-feb8ef735415",
+        "title": "console_putchar.yaml",
+        "chunk_id": "kb-feb8ef735415:8"
+      },
+      {
+        "source_id": "kb-ce75c7b701f9",
+        "title": "module.yaml",
+        "chunk_id": "kb-ce75c7b701f9:3"
+      },
+      {
+        "source_id": "kb-0e7ead888a35",
+        "title": "entry.yaml"
+      }
+    ],
+    "suggested_next_steps": [
+      "阅读 spec/modules/kernel/boot/ops/console_putchar.yaml 的 rely 和 guarantee 节，理解 SBI ecall 契约",
+      "阅读 spec/modules/kernel/boot/module.yaml 的 module_invariants 和 owned_state 节",
+      "阅读 spec/modules/kernel/boot/ops/entry.yaml 的 state_assumptions，确认 S-mode 入口前提",
+      "参考 RISC-V SBI 规范 v2.0 中 EID #1 (console_putchar) 的定义，理解 SBI 标准接口",
+      "在 kernel/boot.c 中检查 console_putchar 的实现，确认 ecall 的 a7/a0 寄存器约定"
+    ],
+    "allowed_snippets": [
+      "// console_putchar via SBI ecall — the canonical pattern:\n//   a0 = character byte\n//   a6 = 0 (fid for console_putchar)\n//   a7 = 1 (EID for legacy console putchar)\n//   ecall  transfers to M-mode; OpenSBI handles the actual UART write\nvoid console_putchar(int c) {\n    asm volatile(\"li a7, 1\\n\"\n                 \"li a6, 0\\n\"\n                 \"mv a0, %0\\n\"\n                 \"ecall\"\n                 :\n                 : \"r\"(c)\n                 : \"a0\", \"a6\", \"a7\", \"memory\");\n}"
+    ]
+  },
+  "kb_hits": [
+    {
+      "source": {
+        "id": "kb-feb8ef735415",
+        "title": "console_putchar.yaml",
+        "source": "spec/modules/kernel/boot/ops/console_putchar.yaml",
+        "source_kind": "project",
+        "sha256": "feb8ef735415d4611af9e5fe5fdbb072569ad08b39d6445df01febeb98b392ec",
+        "object_ref": {
+          "id": "obj-kb-feb8ef735415",
+          "uri": "s3://vos-demo/kb/kb-feb8ef735415/console_putchar.yaml",
+          "sha256": "feb8ef735415d4611af9e5fe5fdbb072569ad08b39d6445df01febeb98b392ec",
+          "content_type": "text/yaml",
+          "size": 1718,
+          "visibility": "student"
+        },
+        "added_at": "2026-06-24T18:46:46.429Z"
+      },
+      "score": 0.5454727998647472,
+      "excerpt": "operation: console_putchar stage: boot purpose: > Output a single character to the console via the SBI console-putchar extension (EID #1).",
+      "chunk_id": "kb-feb8ef735415:3",
+      "citation": {
+        "source_id": "kb-feb8ef735415",
+        "title": "console_putchar.yaml",
+        "object_ref": "s3://vos-demo/kb/kb-feb8ef735415/console_putchar.yaml",
+        "chunk_id": "kb-feb8ef735415:3"
+      }
+    },
+    {
+      "source": {
+        "id": "kb-feb8ef735415",
+        "title": "console_putchar.yaml",
+        "source": "spec/modules/kernel/boot/ops/console_putchar.yaml",
+        "source_kind": "project",
+        "sha256": "feb8ef735415d4611af9e5fe5fdbb072569ad08b39d6445df01febeb98b392ec",
+        "object_ref": {
+          "id": "obj-kb-feb8ef735415",
+          "uri": "s3://vos-demo/kb/kb-feb8ef735415/console_putchar.yaml",
+          "sha256": "feb8ef735415d4611af9e5fe5fdbb072569ad08b39d6445df01febeb98b392ec",
+          "content_type": "text/yaml",
+          "size": 1718,
+          "visibility": "student"
+        },
+        "added_at": "2026-06-24T18:46:46.429Z"
+      },
+      "score": 0.5366818797615829,
+      "excerpt": "guarantee: returns: - void state_updates: [] side_effects: - one byte transmitted to UART via SBI emitted_events: - none",
+      "chunk_id": "kb-feb8ef735415:7",
+      "citation": {
+        "source_id": "kb-feb8ef735415",
+        "title": "console_putchar.yaml",
+        "object_ref": "s3://vos-demo/kb/kb-feb8ef735415/console_putchar.yaml",
+        "chunk_id": "kb-feb8ef735415:7"
+      }
+    },
+    {
+      "source": {
+        "id": "kb-feb8ef735415",
+        "title": "console_putchar.yaml",
+        "source": "spec/modules/kernel/boot/ops/console_putchar.yaml",
+        "source_kind": "project",
+        "sha256": "feb8ef735415d4611af9e5fe5fdbb072569ad08b39d6445df01febeb98b392ec",
+        "object_ref": {
+          "id": "obj-kb-feb8ef735415",
+          "uri": "s3://vos-demo/kb/kb-feb8ef735415/console_putchar.yaml",
+          "sha256": "feb8ef735415d4611af9e5fe5fdbb072569ad08b39d6445df01febeb98b392ec",
+          "content_type": "text/yaml",
+          "size": 1718,
+          "visibility": "student"
+        },
+        "added_at": "2026-06-24T18:46:46.429Z"
+      },
+      "score": 0.5358917306297932,
+      "excerpt": "e is initialized (OpenSBI before S-mode entry) callable_interfaces: - sbi_console_putchar (inline asm ecall) resource_assumptions: - none lock_assumptions: - none",
+      "chunk_id": "kb-feb8ef735415:6",
+      "citation": {
+        "source_id": "kb-feb8ef735415",
+        "title": "console_putchar.yaml",
+        "object_ref": "s3://vos-demo/kb/kb-feb8ef735415/console_putchar.yaml",
+        "chunk_id": "kb-feb8ef735415:6"
+      }
+    },
+    {
+      "source": {
+        "id": "kb-feb8ef735415",
+        "title": "console_putchar.yaml",
+        "source": "spec/modules/kernel/boot/ops/console_putchar.yaml",
+        "source_kind": "project",
+        "sha256": "feb8ef735415d4611af9e5fe5fdbb072569ad08b39d6445df01febeb98b392ec",
+        "object_ref": {
+          "id": "obj-kb-feb8ef735415",
+          "uri": "s3://vos-demo/kb/kb-feb8ef735415/console_putchar.yaml",
+          "sha256": "feb8ef735415d4611af9e5fe5fdbb072569ad08b39d6445df01febeb98b392ec",
+          "content_type": "text/yaml",
+          "size": 1718,
+          "visibility": "student"
+        },
+        "added_at": "2026-06-24T18:46:46.429Z"
+      },
+      "score": 0.5302310282007091,
+      "excerpt": "preconditions: - argument byte is a valid ASCII or UTF-8 code unit postconditions: - byte is queued or emitted on the SBI debug console invariants_preserved: - no kernel memory is touched failure_semantics: - \"SBI spec: putchar may",
+      "chunk_id": "kb-feb8ef735415:8",
+      "citation": {
+        "source_id": "kb-feb8ef735415",
+        "title": "console_putchar.yaml",
+        "object_ref": "s3://vos-demo/kb/kb-feb8ef735415/console_putchar.yaml",
+        "chunk_id": "kb-feb8ef735415:8"
+      }
+    },
+    {
+      "source": {
+        "id": "kb-ce75c7b701f9",
+        "title": "module.yaml",
+        "source": "spec/modules/kernel/boot/module.yaml",
+        "source_kind": "project",
+        "sha256": "ce75c7b701f901faef85027eef34c33a47b3cdba88b780bcbe6e97bfaeb8b9a1",
+        "object_ref": {
+          "id": "obj-kb-ce75c7b701f9",
+          "uri": "s3://vos-demo/kb/kb-ce75c7b701f9/module.yaml",
+          "sha256": "ce75c7b701f901faef85027eef34c33a47b3cdba88b780bcbe6e97bfaeb8b9a1",
+          "content_type": "text/yaml",
+          "size": 986,
+          "visibility": "student"
+        },
+        "added_at": "2026-06-24T18:46:45.531Z"
+      },
+      "score": 0.520328801886173,
+      "excerpt": "(SBI ecall) exported_interfaces: - entry - kernel_main - boot_banner - console_putchar - console_write - shutdown imported_interfaces: [] module_invariants: - boot banner is printable without heap allocation - boot path rem",
+      "chunk_id": "kb-ce75c7b701f9:3",
+      "citation": {
+        "source_id": "kb-ce75c7b701f9",
+        "title": "module.yaml",
+        "object_ref": "s3://vos-demo/kb/kb-ce75c7b701f9/module.yaml",
+        "chunk_id": "kb-ce75c7b701f9:3"
+      }
+    }
+  ],
+  "object_manifest": {
+    "version": 1,
+    "objects": [
+      {
+        "id": "obj-kb-524874a04941",
+        "uri": "s3://vos-demo/kb/kb-524874a04941/shutdown.yaml",
+        "sha256": "524874a049414c4e52e1d5db92fc120acd6912ed22cb45453f00340e5a8672d8",
+        "content_type": "text/yaml",
+        "size": 1626,
+        "visibility": "student",
+        "content": "id: kernel/boot.shutdown\n\nmodule: kernel/boot\n\noperation: shutdown\nstage: boot\npurpose: >\n  Halt the machine via the SBI System Reset extension (EID\n  #0x53525354) with type SHUTDOWN (0x0).\n\nrelated_slice: slice-01-boot\nrelated_adr: null\ndepends_on:\n  requires_modules:\n    - kernel/boot\n\n  requires_ops: []\n\nrely:\n  state_assumptions:\n    - SBI firmware is initialized\n  callable_interfaces:\n    - sbi_system_reset (inline asm ecall)\n  resource_assumptions:\n    - none\n  lock_assumptions:\n    - none\n\nguarantee:\n  returns:\n    - does not return (noreturn)\n  state_updates: []\n  side_effects:\n    - system halt via SBI SRST\n  emitted_events:\n    - none\n\npreconditions:\n  - system is in a valid state for power-off\npostconditions:\n  - execution terminates; QEMU exits\ninvariants_preserved:\n  - no further instructions execute\nfailure_semantics:\n  - if SBI SRST fails, fallback infinite loop with wfi\n\nconcurrency:\n  atomicity: not applicable\n  lock_order: []\n  interrupt_state: irrelevant (does not return)\n  wait_wakeup_rules: []\n\nsecurity:\n  authority_check: none\n  isolation_boundary: none\n  user_pointer_policy: none\n\nobservability:\n  traces: []\n  counters: []\n  expected_logs: []\n\ntest_obligations:\n  public:\n    - shutdown_reaches_qemu_exit\n  generated:\n    - qemu_exits_on_shutdown\n  hidden_tags: []\n\ncodegen:\n  targets:\n    - kind: symbol\n      path: kernel/boot.c\n      symbols: [shutdown]\n      owner: kernel/boot\n      mode: create\n  forbidden_changes:\n    - do not modify code outside the marked region\n    - do not create helper files\n    - do not modify build scripts\n  required_followup_checks:\n    - make build\n"
+      },
+      {
+        "id": "obj-kb-1049eda305f6",
+        "uri": "s3://vos-demo/kb/kb-1049eda305f6/kernel_main.yaml",
+        "sha256": "1049eda305f682ea17cb1fad8dc3f48a1702cfdf5f1739b1ad5daeae6c8df32f",
+        "content_type": "text/yaml",
+        "size": 2128,
+        "visibility": "student",
+        "content": "id: kernel/boot.kernel_main\n\nmodule: kernel/boot\n\noperation: kernel_main\nstage: boot\npurpose: >\n  The kernel's C entry point for Phase 1 (boot stage).\n  Prints the boot banner via console_write, then halts\n  the machine via SBI shutdown. Future stages will add\n  subsystem initialization calls.\n\nrelated_slice: slice-01-boot\nrelated_adr: null\ndepends_on:\n  requires_modules:\n    - kernel/boot\n\n    - kernel/headers\n\n  requires_ops:\n    - kernel/boot.boot_banner\n\n    - kernel/boot.console_write\n\n    - kernel/boot.shutdown\n\n\nrely:\n  state_assumptions:\n    - entered from start() with valid stack and zeroed BSS\n    - single hart execution\n  callable_interfaces:\n    - boot_banner, console_write, shutdown\n  resource_assumptions:\n    - SBI firmware is initialized\n  lock_assumptions:\n    - none during boot phase\n\nguarantee:\n  returns:\n    - void (never returns; calls shutdown)\n  state_updates: []\n  side_effects:\n    - boot banner printed to console via SBI ecall\n    - system halted via SBI SRST\n  emitted_events:\n    - boot banner printed to console\n\npreconditions:\n  - called exactly once at boot\n  - SBI firmware (OpenSBI) is functional\npostconditions:\n  - boot banner has been printed\n  - system has been shut down\ninvariants_preserved:\n  - boot banner printed before shutdown\nfailure_semantics:\n  - shutdown does not return\n\nconcurrency:\n  atomicity: single-hart boot sequence\n  lock_order: []\n  interrupt_state: disabled during boot\n  wait_wakeup_rules: []\n\nsecurity:\n  authority_check: none\n  isolation_boundary: none (pre-paging, single stage)\n  user_pointer_policy: none\n\nobservability:\n  traces: []\n  counters: []\n  expected_logs:\n    - boot banner printed before shutdown\n\ntest_obligations:\n  public:\n    - kernel_main_boots\n    - kernel_main_banner_printed\n  generated: []\n  hidden_tags: []\n\ncodegen:\n  targets:\n    - kind: symbol\n      path: kernel/boot.c\n      symbols: [kernel_main]\n      owner: kernel/boot\n      mode: create\n  forbidden_changes:\n    - do not modify code outside the marked region\n    - do not create helper files\n    - do not modify build scripts\n  required_followup_checks:\n    - make build\n"
+      },
+      {
+        "id": "obj-kb-0e7ead888a35",
+        "uri": "s3://vos-demo/kb/kb-0e7ead888a35/entry.yaml",
+        "sha256": "0e7ead888a357a8a18651517ce0e29ce08c4653f8c322fc4ed80a32773e360c2",
+        "content_type": "text/yaml",
+        "size": 1931,
+        "visibility": "student",
+        "content": "id: kernel/boot.entry\n\nmodule: kernel/boot\n\noperation: entry\nstage: boot\npurpose: >\n  RISC-V assembly entry point (_start). Set up the boot\n  hart's stack pointer, zero the BSS section, and jump to\n  kernel_main. This is the first code executed after\n  OpenSBI hands control to the kernel.\n\nrelated_slice: slice-01-boot\nrelated_adr: null\ndepends_on:\n  requires_modules:\n    - kernel/boot\n\n    - kernel/headers\n\n  requires_ops: []\n\nrely:\n  state_assumptions:\n    - hart 0 enters in S-mode via OpenSBI\n    - no other harts are active\n    - memory is accessible from 0x80000000\n  callable_interfaces:\n    - kernel_main (C entry)\n  resource_assumptions:\n    - stack space reserved in BSS\n  lock_assumptions:\n    - none\n\nguarantee:\n  returns:\n    - void (never returns; transfers to kernel_main)\n  state_updates: []\n  side_effects:\n    - sp set to stack0+STACK_SIZE\n    - BSS section zeroed\n    - control transferred to kernel_main\n  emitted_events:\n    - none\n\npreconditions:\n  - hart 0 is in S-mode\n  - satp is not yet configured\npostconditions:\n  - C environment is set up (stack + BSS)\ninvariants_preserved:\n  - single-hart execution\nfailure_semantics:\n  - undefined if BSS or stack overlap with kernel image\n\nconcurrency:\n  atomicity: single-hart boot\n  lock_order: []\n  interrupt_state: all interrupts disabled\n  wait_wakeup_rules: []\n\nsecurity:\n  authority_check: none\n  isolation_boundary: none (pre-paging)\n  user_pointer_policy: none\n\nobservability:\n  traces: []\n  counters: []\n  expected_logs: []\n\ntest_obligations:\n  public:\n    - entry_bss_zeroed\n    - entry_stack_valid\n  generated: []\n  hidden_tags: []\n\ncodegen:\n  targets:\n    - kind: symbol\n      path: kernel/entry.S\n      symbols: [entry]\n      owner: kernel/boot\n      mode: create\n  forbidden_changes:\n    - do not modify code outside the marked region\n    - do not create helper files\n    - do not modify build scripts\n  required_followup_checks:\n    - make build\n"
+      },
+      {
+        "id": "obj-kb-96c21626e80e",
+        "uri": "s3://vos-demo/kb/kb-96c21626e80e/console_write.yaml",
+        "sha256": "96c21626e80eaa756a336b109057824866e5d15cea021b040dbd1e59081f7193",
+        "content_type": "text/yaml",
+        "size": 1871,
+        "visibility": "student",
+        "content": "id: kernel/boot.console_write\n\nmodule: kernel/boot\n\noperation: console_write\nstage: boot\npurpose: >\n  Write a null-terminated string to the console by repeatedly\n  calling console_putchar for each non-null byte.\n\nrelated_slice: slice-01-boot\nrelated_adr: null\ndepends_on:\n  requires_modules:\n    - kernel/boot\n\n  requires_ops:\n    - kernel/boot.console_putchar\n\n\nrely:\n  state_assumptions:\n    - null-terminated string pointer is valid\n  callable_interfaces:\n    - console_putchar\n  resource_assumptions:\n    - stack is available for call frames\n  lock_assumptions:\n    - none\n\nguarantee:\n  returns:\n    - void\n  state_updates: []\n  side_effects:\n    - each non-null byte emitted via console_putchar\n  emitted_events:\n    - none\n\npreconditions:\n  - input is a valid, non-null pointer to null-terminated char array\npostconditions:\n  - all bytes up to the null terminator are transmitted\ninvariants_preserved:\n  - no kernel memory is mutated\nfailure_semantics:\n  - null pointer input is undefined behaviour (caller contract)\n  - partial output if SBI putchar drops bytes\n\nconcurrency:\n  atomicity: intraword (per-character ecall)\n  lock_order: []\n  interrupt_state: caller decides\n  wait_wakeup_rules: []\n\nsecurity:\n  authority_check: none\n  isolation_boundary: none\n  user_pointer_policy: never called with user pointers\n\nobservability:\n  traces: []\n  counters: []\n  expected_logs: []\n\ntest_obligations:\n  public:\n    - console_write_empty_string\n    - console_write_non_empty\n  generated:\n    - console_write_no_null_terminator\n  hidden_tags: []\n\ncodegen:\n  targets:\n    - kind: symbol\n      path: kernel/boot.c\n      symbols: [console_write]\n      owner: kernel/boot\n      mode: create\n  forbidden_changes:\n    - do not modify code outside the marked region\n    - do not create helper files\n    - do not modify build scripts\n  required_followup_checks:\n    - make build\n"
+      },
+      {
+        "id": "obj-kb-feb8ef735415",
+        "uri": "s3://vos-demo/kb/kb-feb8ef735415/console_putchar.yaml",
+        "sha256": "feb8ef735415d4611af9e5fe5fdbb072569ad08b39d6445df01febeb98b392ec",
+        "content_type": "text/yaml",
+        "size": 1718,
+        "visibility": "student",
+        "content": "id: kernel/boot.console_putchar\n\nmodule: kernel/boot\n\noperation: console_putchar\nstage: boot\npurpose: >\n  Output a single character to the console via the SBI\n  console-putchar extension (EID #1).\n\nrelated_slice: slice-01-boot\nrelated_adr: null\ndepends_on:\n  requires_modules:\n    - kernel/boot\n\n  requires_ops: []\n\nrely:\n  state_assumptions:\n    - SBI firmware is initialized (OpenSBI before S-mode entry)\n  callable_interfaces:\n    - sbi_console_putchar (inline asm ecall)\n  resource_assumptions:\n    - none\n  lock_assumptions:\n    - none\n\nguarantee:\n  returns:\n    - void\n  state_updates: []\n  side_effects:\n    - one byte transmitted to UART via SBI\n  emitted_events:\n    - none\n\npreconditions:\n  - argument byte is a valid ASCII or UTF-8 code unit\npostconditions:\n  - byte is queued or emitted on the SBI debug console\ninvariants_preserved:\n  - no kernel memory is touched\nfailure_semantics:\n  - \"SBI spec: putchar may drop bytes if buffer is full\"\n  - no error is returned\n\nconcurrency:\n  atomicity: single instruction (ecall) is atomic\n  lock_order: []\n  interrupt_state: caller decides\n  wait_wakeup_rules: []\n\nsecurity:\n  authority_check: none\n  isolation_boundary: none\n  user_pointer_policy: none\n\nobservability:\n  traces: []\n  counters: []\n  expected_logs: []\n\ntest_obligations:\n  public:\n    - console_putchar_smoke\n  generated:\n    - putchar_buffer_roundtrip\n  hidden_tags: []\n\ncodegen:\n  targets:\n    - kind: symbol\n      path: kernel/boot.c\n      symbols: [console_putchar]\n      owner: kernel/boot\n      mode: create\n  forbidden_changes:\n    - do not modify code outside the marked region\n    - do not create helper files\n    - do not modify build scripts\n  required_followup_checks:\n    - make build\n"
+      },
+      {
+        "id": "obj-kb-8ea0b0798d3d",
+        "uri": "s3://vos-demo/kb/kb-8ea0b0798d3d/boot_banner.yaml",
+        "sha256": "8ea0b0798d3d95b5cd4a5e6a20b67187e17357caa5df04f5fab0604fdf12cfcf",
+        "content_type": "text/yaml",
+        "size": 2056,
+        "visibility": "student",
+        "content": "id: kernel/boot.boot_banner\n\nmodule: kernel/boot\n\noperation: boot_banner\nstage: boot\npurpose: >\n  Provide a deterministic boot banner string printed during\n  early kernel startup before any subsystem initialization.\n\nrelated_slice: slice-01-boot\nrelated_adr: null\ndepends_on:\n  requires_modules:\n    - kernel/boot\n\n  requires_ops: []\n\nrely:\n  state_assumptions:\n    - boot banner is consumed during early startup before heap init\n  callable_interfaces:\n    - boot_banner (returns const char *)\n  resource_assumptions:\n    - stack is available\n  lock_assumptions:\n    - none\n\nguarantee:\n  returns:\n    - const char * pointing to a null-terminated static banner\n  state_updates: []\n  side_effects:\n    - none\n  emitted_events:\n    - none\n\npreconditions:\n  - implementation must be valid in a freestanding (no_std) context\npostconditions:\n  - returned string is static and byte-for-byte printable via UART\ninvariants_preserved:\n  - no global state is mutated\nfailure_semantics:\n  - do not panic or abort during normal banner retrieval\n\nconcurrency:\n  atomicity: not applicable (single-hart, early boot)\n  lock_order: []\n  interrupt_state: interrupts disabled during boot\n  wait_wakeup_rules: []\n\nsecurity:\n  authority_check: none\n  isolation_boundary: none (pre-user context)\n  user_pointer_policy: none\n\nobservability:\n  traces: []\n  counters: []\n  expected_logs:\n    - banner string appears in UART output before XV6_BOOT_OK\n\ntest_obligations:\n  public:\n    - bootstrap_banner_not_null\n    - bootstrap_banner_length_positive\n  generated:\n    - boot_banner_printable\n  hidden_tags:\n    - banner_does_not_panic\n\ncodegen:\n  targets:\n    - kind: symbol\n      path: kernel/boot.c\n      symbols: [boot_banner]\n      owner: kernel/boot\n      mode: create\n  forbidden_changes:\n    - do not modify code outside the marked region\n    - do not create helper files\n    - do not modify build scripts or linker settings\n    - do not use format machinery (sprintf, itoa, etc.)\n  required_followup_checks:\n    - make build\n    - check that banner string is null-terminated\n"
+      },
+      {
+        "id": "obj-kb-ce75c7b701f9",
+        "uri": "s3://vos-demo/kb/kb-ce75c7b701f9/module.yaml",
+        "sha256": "ce75c7b701f901faef85027eef34c33a47b3cdba88b780bcbe6e97bfaeb8b9a1",
+        "content_type": "text/yaml",
+        "size": 986,
+        "visibility": "student",
+        "content": "id: kernel/boot\n\nmodule: kernel/boot\n\nstage: boot\npurpose: >\n  Early boot path: stack setup, BSS zeroing, SBI console\n  abstraction, boot banner printing, and graceful shutdown.\nrelated_slices:\n  - slice-01-boot\nrelated_adrs: []\nowned_state:\n  - boot banner text (static)\n  - console output contract (SBI ecall)\nexported_interfaces:\n  - entry\n  - kernel_main\n  - boot_banner\n  - console_putchar\n  - console_write\n  - shutdown\nimported_interfaces: []\nmodule_invariants:\n  - boot banner is printable without heap allocation\n  - boot path remains no_std and side-effect free apart from UART\n  - all console output goes through SBI ecall #1\nerror_model:\n  - console_putchar is infallible in SBI spec\n  - shutdown does not return\nresource_lifetime_rules:\n  - boot banner is a static string with infinite lifetime\nsecurity_boundary:\n  - no user/kernel boundary exists during boot\ntest_surfaces:\n  - boot banner content verification\n  - console output smoke test\n  - shutdown signal detection\n"
+      }
+    ],
+    "sources": [
+      {
+        "id": "kb-524874a04941",
+        "title": "shutdown.yaml",
+        "source": "spec/modules/kernel/boot/ops/shutdown.yaml",
+        "source_kind": "project",
+        "sha256": "524874a049414c4e52e1d5db92fc120acd6912ed22cb45453f00340e5a8672d8",
+        "object_ref": {
+          "id": "obj-kb-524874a04941",
+          "uri": "s3://vos-demo/kb/kb-524874a04941/shutdown.yaml",
+          "sha256": "524874a049414c4e52e1d5db92fc120acd6912ed22cb45453f00340e5a8672d8",
+          "content_type": "text/yaml",
+          "size": 1626,
+          "visibility": "student"
+        },
+        "added_at": "2026-06-24T18:46:48.575Z"
+      },
+      {
+        "id": "kb-1049eda305f6",
+        "title": "kernel_main.yaml",
+        "source": "spec/modules/kernel/boot/ops/kernel_main.yaml",
+        "source_kind": "project",
+        "sha256": "1049eda305f682ea17cb1fad8dc3f48a1702cfdf5f1739b1ad5daeae6c8df32f",
+        "object_ref": {
+          "id": "obj-kb-1049eda305f6",
+          "uri": "s3://vos-demo/kb/kb-1049eda305f6/kernel_main.yaml",
+          "sha256": "1049eda305f682ea17cb1fad8dc3f48a1702cfdf5f1739b1ad5daeae6c8df32f",
+          "content_type": "text/yaml",
+          "size": 2128,
+          "visibility": "student"
+        },
+        "added_at": "2026-06-24T18:46:47.974Z"
+      },
+      {
+        "id": "kb-0e7ead888a35",
+        "title": "entry.yaml",
+        "source": "spec/modules/kernel/boot/ops/entry.yaml",
+        "source_kind": "project",
+        "sha256": "0e7ead888a357a8a18651517ce0e29ce08c4653f8c322fc4ed80a32773e360c2",
+        "object_ref": {
+          "id": "obj-kb-0e7ead888a35",
+          "uri": "s3://vos-demo/kb/kb-0e7ead888a35/entry.yaml",
+          "sha256": "0e7ead888a357a8a18651517ce0e29ce08c4653f8c322fc4ed80a32773e360c2",
+          "content_type": "text/yaml",
+          "size": 1931,
+          "visibility": "student"
+        },
+        "added_at": "2026-06-24T18:46:47.422Z"
+      },
+      {
+        "id": "kb-96c21626e80e",
+        "title": "console_write.yaml",
+        "source": "spec/modules/kernel/boot/ops/console_write.yaml",
+        "source_kind": "project",
+        "sha256": "96c21626e80eaa756a336b109057824866e5d15cea021b040dbd1e59081f7193",
+        "object_ref": {
+          "id": "obj-kb-96c21626e80e",
+          "uri": "s3://vos-demo/kb/kb-96c21626e80e/console_write.yaml",
+          "sha256": "96c21626e80eaa756a336b109057824866e5d15cea021b040dbd1e59081f7193",
+          "content_type": "text/yaml",
+          "size": 1871,
+          "visibility": "student"
+        },
+        "added_at": "2026-06-24T18:46:46.936Z"
+      },
+      {
+        "id": "kb-feb8ef735415",
+        "title": "console_putchar.yaml",
+        "source": "spec/modules/kernel/boot/ops/console_putchar.yaml",
+        "source_kind": "project",
+        "sha256": "feb8ef735415d4611af9e5fe5fdbb072569ad08b39d6445df01febeb98b392ec",
+        "object_ref": {
+          "id": "obj-kb-feb8ef735415",
+          "uri": "s3://vos-demo/kb/kb-feb8ef735415/console_putchar.yaml",
+          "sha256": "feb8ef735415d4611af9e5fe5fdbb072569ad08b39d6445df01febeb98b392ec",
+          "content_type": "text/yaml",
+          "size": 1718,
+          "visibility": "student"
+        },
+        "added_at": "2026-06-24T18:46:46.429Z"
+      },
+      {
+        "id": "kb-8ea0b0798d3d",
+        "title": "boot_banner.yaml",
+        "source": "spec/modules/kernel/boot/ops/boot_banner.yaml",
+        "source_kind": "project",
+        "sha256": "8ea0b0798d3d95b5cd4a5e6a20b67187e17357caa5df04f5fab0604fdf12cfcf",
+        "object_ref": {
+          "id": "obj-kb-8ea0b0798d3d",
+          "uri": "s3://vos-demo/kb/kb-8ea0b0798d3d/boot_banner.yaml",
+          "sha256": "8ea0b0798d3d95b5cd4a5e6a20b67187e17357caa5df04f5fab0604fdf12cfcf",
+          "content_type": "text/yaml",
+          "size": 2056,
+          "visibility": "student"
+        },
+        "added_at": "2026-06-24T18:46:45.871Z"
+      },
+      {
+        "id": "kb-ce75c7b701f9",
+        "title": "module.yaml",
+        "source": "spec/modules/kernel/boot/module.yaml",
+        "source_kind": "project",
+        "sha256": "ce75c7b701f901faef85027eef34c33a47b3cdba88b780bcbe6e97bfaeb8b9a1",
+        "object_ref": {
+          "id": "obj-kb-ce75c7b701f9",
+          "uri": "s3://vos-demo/kb/kb-ce75c7b701f9/module.yaml",
+          "sha256": "ce75c7b701f901faef85027eef34c33a47b3cdba88b780bcbe6e97bfaeb8b9a1",
+          "content_type": "text/yaml",
+          "size": 986,
+          "visibility": "student"
+        },
+        "added_at": "2026-06-24T18:46:45.531Z"
+      }
+    ]
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "status": "ok",
+  "requirements": [
+    {
+      "id": "verify-boot-banner",
+      "status": "ok",
+      "requiredTests": [
+        "bootstrap_banner_not_null",
+        "bootstrap_banner_length_positive",
+        "boot_banner_printable"
+      ],
+      "requiredArtifacts": [
+        "build/qemu_boot.log"
+      ],
+      "tests": [
+        {
+          "id": "bootstrap_banner_not_null",
+          "status": "ok",
+          "output": "\n"
+        },
+        {
+          "id": "bootstrap_banner_length_positive",
+          "status": "ok",
+          "output": "\n"
+        },
+        {
+          "id": "boot_banner_printable",
+          "status": "ok",
+          "output": "\n"
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "build/qemu_boot.log",
+          "status": "ok"
+        }
+      ]
+    }
+  ]
+}
