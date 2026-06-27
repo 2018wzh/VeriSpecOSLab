@@ -1,6 +1,8 @@
 import type { ChatClient } from "../agent/loop.ts";
 import type { Config } from "../config.ts";
 import { createAnthropicChatClient } from "./anthropic-client.ts";
+import { createDeepSeekChatClient } from "./deepseek-client.ts";
+import { createOpenAICompatibleChatClient } from "./openai-compatible-client.ts";
 import { createOpenAIChatClient } from "./openai-client.ts";
 import {
   createRoutedChatClient,
@@ -18,8 +20,17 @@ const ANTHROPIC_PREFIXES = [
   "anthropic:",
   "anthropic/",
 ];
+const DEEPSEEK_PREFIXES = ["deepseek:", "deepseek/", "deepseek-"];
+const OPENAI_COMPATIBLE_PREFIXES = [
+  "openai-compatible:",
+  "openai-compatible/",
+  "compat:",
+  "compat/",
+];
 const OPENAI_PREFIXES = ["gpt", "o1", "o3", "o4", "openai:", "openai/"];
 const STRIPPED_ANTHROPIC_PREFIXES = ["anthropic:"];
+const STRIPPED_DEEPSEEK_PREFIXES = ["deepseek:"];
+const STRIPPED_OPENAI_COMPATIBLE_PREFIXES = ["openai-compatible:", "compat:"];
 const STRIPPED_OPENAI_PREFIXES = ["openai:"];
 
 /**
@@ -28,7 +39,9 @@ const STRIPPED_OPENAI_PREFIXES = ["openai:"];
  * model-name prefix:
  *
  *   claude*, opus*, sonnet*, haiku*, anthropic:* → Anthropic
- *   gpt*, o1*, o3*, o4*, openai:*               → OpenAI-compatible
+ *   deepseek*, deepseek:*                        → DeepSeek
+ *   openai-compatible:*, compat:*               → OpenAI-compatible
+ *   gpt*, o1*, o3*, o4*, openai:*               → OpenAI
  *
  * Colon prefixes are routing hints and are stripped before the SDK
  * call. Slash prefixes such as `anthropic/claude-*` are provider/model
@@ -55,6 +68,34 @@ export function createChatClientFromConfig(config: Config): ChatClient {
     routes.push({
       match: matchesPrefix(...ANTHROPIC_PREFIXES),
       client: missingProviderClient("Anthropic", "ANTHROPIC_API_KEY"),
+    });
+  }
+  if (config.deepseek) {
+    const client = createDeepSeekChatClient(config.deepseek);
+    routes.push({
+      match: matchesPrefix(...DEEPSEEK_PREFIXES),
+      client,
+      rewriteModel: stripPrefix(...STRIPPED_DEEPSEEK_PREFIXES),
+    });
+    onlyConfiguredClient = onlyConfiguredClient ? undefined : client;
+  } else {
+    routes.push({
+      match: matchesPrefix(...DEEPSEEK_PREFIXES),
+      client: missingProviderClient("DeepSeek", "DEEPSEEK_API_KEY"),
+    });
+  }
+  if (config.openaiCompatible) {
+    const client = createOpenAICompatibleChatClient(config.openaiCompatible);
+    routes.push({
+      match: matchesPrefix(...OPENAI_COMPATIBLE_PREFIXES),
+      client,
+      rewriteModel: stripPrefix(...STRIPPED_OPENAI_COMPATIBLE_PREFIXES),
+    });
+    onlyConfiguredClient = onlyConfiguredClient ? undefined : client;
+  } else {
+    routes.push({
+      match: matchesPrefix(...OPENAI_COMPATIBLE_PREFIXES),
+      client: missingProviderClient("OpenAI-compatible", "OPENAI_COMPATIBLE_API_KEY"),
     });
   }
   if (config.openai) {

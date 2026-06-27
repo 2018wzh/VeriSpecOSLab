@@ -14,6 +14,18 @@ function fakeBearerProvider() {
   return { authToken: "fake", baseURL: DEAD_URL, maxRetries: 0 };
 }
 
+function fakeCompatibleProvider() {
+  return {
+    apiKey: "fake",
+    baseURL: DEAD_URL,
+    maxRetries: 0,
+    responseFormat: "json_object" as const,
+    reasoningEffort: "off" as const,
+    streamUsage: "off" as const,
+    input: { text: true, image: false, pdf: false },
+  };
+}
+
 function emptyRequest(model: string) {
   return {
     model,
@@ -201,7 +213,7 @@ describe("createChatClientFromConfig", () => {
     }
   });
 
-  test("passes optional JSON schema response format to OpenAI-compatible provider", async () => {
+  test("passes optional JSON schema response format to official OpenAI provider", async () => {
     const bodies: unknown[] = [];
     const server = Bun.serve({
       port: 0,
@@ -263,6 +275,370 @@ describe("createChatClientFromConfig", () => {
           },
         },
       });
+    } finally {
+      await server.stop(true);
+    }
+  });
+
+  test("OpenAI-compatible provider defaults JSON schema response format to JSON object mode", async () => {
+    const bodies: unknown[] = [];
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        bodies.push(await req.json());
+        return Response.json({
+          id: "chatcmpl-test",
+          object: "chat.completion",
+          created: 0,
+          model: "llama",
+          choices: [{
+            index: 0,
+            finish_reason: "stop",
+            message: { role: "assistant", content: "{\"summary\":\"ok\"}" },
+          }],
+        });
+      },
+    });
+
+    try {
+      const chat = createChatClientFromConfig({
+        defaultMode: "smart",
+        modes: { smart: { model: "llama" } },
+        tools: { disabled: [] },
+        openaiCompatible: {
+          apiKey: "fake",
+          baseURL: `http://127.0.0.1:${server.port}/v1`,
+          maxRetries: 0,
+          responseFormat: "json_object",
+          reasoningEffort: "off",
+          streamUsage: "off",
+          input: { text: true, image: false, pdf: false },
+        },
+      });
+
+      await chat.chat({
+        ...emptyRequest("compat:llama"),
+        reasoningEffort: "high",
+        responseFormat: {
+          type: "json_schema",
+          json_schema: { name: "answer", strict: true, schema: { type: "object" } },
+        },
+      });
+
+      expect((bodies[0] as { model?: unknown }).model).toBe("llama");
+      expect((bodies[0] as { response_format?: unknown }).response_format).toEqual({
+        type: "json_object",
+      });
+      expect((bodies[0] as { reasoning_effort?: unknown }).reasoning_effort).toBeUndefined();
+    } finally {
+      await server.stop(true);
+    }
+  });
+
+  test("OpenAI-compatible provider can preserve or suppress response format", async () => {
+    const bodies: unknown[] = [];
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        bodies.push(await req.json());
+        return Response.json({
+          id: "chatcmpl-test",
+          object: "chat.completion",
+          created: 0,
+          model: "llama",
+          choices: [{
+            index: 0,
+            finish_reason: "stop",
+            message: { role: "assistant", content: "ok" },
+          }],
+        });
+      },
+    });
+
+    try {
+      const schemaFormat = {
+        type: "json_schema",
+        json_schema: { name: "answer", strict: true, schema: { type: "object" } },
+      };
+      for (const responseFormat of ["json_schema", "none"] as const) {
+        const chat = createChatClientFromConfig({
+          defaultMode: "smart",
+          modes: { smart: { model: "llama" } },
+          tools: { disabled: [] },
+          openaiCompatible: {
+            apiKey: "fake",
+            baseURL: `http://127.0.0.1:${server.port}/v1`,
+            maxRetries: 0,
+            responseFormat,
+            reasoningEffort: "off",
+            streamUsage: "off",
+            input: { text: true, image: false, pdf: false },
+          },
+        });
+        await chat.chat({
+          ...emptyRequest("compat:llama"),
+          responseFormat: schemaFormat,
+        });
+      }
+
+      expect((bodies[0] as { response_format?: unknown }).response_format).toEqual(schemaFormat);
+      expect((bodies[1] as { response_format?: unknown }).response_format).toBeUndefined();
+    } finally {
+      await server.stop(true);
+    }
+  });
+
+  test("OpenAI-compatible provider gates reasoning effort, stream usage, headers, and capabilities", async () => {
+    const bodies: unknown[] = [];
+    const headerValues: Array<string | null> = [];
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        bodies.push(await req.json());
+        headerValues.push(req.headers.get("x-provider"));
+        return new Response([
+          "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"llama\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"}}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":2,\"total_tokens\":3}}\n\n",
+          "data: [DONE]\n\n",
+        ].join(""), {
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+    });
+
+    try {
+      const chat = createChatClientFromConfig({
+        defaultMode: "smart",
+        modes: { smart: { model: "llama" } },
+        tools: { disabled: [] },
+        openaiCompatible: {
+          apiKey: "fake",
+          baseURL: `http://127.0.0.1:${server.port}/v1`,
+          maxRetries: 0,
+          responseFormat: "json_object",
+          reasoningEffort: "passthrough",
+          streamUsage: "include_usage",
+          input: { text: true, image: true, pdf: false },
+          extraHeaders: { "x-provider": "compat" },
+        },
+      });
+      const usageEvents: unknown[] = [];
+
+      await chat.chat({
+        ...emptyRequest("openai-compatible:llama"),
+        reasoningEffort: "medium",
+        onEvent: () => {},
+        onUsage: (usage) => {
+          usageEvents.push(usage);
+        },
+      });
+
+      expect(chatClientCapabilities(chat, "openai-compatible:llama").input).toEqual({
+        text: true,
+        image: true,
+        pdf: false,
+      });
+      expect((bodies[0] as { reasoning_effort?: unknown }).reasoning_effort).toBe("medium");
+      expect((bodies[0] as { stream_options?: unknown }).stream_options).toEqual({
+        include_usage: true,
+      });
+      expect(headerValues).toEqual(["compat"]);
+      expect(usageEvents[0]).toEqual({
+        inputTokens: 1,
+        outputTokens: 2,
+        totalTokens: 3,
+      });
+    } finally {
+      await server.stop(true);
+    }
+  });
+
+  test("maps JSON schema response format to DeepSeek JSON object mode", async () => {
+    const bodies: unknown[] = [];
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        bodies.push(await req.json());
+        return Response.json({
+          id: "chatcmpl-test",
+          object: "chat.completion",
+          created: 0,
+          model: "deepseek-chat",
+          choices: [{
+            index: 0,
+            finish_reason: "stop",
+            message: { role: "assistant", content: "{\"summary\":\"ok\"}" },
+          }],
+          usage: {
+            prompt_tokens: 3,
+            completion_tokens: 4,
+            total_tokens: 7,
+            prompt_cache_hit_tokens: 1,
+            prompt_cache_miss_tokens: 2,
+          },
+        });
+      },
+    });
+
+    try {
+      const usageEvents: unknown[] = [];
+      const chat = createChatClientFromConfig({
+        defaultMode: "smart",
+        modes: { smart: { model: "deepseek-chat" } },
+        tools: { disabled: [] },
+        deepseek: {
+          apiKey: "fake",
+          baseURL: `http://127.0.0.1:${server.port}`,
+          maxRetries: 0,
+        },
+      });
+
+      await chat.chat({
+        ...emptyRequest("deepseek:deepseek-chat"),
+        reasoningEffort: "xhigh",
+        responseFormat: {
+          type: "json_schema",
+          json_schema: {
+            name: "report_narrative_v1",
+            strict: true,
+            schema: { type: "object" },
+          },
+        },
+        onUsage: (usage) => {
+          usageEvents.push(usage);
+        },
+      });
+
+      expect((bodies[0] as { model?: unknown }).model).toBe("deepseek-chat");
+      expect((bodies[0] as { reasoning_effort?: unknown }).reasoning_effort).toBe("max");
+      expect((bodies[0] as { response_format?: unknown }).response_format).toEqual({
+        type: "json_object",
+      });
+      expect(usageEvents[0]).toEqual({
+        inputTokens: 3,
+        outputTokens: 4,
+        totalTokens: 7,
+        cachedInputTokens: 1,
+        cacheCreationInputTokens: 2,
+      });
+    } finally {
+      await server.stop(true);
+    }
+  });
+
+  test("does not send response format for plain DeepSeek chat and preserves tools", async () => {
+    const bodies: unknown[] = [];
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        bodies.push(await req.json());
+        return Response.json({
+          id: "chatcmpl-test",
+          object: "chat.completion",
+          created: 0,
+          model: "deepseek-chat",
+          choices: [{
+            index: 0,
+            finish_reason: "tool_calls",
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [{
+                id: "call_1",
+                type: "function",
+                function: { name: "Read", arguments: "{\"path\":\"README.md\"}" },
+              }],
+            },
+          }],
+        });
+      },
+    });
+
+    try {
+      const chat = createChatClientFromConfig({
+        defaultMode: "smart",
+        modes: { smart: { model: "deepseek-chat" } },
+        tools: { disabled: [] },
+        deepseek: {
+          apiKey: "fake",
+          baseURL: `http://127.0.0.1:${server.port}`,
+          maxRetries: 0,
+        },
+      });
+
+      const response = await chat.chat({
+        ...emptyRequest("deepseek-chat"),
+        tools: [{
+          type: "function",
+          function: {
+            name: "Read",
+            description: "Read a file",
+            parameters: {
+              type: "object",
+              properties: { path: { type: "string" } },
+              required: ["path"],
+            },
+          },
+        }],
+      });
+
+      expect((bodies[0] as { response_format?: unknown }).response_format).toBeUndefined();
+      expect((bodies[0] as { tools?: unknown }).tools).toEqual([{
+        type: "function",
+        function: {
+          name: "Read",
+          description: "Read a file",
+          parameters: {
+            type: "object",
+            properties: { path: { type: "string" } },
+            required: ["path"],
+          },
+        },
+      }]);
+      const toolCall = response.tool_calls?.[0];
+      expect(toolCall?.type).toBe("function");
+      expect(toolCall?.type === "function" ? toolCall.function.name : undefined).toBe("Read");
+    } finally {
+      await server.stop(true);
+    }
+  });
+
+  test("streams DeepSeek text deltas and ignores reasoning deltas", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch() {
+        return new Response([
+          "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"deepseek-chat\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"hidden\"}}]}\n\n",
+          "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"deepseek-chat\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"he\"}}]}\n\n",
+          "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"deepseek-chat\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"llo\"}}]}\n\n",
+          "data: [DONE]\n\n",
+        ].join(""), {
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+    });
+
+    try {
+      const deltas: string[] = [];
+      const chat = createChatClientFromConfig({
+        defaultMode: "smart",
+        modes: { smart: { model: "deepseek-chat" } },
+        tools: { disabled: [] },
+        deepseek: {
+          apiKey: "fake",
+          baseURL: `http://127.0.0.1:${server.port}`,
+          maxRetries: 0,
+        },
+      });
+
+      const response = await chat.chat({
+        ...emptyRequest("deepseek-chat"),
+        onEvent: (event) => {
+          deltas.push(event.delta);
+        },
+      });
+
+      expect(deltas).toEqual(["he", "llo"]);
+      expect(response.content).toBe("hello");
     } finally {
       await server.stop(true);
     }

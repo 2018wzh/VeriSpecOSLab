@@ -203,9 +203,16 @@ Adding more modes programmatically — see
 | ------------------------ | -------- | --------------- | ------------------------------------------------- |
 | `ANTHROPIC_API_KEY`      | one of   | —               | Enables Anthropic API-key auth.                   |
 | `ANTHROPIC_AUTH_TOKEN`   | one of   | —               | Enables Anthropic Bearer-token auth for gateways. |
-| `OPENAI_API_KEY`         | one of   | —               | Enables the OpenAI-compatible provider.           |
+| `OPENAI_API_KEY`         | one of   | —               | Enables official OpenAI when `OPENAI_BASE_URL` is unset. |
+| `OPENAI_COMPATIBLE_API_KEY` | one of | —            | Enables generic OpenAI-compatible gateways.       |
 | `ANTHROPIC_BASE_URL`     | no       | Anthropic's URL | Self-hosted or proxied Anthropic endpoint.        |
-| `OPENAI_BASE_URL`        | no       | OpenAI's URL    | OpenRouter, vLLM, Ollama (OpenAI mode), …         |
+| `OPENAI_BASE_URL`        | no       | —               | Legacy OpenAI-compatible endpoint override.       |
+| `OPENAI_COMPATIBLE_BASE_URL` | no    | —            | OpenRouter, vLLM, Ollama, local gateways.         |
+| `OPENAI_COMPATIBLE_RESPONSE_FORMAT` | no | `json_object` | `json_object`, `json_schema`, or `none`. |
+| `OPENAI_COMPATIBLE_REASONING_EFFORT` | no | `off`    | `off` or `passthrough`.                           |
+| `OPENAI_COMPATIBLE_STREAM_USAGE` | no | `off`       | `off` or `include_usage`.                         |
+| `OPENAI_COMPATIBLE_INPUTS` | no     | `text`          | Comma-separated `text`, `image`, `pdf`.           |
+| `OPENAI_COMPATIBLE_EXTRA_HEADERS_JSON` | no | —      | JSON object of string headers for gateways.       |
 | `SMART_MODEL`            | no       | `opus4.7`       | Model bound to the `smart` mode.                  |
 | `DEEP_MODEL`             | no       | `gpt5.5`        | Model bound to the `deep` mode.                   |
 | `RUSH_MODEL`             | no       | `sonnet4.6`     | Model bound to the `rush` mode.                   |
@@ -217,10 +224,12 @@ Adding more modes programmatically — see
 | `RUSH_REASONING_EFFORT`  | no       | `medium`        | Mode-level reasoning hint for `rush`.             |
 | `STARS_HOME`             | no       | `~/.stars`      | Thread/todo storage directory.                    |
 
-`loadConfig` requires **at least one** of `ANTHROPIC_API_KEY`,
-`ANTHROPIC_AUTH_TOKEN`, or `OPENAI_API_KEY` and throws otherwise. Both
-provider families may be set simultaneously to enable mixed-provider
-routing.
+`loadConfig` requires **at least one** configured provider key and
+throws otherwise. `OPENAI_API_KEY` alone enables official OpenAI.
+`OPENAI_API_KEY` plus `OPENAI_BASE_URL` is treated as the legacy
+OpenAI-compatible configuration path. Prefer
+`OPENAI_COMPATIBLE_API_KEY` plus `OPENAI_COMPATIBLE_BASE_URL` for new
+gateway setups.
 
 The `ANTHROPIC_DEFAULT_*_MODEL` aliases are accepted for compatibility
 with Anthropic-compatible gateway setups that also power Claude Code.
@@ -268,12 +277,15 @@ to a provider based on the request's `model` field:
 | Model prefix                       | Provider  |
 | ---------------------------------- | --------- |
 | `claude*`, `opus*`, `sonnet*`, `haiku*`, `anthropic:*`, `anthropic/*` | Anthropic |
-| `gpt*`, `o1*`, `o3*`, `o4*`, `openai:*`, `openai/*` | OpenAI-compatible |
+| `deepseek:*`, `deepseek/*`, `deepseek-*` | DeepSeek |
+| `openai-compatible:*`, `openai-compatible/*`, `compat:*`, `compat/*` | OpenAI-compatible |
+| `gpt*`, `o1*`, `o3*`, `o4*`, `openai:*`, `openai/*` | OpenAI |
 
-Colon prefixes (`anthropic:...`, `openai:...`) are routing hints and
-are stripped before the provider call. Slash prefixes (`anthropic/...`,
-`openai/...`) are treated as provider/model namespaces and are preserved
-for gateways that require names such as `anthropic/claude-opus-4.6`.
+Colon prefixes (`anthropic:...`, `openai:...`, `compat:...`) are
+routing hints and are stripped before the provider call. Slash prefixes
+(`anthropic/...`, `openai/...`, `openai-compatible/...`) are treated as
+provider/model namespaces and are preserved for gateways that require
+names such as `anthropic/claude-opus-4.6`.
 
 If only one provider is configured, it also serves as the fallback for
 unrecognised model names. If both are configured and the model matches
@@ -320,30 +332,30 @@ export DEEP_REASONING_EFFORT=high
 ### OpenRouter (OpenAI-compatible)
 
 ```sh
-export OPENAI_API_KEY=sk-or-...
-export OPENAI_BASE_URL=https://openrouter.ai/api/v1
-stars --model openai:gpt-4o-mini -p "..."
+export OPENAI_COMPATIBLE_API_KEY=sk-or-...
+export OPENAI_COMPATIBLE_BASE_URL=https://openrouter.ai/api/v1
+stars --model compat:gpt-4o-mini -p "..."
 ```
 
-Colon prefixes such as `openai:gpt-4o-mini` are routing hints and are
+Colon prefixes such as `compat:gpt-4o-mini` are routing hints and are
 stripped before the model name is sent to the provider. Slash namespaces
-such as `openai/gpt-4o-mini` are preserved for gateways that require
-them.
+such as `openai-compatible/gpt-4o-mini` are preserved for gateways that
+require them.
 
 ### vLLM (self-hosted, OpenAI mode)
 
 ```sh
-export OPENAI_API_KEY=ignored
-export OPENAI_BASE_URL=http://localhost:8000/v1
-stars --model openai:meta-llama/Llama-3.3-70B-Instruct -p "..."
+export OPENAI_COMPATIBLE_API_KEY=ignored
+export OPENAI_COMPATIBLE_BASE_URL=http://localhost:8000/v1
+stars --model compat:meta-llama/Llama-3.3-70B-Instruct -p "..."
 ```
 
 ### Ollama (OpenAI-compatible mode)
 
 ```sh
-export OPENAI_API_KEY=ignored
-export OPENAI_BASE_URL=http://localhost:11434/v1
-stars --model openai:qwen2.5-coder -p "..."
+export OPENAI_COMPATIBLE_API_KEY=ignored
+export OPENAI_COMPATIBLE_BASE_URL=http://localhost:11434/v1
+stars --model compat:qwen2.5-coder -p "..."
 ```
 
 Note: small local models often handle tool calling less reliably than

@@ -56,9 +56,11 @@ by git under `dist/`.
 | ------------------------ | -------- | ------------------ | -------------------------------------------- |
 | `ANTHROPIC_API_KEY`      | one of   | —                  | Enables Anthropic API-key auth.              |
 | `ANTHROPIC_AUTH_TOKEN`   | one of   | —                  | Enables Anthropic Bearer-token gateway auth. |
-| `OPENAI_API_KEY`         | one of   | —                  | Enables the OpenAI-compatible provider.      |
+| `OPENAI_API_KEY`         | one of   | —                  | Enables official OpenAI when `OPENAI_BASE_URL` is unset. |
+| `OPENAI_COMPATIBLE_API_KEY` | one of | —               | Enables the generic OpenAI-compatible provider. |
 | `ANTHROPIC_BASE_URL`     | no       | Anthropic's URL    | For proxies / self-hosted gateways.          |
-| `OPENAI_BASE_URL`        | no       | OpenAI's URL       | For OpenRouter, vLLM, Ollama, …              |
+| `OPENAI_BASE_URL`        | no       | —                  | Legacy OpenAI-compatible endpoint override.  |
+| `OPENAI_COMPATIBLE_BASE_URL` | no    | —                  | OpenRouter, vLLM, Ollama, local gateways.    |
 | `SMART_MODEL`            | no       | `opus4.7`          | Model bound to `smart` mode.                 |
 | `DEEP_MODEL`             | no       | `gpt5.5`           | Model bound to `deep` mode.                  |
 | `RUSH_MODEL`             | no       | `sonnet4.6`        | Model bound to `rush` mode.                  |
@@ -72,16 +74,17 @@ by git under `dist/`.
 | Mode    | Default model | Reasoning effort | Provider selected by model name |
 | ------- | ------------- | ---------------- | -------------------------------- |
 | `smart` | `opus4.7`     | —                | Anthropic                        |
-| `deep`  | `gpt5.5`      | —                | OpenAI-compatible                |
+| `deep`  | `gpt5.5`      | —                | OpenAI                           |
 | `rush`  | `sonnet4.6`   | `medium`         | Anthropic                        |
 
 Use `-m`/`--mode` to select a mode, or `--model <id>` to pin a raw
 model identifier. Reasoning effort is selected only by mode/config, not
 by any CLI or TUI flag; accepted values are `none`, `minimal`, `low`,
 `medium`, `high`, and `xhigh`. Routing prefixes are supported:
-`anthropic:gpt-5.5` forces Anthropic-compatible routing and
-`openai:gpt-4o-mini` forces OpenAI-compatible routing; the prefix is
-stripped before the request is sent.
+`anthropic:gpt-5.5` forces Anthropic-compatible routing,
+`openai:gpt-4o-mini` forces official OpenAI routing, and
+`compat:llama` forces generic OpenAI-compatible routing. Colon prefixes
+are stripped before the request is sent.
 
 ## Run
 

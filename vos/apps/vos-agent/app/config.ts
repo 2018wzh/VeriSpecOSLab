@@ -46,6 +46,30 @@ export interface OpenAIConfig {
   maxRetries?: number;
 }
 
+export type OpenAICompatibleResponseFormat = "json_object" | "json_schema" | "none";
+export type OpenAICompatibleReasoningEffort = "off" | "passthrough";
+export type OpenAICompatibleStreamUsage = "off" | "include_usage";
+
+export interface OpenAICompatibleConfig {
+  apiKey: string;
+  baseURL?: string;
+  responseFormat: OpenAICompatibleResponseFormat;
+  reasoningEffort: OpenAICompatibleReasoningEffort;
+  streamUsage: OpenAICompatibleStreamUsage;
+  input: Record<"text" | "image" | "pdf", boolean>;
+  extraHeaders?: Record<string, string>;
+  /** Max retries on transient errors. SDK default is provider-specific. */
+  maxRetries?: number;
+}
+
+export interface DeepSeekConfig {
+  apiKey: string;
+  baseURL?: string;
+  betaBaseURL?: string;
+  /** Max retries on transient errors. SDK default is provider-specific. */
+  maxRetries?: number;
+}
+
 export interface AnthropicConfig {
   apiKey?: string;
   authToken?: string;
@@ -78,6 +102,10 @@ export interface Config {
   chatRetry?: ChatRetryConfig;
   /** Present iff OPENAI_API_KEY is set. */
   openai?: OpenAIConfig;
+  /** Present iff OPENAI_COMPATIBLE_API_KEY is set, or legacy OPENAI_BASE_URL is set. */
+  openaiCompatible?: OpenAICompatibleConfig;
+  /** Present iff DEEPSEEK_API_KEY is set. */
+  deepseek?: DeepSeekConfig;
   /** Present iff ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN is set. */
   anthropic?: AnthropicConfig;
 }
@@ -90,7 +118,12 @@ export interface Config {
  *   ANTHROPIC_AUTH_TOKEN  enable Anthropic Bearer-token provider auth
  *   ANTHROPIC_BASE_URL    optional override for the Anthropic endpoint
  *   OPENAI_API_KEY        enable OpenAI / OpenAI-compatible provider
- *   OPENAI_BASE_URL       override for OpenRouter, vLLM, Ollama, …
+ *   OPENAI_BASE_URL       legacy OpenAI-compatible endpoint override
+ *   OPENAI_COMPATIBLE_API_KEY enable OpenAI-compatible provider
+ *   OPENAI_COMPATIBLE_BASE_URL optional OpenAI-compatible endpoint override
+ *   DEEPSEEK_API_KEY      enable DeepSeek provider
+ *   DEEPSEEK_BASE_URL     optional override for the DeepSeek endpoint
+ *   DEEPSEEK_BETA_BASE_URL optional override for DeepSeek beta endpoint
  *   SMART_MODEL           override the model bound to the 'smart' mode
  *   DEEP_MODEL            override the model bound to the 'deep' mode
  *   RUSH_MODEL            override the model bound to the 'rush' mode
@@ -109,11 +142,32 @@ export function loadConfig(
   settings: SettingsInput = {},
 ): Config {
   const openaiApiKey = trimToUndefined(env.OPENAI_API_KEY);
+  const openaiBaseUrl = trimToUndefined(env.OPENAI_BASE_URL);
+  const openaiCompatibleApiKey = trimToUndefined(env.OPENAI_COMPATIBLE_API_KEY) ?? (openaiBaseUrl ? openaiApiKey : undefined);
+  const deepseekApiKey = trimToUndefined(env.DEEPSEEK_API_KEY);
   const anthropicApiKey = trimToUndefined(env.ANTHROPIC_API_KEY);
   const anthropicAuthToken = trimToUndefined(env.ANTHROPIC_AUTH_TOKEN);
 
-  const openai = openaiApiKey
-    ? { apiKey: openaiApiKey, baseURL: trimToUndefined(env.OPENAI_BASE_URL) }
+  const openai = openaiApiKey && !openaiBaseUrl
+    ? { apiKey: openaiApiKey, baseURL: undefined }
+    : undefined;
+  const openaiCompatible = openaiCompatibleApiKey
+    ? {
+        apiKey: openaiCompatibleApiKey,
+        baseURL: trimToUndefined(env.OPENAI_COMPATIBLE_BASE_URL) ?? openaiBaseUrl,
+        responseFormat: readOpenAICompatibleResponseFormat(env),
+        reasoningEffort: readOpenAICompatibleReasoningEffort(env),
+        streamUsage: readOpenAICompatibleStreamUsage(env),
+        input: readOpenAICompatibleInput(env),
+        extraHeaders: readOpenAICompatibleExtraHeaders(env),
+      }
+    : undefined;
+  const deepseek = deepseekApiKey
+    ? {
+        apiKey: deepseekApiKey,
+        baseURL: trimToUndefined(env.DEEPSEEK_BASE_URL),
+        betaBaseURL: trimToUndefined(env.DEEPSEEK_BETA_BASE_URL),
+      }
     : undefined;
   const anthropic = anthropicApiKey || anthropicAuthToken
     ? {
@@ -124,9 +178,9 @@ export function loadConfig(
       }
     : undefined;
 
-  if (!openai && !anthropic) {
+  if (!openai && !openaiCompatible && !deepseek && !anthropic) {
     throw new Error(
-      "no provider configured: set ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, and/or OPENAI_API_KEY",
+      "no provider configured: set ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, OPENAI_API_KEY, OPENAI_COMPATIBLE_API_KEY, and/or DEEPSEEK_API_KEY",
     );
   }
 
@@ -188,8 +242,93 @@ export function loadConfig(
       ),
     },
     openai,
+    openaiCompatible,
+    deepseek,
     anthropic,
   };
+}
+
+function readOpenAICompatibleResponseFormat(
+  env: Record<string, string | undefined>,
+): OpenAICompatibleResponseFormat {
+  return readEnumEnv(env, "OPENAI_COMPATIBLE_RESPONSE_FORMAT", [
+    "json_object",
+    "json_schema",
+    "none",
+  ], "json_object");
+}
+
+function readOpenAICompatibleReasoningEffort(
+  env: Record<string, string | undefined>,
+): OpenAICompatibleReasoningEffort {
+  return readEnumEnv(env, "OPENAI_COMPATIBLE_REASONING_EFFORT", [
+    "off",
+    "passthrough",
+  ], "off");
+}
+
+function readOpenAICompatibleStreamUsage(
+  env: Record<string, string | undefined>,
+): OpenAICompatibleStreamUsage {
+  return readEnumEnv(env, "OPENAI_COMPATIBLE_STREAM_USAGE", [
+    "off",
+    "include_usage",
+  ], "off");
+}
+
+function readEnumEnv<T extends string>(
+  env: Record<string, string | undefined>,
+  key: string,
+  allowed: readonly T[],
+  fallback: T,
+): T {
+  const raw = trimToUndefined(env[key]);
+  if (!raw) return fallback;
+  if ((allowed as readonly string[]).includes(raw)) return raw as T;
+  throw new Error(`invalid ${key}: expected one of ${allowed.join(", ")}`);
+}
+
+function readOpenAICompatibleInput(
+  env: Record<string, string | undefined>,
+): Record<"text" | "image" | "pdf", boolean> {
+  const raw = trimToUndefined(env.OPENAI_COMPATIBLE_INPUTS);
+  const result = { text: false, image: false, pdf: false };
+  if (!raw) {
+    result.text = true;
+    return result;
+  }
+  for (const part of raw.split(",")) {
+    const value = part.trim();
+    if (value !== "text" && value !== "image" && value !== "pdf") {
+      throw new Error("invalid OPENAI_COMPATIBLE_INPUTS: expected comma-separated text, image, pdf");
+    }
+    result[value] = true;
+  }
+  return result;
+}
+
+function readOpenAICompatibleExtraHeaders(
+  env: Record<string, string | undefined>,
+): Record<string, string> | undefined {
+  const raw = trimToUndefined(env.OPENAI_COMPATIBLE_EXTRA_HEADERS_JSON);
+  if (!raw) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("invalid OPENAI_COMPATIBLE_EXTRA_HEADERS_JSON: expected a JSON object with string values");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("invalid OPENAI_COMPATIBLE_EXTRA_HEADERS_JSON: expected a JSON object with string values");
+  }
+  const headers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (typeof value !== "string") {
+      throw new Error("invalid OPENAI_COMPATIBLE_EXTRA_HEADERS_JSON: expected a JSON object with string values");
+    }
+    headers[key] = value;
+  }
+  return headers;
 }
 
 /**

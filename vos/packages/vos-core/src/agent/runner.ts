@@ -190,7 +190,21 @@ export function buildAgentEnv(params: {
 
   if (config.provider) {
     const provider = config.provider.toLowerCase();
-    if (provider === "deepseek" || provider === "openai" || provider === "openai-compatible") {
+    if (provider === "deepseek") {
+      if (!mapped.DEEPSEEK_API_KEY && config.authEnv) {
+        mapped.DEEPSEEK_API_KEY = mapped[config.authEnv];
+      }
+      if (config.baseUrl) {
+        mapped.DEEPSEEK_BASE_URL = config.baseUrl;
+      }
+    } else if (provider === "openai-compatible") {
+      if (!mapped.OPENAI_COMPATIBLE_API_KEY && config.authEnv) {
+        mapped.OPENAI_COMPATIBLE_API_KEY = mapped[config.authEnv];
+      }
+      if (config.baseUrl) {
+        mapped.OPENAI_COMPATIBLE_BASE_URL = config.baseUrl;
+      }
+    } else if (provider === "openai") {
       if (!mapped.OPENAI_API_KEY && config.authEnv) {
         mapped.OPENAI_API_KEY = mapped[config.authEnv];
       }

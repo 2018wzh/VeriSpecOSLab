@@ -57,9 +57,38 @@ describe(".env loading", () => {
       env: {} as NodeJS.ProcessEnv,
     });
 
-    expect(result.env.OPENAI_API_KEY).toBe("project-key");
-    expect(result.env.OPENAI_BASE_URL).toBe("https://api.deepseek.com/v1");
+    expect(result.env.DEEPSEEK_API_KEY).toBe("project-key");
+    expect(result.env.DEEPSEEK_BASE_URL).toBe("https://api.deepseek.com/v1");
+    expect(result.env.OPENAI_API_KEY).toBeUndefined();
+    expect(result.env.OPENAI_BASE_URL).toBeUndefined();
     expect(result.env.SMART_MODEL).toBe("deepseek-v4-pro");
+  });
+
+  test("merges OpenAI-compatible agent env without populating official OpenAI env", () => {
+    const projectRoot = makeProject();
+    mkdirSync(join(projectRoot, ".vos"), { recursive: true });
+    writeFileSync(join(projectRoot, ".vos", "config.toml"), [
+      "[agent]",
+      "provider = \"openai-compatible\"",
+      "model = \"llama\"",
+      "base_url = \"http://localhost:8000/v1\"",
+      "",
+      "[agent.auth]",
+      "env = \"GATEWAY_API_KEY\"",
+      "",
+    ].join("\n"));
+    writeFileSync(join(projectRoot, ".env"), "GATEWAY_API_KEY=project-key\n");
+
+    const result = buildAgentEnv({
+      projectRoot,
+      env: {} as NodeJS.ProcessEnv,
+    });
+
+    expect(result.env.OPENAI_COMPATIBLE_API_KEY).toBe("project-key");
+    expect(result.env.OPENAI_COMPATIBLE_BASE_URL).toBe("http://localhost:8000/v1");
+    expect(result.env.OPENAI_API_KEY).toBeUndefined();
+    expect(result.env.OPENAI_BASE_URL).toBeUndefined();
+    expect(result.env.SMART_MODEL).toBe("llama");
   });
 
   test("temporarily hydrates process env from project-root .env", async () => {

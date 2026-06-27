@@ -326,7 +326,7 @@ describe("vos-cli package agent runner", () => {
     expect(Object.keys(captured ?? {})).not.toContain("prompt");
   });
 
-  test("maps xv6 DeepSeek config to OpenAI-compatible agent env", () => {
+  test("maps xv6 DeepSeek config to DeepSeek agent env", () => {
     const projectRoot = makeProject();
     writeFileSync(join(projectRoot, ".vos", "config.toml"), [
       "spec_root = \"spec\"",
@@ -349,12 +349,14 @@ describe("vos-cli package agent runner", () => {
     });
 
     expect(result.model).toBe("deepseek-v4-pro");
-    expect(result.env.OPENAI_API_KEY).toBe("test-key");
-    expect(result.env.OPENAI_BASE_URL).toBe("https://api.deepseek.com/v1");
+    expect(result.env.DEEPSEEK_API_KEY).toBe("test-key");
+    expect(result.env.DEEPSEEK_BASE_URL).toBe("https://api.deepseek.com/v1");
+    expect(result.env.OPENAI_API_KEY).toBeUndefined();
+    expect(result.env.OPENAI_BASE_URL).toBeUndefined();
     expect(result.env.SMART_MODEL).toBe("deepseek-v4-pro");
   });
 
-  test("maps examples/xv6-spec DeepSeek config to OpenAI-compatible agent env", () => {
+  test("maps examples/xv6-spec DeepSeek config to DeepSeek agent env", () => {
     const projectRoot = makeProject();
     writeFileSync(join(projectRoot, ".vos", "config.toml"), [
       "spec_root = \"spec\"",
@@ -377,8 +379,10 @@ describe("vos-cli package agent runner", () => {
     });
 
     expect(result.model).toBe("deepseek-v4-pro");
-    expect(result.env.OPENAI_API_KEY).toBe("xv6-key");
-    expect(result.env.OPENAI_BASE_URL).toBe("https://api.deepseek.com/v1");
+    expect(result.env.DEEPSEEK_API_KEY).toBe("xv6-key");
+    expect(result.env.DEEPSEEK_BASE_URL).toBe("https://api.deepseek.com/v1");
+    expect(result.env.OPENAI_API_KEY).toBeUndefined();
+    expect(result.env.OPENAI_BASE_URL).toBeUndefined();
     expect(result.env.SMART_MODEL).toBe("deepseek-v4-pro");
   });
 
@@ -819,8 +823,36 @@ describe("vos-cli package agent runner", () => {
     });
 
     expect(result.model).toBe("deepseek-chat-2025");
-    expect(result.env.OPENAI_API_KEY).toBe("test-key");
-    expect(result.env.OPENAI_BASE_URL).toBe("https://api.deepseek.com/v1");
+    expect(result.env.DEEPSEEK_API_KEY).toBe("test-key");
+    expect(result.env.DEEPSEEK_BASE_URL).toBe("https://api.deepseek.com/v1");
+  });
+
+  test("maps OpenAI-compatible agent config to dedicated compatible env", () => {
+    const projectRoot = makeProject();
+    writeFileSync(join(projectRoot, ".vos", "config.toml"), [
+      "[agent]",
+      "provider = \"openai-compatible\"",
+      "model = \"llama\"",
+      "base_url = \"https://gateway.example/v1\"",
+      "",
+      "[agent.auth]",
+      "env = \"GATEWAY_API_KEY\"",
+      "",
+    ].join("\n"));
+
+    const result = buildAgentEnv({
+      projectRoot,
+      env: {
+        GATEWAY_API_KEY: "gateway-key",
+      } as NodeJS.ProcessEnv,
+    });
+
+    expect(result.model).toBe("llama");
+    expect(result.env.OPENAI_COMPATIBLE_API_KEY).toBe("gateway-key");
+    expect(result.env.OPENAI_COMPATIBLE_BASE_URL).toBe("https://gateway.example/v1");
+    expect(result.env.OPENAI_API_KEY).toBeUndefined();
+    expect(result.env.OPENAI_BASE_URL).toBeUndefined();
+    expect(result.env.SMART_MODEL).toBe("llama");
   });
 
   test("prefixes Anthropic config model for routed package agent env", () => {

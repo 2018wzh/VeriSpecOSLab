@@ -35,25 +35,95 @@ describe("loadConfig", () => {
     expect(cfg.anthropic).toEqual({ apiKey: "ak", baseURL: undefined });
   });
 
-  test("returns openai config when OPENAI_API_KEY is set", () => {
+  test("returns openai config when OPENAI_API_KEY is set without a base URL", () => {
+    const cfg = loadConfig({
+      OPENAI_API_KEY: "ok",
+    });
+    expect(cfg.openai).toEqual({
+      apiKey: "ok",
+      baseURL: undefined,
+    });
+    expect(cfg.openaiCompatible).toBeUndefined();
+    expect(cfg.anthropic).toBeUndefined();
+  });
+
+  test("treats legacy OPENAI_API_KEY plus OPENAI_BASE_URL as OpenAI-compatible", () => {
     const cfg = loadConfig({
       OPENAI_API_KEY: "ok",
       OPENAI_BASE_URL: "https://example.test/v1",
     });
-    expect(cfg.openai).toEqual({
+    expect(cfg.openai).toBeUndefined();
+    expect(cfg.openaiCompatible).toEqual({
       apiKey: "ok",
       baseURL: "https://example.test/v1",
+      responseFormat: "json_object",
+      reasoningEffort: "off",
+      streamUsage: "off",
+      input: { text: true, image: false, pdf: false },
+      extraHeaders: undefined,
     });
     expect(cfg.anthropic).toBeUndefined();
+  });
+
+  test("OPENAI_COMPATIBLE env config wins over legacy compatible env", () => {
+    const cfg = loadConfig({
+      OPENAI_API_KEY: "legacy",
+      OPENAI_BASE_URL: "https://legacy.example/v1",
+      OPENAI_COMPATIBLE_API_KEY: "compat",
+      OPENAI_COMPATIBLE_BASE_URL: "https://compat.example/v1",
+      OPENAI_COMPATIBLE_RESPONSE_FORMAT: "json_schema",
+      OPENAI_COMPATIBLE_REASONING_EFFORT: "passthrough",
+      OPENAI_COMPATIBLE_STREAM_USAGE: "include_usage",
+      OPENAI_COMPATIBLE_INPUTS: "text,image",
+      OPENAI_COMPATIBLE_EXTRA_HEADERS_JSON: "{\"HTTP-Referer\":\"https://vos.test\",\"X-Title\":\"VOS\"}",
+    });
+
+    expect(cfg.openai).toBeUndefined();
+    expect(cfg.openaiCompatible).toEqual({
+      apiKey: "compat",
+      baseURL: "https://compat.example/v1",
+      responseFormat: "json_schema",
+      reasoningEffort: "passthrough",
+      streamUsage: "include_usage",
+      input: { text: true, image: true, pdf: false },
+      extraHeaders: {
+        "HTTP-Referer": "https://vos.test",
+        "X-Title": "VOS",
+      },
+    });
+  });
+
+  test("rejects invalid OpenAI-compatible whitelist env", () => {
+    expect(() =>
+      loadConfig({
+        OPENAI_COMPATIBLE_API_KEY: "ok",
+        OPENAI_COMPATIBLE_RESPONSE_FORMAT: "schema",
+      }),
+    ).toThrow(/invalid OPENAI_COMPATIBLE_RESPONSE_FORMAT/);
+    expect(() =>
+      loadConfig({
+        OPENAI_COMPATIBLE_API_KEY: "ok",
+        OPENAI_COMPATIBLE_INPUTS: "text,audio",
+      }),
+    ).toThrow(/invalid OPENAI_COMPATIBLE_INPUTS/);
+    expect(() =>
+      loadConfig({
+        OPENAI_COMPATIBLE_API_KEY: "ok",
+        OPENAI_COMPATIBLE_EXTRA_HEADERS_JSON: "{\"X-Test\":1}",
+      }),
+    ).toThrow(/OPENAI_COMPATIBLE_EXTRA_HEADERS_JSON/);
   });
 
   test("returns both providers when both keys are set", () => {
     const cfg = loadConfig({
       ANTHROPIC_API_KEY: "ak",
       OPENAI_API_KEY: "ok",
+      OPENAI_COMPATIBLE_API_KEY: "compat",
+      OPENAI_COMPATIBLE_BASE_URL: "https://compat.example/v1",
     });
     expect(cfg.anthropic).toBeDefined();
     expect(cfg.openai).toBeDefined();
+    expect(cfg.openaiCompatible).toBeDefined();
   });
 
   test("configures provider-neutral chat retries from env", () => {
@@ -235,11 +305,11 @@ describe("loadConfig", () => {
 
   test("trims provider keys, base URLs, and model overrides", () => {
     const cfg = loadConfig({
-      OPENAI_API_KEY: "  ok  ",
-      OPENAI_BASE_URL: "  https://example.test/v1  ",
+      OPENAI_COMPATIBLE_API_KEY: "  ok  ",
+      OPENAI_COMPATIBLE_BASE_URL: "  https://example.test/v1  ",
       SMART_MODEL: "  claude-sonnet-4-5  ",
     });
-    expect(cfg.openai).toEqual({
+    expect(cfg.openaiCompatible).toMatchObject({
       apiKey: "ok",
       baseURL: "https://example.test/v1",
     });
