@@ -11,6 +11,7 @@ export const visualizationSkill: BuiltInSkill = {
   promptText: [
     "## Built-in skill: visualization",
     "",
+    "When the user asks for a visualization, use this visualization skill and call mcp__http-server__publish_html to publish the interactive HTML.",
     "Use mcp__http-server__publish_html to publish self-contained HTML visualizations and cite the returned local URL in the answer.",
     "Do not rely on this URL for durable audit storage; it lasts only for the current MCP server process.",
     "",

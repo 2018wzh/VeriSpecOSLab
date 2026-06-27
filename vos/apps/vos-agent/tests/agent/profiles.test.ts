@@ -235,6 +235,8 @@ describe("agent task profiles", () => {
     expect(codegenPrompt).toContain("deterministic gates");
     expect(kbPrompt).toContain("source refs");
     expect(kbPrompt).toContain("hidden or staff-only material");
+    expect(kbPrompt).toContain("When the user asks for a visualization");
+    expect(kbPrompt).toContain("mcp__http-server__publish_html");
   });
 
   test("built-in skill registry resolves prompts, GDB MCP hints, and visualization server", () => {
