@@ -461,9 +461,9 @@ function createSilentProgress(): CommandProgress {
   return {
     mode: "always",
     enabled: true,
-    start() {},
-    update() {},
-    finish() {},
+    start() { },
+    update() { },
+    finish() { },
   };
 }
 
@@ -3290,7 +3290,7 @@ function createAgentProgressParams(context: ExecContext, stage: string): {
     return {
       taskPrompt: (prompt) => prompt,
       extraMcpServers: [],
-      onEvent: async () => {},
+      onEvent: async () => { },
     };
   }
   return {
@@ -4104,13 +4104,13 @@ function normalizeToolchainDraft(raw: unknown): ToolchainGenerationDraft {
   const obj = raw as Record<string, unknown>;
   const files = Array.isArray(obj.files)
     ? obj.files.map((file) => {
-        if (!file || typeof file !== "object") throw new AgentOutputError("toolchain draft file must be an object");
-        const item = file as Record<string, unknown>;
-        if (typeof item.path !== "string" || typeof item.content !== "string") {
-          throw new AgentOutputError("toolchain draft files require path and content");
-        }
-        return { path: normalizeProjectPath(item.path), content: item.content };
-      })
+      if (!file || typeof file !== "object") throw new AgentOutputError("toolchain draft file must be an object");
+      const item = file as Record<string, unknown>;
+      if (typeof item.path !== "string" || typeof item.content !== "string") {
+        throw new AgentOutputError("toolchain draft files require path and content");
+      }
+      return { path: normalizeProjectPath(item.path), content: item.content };
+    })
     : undefined;
   if (!files || files.length === 0) throw new AgentOutputError("toolchain draft requires files");
   if (!obj.manifest || typeof obj.manifest !== "object" || Array.isArray(obj.manifest)) {
