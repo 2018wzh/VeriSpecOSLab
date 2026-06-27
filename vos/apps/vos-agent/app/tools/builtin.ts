@@ -87,6 +87,7 @@ export function createBuiltinToolRegistry(
   }
   const policy = composeToolPolicies(
     createDisabledToolsPolicy(opts.disabledTools ?? []),
+    opts.courseMode ? createCourseModeWritePolicy() : undefined,
     opts.toolPolicy,
     createDefaultPermissionPolicy({
       rules: opts.permissionRules ?? [],
@@ -96,4 +97,14 @@ export function createBuiltinToolRegistry(
   return new ToolRegistry(tools, {
     policy,
   });
+}
+
+function createCourseModeWritePolicy(): ToolPolicy {
+  const blocked = new Set(["write", "edit"]);
+  return {
+    canAdvertise: (tool) => !blocked.has(tool.name.trim().toLowerCase()),
+    canExecute: ({ name }) => blocked.has(name.trim().toLowerCase())
+      ? { allowed: false, reason: "course mode is read-only" }
+      : { allowed: true },
+  };
 }

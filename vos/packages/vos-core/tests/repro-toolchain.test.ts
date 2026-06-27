@@ -63,6 +63,7 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
     expect(init.status).toBe("passed");
     expect(readFileSync(join(projectRoot, ".vos", "commit-ledger.jsonl"), "utf8")).toContain("\"actor\":\"human\"");
     expect(readFileSync(join(projectRoot, ".gitignore"), "utf8")).toBe("build/\n.vos/\n");
+    expect(readFileSync(join(projectRoot, "AGENTS.md"), "utf8")).toContain("Update this file when new public project conventions");
 
     await executeCliInvocation([
       "bun",
@@ -73,6 +74,7 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
       "init",
     ], { print: false });
     expect(readFileSync(join(projectRoot, ".gitignore"), "utf8")).toBe("build/\n.vos/\n");
+    expect(readFileSync(join(projectRoot, "AGENTS.md"), "utf8")).toContain("Update this file when new public project conventions");
 
     const build = await executeCliInvocation([
       "bun",
@@ -92,6 +94,23 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
     expect(manifest.input_files).toContain(".vos/toolchain.json");
     expect(manifest.input_files).toContain("Makefile");
     expect(manifest.output_files).toContain("build/kernel.bin");
+  });
+
+  test("init does not overwrite an existing AGENTS.md", async () => {
+    const projectRoot = makeGitProject({ manifest: false });
+    writeFileSync(join(projectRoot, "AGENTS.md"), "custom agent rules\n");
+
+    const init = await executeCliInvocation([
+      "bun",
+      "vos",
+      "--project-root",
+      projectRoot,
+      "--json",
+      "init",
+    ], { print: false });
+
+    expect(init.status).toBe("passed");
+    expect(readFileSync(join(projectRoot, "AGENTS.md"), "utf8")).toBe("custom agent rules\n");
   });
 
   test("init default policy lists only supported verify scopes", async () => {

@@ -421,6 +421,8 @@ describe("vos-cli package agent runner", () => {
     expect(prompt).toContain("verify.fuzz");
     expect(prompt).toContain("XV6_BOOT_OK");
     expect(prompt).toContain("staff-visible external mapping");
+    expect(prompt).toContain("Read and follow applicable AGENTS.md before planning or patching");
+    expect(prompt).toContain("must include a minimal AGENTS.md patch");
   });
 
   test("agent plan prompt spells out the exact PlanDraft JSON contract", () => {
@@ -443,6 +445,8 @@ describe("vos-cli package agent runner", () => {
     expect(prompt).toContain("notes: string[]");
     expect(prompt).toContain("spec_patch_required?: boolean");
     expect(prompt).toContain("\"task\": \"plan boot stage\"");
+    expect(prompt).toContain("If the plan introduces durable public project conventions");
+    expect(prompt).toContain("include AGENTS.md in suspected_files or notes");
   });
 
   test("toolchain generate prompt spells out object-form files and manifest v2", () => {
@@ -463,6 +467,8 @@ describe("vos-cli package agent runner", () => {
     expect(prompt).toContain("run.cases");
     expect(prompt).toContain("test.suites");
     expect(prompt).toContain("manifest.files must exactly reference paths present in files[].path");
+    expect(prompt).toContain("When AGENTS.md is an allowed output path");
+    expect(prompt).toContain("Do not exceed allowedOutputPaths just to update AGENTS.md");
   });
 
   test("agent debug prompt explains verify behavior evidence", () => {
@@ -473,7 +479,29 @@ describe("vos-cli package agent runner", () => {
 
     expect(prompt).toContain("DEBUG OUTPUT CONTRACT");
     expect(prompt).toContain("verify-behavior");
+    expect(prompt).toContain("Read and respect applicable AGENTS.md");
+    expect(prompt).toContain("do not modify AGENTS.md");
     expect(prompt).not.toContain("verify-trace");
+  });
+
+  test("behavior test prompts only update AGENTS.md for durable test conventions", () => {
+    const planPrompt = buildAgentBehaviorTestPlanPrompt({
+      scope: "kernel/memory",
+      phase: "generated",
+      obligations: ["kalloc_alignment"],
+      suites: [],
+      projectTree: ["AGENTS.md", "tests/public/verify.sh"],
+    });
+    const patchPrompt = buildAgentBehaviorTestPatchPrompt({
+      scope: "kernel/memory",
+      phase: "fuzz",
+      testPlan: { cases: [] },
+      projectTree: ["AGENTS.md", "tests/public/verify.sh"],
+    });
+
+    expect(planPrompt).toContain("If the TestPlan implies a durable test command");
+    expect(patchPrompt).toContain("Only update AGENTS.md for durable test entrypoints");
+    expect(patchPrompt).toContain("Do not update AGENTS.md for temporary verification cases");
   });
 
   test("agent debug schema accepts evidence chains and visualization steps", () => {
@@ -951,6 +979,37 @@ describe("vos-cli package agent runner", () => {
       content: ".section .text.entry\n.globl _entry\n_entry:\n",
       truncated: false,
     }]);
+  });
+
+  test("context bundle includes root AGENTS.md for live agent guidance", async () => {
+    const projectRoot = makeProject();
+    mkdirSync(join(projectRoot, "spec"), { recursive: true });
+    writeFileSync(join(projectRoot, "AGENTS.md"), "project agent rules\n");
+    writeFileSync(join(projectRoot, ".vos", "project.yaml"), [
+      "project_id: local-project",
+      "spec_root: spec",
+      "current_stage: boot",
+      "",
+    ].join("\n"));
+    writeFileSync(join(projectRoot, ".vos", "policy.yaml"), [
+      "allowed_paths:",
+      "  - spec",
+      "  - .vos",
+      "visibility_scope: public",
+      "",
+    ].join("\n"));
+
+    const bundle = await buildContextBundle({
+      projectRoot,
+      requestedScope: "agent.context",
+    });
+
+    expect(bundle.project_tree).toContain("AGENTS.md");
+    expect(bundle.readonly_context).toContainEqual({
+      path: "AGENTS.md",
+      content: "project agent rules\n",
+      truncated: false,
+    });
   });
 
   test("policy directory prefixes cover spec-bound child files", async () => {

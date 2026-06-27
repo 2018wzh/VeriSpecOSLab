@@ -52,6 +52,18 @@ export interface ToolchainGeneratePromptSpec {
   environment: { required_tools: Array<Record<string, unknown>> };
 }
 
+export const AGENTS_GUIDANCE_PROMPT = [
+  "Read and follow applicable AGENTS.md before planning or patching.",
+  "Update root AGENTS.md only when introducing or changing durable public project conventions, build/test workflow, or agent-facing rules.",
+  "Do not overwrite existing AGENTS.md; patch it minimally.",
+].join("\n");
+
+export const AGENTS_READONLY_GUIDANCE_PROMPT = [
+  "Read and respect applicable AGENTS.md.",
+  "This command is read-only for AGENTS.md; do not modify AGENTS.md.",
+  "If the result reveals a durable workflow rule that belongs there, suggest a follow-up AGENTS.md update instead.",
+].join("\n");
+
 export function buildPromptEnvelope(args: {
   taskKind: string;
   requestedScope: string;
@@ -91,6 +103,7 @@ export function buildPromptEnvelope(args: {
     `Output schema: ${agentProfile.outputSchema}`,
     `Task kind: ${args.taskKind}`,
     `Allowed paths: ${args.allowedPaths.join(", ")}`,
+    AGENTS_GUIDANCE_PROMPT,
     args.task ? `Task: ${args.task}` : "",
   ]
     .filter(Boolean)
@@ -143,6 +156,7 @@ export function buildAgentPlanPrompt(args: {
     "  - required_validations: string[]",
     "  - notes: string[]",
     "  - spec_patch_required?: boolean",
+    "If the plan introduces durable public project conventions, build/test workflow, or agent-facing rules, include AGENTS.md in suspected_files or notes.",
     "The task field must be a single string, not an object, array, or nested plan.",
     "Minimal valid example:",
     JSON.stringify({
@@ -172,6 +186,8 @@ export function buildToolchainGeneratePrompt(spec: ToolchainGeneratePromptSpec):
     "manifest.run.profiles is required.",
     "manifest.run.cases is required.",
     "manifest.test.suites is required.",
+    "When AGENTS.md is an allowed output path, update it only for durable build/run/test workflow or agent-facing conventions introduced by this draft.",
+    "Do not exceed allowedOutputPaths just to update AGENTS.md.",
     "Example files entry: \"files\": [{ \"path\": \"Makefile\", \"content\": \"all:\\n\\ttrue\\n\" }]",
     "Compact valid example:",
     JSON.stringify({
@@ -213,6 +229,7 @@ export function buildAgentDebugPrompt(args: {
   );
   const debugContract = [
     "DEBUG OUTPUT CONTRACT:",
+    AGENTS_READONLY_GUIDANCE_PROMPT,
     "Return exactly one JSON object and nothing else.",
     "Do not use markdown, tables, bullets, or prose.",
     "The JSON object must contain these fields with exact types:",
@@ -269,6 +286,7 @@ export function buildAgentBehaviorTestPlanPrompt(args: {
     "Return exactly one JSON object and nothing else.",
     "Do not execute commands.",
     "Do not generate a patch in this response.",
+    "If the TestPlan implies a durable test command, directory convention, or agent-facing rule, mention that AGENTS.md should be updated by the patch step.",
     "Cover generated/fuzz obligations with user-space behavior whenever possible.",
     "Prefer automated stdin, stdout/exit/timeout oracle, and concrete user program behavior.",
     "The JSON object must contain cases[].",
@@ -295,6 +313,8 @@ export function buildAgentBehaviorTestPatchPrompt(args: {
     "You are producing a VOS verify behavior patch JSON from a validated TestPlan.",
     "Return exactly one JSON object and nothing else.",
     "Only consume the validated TestPlan below; do not invent unrelated tests.",
+    "Only update AGENTS.md for durable test entrypoints, command conventions, directory conventions, or agent-facing rules.",
+    "Do not update AGENTS.md for temporary verification cases.",
     "The JSON object must contain patch, suites, and cases.",
     "patch must be a git-style unified diff that passes git apply --check, or an empty string when no patch is needed.",
     "Do not modify spec/, .git/, .vos/runs/, or .vos/worktrees/.",
@@ -346,6 +366,8 @@ export function buildAgentGeneratePrompt(args: {
     "Do not return an empty patch.",
     "Before final JSON, use Read or Grep to inspect every existing file you will modify; stale hunk context fails validation.",
     "If you cannot inspect an existing file, do not modify that file.",
+    AGENTS_GUIDANCE_PROMPT,
+    "If the patch introduces or changes durable public project conventions, build/test workflow, or agent-facing rules, it must include a minimal AGENTS.md patch.",
   ].join("\n");
   const contextReviewContract = [
     "PROJECT CONTEXT REVIEW:",

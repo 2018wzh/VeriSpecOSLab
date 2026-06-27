@@ -34,6 +34,7 @@ export interface ReadonlyContextFile {
 }
 
 const READONLY_CONTEXT_CANDIDATES = [
+  "AGENTS.md",
   ".vos/toolchain.json",
   "Makefile",
   "kernel/defs.h",
@@ -156,12 +157,12 @@ async function collectSpecSnippets(projectRoot: string): Promise<string[]> {
 
 async function collectProjectTree(projectRoot: string): Promise<string[]> {
   const suffixes = [".c", ".h", ".S", ".s", ".ld", ".mk", ".toml", ".json", ".yaml", ".yml", ".txt"];
-  const roots = ["Makefile", "CMakeLists.txt", "include", "kernel", "user", "src", "tests", "spec", ".vos/toolchain.json"];
+  const roots = ["AGENTS.md", "Makefile", "CMakeLists.txt", "include", "kernel", "user", "src", "tests", "spec", ".vos/toolchain.json"];
   const out: string[] = [];
   for (const entry of roots) {
     const absolute = path.join(projectRoot, entry);
     if (!existsSync(absolute)) continue;
-    if (entry === "Makefile" || entry === "CMakeLists.txt" || entry.endsWith(".json")) {
+    if (entry === "AGENTS.md" || entry === "Makefile" || entry === "CMakeLists.txt" || entry.endsWith(".json")) {
       out.push(entry);
       continue;
     }
@@ -280,7 +281,7 @@ async function collectReadonlyContext(
   for (const candidate of READONLY_CONTEXT_CANDIDATES) {
     if (out.length >= READONLY_CONTEXT_MAX_FILES) break;
     const normalized = normalizeProjectPath(candidate);
-    if (!isPathCoveredByPolicy(normalized, allowedPaths)) continue;
+    if (normalized !== "AGENTS.md" && !isPathCoveredByPolicy(normalized, allowedPaths)) continue;
     const absolute = path.join(projectRoot, normalized);
     if (!existsSync(absolute)) continue;
 

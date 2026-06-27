@@ -7,6 +7,7 @@ import type { EvidenceWriter } from "../evidence/index.ts";
 import type { RunManifest } from "../evidence/manifest.ts";
 import { CliError, AgentOutputError } from "../errors.ts";
 import { appendLogEntry, readLogEntries } from "../agent/helpers.ts";
+import { AGENTS_READONLY_GUIDANCE_PROMPT } from "../agent/prompt.ts";
 import { parseJsonFromText, runAgentWithPrompt, type HeadlessAgentTaskRunner } from "../agent/runner.ts";
 import { currentStageForProject } from "../utils/project.ts";
 import { parseTopLevelYaml } from "../utils/yaml.ts";
@@ -416,7 +417,11 @@ async function generateAgentNarrative(params: {
 }): Promise<z.infer<typeof narrativeSchema>> {
   const result = await runAgentWithPrompt({
     projectRoot: params.projectRoot,
-    taskPrompt: "Summarize the deterministic course report draft without changing pass/fail facts or inventing evidence.",
+    taskPrompt: [
+      "Summarize the deterministic course report draft without changing pass/fail facts or inventing evidence.",
+      AGENTS_READONLY_GUIDANCE_PROMPT,
+      "Do not use the report narrative to create, edit, or reinterpret AGENTS.md.",
+    ].join("\n"),
     taskKind: "report_narrative",
     requestedScope: "report.generate",
     context: params.draft,

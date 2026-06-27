@@ -76,6 +76,7 @@ describe("agent task profiles", () => {
     expect(prompt).toContain("StructuredOutput");
     expect(prompt).toContain("if validation fails, fix the shape and call it again");
     expect(prompt).toContain("report_narrative.v1");
+    expect(prompt).toContain("Read and follow applicable AGENTS.md");
   });
 
   test("interactive profile prompts do not require StructuredOutput", () => {
@@ -237,6 +238,7 @@ describe("agent task profiles", () => {
     expect(kbPrompt).toContain("hidden or staff-only material");
     expect(kbPrompt).toContain("When the user asks for a visualization");
     expect(kbPrompt).toContain("mcp__http-server__publish_html");
+    expect(kbPrompt).toContain("Do not write, attach, or paste HTML files");
   });
 
   test("built-in skill registry resolves prompts, GDB MCP hints, and visualization server", () => {

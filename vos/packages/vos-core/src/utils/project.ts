@@ -78,7 +78,7 @@ export async function loadPolicyConfig(projectRoot: string): Promise<PolicyConfi
         "agent apply-patch",
         "agent log",
       ],
-      allowed_paths: ["spec", "src", "tests", ".vos", "Makefile", "CMakeLists.txt", "xtask"],
+      allowed_paths: ["spec", "src", "tests", ".vos", "Makefile", "CMakeLists.txt", "xtask", "AGENTS.md"],
       visibility_scope: "public",
     };
   }
@@ -114,6 +114,7 @@ export async function ensureDefaultProjectConfig(projectRoot: string): Promise<v
   const vosDir = path.resolve(projectRoot, ".vos");
   const projectPath = path.join(vosDir, "project.yaml");
   const policyPath = path.join(vosDir, "policy.yaml");
+  const agentsPath = path.join(projectRoot, "AGENTS.md");
   mkdirSync(vosDir, { recursive: true });
   if (!existsSync(projectPath)) {
     writeFileSync(
@@ -170,9 +171,13 @@ export async function ensureDefaultProjectConfig(projectRoot: string): Promise<v
       "  - Makefile",
       "  - CMakeLists.txt",
       "  - xtask",
+      "  - AGENTS.md",
       "visibility_scope: public\n",
     ];
     writeFileSync(policyPath, `${defaultPolicy.join("\n")}\n`);
+  }
+  if (!existsSync(agentsPath)) {
+    writeFileSync(agentsPath, DEFAULT_AGENTS_TEMPLATE);
   }
 
   const cacheDir = path.join(vosDir, "cache", "normalized");
@@ -189,3 +194,21 @@ function ensureVosGitignore(projectRoot: string): void {
   const prefix = existing && !existing.endsWith("\n") ? `${existing}\n` : existing;
   writeFileSync(gitignorePath, `${prefix}.vos/\n`);
 }
+
+const DEFAULT_AGENTS_TEMPLATE = `# AGENTS.md
+
+Guidance for agents and humans working in this VOS project.
+
+## Project
+
+This is a VeriSpecOSLab project. Treat \`spec/\`, source code, tests, and \`.vos/\`
+runtime artifacts as separate evidence-backed surfaces.
+
+## Agent Instructions
+
+- Inspect relevant specs and existing files before proposing patches.
+- Keep changes scoped to the requested task and allowed paths.
+- Do not edit generated \`.vos/runs/\` or \`.vos/worktrees/\` artifacts.
+- Update this file when new public project conventions or agent-facing workflow
+  rules are introduced.
+`;

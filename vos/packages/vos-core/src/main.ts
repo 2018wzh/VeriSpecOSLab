@@ -98,6 +98,7 @@ import {
 import { resolveToolchainManifestPath } from "./runtime/toolchain-manifest.ts";
 import { buildContextBundle, loadAgentAllowedPaths } from "./agent/context.ts";
 import {
+  AGENTS_READONLY_GUIDANCE_PROMPT,
   buildAgentDebugPrompt,
   buildAgentGeneratePrompt,
   buildAgentPlanPrompt,
@@ -818,7 +819,7 @@ export async function executeInit(
     actor: "human",
     intent: "initialize VOS project ledger",
     specRefs: [],
-    changedTargets: [".vos/project.yaml", ".vos/policy.yaml", ".gitignore"],
+    changedTargets: [".vos/project.yaml", ".vos/policy.yaml", ".gitignore", "AGENTS.md"],
     runId: evidence.run_id,
   });
   return { status: "passed", details: { initialized: true, ledger: true } };
@@ -3183,9 +3184,11 @@ async function runDefaultAgentSpecReview(params: {
   };
   const prompt = [
     "Review this VOS spec result for design conflicts and tradeoffs.",
+    AGENTS_READONLY_GUIDANCE_PROMPT,
     "Return JSON only with { findings: [{ severity, message, related_specs, suggested_actions }], summary }.",
     "Severity must be one of info, warning, error, blocker.",
     "Your findings are advisory and must be grounded in the provided diagnostics or spec refs.",
+    "If a missing public spec or agent workflow convention belongs in AGENTS.md, mention that in suggested_actions.",
     JSON.stringify(reviewInput, null, 2),
   ].join("\n\n");
 
@@ -3796,6 +3799,9 @@ export function buildAgentDebugTracePrompt(input: DebugTraceInput): string {
     "Return exactly one JSON object and nothing else.",
     "Do not execute commands.",
     "Do not modify spec files.",
+    AGENTS_READONLY_GUIDANCE_PROMPT,
+    "Do not force AGENTS.md into temporary instrumentation patches.",
+    "If validation uncovers a durable project workflow rule, suggest a follow-up AGENTS.md update instead.",
     "Use the validation input as the source of truth: target, public requirements, module test surfaces, coverage hints, project tree, toolchain, and recent evidence.",
     "Before writing the final JSON, use available file-reading tools to inspect every source file you modify and any spec file that names the mapped requirement.",
     "If target names a specific module or requirement, every case must map to that target through requirement_id, related_specs, and expected_trace_events.",

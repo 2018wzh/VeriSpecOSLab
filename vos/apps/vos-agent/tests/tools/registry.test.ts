@@ -172,6 +172,19 @@ describe("createBuiltinToolRegistry", () => {
     );
   });
 
+  test("course mode denies write tools even if they are supplied externally", async () => {
+    const reg = createBuiltinToolRegistry({
+      courseMode: true,
+      extraTools: [fakeTool("Write", () => "wrote")],
+    });
+
+    expect(reg.names()).not.toContain("Write");
+    expect(await reg.execute("Write", JSON.stringify({
+      file_path: "boot-flow-visual.html",
+      content: "<html></html>",
+    }))).toContain('Tool "Write" denied by policy');
+  });
+
   test("Task subagent specs restrict the nested built-in registry", async () => {
     const chat = new CallbackChatClient((request) => {
       const names = request.tools.map((tool) => tool.function.name);

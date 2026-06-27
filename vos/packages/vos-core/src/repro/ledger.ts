@@ -157,7 +157,8 @@ function isIgnoredRuntimeArtifact(file: string): boolean {
   return file.startsWith(".vos/runs/") ||
     file.startsWith(".vos/index/") ||
     file === ".vos/commit-ledger.jsonl" ||
-    file === ".gitignore";
+    file === ".gitignore" ||
+    file === "AGENTS.md";
 }
 
 function gitMaybe(projectRoot: string, args: string[]): { ok: true; stdout: string; stderr: string } | { ok: false; stdout: string; stderr: string } {

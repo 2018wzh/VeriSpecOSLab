@@ -204,6 +204,8 @@ describe("DebugAgent trace helpers", () => {
     expect(prompt).toContain("Return exactly one JSON object and nothing else.");
     expect(prompt).toContain("instrumentation_patch");
     expect(prompt).toContain("Validation input:");
+    expect(prompt).toContain("Read and respect applicable AGENTS.md");
+    expect(prompt).toContain("Do not force AGENTS.md into temporary instrumentation patches");
     expect(prompt).toContain("\"target\": \"kernel/syscall\"");
     expect(prompt).not.toContain("For broad targets, aim for at most 3 touched files");
     expect(prompt).not.toContain("Do not place trace printing inside hot per-character");
