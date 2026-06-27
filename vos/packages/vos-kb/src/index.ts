@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Database } from "bun:sqlite";
 import * as cheerio from "cheerio";
 import mime from "mime";
 import officeparser from "officeparser";
+import simpleGit, { type SimpleGit } from "simple-git";
 import * as sqliteVec from "sqlite-vec";
 import { z } from "zod";
 
@@ -73,6 +74,8 @@ export interface AddKbSourceInput {
   stage?: string;
   title?: string;
   recursive?: boolean;
+  branch?: string;
+  tag?: string;
 }
 
 export interface ListKbSourcesFilter {
@@ -159,8 +162,10 @@ export async function addKbSource(
   const input = typeof sourceOrInput === "string"
     ? { source: sourceOrInput, sourceKind: typeof legacySourceKindOrOptions === "string" ? legacySourceKindOrOptions : "project" }
     : sourceOrInput;
+  if (input.branch && input.tag) throw new Error("cannot specify both branch and tag for KB git source");
   const embedder = requireEmbedder(options.embedder);
-  const files = await expandSources(projectRoot, input.source, input.recursive ?? false);
+  const gitRef = input.branch || input.tag ? { branch: input.branch, tag: input.tag } : undefined;
+  const files = await expandSources(projectRoot, input.source, input.recursive ?? false, gitRef);
   let first: KbSource | undefined;
   for (const file of files) {
     const item = await addOne(projectRoot, { ...input, source: file }, embedder);
@@ -310,7 +315,146 @@ async function addOne(projectRoot: string, input: AddKbSourceInput, embedder: Kb
   return item;
 }
 
-async function expandSources(projectRoot: string, source: string, recursive: boolean): Promise<string[]> {
+// --- Git remote repository support ---
+
+const GIT_REMOTE_RE = /^(?:https?:\/\/|git@|file:\/\/)[^\s]+\.git(?:\/[^\s]*)?$/i;
+
+function isGitRemoteUrl(source: string): boolean {
+  return GIT_REMOTE_RE.test(source);
+}
+
+function gitCacheDir(projectRoot: string, url: string): string {
+  return path.join(projectRoot, ".vos", "kb", "repos", hash(url).slice(0, 16));
+}
+
+function readGitAuthConfig(projectRoot: string): { sshKeyPath?: string; token?: string } {
+  const configPath = path.join(projectRoot, ".vos", "config.toml");
+  if (!existsSync(configPath)) return {};
+  const parsed = Bun.TOML.parse(readFileSync(configPath, "utf8"));
+  if (!parsed || typeof parsed !== "object") return {};
+  const root = parsed as Record<string, unknown>;
+  const gitSection = (root.kb as Record<string, unknown> | undefined)?.git as Record<string, unknown> | undefined
+    ?? (root.git as Record<string, unknown> | undefined);
+  if (!gitSection || typeof gitSection !== "object") return {};
+  return {
+    sshKeyPath: typeof gitSection.ssh_key_path === "string" ? gitSection.ssh_key_path : undefined,
+    token: typeof gitSection.token === "string" ? gitSection.token : undefined,
+  };
+}
+
+async function cloneOrUpdateRepo(
+  projectRoot: string,
+  url: string,
+  cacheDir: string,
+  options: { branch?: string; tag?: string },
+): Promise<string> {
+  let resolvedUrl = url;
+  const auth = readGitAuthConfig(projectRoot);
+
+  // Resolve auth URL once; env vars only needed when auth is present.
+  if (auth.token) {
+    resolvedUrl = url.replace(/^https?:\/\//, (match) => `${match}oauth2:${auth.token}@`);
+  }
+
+  // Build a minimal env for git auth, avoiding process.env spread so
+  // simple-git's vulnerability checks don't flag inherited GIT_EDITOR etc.
+  const buildAuthEnv = (): Record<string, string> | undefined => {
+    const pairs: Record<string, string> = {};
+    if (auth.sshKeyPath) {
+      const resolved = auth.sshKeyPath.replace(/^~/, process.env.HOME ?? "/root");
+      pairs.GIT_SSH_COMMAND = `ssh -i ${resolved} -o StrictHostKeyChecking=accept-new`;
+    }
+    if (auth.token) pairs.GIT_TERMINAL_PROMPT = "0";
+    return Object.keys(pairs).length > 0 ? pairs : undefined;
+  };
+  const authEnv = buildAuthEnv();
+
+  const withEnv = (git: SimpleGit): SimpleGit => authEnv ? git.env(authEnv) : git;
+
+  if (existsSync(cacheDir) && existsSync(path.join(cacheDir, ".git"))) {
+    // Update existing checkout
+    const git = simpleGit(cacheDir);
+    if (options.tag) {
+      await withEnv(git).fetch(["origin", `refs/tags/${options.tag}:refs/tags/${options.tag}`, "--force"]);
+      await withEnv(git).checkout(options.tag);
+    } else if (options.branch) {
+      await withEnv(git).fetch(["origin", options.branch]);
+      // Force local branch to match updated remote tracking ref
+      await withEnv(git).raw(["checkout", "-B", options.branch, `origin/${options.branch}`]);
+    } else {
+      await withEnv(git).fetch(["origin"]);
+      const head = await git.revparse(["HEAD"]);
+      await withEnv(git).checkout(head);
+    }
+  } else {
+    // Fresh clone
+    if (existsSync(cacheDir)) await rm(cacheDir, { recursive: true, force: true });
+    await mkdir(path.dirname(cacheDir), { recursive: true });
+    const cloneArgs: string[] = ["--depth", "1"];
+    if (options.branch) cloneArgs.push("--branch", options.branch);
+    await withEnv(simpleGit({ baseDir: path.dirname(cacheDir) })).clone(resolvedUrl, path.basename(cacheDir), cloneArgs);
+    if (options.tag) {
+      const git = simpleGit(cacheDir);
+      // Shallow clones skip tags; fetch the tag explicitly
+      await withEnv(git).fetch(["origin", `refs/tags/${options.tag}:refs/tags/${options.tag}`]);
+      await withEnv(git).checkout(options.tag);
+    }
+  }
+  return cacheDir;
+}
+
+async function expandGitRemoteSource(
+  projectRoot: string,
+  url: string,
+  recursive: boolean,
+  gitRef?: { branch?: string; tag?: string },
+): Promise<string[]> {
+  const cacheDir = gitCacheDir(projectRoot, url);
+  await cloneOrUpdateRepo(projectRoot, url, cacheDir, {
+    branch: gitRef?.branch,
+    tag: gitRef?.tag,
+  });
+
+  if (!recursive) {
+    // Index only files in the repo root
+    const out: string[] = [];
+    for (const entry of await readdir(cacheDir, { withFileTypes: true })) {
+      if (entry.isDirectory() && shouldSkipDirectory(entry.name)) continue;
+      if (entry.isFile() && isIndexableFile(path.join(cacheDir, entry.name))) {
+        out.push(path.relative(projectRoot, path.join(cacheDir, entry.name)));
+      }
+    }
+    return out.sort();
+  }
+
+  // Recursive: prefer git ls-files when available
+  const gitFiles = gitListFiles(cacheDir);
+  if (gitFiles) {
+    return gitFiles
+      .filter((file) => !isIgnoredKbPath(file) && isIndexableFile(path.join(cacheDir, file)))
+      .map((file) => path.relative(projectRoot, path.join(cacheDir, file)))
+      .sort();
+  }
+  // Fallback: manual recursive walk
+  const out: string[] = [];
+  const walk = async (dir: string) => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      if (entry.isDirectory() && shouldSkipDirectory(entry.name)) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      if (entry.isFile() && isIndexableFile(full)) out.push(path.relative(projectRoot, full));
+    }
+  };
+  await walk(cacheDir);
+  return out.sort();
+}
+
+// --- End git remote repository support ---
+
+async function expandSources(projectRoot: string, source: string, recursive: boolean, gitRef?: { branch?: string; tag?: string }): Promise<string[]> {
+  if (isGitRemoteUrl(source)) {
+    return expandGitRemoteSource(projectRoot, source, recursive, gitRef);
+  }
   if (/^https?:\/\//.test(source)) return [source];
   const resolved = path.resolve(projectRoot, source);
   if (!existsSync(resolved)) throw new Error(`KB source not found: ${source}`);

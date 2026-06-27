@@ -1,7 +1,16 @@
 import type { BaseCommandResult } from "./types.ts";
 import { prettyPrint } from "./utils/print.ts";
 
-export function renderOutput(result: BaseCommandResult): string {
+export function renderOutput(result: BaseCommandResult, opts: { verbose?: boolean } = {}): string {
+  if (!opts.verbose) {
+    const lines = [
+      `status: ${result.status}`,
+      `message: ${result.message ?? ""}`,
+      `run_id: ${result.run_id}`,
+    ];
+    return prettyPrint(lines);
+  }
+
   const status = result.status;
   const lines = [
     `command: ${result.command.join(" ")}`,
@@ -19,6 +28,11 @@ export function renderOutput(result: BaseCommandResult): string {
     for (const artifact of result.artifacts) {
       lines.push(`- ${artifact.kind}: ${artifact.path}`);
     }
+  }
+  lines.push(`evidence_refs: ${result.evidence_refs.length}`);
+  if (result.details) {
+    lines.push("details:");
+    lines.push(JSON.stringify(result.details, null, 2));
   }
   return prettyPrint(lines);
 }

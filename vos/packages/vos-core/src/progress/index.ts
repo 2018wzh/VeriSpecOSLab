@@ -42,10 +42,11 @@ export function shouldEnableProgress(
 
 class NoopProgress implements CommandProgress {
   readonly enabled = false;
-  constructor(readonly mode: ProgressMode) {}
-  start(): void {}
-  update(): void {}
-  finish(): void {}
+  constructor(readonly mode: ProgressMode) { }
+  start(): void { }
+  update(): void { }
+  finish(): void { }
+  hide(): void { }
 }
 
 class TerminalProgress implements CommandProgress {
@@ -122,6 +123,14 @@ class TerminalProgress implements CommandProgress {
     } else {
       this.stopHeartbeat();
       this.opts.output.write(`${line}\n`);
+    }
+  }
+
+  hide(): void {
+    this.stopHeartbeat();
+    if (this.spinner.isSpinning) {
+      this.spinner.stop();
+      this.spinner.clear();
     }
   }
 

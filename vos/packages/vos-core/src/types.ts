@@ -37,6 +37,7 @@ export type ProgressMode = "auto" | "always" | "never";
 export interface GlobalOptions {
   projectRoot: string;
   json: boolean;
+  verbose: boolean;
   progress: ProgressMode;
   agentSession?: string;
   reportPath?: string;
@@ -297,6 +298,8 @@ export interface KbAddCommand extends BaseCommand {
   title?: string;
   recursive?: boolean;
   manifestPath?: string;
+  branch?: string;
+  tag?: string;
 }
 
 export interface KbListCommand extends BaseCommand {

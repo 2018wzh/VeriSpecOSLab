@@ -273,7 +273,7 @@ export async function executeCliInvocation(
         readonlyDisplay,
       });
       if (options.print ?? true) {
-        printResult(finalOutput as unknown as Record<string, unknown>, parsed.global.json);
+        printResult(finalOutput as unknown as Record<string, unknown>, parsed.global.json, parsed.global.verbose);
       }
       return finalOutput;
     } catch (error) {
@@ -302,7 +302,7 @@ export async function executeCliInvocation(
       }
       progress.finish(status, message);
       if (options.print ?? true) {
-        printResult(finalOutput as unknown as Record<string, unknown>, parsed.global.json);
+        printResult(finalOutput as unknown as Record<string, unknown>, parsed.global.json, parsed.global.verbose);
       }
       return finalOutput;
     }
@@ -365,6 +365,7 @@ export async function executeVosCommand(
   const global = {
     projectRoot,
     json: options.json ?? true,
+    verbose: false,
     progress: options.progress ?? "never",
     agentSession: options.agentSession,
     reportPath: options.reportPath,
@@ -464,6 +465,7 @@ function createSilentProgress(): CommandProgress {
     start() { },
     update() { },
     finish() { },
+    hide() { },
   };
 }
 
@@ -1638,6 +1640,8 @@ export async function executeKbAdd(
     stage: command.stage,
     title: command.title,
     recursive: command.recursive,
+    branch: command.branch,
+    tag: command.tag,
   }, { embedder: createKbEmbedder(projectRoot) });
   const artifact = path.join(projectRoot, ".vos", "kb", "last-add.json");
   await mkdir(path.dirname(artifact), { recursive: true });
@@ -2343,7 +2347,7 @@ export async function executeAgentAsk(
   };
   if (command.interactive) {
     updateProgress(context, { stage: "agent ask", status: "running", message: "starting interactive repl" });
-    context.progress?.finish("passed", "");
+    context.progress?.hide();
     await runAgentInteractiveTask({
       projectRoot,
       taskKind: "knowledgebase_qa",
@@ -2543,7 +2547,7 @@ export async function executeAgentDebug(
   const projectRoot = context.projectRoot;
   if (!command.logPath && !command.runId) {
     updateProgress(context, { stage: "agent debug", status: "running", message: "starting interactive repl" });
-    context.progress?.finish("passed", "");
+    context.progress?.hide();
     await runAgentInteractiveTask({
       projectRoot,
       taskKind: "debug",
@@ -4230,12 +4234,12 @@ function hashString(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function printResult(result: Record<string, unknown>, asJson: boolean): void {
+function printResult(result: Record<string, unknown>, asJson: boolean, verbose: boolean): void {
   if (asJson) {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
-  console.log(renderOutput(result as unknown as BaseCommandResult));
+  console.log(renderOutput(result as unknown as BaseCommandResult, { verbose }));
 }
 
 export function printHelp(topic?: string): void {
@@ -4246,6 +4250,7 @@ export function printHelp(topic?: string): void {
     "Global:",
     "  --project-root <dir>",
     "  --json",
+    "  -v, --verbose",
     "  --progress auto|always|never",
     "  --agent-session <id>",
     "  --report <path>",

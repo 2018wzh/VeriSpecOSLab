@@ -29,6 +29,8 @@ const addSchema = z.object({
   stage_key: z.string().optional(),
   title: z.string().optional(),
   recursive: z.boolean().optional(),
+  branch: z.string().optional(),
+  tag: z.string().optional(),
 });
 const listSchema = z.object({ source_kind: sourceKindSchema.optional(), stage_key: z.string().optional() }).optional();
 const idSchema = z.object({ id: z.string() });
@@ -92,6 +94,8 @@ async function callTool(projectRoot: string, params: unknown): Promise<{ text: s
         stage: args.stage_key,
         title: args.title,
         recursive: args.recursive,
+        branch: args.branch,
+        tag: args.tag,
       }, { embedder: embedderFromEnv() }));
     }
     if (raw.name === "kb_list_sources") {
@@ -126,7 +130,7 @@ function toolDefinitions(): Array<Record<string, unknown>> {
   return [
     { name: "kb_search", description: "Search VOS knowledge base sources.", inputSchema: { type: "object", properties: { query: { type: "string" }, stage_key: { type: "string" }, limit: { type: "number" } }, required: ["query"] } },
     { name: "kb_lookup", description: "Lookup a KB chunk or source by id.", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
-    { name: "kb_add_source", description: "Add a KB source.", inputSchema: { type: "object", properties: { uri: { type: "string" }, source_kind: { type: "string", enum: ["course", "project", "external"] }, stage_key: { type: "string" }, title: { type: "string" }, recursive: { type: "boolean" } }, required: ["uri", "source_kind"] } },
+    { name: "kb_add_source", description: "Add a KB source.", inputSchema: { type: "object", properties: { uri: { type: "string" }, source_kind: { type: "string", enum: ["course", "project", "external"] }, stage_key: { type: "string" }, title: { type: "string" }, recursive: { type: "boolean" }, branch: { type: "string" }, tag: { type: "string" } }, required: ["uri", "source_kind"] } },
     { name: "kb_list_sources", description: "List KB sources.", inputSchema: { type: "object", properties: { source_kind: { type: "string", enum: ["course", "project", "external"] }, stage_key: { type: "string" } }, required: [] } },
     { name: "kb_remove_source", description: "Remove a KB source.", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
     { name: "kb_clear", description: "Clear the project KB.", inputSchema: { type: "object", properties: {}, required: [] } },

@@ -161,6 +161,159 @@ describe("vos-kb local registry", () => {
     await expect(searchKb(root, "allocator")).rejects.toThrow(/embedding/i);
   });
 
+  test("rejects branch and tag specified together", async () => {
+    await expect(addKbSource(root, {
+      source: "manual.md",
+      sourceKind: "course",
+      branch: "main",
+      tag: "v1.0",
+    }, { embedder: fakeEmbedder })).rejects.toThrow(/cannot specify both branch and tag/i);
+  });
+
+  test("clones a git remote repo and indexes its files", async () => {
+    // Create a bare repo as "remote"
+    const remoteDir = mkdtempSync(path.join(tmpdir(), "vos-kb-remote-"));
+    const bareDir = path.join(remoteDir, "bare.git");
+    mkdirSync(bareDir, { recursive: true });
+    Bun.spawnSync(["git", "init", "--bare", bareDir], { stdout: "pipe", stderr: "pipe" });
+
+    // Create a working clone to push content
+    const workDir = mkdtempSync(path.join(tmpdir(), "vos-kb-work-"));
+    const workGit = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: workDir, stdout: "pipe", stderr: "pipe" });
+    workGit(["init", "--initial-branch=main"]);
+    workGit(["config", "user.email", "test@example.com"]);
+    workGit(["config", "user.name", "VOS Test"]);
+    writeFileSync(path.join(workDir, "README.md"), "# Remote Repo\n\nremote allocator patterns\n");
+    mkdirSync(path.join(workDir, "src"), { recursive: true });
+    writeFileSync(path.join(workDir, "src", "alloc.c"), "// kernel allocator\nvoid* kalloc(void) { return NULL; }\n");
+    workGit(["add", "."]);
+    workGit(["commit", "-m", "initial"]);
+    workGit(["remote", "add", "origin", bareDir]);
+    workGit(["push", "-u", "origin", "main"]);
+
+    try {
+      await addKbSource(root, { source: `file://${bareDir}`, sourceKind: "external", recursive: true, branch: "main" }, { embedder: fakeEmbedder });
+
+      const sources = await listKbSources(root);
+      expect(sources.length).toBeGreaterThanOrEqual(2);
+      expect(sources.some((s) => s.source.includes("README.md"))).toBe(true);
+      expect(sources.some((s) => s.source.includes("alloc.c"))).toBe(true);
+      expect((await searchKb(root, "allocator patterns", { embedder: fakeEmbedder })).some((h) => h.excerpt.toLowerCase().includes("allocator"))).toBe(true);
+    } finally {
+      rmSync(remoteDir, { recursive: true, force: true });
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
+  test("clones with branch and indexes the correct branch content", async () => {
+    // Create bare repo with main and feature branches
+    const remoteDir = mkdtempSync(path.join(tmpdir(), "vos-kb-branch-remote-"));
+    const bareDir = path.join(remoteDir, "bare.git");
+    mkdirSync(bareDir, { recursive: true });
+    Bun.spawnSync(["git", "init", "--bare", bareDir], { stdout: "pipe", stderr: "pipe" });
+
+    const workDir = mkdtempSync(path.join(tmpdir(), "vos-kb-branch-work-"));
+    const workGit = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: workDir, stdout: "pipe", stderr: "pipe" });
+    workGit(["init", "--initial-branch=main"]);
+    workGit(["config", "user.email", "test@example.com"]);
+    workGit(["config", "user.name", "VOS Test"]);
+    writeFileSync(path.join(workDir, "main.txt"), "main branch content\n");
+    workGit(["add", "."]);
+    workGit(["commit", "-m", "main commit"]);
+    workGit(["checkout", "-b", "feature"]);
+    writeFileSync(path.join(workDir, "feature.txt"), "feature branch content with special allocator\n");
+    workGit(["add", "."]);
+    workGit(["commit", "-m", "feature commit"]);
+    workGit(["remote", "add", "origin", bareDir]);
+    workGit(["push", "-u", "origin", "main"]);
+    workGit(["push", "-u", "origin", "feature"]);
+
+    try {
+      await addKbSource(root, { source: `file://${bareDir}`, sourceKind: "external", recursive: true, branch: "feature" }, { embedder: fakeEmbedder });
+
+      const sources = await listKbSources(root);
+      expect(sources.some((s) => s.source.includes("feature.txt"))).toBe(true);
+      expect(sources.some((s) => s.source.includes("main.txt"))).toBe(true);
+      expect((await searchKb(root, "special allocator", { embedder: fakeEmbedder })).some((h) => h.excerpt.includes("special"))).toBe(true);
+    } finally {
+      rmSync(remoteDir, { recursive: true, force: true });
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
+  test("updates an existing git checkout on re-add", async () => {
+    const remoteDir = mkdtempSync(path.join(tmpdir(), "vos-kb-update-remote-"));
+    const bareDir = path.join(remoteDir, "bare.git");
+    mkdirSync(bareDir, { recursive: true });
+    Bun.spawnSync(["git", "init", "--bare", bareDir], { stdout: "pipe", stderr: "pipe" });
+
+    const workDir = mkdtempSync(path.join(tmpdir(), "vos-kb-update-work-"));
+    const workGit = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: workDir, stdout: "pipe", stderr: "pipe" });
+    workGit(["init", "--initial-branch=main"]);
+    workGit(["config", "user.email", "test@example.com"]);
+    workGit(["config", "user.name", "VOS Test"]);
+    writeFileSync(path.join(workDir, "v1.txt"), "version one allocator\n");
+    workGit(["add", "."]);
+    workGit(["commit", "-m", "v1"]);
+    workGit(["remote", "add", "origin", bareDir]);
+    workGit(["push", "-u", "origin", "main"]);
+
+    try {
+      // First add
+      await addKbSource(root, { source: `file://${bareDir}`, sourceKind: "external", recursive: true, branch: "main" }, { embedder: fakeEmbedder });
+      expect((await searchKb(root, "version one", { embedder: fakeEmbedder })).some((h) => h.excerpt.includes("version one"))).toBe(true);
+      expect((await searchKb(root, "version two", { embedder: fakeEmbedder })).some((h) => h.excerpt.includes("version two"))).toBe(false);
+
+      // Update remote
+      writeFileSync(path.join(workDir, "v2.txt"), "version two allocator\n");
+      workGit(["add", "."]);
+      workGit(["commit", "-m", "v2"]);
+      workGit(["push", "origin", "main"]);
+
+      // Re-add (should update)
+      await addKbSource(root, { source: `file://${bareDir}`, sourceKind: "external", recursive: true, branch: "main" }, { embedder: fakeEmbedder });
+      expect((await searchKb(root, "version two", { embedder: fakeEmbedder })).some((h) => h.excerpt.includes("version two"))).toBe(true);
+    } finally {
+      rmSync(remoteDir, { recursive: true, force: true });
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
+  test("clones with a tag and indexes tag content", async () => {
+    const remoteDir = mkdtempSync(path.join(tmpdir(), "vos-kb-tag-remote-"));
+    const bareDir = path.join(remoteDir, "bare.git");
+    mkdirSync(bareDir, { recursive: true });
+    Bun.spawnSync(["git", "init", "--bare", bareDir], { stdout: "pipe", stderr: "pipe" });
+
+    const workDir = mkdtempSync(path.join(tmpdir(), "vos-kb-tag-work-"));
+    const workGit = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: workDir, stdout: "pipe", stderr: "pipe" });
+    workGit(["init", "--initial-branch=main"]);
+    workGit(["config", "user.email", "test@example.com"]);
+    workGit(["config", "user.name", "VOS Test"]);
+    writeFileSync(path.join(workDir, "released.md"), "# v1.0 Release\n\nstable allocator API\n");
+    workGit(["add", "."]);
+    workGit(["commit", "-m", "release commit"]);
+    workGit(["tag", "v1.0"]);
+    writeFileSync(path.join(workDir, "wip.md"), "# draft\nunstable work in progress\n");
+    workGit(["add", "."]);
+    workGit(["commit", "-m", "wip commit"]);
+    workGit(["remote", "add", "origin", bareDir]);
+    workGit(["push", "-u", "origin", "main"]);
+    workGit(["push", "origin", "--tags"]);
+
+    try {
+      await addKbSource(root, { source: `file://${bareDir}`, sourceKind: "external", recursive: true, tag: "v1.0" }, { embedder: fakeEmbedder });
+
+      const sources = await listKbSources(root);
+      expect(sources.some((s) => s.source.includes("released.md"))).toBe(true);
+      expect(sources.some((s) => s.source.includes("wip.md"))).toBe(false);
+      expect((await searchKb(root, "stable allocator", { embedder: fakeEmbedder })).some((h) => h.excerpt.includes("stable"))).toBe(true);
+    } finally {
+      rmSync(remoteDir, { recursive: true, force: true });
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
   test("keeps officeparser PDF extraction working", async () => {
     const pdfPath = path.resolve(import.meta.dir, "../../../../docs/fast26-liu-qingyuan.pdf");
     expect(existsSync(pdfPath)).toBe(true);

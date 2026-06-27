@@ -188,6 +188,12 @@ describe("vos-cli agent command parsing", () => {
     );
   });
 
+  test("parses global verbose mode", () => {
+    expect(parseArgs(["bun", "vos", "doctor"]).global.verbose).toBe(false);
+    expect(parseArgs(["bun", "vos", "-v", "doctor"]).global.verbose).toBe(true);
+    expect(parseArgs(["bun", "vos", "--verbose", "doctor"]).global.verbose).toBe(true);
+  });
+
   test("parses full xv6 agent generate flow flags", () => {
     const parsed = parseArgs([
       "bun",

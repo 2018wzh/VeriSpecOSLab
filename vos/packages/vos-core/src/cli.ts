@@ -92,6 +92,7 @@ export function parseArgs(argv: string[]): ParsedInvocation {
   const global: GlobalOptions = {
     projectRoot: process.cwd(),
     json: false,
+    verbose: false,
     progress: "auto",
   };
 
@@ -110,6 +111,10 @@ export function parseArgs(argv: string[]): ParsedInvocation {
     }
     if (arg === "--json") {
       global.json = true;
+      continue;
+    }
+    if (arg === "-v" || arg === "--verbose") {
+      global.verbose = true;
       continue;
     }
     if (arg === "--progress") {
@@ -791,6 +796,8 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       let title: string | undefined;
       let manifestPath: string | undefined;
       let recursive = false;
+      let branch: string | undefined;
+      let tag: string | undefined;
       if (!source || source.startsWith("-")) throw new Error("kb add requires <path-or-url>");
       for (let i = 2; i < rest.length; i++) {
         const arg = rest[i];
@@ -834,9 +841,27 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
           recursive = true;
           continue;
         }
+        if (arg === "--branch") {
+          branch = resolveRequiredValue(rest, i, arg);
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--branch=")) {
+          branch = arg.slice("--branch=".length);
+          continue;
+        }
+        if (arg === "--tag") {
+          tag = resolveRequiredValue(rest, i, arg);
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--tag=")) {
+          tag = arg.slice("--tag=".length);
+          continue;
+        }
         throw new Error(`unknown flag for kb add: ${arg}`);
       }
-      return { kind: "kb_add", source, sourceKind, stage, title, recursive, manifestPath } satisfies KbAddCommand;
+      return { kind: "kb_add", source, sourceKind, stage, title, recursive, manifestPath, branch, tag } satisfies KbAddCommand;
     }
     if (second === "list") return { kind: "kb_list" } satisfies KbListCommand;
     if (second === "search") {
