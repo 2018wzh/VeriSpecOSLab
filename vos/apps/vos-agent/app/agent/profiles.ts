@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import type { McpServerConfig } from "../plugins/manifest.ts";
 import type { Tool, ToolPolicy } from "../tools/types.ts";
 import { resolveBuiltInSkills } from "../skills/index.ts";
+import { VISUALIZATION_TOOL_NAMES } from "../skills/visualization.ts";
 import { STRUCTURED_OUTPUT_TOOL_NAME } from "../tools/structured-output.ts";
 
 export const PROGRESS_MCP_TOOL_NAME = "mcp__vos-progress__report_progress";
@@ -174,7 +175,7 @@ const PROFILE_CONFIGS: AgentTaskProfileConfig[] = [
     mode: "smart",
     taskKinds: ["debug", "explain_log", "failure_triage"],
     toolProfile: "readonly-debug",
-    skills: ["gdb-debug", "qemu-monitor", "bret-victor-tutor", "verification-diagnosis"],
+    skills: ["gdb-debug", "qemu-monitor", "visualization", "verification-diagnosis"],
     mcpServers: ["evidence-store", "spec-index"],
     outputSchema: "debug_output.v1",
     visibilityScope: "agent-public",
@@ -204,7 +205,7 @@ const PROFILE_CONFIGS: AgentTaskProfileConfig[] = [
     mode: "smart",
     taskKinds: ["knowledgebase_qa", "reference_lookup", "explain_concept", "compare_design"],
     toolProfile: "readonly-reference",
-    skills: ["reference-policy", "teaching-explanation"],
+    skills: ["reference-policy", "teaching-explanation", "visualization"],
     mcpServers: ["vos-kb", "course-kb", "spec-index"],
     outputSchema: "knowledgebase_answer.v1",
     visibilityScope: "student-public",
@@ -216,8 +217,8 @@ const TOOL_PROFILE_TOOLS: Record<ToolProfile, readonly string[]> = {
   "readonly-spec": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
   "readonly-codegen": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
   "readonly-validation": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
-  "readonly-debug": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS, "mcp__gdb__gdb_start", "mcp__gdb__gdb_load", "mcp__gdb__gdb_load_core", "mcp__gdb__gdb_command", "mcp__gdb__gdb_set_breakpoint", "mcp__gdb__gdb_continue", "mcp__gdb__gdb_step", "mcp__gdb__gdb_next", "mcp__gdb__gdb_finish", "mcp__gdb__gdb_print", "mcp__gdb__gdb_examine", "mcp__gdb__gdb_backtrace", "mcp__gdb__gdb_info_registers", "mcp__gdb__gdb_list_source", "mcp__gdb__gdb_list_sessions", "mcp__gdb__gdb_attach", "mcp__gdb__gdb_terminate", "mcp__qemu-monitor__qmp_query", "mcp__qemu-monitor__hmp_info"],
-  "readonly-reference": ["Read", "Glob", "Grep", "TodoRead", "Task", "WebSearch", "WebFetch", ...PROJECT_CONTEXT_TOOLS, "mcp__vos-kb__kb_search", "mcp__vos-kb__kb_lookup", "mcp__vos-kb__kb_list_sources"],
+  "readonly-debug": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS, "mcp__gdb__gdb_start", "mcp__gdb__gdb_load", "mcp__gdb__gdb_load_core", "mcp__gdb__gdb_command", "mcp__gdb__gdb_set_breakpoint", "mcp__gdb__gdb_continue", "mcp__gdb__gdb_step", "mcp__gdb__gdb_next", "mcp__gdb__gdb_finish", "mcp__gdb__gdb_print", "mcp__gdb__gdb_examine", "mcp__gdb__gdb_backtrace", "mcp__gdb__gdb_info_registers", "mcp__gdb__gdb_list_source", "mcp__gdb__gdb_list_sessions", "mcp__gdb__gdb_attach", "mcp__gdb__gdb_terminate", "mcp__qemu-monitor__qmp_query", "mcp__qemu-monitor__hmp_info", ...VISUALIZATION_TOOL_NAMES],
+  "readonly-reference": ["Read", "Glob", "Grep", "TodoRead", "Task", "WebSearch", "WebFetch", ...PROJECT_CONTEXT_TOOLS, "mcp__vos-kb__kb_search", "mcp__vos-kb__kb_lookup", "mcp__vos-kb__kb_list_sources", ...VISUALIZATION_TOOL_NAMES],
 };
 
 const TOOL_PROFILE_VOS_COMMANDS: Record<ToolProfile, readonly string[]> = {

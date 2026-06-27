@@ -19,6 +19,7 @@ import {
 import { discoverWorkspaceRoot } from "./workspace.ts";
 import { runInteractive } from "./terminal/repl.ts";
 import { serveAgentHttp } from "./server/http.ts";
+import { runHttpServerMcpServer } from "./mcp/http-server.ts";
 import { runQemuMonitorMcpServer } from "./mcp/qemu-monitor-server.ts";
 import { runProjectContextMcpServer } from "./mcp/project-context-server.ts";
 
@@ -31,6 +32,10 @@ async function main(): Promise<void> {
   }
   if (process.argv[2] === "internal" && process.argv[3] === "project-context-mcp") {
     await runProjectContextMcpServer();
+    return;
+  }
+  if (process.argv[2] === "internal" && process.argv[3] === "http-server-mcp") {
+    await runHttpServerMcpServer();
     return;
   }
 

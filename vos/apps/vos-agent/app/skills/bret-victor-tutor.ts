@@ -1,6 +1,6 @@
 import type { BuiltInSkill } from "./types.ts";
 
-const BRET_VICTOR_TUTOR_PROMPT = String.raw`## Built-in skill: bret-victor-tutor
+export const BRET_VICTOR_TUTOR_PROMPT = String.raw`## Built-in skill: bret-victor-tutor
 
 # Bret Victor Tutor - Interactive HTML Generator
 

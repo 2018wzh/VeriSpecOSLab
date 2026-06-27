@@ -64,7 +64,7 @@ describe("vos-agent HTTP server", () => {
     });
     expect(profile.agent_profile.skills).toContain("gdb-debug");
     expect(profile.agent_profile.skills).toContain("qemu-monitor");
-    expect(profile.agent_profile.skills).toContain("bret-victor-tutor");
+    expect(profile.agent_profile.skills).toContain("visualization");
     expect(profile.agent_profile.skills).toContain("verification-diagnosis");
     expect(profile.agent_profile.mcpServers).toContain("evidence-store");
   });
@@ -206,7 +206,7 @@ describe("vos-agent HTTP server", () => {
     });
     expect(response.agent_profile.skills).toContain("gdb-debug");
     expect(response.agent_profile.skills).toContain("qemu-monitor");
-    expect(response.agent_profile.skills).toContain("bret-victor-tutor");
+    expect(response.agent_profile.skills).toContain("visualization");
     expect(response.agent_profile.skills).toContain("verification-diagnosis");
     expect(response.agent_profile.mcpServers).toContain("evidence-store");
     expect(response.agent_profile.mcpServers).toContain("spec-index");
@@ -224,6 +224,7 @@ describe("vos-agent HTTP server", () => {
     expect(toolNames).toContain("mcp__project-context__evidence_summary");
     expect(toolNames).toContain("mcp__gdb__gdb_command");
     expect(toolNames).toContain("mcp__qemu-monitor__hmp_info");
+    expect(toolNames).toContain("mcp__http-server__publish_html");
     expect(toolNames).not.toContain("Write");
     expect(toolNames).not.toContain("Edit");
 

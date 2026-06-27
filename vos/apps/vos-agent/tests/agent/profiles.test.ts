@@ -93,6 +93,7 @@ describe("agent task profiles", () => {
     const publicProfile = publicAgentTaskProfile(profile);
 
     expect(publicProfile.promptId).toBe("knowledgebase.v1");
+    expect(publicProfile.skills).toContain("visualization");
     expect(publicProfile.mcpServers).toContain("vos-kb");
     expect(publicProfile.outputSchema).toBe("knowledgebase_answer.v1");
   });
@@ -105,9 +106,12 @@ describe("agent task profiles", () => {
     expect(await allowed(policy, "WebSearch")).toBe(true);
     expect(await allowed(policy, "mcp__vos-kb__kb_search")).toBe(true);
     expect(await allowed(policy, "mcp__project-context__spec_summary")).toBe(true);
+    expect(await allowed(policy, "mcp__http-server__publish_html")).toBe(true);
     expect(await allowed(policy, "Write")).toBe(false);
+    expect(await allowed(policy, "Edit")).toBe(false);
     expect(policy.canAdvertise?.(tool("mcp__vos-kb__kb_lookup")) ?? true).toBe(true);
     expect(policy.canAdvertise?.(tool("mcp__project-context__evidence_summary")) ?? true).toBe(true);
+    expect(policy.canAdvertise?.(tool("mcp__http-server__publish_html")) ?? true).toBe(true);
   });
 
   test("spec and evidence profiles can use readonly project context MCP tools", async () => {
@@ -154,7 +158,7 @@ describe("agent task profiles", () => {
 
     expect(profile.skills).toContain("gdb-debug");
     expect(profile.skills).toContain("qemu-monitor");
-    expect(profile.skills).toContain("bret-victor-tutor");
+    expect(profile.skills).toContain("visualization");
     expect(prompt).toContain("Interactive GDB Debugging via MCP");
     expect(prompt).toContain("QEMU Monitor Debugging via MCP");
     expect(prompt).toContain("Monitor Preflight");
@@ -233,15 +237,16 @@ describe("agent task profiles", () => {
     expect(kbPrompt).toContain("hidden or staff-only material");
   });
 
-  test("built-in skill registry resolves prompts and GDB MCP hints", () => {
-    const resolved = resolveBuiltInSkills(["gdb-debug", "qemu-monitor", "bret-victor-tutor", "unknown-skill"]);
+  test("built-in skill registry resolves prompts, GDB MCP hints, and visualization server", () => {
+    const resolved = resolveBuiltInSkills(["gdb-debug", "qemu-monitor", "visualization", "unknown-skill"]);
 
     expect(resolved.promptText).toContain("target remote");
     expect(resolved.promptText).toContain("query-status");
     expect(resolved.promptText).toContain("states[]");
-    expect(resolved.mcpServers.map((server) => server.name)).toEqual(["gdb", "qemu-monitor"]);
+    expect(resolved.mcpServers.map((server) => server.name)).toEqual(["gdb", "qemu-monitor", "http-server"]);
     expect(resolved.allowedToolNames).toContain("mcp__gdb__gdb_command");
     expect(resolved.allowedToolNames).toContain("mcp__qemu-monitor__qmp_query");
+    expect(resolved.allowedToolNames).toContain("mcp__http-server__publish_html");
     expect(resolved.unknownSkills).toEqual(["unknown-skill"]);
   });
 });

@@ -66,7 +66,7 @@ Default public profiles are resolved from `taskKind`:
 | `codegen`, `skeleton_generation`         | `spec-compiler.v1`       | `deep`  | `operation-codegen`                        | `spec-index`                   | `spec_compiler_output.v1` |
 | `toolchain_generate`                     | `toolchain-agent.v1`     | `deep`  | `toolchain-authoring`                      | `spec-index`                   | `toolchain_generation_draft.v1` |
 | `validate`, `review_patch`               | `spec-validator.v1`      | `deep`  | `verification-diagnosis`, `audit-review`   | `spec-index`, `evidence-store` | `validator_feedback.v1`   |
-| `debug`, `explain_log`, `failure_triage` | `debug-agent.v1`         | `smart` | `gdb-debug`, `qemu-monitor`, `bret-victor-tutor`, `verification-diagnosis` | `evidence-store`, `spec-index` | `debug_output.v1` |
+| `debug`, `explain_log`, `failure_triage` | `debug-agent.v1`         | `smart` | `gdb-debug`, `qemu-monitor`, `visualization`, `verification-diagnosis` | `evidence-store`, `spec-index` | `debug_output.v1` |
 | `debug_trace`                            | `debug-trace-agent.v1`   | `smart` | `gdb-debug`, `qemu-monitor`, `verification-diagnosis`, `instrumentation-testing` | `evidence-store`, `spec-index` | `debug_trace_plan.v1` |
 | `report_narrative`                       | `report-agent.v1`        | `smart` | `verification-diagnosis`, `evidence-reporting` | `evidence-store`, `spec-index` | `report_narrative.v1` |
 | `knowledgebase_qa`, `reference_lookup`   | `knowledgebase.v1`       | `smart` | `reference-policy`, `teaching-explanation` | `vos-kb`, `course-kb`, `spec-index` | `knowledgebase_answer.v1` |
@@ -92,7 +92,7 @@ always intersected with the internal profile tool policy.
 Built-in prompt skills are: `os-spec-authoring`, `audit-review`,
 `operation-codegen`, `toolchain-authoring`, `evidence-reporting`,
 `instrumentation-testing`, `reference-policy`, `teaching-explanation`,
-`gdb-debug`, `qemu-monitor`, `bret-victor-tutor`, and
+`gdb-debug`, `qemu-monitor`, `visualization`, and
 `verification-diagnosis`.
 
 ## Package API

@@ -11,6 +11,7 @@ import { referencePolicySkill } from "./reference-policy.ts";
 import { teachingExplanationSkill } from "./teaching-explanation.ts";
 import { toolchainAuthoringSkill } from "./toolchain-authoring.ts";
 import { verificationDiagnosisSkill } from "./verification-diagnosis.ts";
+import { visualizationSkill } from "./visualization.ts";
 import type { BuiltInSkill, BuiltInSkillResolution } from "./types.ts";
 
 const BUILT_IN_SKILLS: Record<string, BuiltInSkill> = {
@@ -25,6 +26,7 @@ const BUILT_IN_SKILLS: Record<string, BuiltInSkill> = {
   "gdb-debug": gdbDebugSkill,
   "qemu-monitor": qemuMonitorSkill,
   "bret-victor-tutor": bretVictorTutorSkill,
+  "visualization": visualizationSkill,
   "verification-diagnosis": verificationDiagnosisSkill,
 };
 
