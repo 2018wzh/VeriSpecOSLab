@@ -2343,6 +2343,7 @@ export async function executeAgentAsk(
   };
   if (command.interactive) {
     updateProgress(context, { stage: "agent ask", status: "running", message: "starting interactive repl" });
+    context.progress?.finish("passed", "");
     await runAgentInteractiveTask({
       projectRoot,
       taskKind: "knowledgebase_qa",
@@ -2542,6 +2543,7 @@ export async function executeAgentDebug(
   const projectRoot = context.projectRoot;
   if (!command.logPath && !command.runId) {
     updateProgress(context, { stage: "agent debug", status: "running", message: "starting interactive repl" });
+    context.progress?.finish("passed", "");
     await runAgentInteractiveTask({
       projectRoot,
       taskKind: "debug",
