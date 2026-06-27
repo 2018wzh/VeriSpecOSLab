@@ -92,13 +92,25 @@ export interface StageShowCommand extends BaseCommand {
   kind: "stage_show";
 }
 
+export interface StageSaveCommand extends BaseCommand {
+  kind: "stage_save";
+  intent: string;
+  actor: "human" | "agent";
+}
+
 export interface ToolchainLintCommand extends BaseCommand {
   kind: "toolchain_lint";
+}
+
+export interface ToolchainInitCommand extends BaseCommand {
+  kind: "toolchain_init";
+  force: boolean;
 }
 
 export interface SpecLintCommand extends BaseCommand {
   kind: "spec_lint";
   path?: string;
+  noAgent?: boolean;
 }
 
 export interface SpecNormalizeCommand extends BaseCommand {
@@ -123,6 +135,7 @@ export interface SpecPatchApplyCommand extends BaseCommand {
 export interface ArchLintCommand extends BaseCommand {
   kind: "arch_lint";
   path?: string;
+  noAgent?: boolean;
 }
 
 export interface ArchComposeCommand extends BaseCommand {
@@ -145,6 +158,7 @@ export interface BuildCommand extends BaseCommand {
 export interface BuildGenerateCommand extends BaseCommand {
   kind: "build_generate";
   agentSession?: string;
+  noAgent?: boolean;
 }
 
 export interface RunQemuCommand extends BaseCommand {
@@ -321,7 +335,9 @@ export type CliCommand =
   | InitCommand
   | DoctorCommand
   | StageShowCommand
+  | StageSaveCommand
   | ToolchainLintCommand
+  | ToolchainInitCommand
   | SpecLintCommand
   | SpecNormalizeCommand
   | SpecCheckConsistencyCommand

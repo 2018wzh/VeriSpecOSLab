@@ -34,6 +34,7 @@ import type {
   RunQemuCommand,
   ServeCommand,
   StageShowCommand,
+  StageSaveCommand,
   SpecCheckConsistencyCommand,
   SpecLintCommand,
   SpecNormalizeCommand,
@@ -42,6 +43,7 @@ import type {
   SubmitPackCommand,
   TestCommand,
   ToolchainLintCommand,
+  ToolchainInitCommand,
   TraceSyscallCommand,
   VerifyCommand,
   VerifyScope,
@@ -52,6 +54,8 @@ const VALUE_FLAGS = new Set([
   "--project-root",
   "--progress",
   "--agent-session",
+  "--actor",
+  "--intent",
   "--report",
   "--evidence-dir",
   "--toolchain",
@@ -305,24 +309,77 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
 
   if (command === "stage") {
     const second = rest[0];
-    if (second !== "show") {
-      throw new Error("unknown command: stage (use: stage show)");
+    if (second === "show") {
+      return { kind: "stage_show" } satisfies StageShowCommand;
     }
-    return { kind: "stage_show" } satisfies StageShowCommand;
+    if (second === "save") {
+      let intent: string | undefined;
+      let actor: "human" | "agent" = "human";
+      for (let i = 1; i < rest.length; i++) {
+        const arg = rest[i];
+        if (arg === "--intent") {
+          intent = resolveRequiredValue(rest, i, arg);
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--intent=")) {
+          intent = arg.slice("--intent=".length);
+          continue;
+        }
+        if (arg === "--actor") {
+          const value = resolveRequiredValue(rest, i, arg);
+          if (value !== "human" && value !== "agent") throw new Error("--actor must be human or agent");
+          actor = value;
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--actor=")) {
+          const value = arg.slice("--actor=".length);
+          if (value !== "human" && value !== "agent") throw new Error("--actor must be human or agent");
+          actor = value;
+          continue;
+        }
+        throw new Error(`unknown flag for stage save: ${arg}`);
+      }
+      if (!intent) throw new Error("stage save requires --intent");
+      return { kind: "stage_save", intent, actor } satisfies StageSaveCommand;
+    }
+    throw new Error("unknown command: stage (use: stage show|save)");
   }
 
   if (command === "toolchain") {
     const second = rest[0];
-    if (second !== "lint") {
-      throw new Error("unknown command: toolchain (use: toolchain lint)");
+    if (second === "lint") {
+      return { kind: "toolchain_lint" } satisfies ToolchainLintCommand;
     }
-    return { kind: "toolchain_lint" } satisfies ToolchainLintCommand;
+    if (second === "init") {
+      let force = false;
+      for (const arg of rest.slice(1)) {
+        if (arg === "--force") {
+          force = true;
+          continue;
+        }
+        throw new Error(`unknown flag for toolchain init: ${arg}`);
+      }
+      return { kind: "toolchain_init", force } satisfies ToolchainInitCommand;
+    }
+    throw new Error("unknown command: toolchain (use: toolchain lint|init)");
   }
 
   if (command === "spec") {
     const second = rest[0];
     if (second === "lint") {
-      return { kind: "spec_lint", path: rest[1] } satisfies SpecLintCommand;
+      let noAgent = false;
+      let target: string | undefined;
+      for (const arg of rest.slice(1)) {
+        if (arg === "--no-agent") {
+          noAgent = true;
+          continue;
+        }
+        if (arg.startsWith("-")) throw new Error(`unknown flag for spec lint: ${arg}`);
+        target = arg;
+      }
+      return { kind: "spec_lint", path: target, noAgent } satisfies SpecLintCommand;
     }
     if (second === "normalize") {
       return { kind: "spec_normalize" } satisfies SpecNormalizeCommand;
@@ -352,7 +409,17 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
   if (command === "arch") {
     const second = rest[0];
     if (second === "lint") {
-      return { kind: "arch_lint", path: rest[1] } satisfies ArchLintCommand;
+      let noAgent = false;
+      let target: string | undefined;
+      for (const arg of rest.slice(1)) {
+        if (arg === "--no-agent") {
+          noAgent = true;
+          continue;
+        }
+        if (arg.startsWith("-")) throw new Error(`unknown flag for arch lint: ${arg}`);
+        target = arg;
+      }
+      return { kind: "arch_lint", path: target, noAgent } satisfies ArchLintCommand;
     }
     if (second === "compose") {
       return { kind: "arch_compose", path: rest[1] } satisfies ArchComposeCommand;
@@ -366,6 +433,7 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
   if (command === "build") {
     if (rest[0] === "generate") {
       let agentSession: string | undefined;
+      let noAgent = false;
       for (let i = 1; i < rest.length; i++) {
         const arg = rest[i];
         if (arg === "--agent-session") {
@@ -377,9 +445,13 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
           agentSession = arg.slice("--agent-session=".length);
           continue;
         }
+        if (arg === "--no-agent") {
+          noAgent = true;
+          continue;
+        }
         throw new Error(`unknown flag for build generate: ${arg}`);
       }
-      return { kind: "build_generate", agentSession: agentSession ?? global.agentSession } satisfies BuildGenerateCommand;
+      return { kind: "build_generate", agentSession: agentSession ?? global.agentSession, noAgent } satisfies BuildGenerateCommand;
     }
     let dryRun = false;
     let toolchainPath: string | undefined;

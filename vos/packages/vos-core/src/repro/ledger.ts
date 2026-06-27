@@ -45,6 +45,7 @@ export async function assertReproducible(projectRoot: string): Promise<Reproduci
     throw new CliError(`policy_blocked: ${verdict.reason}`, "policy_blocked", {
       reason: verdict.reason,
       commit_sha: verdict.commitSha,
+      suggested_next_commands: ["vos stage save --intent \"record current stage state\""],
     });
   }
   return verdict;

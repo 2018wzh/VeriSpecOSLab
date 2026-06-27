@@ -613,28 +613,41 @@ describe("vos-cli package agent runner", () => {
       args: [],
     });
 
-    await expect(executeCommand({
-      kind: "agent_debug",
-      runId: "failed-run",
-      keepWorktree: false,
-    }, {
-      projectRoot,
-      global: { projectRoot, json: false },
-      evidence,
-      agentRunner: async () => ({
-        content: JSON.stringify({
-          failure_class: "verification_failure",
-          summary: "Allocator evidence failed.",
-          suspected_clauses: [],
-          related_specs: [],
-          evidence_chain: [],
-          visualization_steps: [],
-          next_diagnostic_commands: [],
-          student_visible_limitations: [],
+    const badContent = JSON.stringify({
+      failure_class: "verification_failure",
+      summary: "Allocator evidence failed.",
+      suspected_clauses: [],
+      related_specs: [],
+      evidence_chain: [],
+      visualization_steps: [],
+      next_diagnostic_commands: [],
+      student_visible_limitations: [],
+    });
+    let schemaError: unknown;
+    try {
+      await executeCommand({
+        kind: "agent_debug",
+        runId: "failed-run",
+        keepWorktree: false,
+      }, {
+        projectRoot,
+        global: { projectRoot, json: false },
+        evidence,
+        agentRunner: async () => ({
+          content: badContent,
+          events: [],
         }),
-        events: [],
-      }),
-    })).rejects.toThrow("DebugOutput.visualization_html must be string");
+      });
+    } catch (error) {
+      schemaError = error;
+    }
+    expect(schemaError).toBeTruthy();
+    expect((schemaError as Error).message).toContain("debug_output.v1");
+    const details = (schemaError as { details?: Record<string, unknown> }).details;
+    expect(details?.schema).toBe("debug_output.v1");
+    expect(String(details?.schema_error)).toContain("visualization_html");
+    expect(details?.raw_artifact).toBe("agent-debug/agent-debug-raw.txt");
+    expect(readFileSync(join(evidence.run_root, "artifacts", "agent-debug", "agent-debug-raw.txt"), "utf8")).toBe(badContent);
   });
 
   test("agent debug without inputs starts the interactive debug profile", async () => {
@@ -1330,18 +1343,31 @@ describe("vos-cli package agent runner", () => {
       command: ["agent", "ask"],
       args: ["agent", "ask"],
     });
-    const badRunner = async () => ({ content: JSON.stringify({ answer: "missing arrays" }), events: [] });
-    await expect(executeCommand({
+    const badContent = JSON.stringify({ answer: "missing arrays" });
+    const badRunner = async () => ({ content: badContent, events: [] });
+    let schemaError: unknown;
+    try {
+      await executeCommand({
       kind: "agent_ask",
       question: "bad schema?",
       scope: "memory",
       interactive: false,
-    }, {
-      projectRoot,
-      global: { projectRoot, json: false },
-      evidence: badEvidence,
-      agentRunner: badRunner,
-    })).rejects.toThrow(/knowledgebase_answer\.v1/);
+      }, {
+        projectRoot,
+        global: { projectRoot, json: false },
+        evidence: badEvidence,
+        agentRunner: badRunner,
+      });
+    } catch (error) {
+      schemaError = error;
+    }
+    expect(schemaError).toBeTruthy();
+    expect((schemaError as Error).message).toContain("knowledgebase_answer.v1");
+    const details = (schemaError as { details?: Record<string, unknown> }).details;
+    expect(details?.schema).toBe("knowledgebase_answer.v1");
+    expect(String(details?.schema_error)).toContain("design_goal_alignment");
+    expect(details?.raw_artifact).toBe("agent/agent-ask-raw.txt");
+    expect(readFileSync(join(badEvidence.run_root, "artifacts", "agent", "agent-ask-raw.txt"), "utf8")).toBe(badContent);
     await embeddingServer.stop(true);
   });
 });

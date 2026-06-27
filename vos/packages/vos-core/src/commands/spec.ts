@@ -1,6 +1,8 @@
 export {
   executeStageShow,
+  executeStageSave,
   executeToolchainLint,
+  executeToolchainInit,
   executeSpecLint,
   executeSpecNormalize,
   executeSpecCheckConsistency,

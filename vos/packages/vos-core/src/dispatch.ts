@@ -25,8 +25,14 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
     case "stage_show":
       return handlers.executeStageShow(command, projectRoot);
 
+    case "stage_save":
+      return handlers.executeStageSave(command, context);
+
     case "toolchain_lint":
       return handlers.executeToolchainLint(command, projectRoot);
+
+    case "toolchain_init":
+      return handlers.executeToolchainInit(command, context, evidence);
 
     case "spec_lint":
       return handlers.executeSpecLint(command, projectRoot, context, evidence);

@@ -694,6 +694,80 @@ vos submit pack                            # 打包提交
 | 发现的工具链不足 | 13 项 (D1-D15, 不含 D4/D6) |
 | 错误注入场景 | 4 种（语法/语义/契约/链接） |
 
+### C. Known Issues Closure Demo
+
+本附录用于课堂展示 D1-D15 已知问题的关闭路径。演示仓库固定为 `/home/wzh/student-boot/`，主仓库命令从 `/home/wzh/VeriSpecOSLab/vos` 执行，并带 `--project-root /home/wzh/student-boot`。
+
+#### C.1 Clean Check
+
+```bash
+bun run vos -- --project-root /home/wzh/student-boot doctor
+bun run vos -- --project-root /home/wzh/student-boot toolchain lint
+bun run vos -- --project-root /home/wzh/student-boot spec lint --no-agent
+bun run vos -- --project-root /home/wzh/student-boot arch lint --no-agent
+```
+
+预期状态：全部通过。`spec lint --no-agent` 只执行 deterministic bundle/compose 检查，不调用 advisory agent review。关键 artifact：`.vos/cache/normalized/bundle.json`。
+
+#### C.2 Deterministic Path
+
+```bash
+bun run vos -- --project-root /home/wzh/student-boot toolchain init --force
+bun run vos -- --project-root /home/wzh/student-boot build generate --no-agent
+```
+
+预期状态：全部通过，并生成同一类 deterministic `.vos/toolchain.json`。manifest 应包含 `environment.required_tools`、`build/kernel.{elf,bin,asm}`、`boot-smoke`、public test suites、`exit_code: 0`。关键 artifact：`.vos/toolchain.json`、`.vos/cache/normalized/bundle.json`。
+
+#### C.3 Build / Run / Verify
+
+```bash
+bun run vos -- --project-root /home/wzh/student-boot build
+bun run vos -- --project-root /home/wzh/student-boot run qemu --case boot-smoke
+bun run vos -- --project-root /home/wzh/student-boot verify public
+```
+
+预期状态：全部通过。`boot-smoke` 使用 OpenSBI `-bios default`，kernel 链接到 `0x80200000`，入口路径为 `entry -> kernel_main`，并校验 QEMU 退出码为 0。关键 artifact：`build/kernel.elf`、`.vos/runs/<run-id>/artifacts/run/boot-smoke/serial.log`、`.vos/runs/<run-id>/artifacts/run/boot-smoke/result.json`、`.vos/runs/<run-id>/artifacts/verify/public-summary.json`。
+
+#### C.4 Failure Injection Cases
+
+```bash
+# 1. 移除 shutdown()
+# 编辑 kernel/boot.c，删除 kernel_main 末尾的 shutdown 调用
+bun run vos -- --project-root /home/wzh/student-boot run qemu --case boot-smoke
+
+# 2. 改 banner
+# 编辑 kernel/boot.c 中的 banner 文本
+bun run vos -- --project-root /home/wzh/student-boot verify public
+
+# 3. 改 ENTRY 符号
+# 编辑 kernel/kernel.ld，将 ENTRY(entry) 改为不存在的符号
+bun run vos -- --project-root /home/wzh/student-boot build
+
+# 4. 制造 C 语法错误
+# 编辑任一 kernel/*.c，加入非法语法
+bun run vos -- --project-root /home/wzh/student-boot build
+```
+
+预期状态：四类注入均失败。移除 `shutdown()` 时 `boot-smoke` 应因退出验证失败；改 banner 时 public verify 应指出 banner oracle 不满足；改 ENTRY 时链接阶段因 `--fatal-warnings` 失败；C 语法错误在 build compile 阶段失败。关键 artifact：`.vos/runs/<run-id>/artifacts/build.log`、`.vos/runs/<run-id>/artifacts/build/make-all.log`、`.vos/runs/<run-id>/artifacts/run/boot-smoke/result.json`。
+
+#### C.5 Recovery Case
+
+```bash
+bun run vos -- --project-root /home/wzh/student-boot debug explain-log
+bun run vos -- --project-root /home/wzh/student-boot agent debug --run <run-id>
+```
+
+预期状态：`debug explain-log` 给出 deterministic log 摘要；`agent debug --run <run-id>` 若模型输出符合 schema，则产出 debug JSON、Markdown、visualization 和 GDB 合约。若模型输出不符合 `debug_output.v1`，命令保持 `agent_output_error`，但 JSON details 必须包含 `schema`、`schema_error`、`raw_artifact` 和 `suggested_next_commands`。关键 artifact：`.vos/runs/<run-id>/artifacts/agent-debug/debug.json`、`.vos/runs/<run-id>/artifacts/agent-debug/visualization.html`、坏输出时的 `.vos/runs/<run-id>/artifacts/agent-debug/agent-debug-raw.txt`。
+
+#### C.6 Reproducibility Case
+
+```bash
+# 修改任意 spec/kernel 文件后保存阶段状态
+bun run vos -- --project-root /home/wzh/student-boot stage save --intent "explain the classroom change" --actor human
+```
+
+预期状态：有变更时创建提交 `[vos][stage] Save stage state` 并写 `.vos/commit-ledger.jsonl`；无变更时为当前 HEAD 补 ledger。若直接运行受控命令并遇到 `policy_blocked: dirty_worktree` 或 `policy_blocked: ledger_missing`，JSON details 会给出可复制的 `vos stage save --intent "record current stage state"` 建议命令。关键 artifact：`.vos/commit-ledger.jsonl`、`.vos/runs/<run-id>/manifest.json`。
+
 ---
 
 > **报告生成时间**：2026-06-25

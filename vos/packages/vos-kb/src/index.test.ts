@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import officeparser from "officeparser";
 import {
   addKbSource,
   clearKbSources,
@@ -158,5 +159,13 @@ describe("vos-kb local registry", () => {
   test("requires an embedder for indexing and searching", async () => {
     await expect(addKbSource(root, { source: "manual.md", sourceKind: "course" })).rejects.toThrow(/embedding/i);
     await expect(searchKb(root, "allocator")).rejects.toThrow(/embedding/i);
+  });
+
+  test("keeps officeparser PDF extraction working", async () => {
+    const pdfPath = path.resolve(import.meta.dir, "../../../../docs/fast26-liu-qingyuan.pdf");
+    expect(existsSync(pdfPath)).toBe(true);
+    const ast = await officeparser.parseOffice(pdfPath, { ocr: false });
+    const text = ast.toText().replace(/\s+/g, " ").trim();
+    expect(text.length).toBeGreaterThan(1000);
   });
 });

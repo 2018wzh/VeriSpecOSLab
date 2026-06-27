@@ -38,6 +38,7 @@ import type {
   ParsedInvocation,
   RunAuthContext,
   ServeCommand,
+  StageSaveCommand,
   StageShowCommand,
   SpecCheckConsistencyCommand,
   SpecLintCommand,
@@ -47,6 +48,7 @@ import type {
   SubmitPackCommand,
   TestCommand,
   ToolchainLintCommand,
+  ToolchainInitCommand,
   TraceSyscallCommand,
   ToolchainGenerationDraft,
   VosCommand,
@@ -69,7 +71,7 @@ import {
 import { appendLogEntry, readLogEntries } from "./agent/helpers.ts";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { renderOutput } from "./output.ts";
 import { createCommandProgress } from "./progress/index.ts";
@@ -669,6 +671,7 @@ function isAuthBypassCommand(command: CliCommand): boolean {
     command.kind === "logout" ||
     command.kind === "whoami" ||
     command.kind === "init" ||
+    command.kind === "stage_save" ||
     command.kind === "ledger_record" ||
     command.kind === "help";
 }
@@ -793,6 +796,7 @@ function isReproBypassCommand(command: CliCommand): boolean {
     command.kind === "whoami" ||
     command.kind === "help" ||
     command.kind === "init" ||
+    command.kind === "stage_save" ||
     command.kind === "ledger_record";
 }
 
@@ -923,12 +927,56 @@ export async function executeStageShow(
   };
 }
 
+export async function executeStageSave(
+  command: StageSaveCommand,
+  context: ExecContext,
+): Promise<CommandOutcome> {
+  const projectRoot = context.projectRoot;
+  const before = git(projectRoot, ["status", "--porcelain", "--untracked-files=all"])
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => line.slice(3).trim())
+    .filter(Boolean);
+  git(projectRoot, ["add", "-A"]);
+  const staged = git(projectRoot, ["diff", "--cached", "--name-only"])
+    .split(/\r?\n/)
+    .filter(Boolean);
+  let committed = false;
+  if (staged.length > 0) {
+    git(projectRoot, ["commit", "-m", "[vos][stage] Save stage state"]);
+    committed = true;
+  }
+  const entry = await ensureHeadLedgerEntry({
+    projectRoot,
+    actor: command.actor,
+    intent: command.intent,
+    changedTargets: staged.length > 0 ? staged : before,
+    runId: context.evidence.run_id,
+  });
+  return {
+    status: "passed",
+    details: {
+      committed,
+      changed_targets: staged.length > 0 ? staged : before,
+      ledger: entry ? `${".vos/commit-ledger.jsonl"}#${entry.commit_sha}` : undefined,
+    },
+  };
+}
+
 export async function executeToolchainLint(
   _command: ToolchainLintCommand,
   projectRoot: string,
 ): Promise<CommandOutcome> {
   const lint = await runToolchainLint(projectRoot);
   return { status: lint.status, details: lint as unknown as Record<string, unknown> };
+}
+
+export async function executeToolchainInit(
+  command: ToolchainInitCommand,
+  context: ExecContext,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  return await writeDeterministicToolchainManifest(context.projectRoot, evidence, command.force);
 }
 
 export async function executeSpecLint(
@@ -944,13 +992,15 @@ export async function executeSpecLint(
     targetPath: command.path,
   });
   const bundlePath = await writeNormalizedBundle(projectRoot, bundle, evidence);
-  const agentReview = await runDefaultAgentSpecReview({
-    command: "spec lint",
-    target: command.path,
-    bundle,
-    context,
-    evidence,
-  });
+  const agentReview = command.noAgent
+    ? deterministicOnlyAgentReview("spec lint")
+    : await runDefaultAgentSpecReview({
+      command: "spec lint",
+      target: command.path,
+      bundle,
+      context,
+      evidence,
+    });
   return {
     status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
     details: {
@@ -1185,13 +1235,15 @@ export async function executeArchLint(
     targetPath: command.path,
   });
   const composition = composeArchitecture(bundle);
-  const agentReview = await runDefaultAgentSpecReview({
-    command: "arch lint",
-    target: command.path,
-    bundle,
-    context,
-    evidence,
-  });
+  const agentReview = command.noAgent
+    ? deterministicOnlyAgentReview("arch lint")
+    : await runDefaultAgentSpecReview({
+      command: "arch lint",
+      target: command.path,
+      bundle,
+      context,
+      evidence,
+    });
   const diagnostics = [...bundle.diagnostics, ...composition.conflicts];
   return {
     status: hasBlockingDiagnostics(diagnostics) ? "validation_failed" : "passed",
@@ -1696,6 +1748,9 @@ export async function executeBuildGenerate(
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
+  if (command.noAgent) {
+    return await writeDeterministicToolchainManifest(projectRoot, evidence, true);
+  }
   const spec = await loadToolchainGenerationSpec(projectRoot);
   const agentResult = await runAgentWithPrompt({
     projectRoot,
@@ -2334,7 +2389,13 @@ export async function executeAgentAsk(
   try {
     parsed = parseKnowledgebaseAnswer(agentStructuredOutput(response, "agent_ask"));
   } catch (error) {
-    throw new AgentOutputError(`knowledgebase answer does not match knowledgebase_answer.v1: ${error instanceof Error ? error.message : String(error)}`);
+    const rawPath = await recordRawAgentOutput(evidence, "agent", "agent-ask-raw.txt", response.resultText);
+    throw new AgentOutputError(`knowledgebase answer does not match knowledgebase_answer.v1: ${error instanceof Error ? error.message : String(error)}`, {
+      schema: "knowledgebase_answer.v1",
+      schema_error: error instanceof Error ? error.message : String(error),
+      raw_artifact: path.relative(evidence.artifacts_root, rawPath),
+      suggested_next_commands: ["rerun `vos agent ask` or inspect the raw artifact"],
+    });
   }
   const artifact = path.join(projectRoot, ".vos", "agent-ask.json");
   await writeFile(artifact, `${JSON.stringify({ question: command.question, answer: parsed, kb_hits: kbHits, object_manifest: kbManifest }, null, 2)}\n`);
@@ -2562,7 +2623,18 @@ export async function executeAgentDebug(
       },
     };
   }
-  const debugOutput = parseDebugOutput(agentStructuredOutput(response, "agent_debug"));
+  let debugOutput: ReturnType<typeof parseDebugOutput>;
+  try {
+    debugOutput = parseDebugOutput(agentStructuredOutput(response, "agent_debug"));
+  } catch (error) {
+    const rawPath = await recordRawAgentOutput(evidence, "agent-debug", "agent-debug-raw.txt", response.resultText);
+    throw new AgentOutputError(`agent debug output does not match debug_output.v1: ${error instanceof Error ? error.message : String(error)}`, {
+      schema: "debug_output.v1",
+      schema_error: error instanceof Error ? error.message : String(error),
+      raw_artifact: path.relative(evidence.artifacts_root, rawPath),
+      suggested_next_commands: ["rerun `vos agent debug --run <run-id>` or inspect the raw artifact"],
+    });
+  }
   const gdbSummaryPath = await writeGdbSummaryArtifact(projectRoot, evidence, debugRoot, debugOutput, adapterContractPath);
   const artifact = path.join(debugRoot, "debug.json");
   const markdown = path.join(debugRoot, "debug.md");
@@ -2910,6 +2982,16 @@ async function writeNormalizedBundle(
   return cachePath;
 }
 
+async function writeCurrentNormalizedBundleAndHash(
+  projectRoot: string,
+  evidence: EvidenceWriter,
+): Promise<string> {
+  const project = await loadProjectConfig(projectRoot);
+  const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+  const bundlePath = await writeNormalizedBundle(projectRoot, bundle, evidence);
+  return createHash("sha256").update(await readFile(bundlePath)).digest("hex");
+}
+
 async function writePatchApplyCache(params: {
   projectRoot: string;
   evidence: EvidenceWriter;
@@ -3134,6 +3216,14 @@ async function runDefaultAgentSpecReview(params: {
   }
 }
 
+function deterministicOnlyAgentReview(command: string): AgentSpecReview {
+  return {
+    status: "unavailable",
+    findings: [],
+    summary: `${command} ran deterministic checks only (--no-agent)`,
+  };
+}
+
 async function writeAgentReviewArtifact(
   projectRoot: string,
   evidence: EvidenceWriter,
@@ -3255,6 +3345,7 @@ export function commandToArray(command: CliCommand): string[] {
         "build",
         "generate",
         ...(command.agentSession ? ["--agent-session", command.agentSession] : []),
+        ...(command.noAgent ? ["--no-agent"] : []),
       ];
     case "run_qemu":
       return [
@@ -3265,7 +3356,7 @@ export function commandToArray(command: CliCommand): string[] {
         ...(command.readyPattern ? ["--ready-pattern", command.readyPattern] : []),
       ];
     case "spec_lint":
-      return command.path ? ["spec", "lint", command.path] : ["spec", "lint"];
+      return ["spec", "lint", ...(command.noAgent ? ["--no-agent"] : []), ...(command.path ? [command.path] : [])];
     case "spec_check_consistency":
       return ["spec", "check-consistency"];
     case "spec_patch_lint":
@@ -3280,7 +3371,7 @@ export function commandToArray(command: CliCommand): string[] {
     case "spec_normalize":
       return ["spec", "normalize"];
     case "arch_lint":
-      return command.path ? ["arch", "lint", command.path] : ["arch", "lint"];
+      return ["arch", "lint", ...(command.noAgent ? ["--no-agent"] : []), ...(command.path ? [command.path] : [])];
     case "arch_compose":
       return command.path ? ["arch", "compose", command.path] : ["arch", "compose"];
     case "arch_derive_tests":
@@ -3310,6 +3401,8 @@ export function commandToArray(command: CliCommand): string[] {
       return command.logPath ? ["debug", "explain-log", command.logPath] : ["debug", "explain-log"];
     case "toolchain_lint":
       return ["toolchain", "lint"];
+    case "toolchain_init":
+      return ["toolchain", "init", ...(command.force ? ["--force"] : [])];
     case "agent_serve":
       return [
         "agent",
@@ -3443,6 +3536,8 @@ export function commandToArray(command: CliCommand): string[] {
       return ["doctor"];
     case "stage_show":
       return ["stage", "show"];
+    case "stage_save":
+      return ["stage", "save", "--actor", command.actor, "--intent", command.intent];
     default:
       return ["unknown"];
   }
@@ -3849,7 +3944,7 @@ async function loadToolchainGenerationSpec(projectRoot: string): Promise<{
   profileSpec?: unknown;
   runSpec?: unknown;
   allowedOutputPaths: string[];
-  environment: { required_tools: Array<Record<string, unknown>> };
+  environment: { required_tools: RequiredToolV2[] };
 }> {
   const toolchainPath = path.join(projectRoot, "spec", "toolchain", "toolchain.yaml");
   const buildPath = path.join(projectRoot, "spec", "toolchain", "build.yaml");
@@ -3869,6 +3964,135 @@ async function loadToolchainGenerationSpec(projectRoot: string): Promise<{
     allowedOutputPaths: collectStringListByKey(buildSpec, "allowed_output_path"),
     environment: normalizeProfileEnvironment(profileSpec),
   };
+}
+
+async function writeDeterministicToolchainManifest(
+  projectRoot: string,
+  evidence: EvidenceWriter,
+  force: boolean,
+): Promise<CommandOutcome> {
+  const manifestPath = path.join(projectRoot, ".vos", "toolchain.json");
+  if (existsSync(manifestPath) && !force) {
+    throw new CliError("toolchain manifest already exists; rerun with --force to overwrite", "failed", {
+      path: ".vos/toolchain.json",
+    });
+  }
+  const spec = await loadToolchainGenerationSpec(projectRoot);
+  const specHash = await writeCurrentNormalizedBundleAndHash(projectRoot, evidence);
+  const manifest = buildDeterministicToolchainManifest(projectRoot, spec, specHash);
+  parseToolchainManifest(manifest);
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  evidence.addArtifact("toolchain", path.relative(projectRoot, manifestPath), "deterministic toolchain manifest");
+  return {
+    status: "passed",
+    details: {
+      path: ".vos/toolchain.json",
+      generator: manifest.generator,
+      required_tools: manifest.environment.required_tools.map((tool) => tool.command),
+      build_artifacts: manifest.build.variants[0]?.artifacts ?? [],
+      run_cases: manifest.run.cases.map((testCase) => testCase.id),
+      test_suites: manifest.test.suites.map((suite) => suite.name),
+    },
+  };
+}
+
+function buildDeterministicToolchainManifest(
+  projectRoot: string,
+  spec: Awaited<ReturnType<typeof loadToolchainGenerationSpec>>,
+  specHash: string,
+): ToolchainManifestV2 {
+  const buildArtifacts = collectStringListByKey(spec.buildSpec, "generated_artifacts").length > 0
+    ? collectStringListByKey(spec.buildSpec, "generated_artifacts")
+    : collectStringListByKey(spec.buildSpec, "expected_outputs");
+  const runSpec = isRecord(spec.runSpec) && isRecord(spec.runSpec.run) ? spec.runSpec.run : spec.runSpec;
+  const runRecord = isRecord(runSpec) ? runSpec : {};
+  const command = stringValue(runRecord.command) ?? stringValue(runRecord.emulator) ?? "qemu-system-riscv64";
+  const args = stringValue(runRecord.command)
+    ? []
+    : qemuArgsFromRunSpec(runRecord, buildArtifacts[0] ?? "build/kernel.elf");
+  const timeoutSecs = numberValue(runRecord.timeout_secs);
+  const timeoutMs = numberValue(runRecord.timeout_ms) ?? (timeoutSecs ? timeoutSecs * 1000 : undefined);
+  const successRegex = stringValue(runRecord.success_signal) ?? stringValue(runRecord.success_regex) ?? "ok";
+  const profileArtifact = stringValue(runRecord.artifact) ?? buildArtifacts[0];
+  const publicTests = publicMatrixTests(projectRoot);
+  return {
+    manifest_version: 2,
+    spec_hash: specHash,
+    spec_path: "spec/toolchain/toolchain.yaml",
+    files: ["Makefile"].filter((file) => existsSync(path.join(projectRoot, file))),
+    generator: { name: "vos-deterministic", version: "toolchain-init-v1" },
+    environment: spec.environment.required_tools.length > 0
+      ? spec.environment
+      : { required_tools: [requiredTool("true", ">=0")] },
+    build: {
+      variants: [{
+        id: "baseline",
+        commands: [{ name: "make-all", command: ["make", "all"], timeout_ms: 60000 }],
+        artifacts: buildArtifacts,
+      }],
+    },
+    run: {
+      profiles: [{
+        id: "default",
+        command,
+        args,
+        artifacts: profileArtifact ? [profileArtifact] : [],
+        timeout_ms: timeoutMs,
+      }],
+      cases: [{
+        id: "boot-smoke",
+        profile: "default",
+        success_regex: successRegex,
+        exit_code: 0,
+        timeout_ms: timeoutMs,
+        required_artifacts: [],
+        expected_qmp_events: [],
+      }],
+    },
+    test: {
+      suites: publicTests.map((name) => ({
+        name,
+        kind: "command",
+        command: ["bash", "tests/public/verify.sh", name],
+        related_specs: [],
+      })),
+    },
+  };
+}
+
+function qemuArgsFromRunSpec(runSpec: Record<string, unknown>, artifact: string): string[] {
+  const args: string[] = [];
+  const machine = stringValue(runSpec.machine);
+  if (machine) args.push("-machine", machine);
+  const bios = stringValue(runSpec.bios);
+  if (bios) args.push("-bios", bios);
+  args.push(stringValue(runSpec.kernel_arg) ?? "-kernel", artifact);
+  const memory = stringValue(runSpec.memory);
+  if (memory) args.push("-m", memory);
+  args.push("-smp", "1");
+  const extra = Array.isArray(runSpec.extra_args) ? runSpec.extra_args.filter((item): item is string => typeof item === "string") : [];
+  args.push(...extra);
+  return args;
+}
+
+function publicMatrixTests(projectRoot: string): string[] {
+  const matrixPath = path.join(projectRoot, "spec", "verification", "public-matrix.yaml");
+  if (!existsSync(matrixPath)) return [];
+  try {
+    const matrix = parseTopLevelYaml(readFileSync(matrixPath, "utf8"));
+    return collectStringListByKey(matrix, "required_tests");
+  } catch {
+    return [];
+  }
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function normalizeToolchainDraft(raw: unknown): ToolchainGenerationDraft {
@@ -3944,12 +4168,12 @@ function normalizeToolchainEnvironment(
   return { required_tools: tools };
 }
 
-function normalizeProfileEnvironment(profileSpec: unknown): { required_tools: Array<Record<string, unknown>> } {
+function normalizeProfileEnvironment(profileSpec: unknown): { required_tools: RequiredToolV2[] } {
   const env = profileSpec && typeof profileSpec === "object" && !Array.isArray(profileSpec)
     ? (profileSpec as { environment?: unknown }).environment
     : undefined;
   if (!env || typeof env !== "object" || Array.isArray(env)) return { required_tools: [] };
-  const out = new Map<string, Record<string, unknown>>();
+  const out = new Map<string, RequiredToolV2>();
   for (const item of Array.isArray((env as { required_tools?: unknown }).required_tools) ? (env as { required_tools: unknown[] }).required_tools : []) {
     if (item && typeof item === "object" && !Array.isArray(item)) {
       for (const [name, constraint] of Object.entries(item)) {
@@ -3964,7 +4188,7 @@ function normalizeProfileEnvironment(profileSpec: unknown): { required_tools: Ar
   return { required_tools: [...out.values()] };
 }
 
-function requiredTool(name: string, constraint: string): Record<string, unknown> {
+function requiredTool(name: string, constraint: string): RequiredToolV2 {
   return {
     name,
     command: name,
@@ -3976,8 +4200,9 @@ function requiredTool(name: string, constraint: string): Record<string, unknown>
 }
 
 function toolKind(name: string): string {
+  if (["bash", "make", "true"].includes(name)) return "utility";
   if (name.includes("qemu")) return "emulator";
-  if (name.includes("objcopy") || name.includes("objdump") || name === "ld" || name === "ar") return "binutils";
+  if (name.includes("objcopy") || name.includes("objdump") || name.endsWith("-ld") || name === "ld" || name === "ar") return "binutils";
   return "compiler";
 }
 
@@ -4031,18 +4256,18 @@ export function printHelp(topic?: string): void {
     "  serve --portal-url <url> --project-id <id> [--host <host>] [--port <port>]",
     "  init",
     "  doctor",
-    "  stage show",
-    "  toolchain lint",
-    "  spec lint [path]",
+    "  stage show|save --intent <text> [--actor human|agent]",
+    "  toolchain lint|init [--force]",
+    "  spec lint [--no-agent] [path]",
     "  spec normalize",
     "  spec check-consistency",
     "  spec patch lint <patch-yaml|commit-ish>",
     "  spec patch apply <patch-yaml|commit-ish>",
-    "  arch lint [path]",
+    "  arch lint [--no-agent] [path]",
     "  arch compose [path]",
     "  arch derive-tests [path]",
     "  build [--dry-run] [--toolchain <path>]",
-    "  build generate [--agent-session <id>]",
+    "  build generate [--agent-session <id>] [--no-agent]",
     "  run qemu [--dry-run] [--timeout=<ms>]",
     "  test [--dry-run] [--suite=<name>]...",
     "  verify public|patch|full|invariant|generated|fuzz [--target <value>] [--staff-policy <path>]",

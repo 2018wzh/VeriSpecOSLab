@@ -63,7 +63,43 @@ describe("vos-cli agent command parsing", () => {
     });
   });
 
-  test("parses build generate and ledger record commands", () => {
+  test("parses toolchain init, no-agent lint/generate, stage save, and ledger record commands", () => {
+    expect(parseArgs([
+      "bun",
+      "vos",
+      "toolchain",
+      "init",
+      "--force",
+    ]).command).toEqual({
+      kind: "toolchain_init",
+      force: true,
+    });
+
+    expect(parseArgs([
+      "bun",
+      "vos",
+      "spec",
+      "lint",
+      "--no-agent",
+      "spec/modules",
+    ]).command).toEqual({
+      kind: "spec_lint",
+      path: "spec/modules",
+      noAgent: true,
+    });
+
+    expect(parseArgs([
+      "bun",
+      "vos",
+      "arch",
+      "lint",
+      "--no-agent",
+    ]).command).toEqual({
+      kind: "arch_lint",
+      path: undefined,
+      noAgent: true,
+    });
+
     expect(parseArgs([
       "bun",
       "vos",
@@ -71,9 +107,26 @@ describe("vos-cli agent command parsing", () => {
       "generate",
       "--agent-session",
       "agent-session-1",
+      "--no-agent",
     ]).command).toEqual({
       kind: "build_generate",
       agentSession: "agent-session-1",
+      noAgent: true,
+    });
+
+    expect(parseArgs([
+      "bun",
+      "vos",
+      "stage",
+      "save",
+      "--intent",
+      "save boot stage",
+      "--actor",
+      "agent",
+    ]).command).toEqual({
+      kind: "stage_save",
+      intent: "save boot stage",
+      actor: "agent",
     });
 
     expect(parseArgs([

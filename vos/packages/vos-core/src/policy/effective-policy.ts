@@ -64,6 +64,10 @@ export function matchCommandIntent(command: readonly string[]): string {
   if (command[0] === "arch" && command[1] === "lint") return "arch lint";
   if (command[0] === "arch" && command[1] === "compose") return "arch compose";
   if (command[0] === "arch" && command[1] === "derive-tests") return "arch derive-tests";
+  if (command[0] === "stage" && command[1] === "save") return "stage save";
+  if (command[0] === "stage" && command[1] === "show") return "stage show";
+  if (command[0] === "toolchain" && command[1] === "init") return "toolchain init";
+  if (command[0] === "toolchain" && command[1] === "lint") return "toolchain lint";
   if (command[0] === "build" && command[1] === "generate") return "build generate";
   if (command[0] === "run" && command[1] === "qemu") return "run qemu";
   if (command[0] === "ledger" && command[1] === "record") return "ledger record";

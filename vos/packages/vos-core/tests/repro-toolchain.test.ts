@@ -28,6 +28,7 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
 
     expect(result.status).toBe("policy_blocked");
     expect(result.message).toContain("ledger_missing");
+    expect(result.details?.suggested_next_commands).toContain('vos stage save --intent "record current stage state"');
   });
 
   test("blocks non-build controlled project commands when current HEAD has no ledger entry", async () => {
@@ -189,6 +190,76 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
     expect(JSON.parse(readFileSync(join(projectRoot, ".vos", "toolchain.json"), "utf8")).spec_hash).toBeTruthy();
     expect(readFileSync(join(projectRoot, ".vos", "commit-ledger.jsonl"), "utf8")).toContain("toolchain-generate");
     expect(git(projectRoot, ["log", "-1", "--pretty=%s"]).stdout.trim()).toBe("[vos][toolchain] Generate build system");
+  });
+
+  test("toolchain init writes a deterministic manifest from spec files", async () => {
+    const projectRoot = makeGitProject({ manifest: false });
+    await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
+
+    const result = await executeCliInvocation([
+      "bun",
+      "vos",
+      "--project-root",
+      projectRoot,
+      "--json",
+      "toolchain",
+      "init",
+    ], { print: false });
+
+    expect(result.status).toBe("passed");
+    const manifest = JSON.parse(readFileSync(join(projectRoot, ".vos", "toolchain.json"), "utf8"));
+    expect(manifest.manifest_version).toBe(2);
+    expect(manifest.environment.required_tools[0].command).toBe("true");
+    expect(manifest.build.variants[0].commands[0].command).toEqual(["make", "all"]);
+    expect(manifest.run.profiles[0].command).toBe("printf");
+    expect(manifest.run.cases[0]).toMatchObject({ success_regex: "boot ok", exit_code: 0 });
+  });
+
+  test("build generate --no-agent reuses deterministic toolchain init", async () => {
+    const projectRoot = makeGitProject({ manifest: false });
+    await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
+
+    const result = await executeCliInvocation([
+      "bun",
+      "vos",
+      "--project-root",
+      projectRoot,
+      "--json",
+      "build",
+      "generate",
+      "--no-agent",
+    ], {
+      print: false,
+      agentRunner: async () => {
+        throw new Error("agent should not be called");
+      },
+    });
+
+    expect(result.status).toBe("passed");
+    expect(readFileSync(join(projectRoot, "Makefile"), "utf8")).toContain("printf existing");
+    expect(JSON.parse(readFileSync(join(projectRoot, ".vos", "toolchain.json"), "utf8")).generator.name).toBe("vos-deterministic");
+  });
+
+  test("stage save commits dirty worktree and records ledger", async () => {
+    const projectRoot = makeGitProject({ manifest: true });
+    writeFileSync(join(projectRoot, "Makefile"), "all:\n\tprintf changed\n");
+
+    const result = await executeCliInvocation([
+      "bun",
+      "vos",
+      "--project-root",
+      projectRoot,
+      "--json",
+      "stage",
+      "save",
+      "--intent",
+      "save edited makefile",
+    ], { print: false });
+
+    expect(result.status).toBe("passed");
+    expect(git(projectRoot, ["status", "--porcelain"]).stdout.trim()).toBe("");
+    expect(git(projectRoot, ["log", "-1", "--pretty=%s"]).stdout.trim()).toBe("[vos][stage] Save stage state");
+    expect(readFileSync(join(projectRoot, ".vos", "commit-ledger.jsonl"), "utf8")).toContain("save edited makefile");
   });
 
   test("agent plan records raw output when PlanDraft schema is invalid", async () => {
