@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   executeCliInvocation,
   parseArgs,
+  printCliError,
   printHelp,
   runProgressMcpServer,
 } from "vos-core";
@@ -18,7 +19,7 @@ async function main(): Promise<void> {
 
     const parsed = parseArgs(process.argv);
     if (parsed.command.kind === "help") {
-      printHelp(parsed.command.topic);
+      process.exitCode = printHelp(parsed.command.topic) ? 0 : 1;
       return;
     }
     if (parsed.command.kind === "serve") {
@@ -44,7 +45,7 @@ async function main(): Promise<void> {
     });
     process.exitCode = result.ok ? 0 : 1;
   } catch (error) {
-    console.error(error instanceof Error ? error.message : "unknown error");
+    printCliError(error, process.argv);
     process.exitCode = 1;
   }
 }
@@ -60,7 +61,7 @@ function waitForStop(server: Bun.Server<undefined>): Promise<void> {
   });
 }
 
-export { executeCliInvocation, parseArgs, printHelp };
+export { executeCliInvocation, parseArgs, printCliError, printHelp };
 export { executeCommand } from "vos-core";
 export { startAgentServer } from "vos-core";
 export type { CommandOutcome, ExecContext, ExecuteCliOptions } from "vos-core";

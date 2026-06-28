@@ -124,6 +124,7 @@ export {
   executeCommand,
   executeVosCommand,
   isVosCommand,
+  printCliError,
   printHelp,
   startAgentServer,
 } from "./main.ts";

@@ -284,6 +284,82 @@ describe("vos-cli agent command parsing", () => {
     expect(output).not.toContain("verify goal");
   });
 
+  test("parses command help topics", () => {
+    expect(parseArgs(["bun", "vos", "build", "--help"]).command).toEqual({
+      kind: "help",
+      topic: "build",
+    });
+    expect(parseArgs(["bun", "vos", "agent", "generate", "--help"]).command).toEqual({
+      kind: "help",
+      topic: "agent generate",
+    });
+    expect(parseArgs(["bun", "vos", "verify", "public", "--help"]).command).toEqual({
+      kind: "help",
+      topic: "verify public",
+    });
+    expect(parseArgs(["bun", "vos", "help", "spec", "patch", "apply"]).command).toEqual({
+      kind: "help",
+      topic: "spec patch apply",
+    });
+  });
+
+  test("command help prints focused usage", () => {
+    const result = Bun.spawnSync({
+      cmd: ["bun", "run", "src/main.ts", "agent", "generate", "--help"],
+      cwd: join(import.meta.dir, ".."),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const output = result.stdout.toString();
+
+    expect(result.exitCode).toBe(0);
+    expect(output).toContain("Usage: vos agent generate");
+    expect(output).toContain("--apply");
+    expect(output).toContain("--build");
+    expect(output).toContain("--run");
+    expect(result.stderr.toString()).toBe("");
+  });
+
+  test("verify scope help prints focused usage", () => {
+    const result = Bun.spawnSync({
+      cmd: ["bun", "run", "src/main.ts", "verify", "public", "--help"],
+      cwd: join(import.meta.dir, ".."),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.toString()).toContain("Usage: vos verify public");
+    expect(result.stderr.toString()).toBe("");
+  });
+
+  test("unknown help topics fail", () => {
+    const result = Bun.spawnSync({
+      cmd: ["bun", "run", "src/main.ts", "help", "nope"],
+      cwd: join(import.meta.dir, ".."),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr.toString()).toContain("unknown help topic: nope");
+  });
+
+  test("unknown flags print related help to stderr", () => {
+    const result = Bun.spawnSync({
+      cmd: ["bun", "run", "src/main.ts", "build", "--mystery"],
+      cwd: join(import.meta.dir, ".."),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const error = result.stderr.toString();
+
+    expect(result.exitCode).toBe(1);
+    expect(error).toContain("unknown flag for build: --mystery");
+    expect(error).toContain("Usage: vos build");
+    expect(result.stdout.toString()).toBe("");
+  });
+
   test("parses agent debug run requests", () => {
     const parsed = parseArgs([
       "bun",

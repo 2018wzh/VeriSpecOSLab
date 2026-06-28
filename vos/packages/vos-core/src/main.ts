@@ -168,7 +168,7 @@ async function main(): Promise<void> {
 
     const parsed = parseArgs(process.argv);
     if (parsed.command.kind === "help") {
-      printHelp(parsed.command.topic);
+      process.exitCode = printHelp(parsed.command.topic) ? 0 : 1;
       return;
     }
     const controller = new AbortController();
@@ -181,11 +181,7 @@ async function main(): Promise<void> {
     });
     process.exitCode = isSuccessStatus(result.status) ? 0 : 1;
   } catch (error) {
-    if (error instanceof Error) {
-      console.error(error.message);
-    } else {
-      console.error("unknown error");
-    }
+    printCliError(error, process.argv);
     process.exitCode = 1;
   }
 }
@@ -4248,8 +4244,49 @@ function printResult(result: Record<string, unknown>, asJson: boolean, verbose: 
   console.log(renderOutput(result as unknown as BaseCommandResult, { verbose }));
 }
 
-export function printHelp(topic?: string): void {
-  const globalHelp = [
+export function printHelp(topic?: string, stream: "stdout" | "stderr" = "stdout"): boolean {
+  const lines = HELP_TOPICS[topic ?? ""];
+  const write = stream === "stdout" ? console.log : console.error;
+  if (!lines) {
+    console.error(`unknown help topic: ${topic}`);
+    console.error("Run `vos --help` to list commands.");
+    return false;
+  }
+  write(lines.join("\n"));
+  return true;
+}
+
+export function printCliError(error: unknown, argv: string[]): void {
+  console.error(error instanceof Error ? error.message : "unknown error");
+  const topic = inferHelpTopic(argv);
+  if (topic && HELP_TOPICS[topic]) {
+    console.error("");
+    printHelp(topic, "stderr");
+  }
+}
+
+function helpBlock(usage: string, options: string[], examples: string[]): string[] {
+  return [
+    `Usage: vos ${usage}`,
+    "",
+    "Options:",
+    ...options.map((line) => `  ${line}`),
+    "",
+    "Examples:",
+    ...examples.map((line) => `  ${line}`),
+  ];
+}
+
+function verifyHelpBlock(scope: string): string[] {
+  return helpBlock(
+    `verify ${scope} [--dry-run] [--target <value>] [--staff-policy <path>]`,
+    ["--dry-run", "--target <value>", "--staff-policy <path>"],
+    [`vos verify ${scope}`],
+  );
+}
+
+const HELP_TOPICS: Record<string, string[]> = {
+  "": [
     "vos CLI",
     `version: ${COMMAND_VERSION}`,
     "",
@@ -4308,11 +4345,174 @@ export function printHelp(topic?: string): void {
     "  agent log [-i] [--append] [entry-path]",
     "",
     "  -i on finite agent commands opens a readonly TUI flow display; ask -i and empty debug keep their fixed-profile REPLs.",
-  ];
-  console.log(globalHelp.join("\n"));
-  if (topic) {
-    console.log(`\nUnknown topic: ${topic}`);
+  ],
+  "login": helpBlock(
+    "login --portal-url <url> [--token <token>|--token-stdin]",
+    ["--portal-url <url>", "--token <token>", "--token-stdin"],
+    ["vos login --portal-url https://portal.example --token-stdin"],
+  ),
+  "logout": helpBlock("logout [--portal-url <url>]", ["--portal-url <url>"], ["vos logout"]),
+  "whoami": helpBlock("whoami [--portal-url <url>]", ["--portal-url <url>"], ["vos whoami"]),
+  "serve": helpBlock(
+    "serve --portal-url <url> --project-id <id> [--host <host>] [--port <port>]",
+    ["--portal-url <url>", "--project-id <id>", "--host <host>", "--port <port>"],
+    ["vos serve --portal-url https://portal.example --project-id project-1"],
+  ),
+  "init": helpBlock("init", ["No command-specific options."], ["vos init"]),
+  "doctor": helpBlock("doctor", ["No command-specific options."], ["vos doctor"]),
+  "stage": helpBlock("stage show|save ...", ["show", "save --intent <text> [--actor human|agent]"], ["vos stage show"]),
+  "stage show": helpBlock("stage show", ["No command-specific options."], ["vos stage show"]),
+  "stage save": helpBlock(
+    "stage save --intent <text> [--actor human|agent]",
+    ["--intent <text>", "--actor human|agent"],
+    ["vos stage save --intent \"save boot stage\" --actor human"],
+  ),
+  "toolchain": helpBlock("toolchain lint|init ...", ["lint", "init [--force]"], ["vos toolchain lint"]),
+  "toolchain lint": helpBlock("toolchain lint", ["No command-specific options."], ["vos toolchain lint"]),
+  "toolchain init": helpBlock("toolchain init [--force]", ["--force"], ["vos toolchain init --force"]),
+  "spec": helpBlock(
+    "spec lint|normalize|check-consistency|patch ...",
+    ["lint [--no-agent] [path]", "normalize", "check-consistency", "patch lint|apply <patch-yaml|commit-ish>"],
+    ["vos spec lint --no-agent spec/modules"],
+  ),
+  "spec lint": helpBlock("spec lint [--no-agent] [path]", ["--no-agent", "path"], ["vos spec lint --no-agent spec/modules"]),
+  "spec normalize": helpBlock("spec normalize", ["No command-specific options."], ["vos spec normalize"]),
+  "spec check-consistency": helpBlock("spec check-consistency", ["No command-specific options."], ["vos spec check-consistency"]),
+  "spec patch": helpBlock(
+    "spec patch lint|apply <patch-yaml|commit-ish>",
+    ["lint <patch-yaml|commit-ish>", "apply <patch-yaml|commit-ish>"],
+    ["vos spec patch lint change.yaml"],
+  ),
+  "spec patch lint": helpBlock(
+    "spec patch lint <patch-yaml|commit-ish>",
+    ["<patch-yaml|commit-ish>"],
+    ["vos spec patch lint change.yaml"],
+  ),
+  "spec patch apply": helpBlock(
+    "spec patch apply <patch-yaml|commit-ish>",
+    ["<patch-yaml|commit-ish>"],
+    ["vos spec patch apply change.yaml"],
+  ),
+  "arch": helpBlock(
+    "arch lint|compose|derive-tests ...",
+    ["lint [--no-agent] [path]", "compose [path]", "derive-tests [path]"],
+    ["vos arch lint --no-agent"],
+  ),
+  "arch lint": helpBlock("arch lint [--no-agent] [path]", ["--no-agent", "path"], ["vos arch lint --no-agent"]),
+  "arch compose": helpBlock("arch compose [path]", ["path"], ["vos arch compose spec/arch.yaml"]),
+  "arch derive-tests": helpBlock("arch derive-tests [path]", ["path"], ["vos arch derive-tests spec/arch.yaml"]),
+  "build": helpBlock(
+    "build [--dry-run] [--toolchain <path>] [--variant <name>]",
+    ["--dry-run", "--toolchain <path>", "--variant <name>"],
+    ["vos build", "vos build --dry-run"],
+  ),
+  "build generate": helpBlock(
+    "build generate [--agent-session <id>] [--no-agent]",
+    ["--agent-session <id>", "--no-agent"],
+    ["vos build generate --no-agent"],
+  ),
+  "run": helpBlock("run qemu ...", ["qemu [--dry-run] [--timeout <ms>] [--profile <id>] [--case <id>]"], ["vos run qemu"]),
+  "run qemu": helpBlock(
+    "run qemu [--dry-run] [--timeout <ms>] [--ready-pattern <text>] [--profile <id>] [--case <id>] [--list-profiles] [--list-cases]",
+    ["--dry-run", "--timeout <ms>", "--ready-pattern <text>", "--profile <id>", "--case <id>", "--list-profiles", "--list-cases"],
+    ["vos run qemu --profile syscall --case write-smoke"],
+  ),
+  "test": helpBlock("test [--dry-run] [--suite <name>]...", ["--dry-run", "--suite <name>"], ["vos test --suite public"]),
+  "verify": helpBlock(
+    "verify public|patch|full|invariant|generated|fuzz [--target <value>] [--staff-policy <path>]",
+    ["public|patch|full|invariant|generated|fuzz", "--target <value>", "--staff-policy <path>", "--dry-run"],
+    ["vos verify public", "vos verify full --staff-policy ../staff/verify.json"],
+  ),
+  "verify public": verifyHelpBlock("public"),
+  "verify patch": verifyHelpBlock("patch"),
+  "verify full": verifyHelpBlock("full"),
+  "verify invariant": verifyHelpBlock("invariant"),
+  "verify generated": verifyHelpBlock("generated"),
+  "verify fuzz": verifyHelpBlock("fuzz"),
+  "trace": helpBlock("trace syscall ...", ["syscall [--dry-run] [--timeout <ms>]"], ["vos trace syscall --dry-run"]),
+  "trace syscall": helpBlock("trace syscall [--dry-run] [--timeout <ms>]", ["--dry-run", "--timeout <ms>"], ["vos trace syscall --timeout=10000"]),
+  "debug": helpBlock("debug explain-log [log-path]", ["explain-log [log-path]"], ["vos debug explain-log .vos/runs/run/log.jsonl"]),
+  "debug explain-log": helpBlock("debug explain-log [log-path]", ["log-path"], ["vos debug explain-log"]),
+  "report": helpBlock("report generate [--stage <stage>|--final]", ["generate [--stage <stage>|--final]"], ["vos report generate --final"]),
+  "report generate": helpBlock("report generate [--stage <stage>|--final]", ["--stage <stage>", "--final"], ["vos report generate --stage boot"]),
+  "submit": helpBlock("submit pack", ["pack"], ["vos submit pack"]),
+  "submit pack": helpBlock("submit pack", ["No command-specific options."], ["vos submit pack"]),
+  "ledger": helpBlock("ledger record ...", ["record --actor human|agent --intent <text>"], ["vos ledger record --actor human --intent \"manual fix\""]),
+  "ledger record": helpBlock(
+    "ledger record --actor human|agent --intent <text> [--spec-ref <ref>]... [--changed-target <path>]...",
+    ["--actor human|agent", "--intent <text>", "--spec-ref <ref>", "--changed-target <path>"],
+    ["vos ledger record --actor human --intent \"manual fix\" --changed-target kernel/syscall.c"],
+  ),
+  "kb": helpBlock(
+    "kb add|list|search|remove|clear|export-manifest|import-manifest ...",
+    ["add <path-or-url>", "list", "search <query>", "remove <source-id>", "clear", "export-manifest [--out <path>]", "import-manifest <path>"],
+    ["vos kb search allocator"],
+  ),
+  "kb add": helpBlock(
+    "kb add <path-or-url> [--source-kind course|project|external] [--stage <stage>] [--title <title>] [--recursive] [--manifest <path>]",
+    ["--source-kind course|project|external", "--stage <stage>", "--title <title>", "--recursive", "--manifest <path>", "--branch <name>", "--tag <name>"],
+    ["vos kb add docs/manual.md --source-kind course --stage memory"],
+  ),
+  "kb list": helpBlock("kb list", ["No command-specific options."], ["vos kb list"]),
+  "kb search": helpBlock("kb search <query>", ["<query>"], ["vos kb search allocator invariant"]),
+  "kb remove": helpBlock("kb remove <source-id>", ["<source-id>"], ["vos kb remove kb-123"]),
+  "kb clear": helpBlock("kb clear", ["No command-specific options."], ["vos kb clear"]),
+  "kb export-manifest": helpBlock("kb export-manifest [--out <path>]", ["--out <path>"], ["vos kb export-manifest --out kb-manifest.json"]),
+  "kb import-manifest": helpBlock("kb import-manifest <path>", ["<path>"], ["vos kb import-manifest kb-manifest.json"]),
+  "agent": helpBlock(
+    "agent serve|context|plan|ask|generate|apply-patch|validate-generated|review-spec|debug|log ...",
+    ["serve", "context", "plan", "ask", "generate", "apply-patch", "validate-generated", "review-spec", "debug", "log"],
+    ["vos agent plan --stage memory \"check allocator design\""],
+  ),
+  "agent serve": helpBlock("agent serve [-i] [--host <host>] [--port <port>]", ["-i, --interactive", "--host <host>", "--port <port>"], ["vos agent serve --port 8787"]),
+  "agent context": helpBlock("agent context [-i] [--scope <scope>]", ["-i, --interactive", "--scope <scope>", "--stage <stage>"], ["vos agent context --scope memory"]),
+  "agent plan": helpBlock("agent plan [-i] [--scope <scope>|--stage <stage>] [--task <task>]", ["-i, --interactive", "--scope <scope>", "--stage <stage>", "--task <task>"], ["vos agent plan --stage syscall \"check allocator design\""]),
+  "agent ask": helpBlock("agent ask [-i|--interactive] [--stage <stage>|--scope <scope>] [question]", ["-i, --interactive", "--stage <stage>", "--scope <scope>", "--task <question>"], ["vos agent ask --stage memory \"How should I design kalloc?\""]),
+  "agent generate": helpBlock(
+    "agent generate [-i] [target] [--target <target>] [--task <task>] [--apply] [--build] [--run]",
+    ["-i, --interactive", "--target <target>", "--task <task>", "--apply", "--build", "--run"],
+    ["vos agent generate kernel/memory --apply --build"],
+  ),
+  "agent apply-patch": helpBlock(
+    "agent apply-patch [-i] [--patch-file <file>] [--run-validation] [--no-require-spec]",
+    ["-i, --interactive", "--patch-file <file>", "--run-validation", "--no-require-spec"],
+    ["vos agent apply-patch --patch-file candidate.patch --run-validation"],
+  ),
+  "agent validate-generated": helpBlock(
+    "agent validate-generated [-i] --target <value> [--patch-file <file>] [--keep-worktree]",
+    ["-i, --interactive", "--target <value>", "--patch-file <file>", "--keep-worktree"],
+    ["vos agent validate-generated --target full-syscall --patch-file candidate.patch"],
+  ),
+  "agent review-spec": helpBlock("agent review-spec [-i] [--target <path|stage|patch>]", ["-i, --interactive", "--target <path|stage|patch>"], ["vos agent review-spec --target memory"]),
+  "agent debug": helpBlock(
+    "agent debug [-i] [--run <run-id>] [--log <path>] [--keep-worktree]",
+    ["-i, --interactive", "--run <run-id>", "--log <path>", "--keep-worktree"],
+    ["vos agent debug --run run-1"],
+  ),
+  "agent log": helpBlock("agent log [-i] [--append] [entry-path]", ["-i, --interactive", "--append", "--entry <path>", "entry-path"], ["vos agent log --append entry.json"]),
+};
+
+function inferHelpTopic(argv: string[]): string | undefined {
+  const valueFlags = new Set(["--project-root", "--progress", "--agent-session", "--report", "--evidence-dir"]);
+  const tokens: string[] = [];
+  const args = argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (valueFlags.has(arg)) {
+      i++;
+      continue;
+    }
+    if ([...valueFlags].some((flag) => arg.startsWith(`${flag}=`))) continue;
+    if (arg === "--json" || arg === "-v" || arg === "--verbose") continue;
+    if (arg.startsWith("-")) break;
+    tokens.push(arg);
   }
+  if (tokens[0] === "help") tokens.shift();
+  for (let length = tokens.length; length > 0; length--) {
+    const topic = tokens.slice(0, length).join(" ");
+    if (HELP_TOPICS[topic]) return topic;
+  }
+  return undefined;
 }
 
 function extractPatchTouches(patchText: string): string[] {

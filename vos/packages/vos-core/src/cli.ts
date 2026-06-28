@@ -152,6 +152,15 @@ export function parseArgs(argv: string[]): ParsedInvocation {
     return { global, command: { kind: "help", topic: undefined } };
   }
 
+  if (commandTokens[0] === "help") {
+    return { global, command: { kind: "help", topic: commandTokens.slice(1).join(" ") || undefined } };
+  }
+
+  const helpIndex = commandTokens.findIndex((arg) => arg === "-h" || arg === "--help");
+  if (helpIndex >= 0) {
+    return { global, command: { kind: "help", topic: commandTokens.slice(0, helpIndex).join(" ") || undefined } };
+  }
+
   const command = parseCommand(commandTokens, global);
   return { global, command };
 }
