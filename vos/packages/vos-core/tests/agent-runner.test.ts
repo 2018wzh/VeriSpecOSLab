@@ -855,6 +855,34 @@ describe("vos-cli package agent runner", () => {
     expect(result.env.SMART_MODEL).toBe("llama");
   });
 
+  test("maps Ollama agent config to native Ollama env", () => {
+    const projectRoot = makeProject();
+    writeFileSync(join(projectRoot, ".vos", "config.toml"), [
+      "[agent]",
+      "provider = \"ollama\"",
+      "model = \"qwen2.5-coder\"",
+      "base_url = \"http://localhost:11434/api\"",
+      "",
+      "[agent.auth]",
+      "env = \"OLLAMA_TOKEN\"",
+      "",
+    ].join("\n"));
+
+    const result = buildAgentEnv({
+      projectRoot,
+      env: {
+        OLLAMA_TOKEN: "ollama-key",
+      } as NodeJS.ProcessEnv,
+    });
+
+    expect(result.model).toBe("qwen2.5-coder");
+    expect(result.env.OLLAMA_ENABLED).toBe("1");
+    expect(result.env.OLLAMA_API_KEY).toBe("ollama-key");
+    expect(result.env.OLLAMA_BASE_URL).toBe("http://localhost:11434/api");
+    expect(result.env.OPENAI_COMPATIBLE_API_KEY).toBeUndefined();
+    expect(result.env.SMART_MODEL).toBe("qwen2.5-coder");
+  });
+
   test("prefixes Anthropic config model for routed package agent env", () => {
     const projectRoot = makeProject();
     writeFileSync(join(projectRoot, ".vos", "config.toml"), [

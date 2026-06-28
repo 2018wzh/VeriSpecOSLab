@@ -36,15 +36,18 @@ $ ./dist/stars --help
 
 ## 3. Configure
 
-The agent talks to both Anthropic's native Messages API and any
-OpenAI-compatible endpoint. Configure at least one:
+The agent talks to Anthropic, OpenAI, OpenAI-compatible gateways, and
+native Ollama. Configure at least one:
 
 ```sh
 # Anthropic — powers the default 'smart' mode (opus4.7) and 'rush' mode:
 $ export ANTHROPIC_API_KEY=sk-ant-...
 
-# OpenAI-compatible — powers the 'deep' mode (gpt5.5):
+# OpenAI — powers the 'deep' mode (gpt5.5):
 $ export OPENAI_API_KEY=sk-...
+
+# Ollama native API:
+$ export OLLAMA_ENABLED=1
 
 # or both, to use smart and deep in different runs / mix models:
 $ export ANTHROPIC_API_KEY=sk-ant-...
@@ -66,7 +69,7 @@ interactive TUI. Existing Anthropic-compatible gateway setups that set
 `ANTHROPIC_DEFAULT_OPUS_MODEL` / `ANTHROPIC_DEFAULT_SONNET_MODEL` are
 also understood as fallbacks for `smart` / `rush`. The full
 configuration surface, including
-Anthropic-compatible bearer gateways, OpenRouter, vLLM, Ollama, user or
+Anthropic-compatible bearer gateways, OpenRouter, vLLM, Ollama native API, user or
 workspace settings, and disabling tools such as `Bash`, is documented in
 [Configuration](configuration.md).
 

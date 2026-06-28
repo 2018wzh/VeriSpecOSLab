@@ -211,6 +211,14 @@ export function buildAgentEnv(params: {
       if (config.baseUrl) {
         mapped.OPENAI_BASE_URL = config.baseUrl;
       }
+    } else if (provider === "ollama") {
+      mapped.OLLAMA_ENABLED = "1";
+      if (!mapped.OLLAMA_API_KEY && config.authEnv) {
+        mapped.OLLAMA_API_KEY = mapped[config.authEnv];
+      }
+      if (config.baseUrl) {
+        mapped.OLLAMA_BASE_URL = config.baseUrl;
+      }
     } else if (provider === "anthropic") {
       if (!mapped.ANTHROPIC_API_KEY && !mapped.ANTHROPIC_AUTH_TOKEN && config.authEnv) {
         mapped.ANTHROPIC_API_KEY = mapped[config.authEnv];

@@ -70,6 +70,15 @@ export interface DeepSeekConfig {
   maxRetries?: number;
 }
 
+export type OllamaThink = "off" | "passthrough";
+
+export interface OllamaConfig {
+  baseURL: string;
+  apiKey?: string;
+  think: OllamaThink;
+  keepAlive?: string;
+}
+
 export interface AnthropicConfig {
   apiKey?: string;
   authToken?: string;
@@ -106,6 +115,8 @@ export interface Config {
   openaiCompatible?: OpenAICompatibleConfig;
   /** Present iff DEEPSEEK_API_KEY is set. */
   deepseek?: DeepSeekConfig;
+  /** Present iff OLLAMA_ENABLED, OLLAMA_BASE_URL, or OLLAMA_API_KEY is set. */
+  ollama?: OllamaConfig;
   /** Present iff ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN is set. */
   anthropic?: AnthropicConfig;
 }
@@ -124,6 +135,11 @@ export interface Config {
  *   DEEPSEEK_API_KEY      enable DeepSeek provider
  *   DEEPSEEK_BASE_URL     optional override for the DeepSeek endpoint
  *   DEEPSEEK_BETA_BASE_URL optional override for DeepSeek beta endpoint
+ *   OLLAMA_ENABLED        set to 1/true to enable local Ollama
+ *   OLLAMA_BASE_URL       optional Ollama native API base URL
+ *   OLLAMA_API_KEY        optional Bearer token for remote Ollama
+ *   OLLAMA_THINK          off or passthrough
+ *   OLLAMA_KEEP_ALIVE     optional Ollama keep_alive value
  *   SMART_MODEL           override the model bound to the 'smart' mode
  *   DEEP_MODEL            override the model bound to the 'deep' mode
  *   RUSH_MODEL            override the model bound to the 'rush' mode
@@ -145,6 +161,9 @@ export function loadConfig(
   const openaiBaseUrl = trimToUndefined(env.OPENAI_BASE_URL);
   const openaiCompatibleApiKey = trimToUndefined(env.OPENAI_COMPATIBLE_API_KEY) ?? (openaiBaseUrl ? openaiApiKey : undefined);
   const deepseekApiKey = trimToUndefined(env.DEEPSEEK_API_KEY);
+  const ollamaEnabled = truthyEnv(env.OLLAMA_ENABLED);
+  const ollamaBaseUrl = trimToUndefined(env.OLLAMA_BASE_URL);
+  const ollamaApiKey = trimToUndefined(env.OLLAMA_API_KEY);
   const anthropicApiKey = trimToUndefined(env.ANTHROPIC_API_KEY);
   const anthropicAuthToken = trimToUndefined(env.ANTHROPIC_AUTH_TOKEN);
 
@@ -169,6 +188,14 @@ export function loadConfig(
         betaBaseURL: trimToUndefined(env.DEEPSEEK_BETA_BASE_URL),
       }
     : undefined;
+  const ollama = ollamaEnabled || ollamaBaseUrl || ollamaApiKey
+    ? {
+        baseURL: ollamaBaseUrl ?? "http://localhost:11434/api",
+        apiKey: ollamaApiKey,
+        think: readOllamaThink(env),
+        keepAlive: trimToUndefined(env.OLLAMA_KEEP_ALIVE),
+      }
+    : undefined;
   const anthropic = anthropicApiKey || anthropicAuthToken
     ? {
         ...(anthropicApiKey
@@ -178,9 +205,9 @@ export function loadConfig(
       }
     : undefined;
 
-  if (!openai && !openaiCompatible && !deepseek && !anthropic) {
+  if (!openai && !openaiCompatible && !deepseek && !ollama && !anthropic) {
     throw new Error(
-      "no provider configured: set ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, OPENAI_API_KEY, OPENAI_COMPATIBLE_API_KEY, and/or DEEPSEEK_API_KEY",
+      "no provider configured: set ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, OPENAI_API_KEY, OPENAI_COMPATIBLE_API_KEY, DEEPSEEK_API_KEY, and/or OLLAMA_ENABLED",
     );
   }
 
@@ -244,8 +271,18 @@ export function loadConfig(
     openai,
     openaiCompatible,
     deepseek,
+    ollama,
     anthropic,
   };
+}
+
+function truthyEnv(value: string | undefined): boolean {
+  const trimmed = value?.trim().toLowerCase();
+  return trimmed === "1" || trimmed === "true" || trimmed === "yes";
+}
+
+function readOllamaThink(env: Record<string, string | undefined>): OllamaThink {
+  return readEnumEnv(env, "OLLAMA_THINK", ["off", "passthrough"], "off");
 }
 
 function readOpenAICompatibleResponseFormat(

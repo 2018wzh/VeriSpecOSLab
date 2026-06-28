@@ -60,7 +60,9 @@ by git under `dist/`.
 | `OPENAI_COMPATIBLE_API_KEY` | one of | —               | Enables the generic OpenAI-compatible provider. |
 | `ANTHROPIC_BASE_URL`     | no       | Anthropic's URL    | For proxies / self-hosted gateways.          |
 | `OPENAI_BASE_URL`        | no       | —                  | Legacy OpenAI-compatible endpoint override.  |
-| `OPENAI_COMPATIBLE_BASE_URL` | no    | —                  | OpenRouter, vLLM, Ollama, local gateways.    |
+| `OPENAI_COMPATIBLE_BASE_URL` | no    | —                  | OpenRouter, vLLM, local gateways.            |
+| `OLLAMA_ENABLED`         | one of   | —                  | Enables native local Ollama.                 |
+| `OLLAMA_BASE_URL`        | no       | `http://localhost:11434/api` | Native Ollama API base URL.        |
 | `SMART_MODEL`            | no       | `opus4.7`          | Model bound to `smart` mode.                 |
 | `DEEP_MODEL`             | no       | `gpt5.5`           | Model bound to `deep` mode.                  |
 | `RUSH_MODEL`             | no       | `sonnet4.6`        | Model bound to `rush` mode.                  |
@@ -83,8 +85,8 @@ by any CLI or TUI flag; accepted values are `none`, `minimal`, `low`,
 `medium`, `high`, and `xhigh`. Routing prefixes are supported:
 `anthropic:gpt-5.5` forces Anthropic-compatible routing,
 `openai:gpt-4o-mini` forces official OpenAI routing, and
-`compat:llama` forces generic OpenAI-compatible routing. Colon prefixes
-are stripped before the request is sent.
+`compat:llama` forces generic OpenAI-compatible routing. `ollama:qwen2.5-coder`
+uses Ollama's native API. Colon prefixes are stripped before the request is sent.
 
 ## Run
 

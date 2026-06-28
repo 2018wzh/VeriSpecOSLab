@@ -207,12 +207,17 @@ Adding more modes programmatically — see
 | `OPENAI_COMPATIBLE_API_KEY` | one of | —            | Enables generic OpenAI-compatible gateways.       |
 | `ANTHROPIC_BASE_URL`     | no       | Anthropic's URL | Self-hosted or proxied Anthropic endpoint.        |
 | `OPENAI_BASE_URL`        | no       | —               | Legacy OpenAI-compatible endpoint override.       |
-| `OPENAI_COMPATIBLE_BASE_URL` | no    | —            | OpenRouter, vLLM, Ollama, local gateways.         |
+| `OPENAI_COMPATIBLE_BASE_URL` | no    | —            | OpenRouter, vLLM, local gateways.                 |
 | `OPENAI_COMPATIBLE_RESPONSE_FORMAT` | no | `json_object` | `json_object`, `json_schema`, or `none`. |
 | `OPENAI_COMPATIBLE_REASONING_EFFORT` | no | `off`    | `off` or `passthrough`.                           |
 | `OPENAI_COMPATIBLE_STREAM_USAGE` | no | `off`       | `off` or `include_usage`.                         |
 | `OPENAI_COMPATIBLE_INPUTS` | no     | `text`          | Comma-separated `text`, `image`, `pdf`.           |
 | `OPENAI_COMPATIBLE_EXTRA_HEADERS_JSON` | no | —      | JSON object of string headers for gateways.       |
+| `OLLAMA_ENABLED`         | one of   | —               | Enables native local Ollama when set to `1`.      |
+| `OLLAMA_BASE_URL`        | no       | `http://localhost:11434/api` | Native Ollama API base URL.       |
+| `OLLAMA_API_KEY`         | no       | —               | Optional Bearer token for remote Ollama.          |
+| `OLLAMA_THINK`           | no       | `off`           | `off` or `passthrough`.                           |
+| `OLLAMA_KEEP_ALIVE`      | no       | —               | Optional Ollama `keep_alive` value.               |
 | `SMART_MODEL`            | no       | `opus4.7`       | Model bound to the `smart` mode.                  |
 | `DEEP_MODEL`             | no       | `gpt5.5`        | Model bound to the `deep` mode.                   |
 | `RUSH_MODEL`             | no       | `sonnet4.6`     | Model bound to the `rush` mode.                   |
@@ -280,12 +285,13 @@ to a provider based on the request's `model` field:
 | `deepseek:*`, `deepseek/*`, `deepseek-*` | DeepSeek |
 | `openai-compatible:*`, `openai-compatible/*`, `compat:*`, `compat/*` | OpenAI-compatible |
 | `gpt*`, `o1*`, `o3*`, `o4*`, `openai:*`, `openai/*` | OpenAI |
+| `ollama:*`, `ollama/*`, `llama*`, `qwen*`, `mistral*`, `gemma*` | Ollama |
 
 Colon prefixes (`anthropic:...`, `openai:...`, `compat:...`) are
 routing hints and are stripped before the provider call. Slash prefixes
-(`anthropic/...`, `openai/...`, `openai-compatible/...`) are treated as
-provider/model namespaces and are preserved for gateways that require
-names such as `anthropic/claude-opus-4.6`.
+(`anthropic/...`, `openai/...`, `openai-compatible/...`, `ollama/...`)
+are treated as provider/model namespaces and are preserved for gateways
+that require names such as `anthropic/claude-opus-4.6`.
 
 If only one provider is configured, it also serves as the fallback for
 unrecognised model names. If both are configured and the model matches
@@ -350,12 +356,11 @@ export OPENAI_COMPATIBLE_BASE_URL=http://localhost:8000/v1
 stars --model compat:meta-llama/Llama-3.3-70B-Instruct -p "..."
 ```
 
-### Ollama (OpenAI-compatible mode)
+### Ollama (native API)
 
 ```sh
-export OPENAI_COMPATIBLE_API_KEY=ignored
-export OPENAI_COMPATIBLE_BASE_URL=http://localhost:11434/v1
-stars --model compat:qwen2.5-coder -p "..."
+export OLLAMA_ENABLED=1
+stars --model ollama:qwen2.5-coder -p "..."
 ```
 
 Note: small local models often handle tool calling less reliably than

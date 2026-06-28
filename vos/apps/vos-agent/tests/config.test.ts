@@ -114,16 +114,48 @@ describe("loadConfig", () => {
     ).toThrow(/OPENAI_COMPATIBLE_EXTRA_HEADERS_JSON/);
   });
 
+  test("configures Ollama from enable flag or base URL", () => {
+    expect(loadConfig({ OLLAMA_ENABLED: "1" }).ollama).toEqual({
+      baseURL: "http://localhost:11434/api",
+      apiKey: undefined,
+      think: "off",
+      keepAlive: undefined,
+    });
+
+    expect(loadConfig({
+      OLLAMA_BASE_URL: " http://localhost:11434/api ",
+      OLLAMA_API_KEY: " local-token ",
+      OLLAMA_THINK: "passthrough",
+      OLLAMA_KEEP_ALIVE: "5m",
+    }).ollama).toEqual({
+      baseURL: "http://localhost:11434/api",
+      apiKey: "local-token",
+      think: "passthrough",
+      keepAlive: "5m",
+    });
+  });
+
+  test("rejects invalid Ollama think env", () => {
+    expect(() =>
+      loadConfig({
+        OLLAMA_ENABLED: "1",
+        OLLAMA_THINK: "always",
+      }),
+    ).toThrow(/invalid OLLAMA_THINK/);
+  });
+
   test("returns both providers when both keys are set", () => {
     const cfg = loadConfig({
       ANTHROPIC_API_KEY: "ak",
       OPENAI_API_KEY: "ok",
       OPENAI_COMPATIBLE_API_KEY: "compat",
       OPENAI_COMPATIBLE_BASE_URL: "https://compat.example/v1",
+      OLLAMA_ENABLED: "1",
     });
     expect(cfg.anthropic).toBeDefined();
     expect(cfg.openai).toBeDefined();
     expect(cfg.openaiCompatible).toBeDefined();
+    expect(cfg.ollama).toBeDefined();
   });
 
   test("configures provider-neutral chat retries from env", () => {

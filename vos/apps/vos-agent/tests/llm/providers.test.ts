@@ -46,8 +46,8 @@ describe("createChatClientFromConfig", () => {
       anthropic: fakeProvider(),
       openai: fakeProvider(),
     });
-    await expect(chat.chat(emptyRequest("mistral-large"))).rejects.toThrow(
-      /no chat client registered for model "mistral-large"/,
+    await expect(chat.chat(emptyRequest("unknown-large"))).rejects.toThrow(
+      /no chat client registered for model "unknown-large"/,
     );
   });
 
@@ -446,6 +446,176 @@ describe("createChatClientFromConfig", () => {
         inputTokens: 1,
         outputTokens: 2,
         totalTokens: 3,
+      });
+    } finally {
+      await server.stop(true);
+    }
+  });
+
+  test("Ollama provider sends native chat body and maps tool calls", async () => {
+    const bodies: unknown[] = [];
+    const authHeaders: Array<string | null> = [];
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        bodies.push(await req.json());
+        authHeaders.push(req.headers.get("authorization"));
+        return Response.json({
+          model: "qwen2.5-coder",
+          created_at: "2026-06-28T00:00:00Z",
+          message: {
+            role: "assistant",
+            content: "checking",
+            tool_calls: [{
+              function: {
+                name: "Read",
+                arguments: { path: "README.md" },
+              },
+            }],
+          },
+          done: true,
+          prompt_eval_count: 5,
+          eval_count: 7,
+        });
+      },
+    });
+
+    try {
+      const chat = createChatClientFromConfig({
+        defaultMode: "smart",
+        modes: { smart: { model: "qwen2.5-coder" } },
+        tools: { disabled: [] },
+        ollama: {
+          baseURL: `http://127.0.0.1:${server.port}/api`,
+          apiKey: "ollama-token",
+          think: "passthrough",
+          keepAlive: "5m",
+        },
+      });
+      const usageEvents: unknown[] = [];
+
+      const response = await chat.chat({
+        model: "ollama:qwen2.5-coder",
+        reasoningEffort: "high",
+        messages: [
+          { role: "system", content: "Be terse." },
+          { role: "user", content: "Read README" },
+        ],
+        tools: [{
+          type: "function",
+          function: {
+            name: "Read",
+            description: "Read a file",
+            parameters: {
+              type: "object",
+              properties: { path: { type: "string" } },
+              required: ["path"],
+            },
+          },
+        }],
+        responseFormat: {
+          type: "json_schema",
+          json_schema: { name: "answer", strict: true, schema: { type: "object" } },
+        },
+        onUsage: (usage) => {
+          usageEvents.push(usage);
+        },
+      });
+
+      expect(authHeaders).toEqual(["Bearer ollama-token"]);
+      expect(bodies[0]).toEqual({
+        model: "qwen2.5-coder",
+        messages: [
+          { role: "system", content: "Be terse." },
+          { role: "user", content: "Read README" },
+        ],
+        stream: false,
+        tools: [{
+          type: "function",
+          function: {
+            name: "Read",
+            description: "Read a file",
+            parameters: {
+              type: "object",
+              properties: { path: { type: "string" } },
+              required: ["path"],
+            },
+          },
+        }],
+        format: { type: "object" },
+        think: true,
+        keep_alive: "5m",
+      });
+      expect(response.tool_calls).toEqual([{
+        id: "ollama_call_0",
+        type: "function",
+        function: {
+          name: "Read",
+          arguments: "{\"path\":\"README.md\"}",
+        },
+      }]);
+      expect(usageEvents[0]).toEqual({
+        inputTokens: 5,
+        outputTokens: 7,
+        totalTokens: 12,
+      });
+    } finally {
+      await server.stop(true);
+    }
+  });
+
+  test("Ollama provider maps json_object format to json and streams NDJSON", async () => {
+    const bodies: unknown[] = [];
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        bodies.push(await req.json());
+        return new Response([
+          "{\"model\":\"llama3.2\",\"message\":{\"role\":\"assistant\",\"content\":\"he\"},\"done\":false}\n",
+          "{\"model\":\"llama3.2\",\"message\":{\"role\":\"assistant\",\"content\":\"llo\"},\"done\":false}\n",
+          "{\"model\":\"llama3.2\",\"done\":true,\"prompt_eval_count\":2,\"eval_count\":3}\n",
+        ].join(""), {
+          headers: { "content-type": "application/x-ndjson" },
+        });
+      },
+    });
+
+    try {
+      const chat = createChatClientFromConfig({
+        defaultMode: "smart",
+        modes: { smart: { model: "llama3.2" } },
+        tools: { disabled: [] },
+        ollama: {
+          baseURL: `http://127.0.0.1:${server.port}/api`,
+          think: "off",
+        },
+      });
+      const deltas: string[] = [];
+      const usageEvents: unknown[] = [];
+
+      const response = await chat.chat({
+        ...emptyRequest("llama3.2"),
+        responseFormat: { type: "json_object" },
+        onEvent: (event) => {
+          deltas.push(event.delta);
+        },
+        onUsage: (usage) => {
+          usageEvents.push(usage);
+        },
+      });
+
+      expect(bodies[0]).toMatchObject({
+        model: "llama3.2",
+        stream: true,
+        format: "json",
+      });
+      expect((bodies[0] as { think?: unknown }).think).toBeUndefined();
+      expect(deltas).toEqual(["he", "llo"]);
+      expect(response.content).toBe("hello");
+      expect(usageEvents[0]).toEqual({
+        inputTokens: 2,
+        outputTokens: 3,
+        totalTokens: 5,
       });
     } finally {
       await server.stop(true);

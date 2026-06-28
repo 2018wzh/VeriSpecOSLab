@@ -4,6 +4,7 @@ import { createAnthropicChatClient } from "./anthropic-client.ts";
 import { createDeepSeekChatClient } from "./deepseek-client.ts";
 import { createOpenAICompatibleChatClient } from "./openai-compatible-client.ts";
 import { createOpenAIChatClient } from "./openai-client.ts";
+import { createOllamaChatClient } from "./ollama-client.ts";
 import {
   createRoutedChatClient,
   matchesPrefix,
@@ -28,10 +29,12 @@ const OPENAI_COMPATIBLE_PREFIXES = [
   "compat/",
 ];
 const OPENAI_PREFIXES = ["gpt", "o1", "o3", "o4", "openai:", "openai/"];
+const OLLAMA_PREFIXES = ["ollama:", "ollama/", "llama", "qwen", "mistral", "gemma"];
 const STRIPPED_ANTHROPIC_PREFIXES = ["anthropic:"];
 const STRIPPED_DEEPSEEK_PREFIXES = ["deepseek:"];
 const STRIPPED_OPENAI_COMPATIBLE_PREFIXES = ["openai-compatible:", "compat:"];
 const STRIPPED_OPENAI_PREFIXES = ["openai:"];
+const STRIPPED_OLLAMA_PREFIXES = ["ollama:"];
 
 /**
  * Build a routed ChatClient from a Config. Only providers whose
@@ -42,6 +45,7 @@ const STRIPPED_OPENAI_PREFIXES = ["openai:"];
  *   deepseek*, deepseek:*                        → DeepSeek
  *   openai-compatible:*, compat:*               → OpenAI-compatible
  *   gpt*, o1*, o3*, o4*, openai:*               → OpenAI
+ *   ollama:*, llama*, qwen*, mistral*, gemma*   → Ollama
  *
  * Colon prefixes are routing hints and are stripped before the SDK
  * call. Slash prefixes such as `anthropic/claude-*` are provider/model
@@ -110,6 +114,20 @@ export function createChatClientFromConfig(config: Config): ChatClient {
     routes.push({
       match: matchesPrefix(...OPENAI_PREFIXES),
       client: missingProviderClient("OpenAI", "OPENAI_API_KEY"),
+    });
+  }
+  if (config.ollama) {
+    const client = createOllamaChatClient(config.ollama);
+    routes.push({
+      match: matchesPrefix(...OLLAMA_PREFIXES),
+      client,
+      rewriteModel: stripPrefix(...STRIPPED_OLLAMA_PREFIXES),
+    });
+    onlyConfiguredClient = onlyConfiguredClient ? undefined : client;
+  } else {
+    routes.push({
+      match: matchesPrefix(...OLLAMA_PREFIXES),
+      client: missingProviderClient("Ollama", "OLLAMA_ENABLED"),
     });
   }
 
