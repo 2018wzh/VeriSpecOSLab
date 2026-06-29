@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildAgentTaskUserPrompt,
   buildAgentTaskSystemPrompt,
   createProfileToolPolicy,
   publicAgentTaskProfile,
@@ -182,8 +183,24 @@ describe("agent task profiles", () => {
     expect(prompt).toContain("Step 7 - State Object Schema");
     expect(prompt).toContain("Quality Checklist");
     expect(prompt).toContain("Anti-patterns");
+    expect(prompt).toContain("When the declared output schema has a visualization_html field");
+    expect(prompt).toContain("Use mcp__http-server__publish_html to publish self-contained HTML visualizations only when the schema has no visualization_html field");
     expect(prompt).toContain("Do NOT use for: QEMU system emulation or kernel debugging");
     expect(prompt).not.toContain(".tmp/skills");
+  });
+
+  test("debug user prompt carries the visualization_html schema contract", () => {
+    const profile = resolveAgentTaskProfile({ taskKind: "debug" });
+    const prompt = buildAgentTaskUserPrompt({
+      profile,
+      taskKind: "debug",
+      requestedScope: "agent.debug",
+      task: "Diagnose a failed public run.",
+      context: { log_ref: "qemu.log" },
+    });
+
+    expect(prompt).toContain('"output_schema": "debug_output.v1"');
+    expect(prompt).toContain('"task_kind": "debug"');
   });
 
   test("all profile skills resolve to built-in teaching instructions", () => {

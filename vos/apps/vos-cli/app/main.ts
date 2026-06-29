@@ -8,12 +8,17 @@ import {
   printHelp,
   runProgressMcpServer,
 } from "vos-core";
+import { runDemoCli } from "vos-demo";
 import { startVosHttpServer } from "vos-server";
 
 async function main(): Promise<void> {
   try {
     if (process.argv[2] === "internal" && process.argv[3] === "progress-mcp") {
       await runProgressMcpServer();
+      return;
+    }
+    if (isDemoInvocation(process.argv)) {
+      await runDemoCli(process.argv);
       return;
     }
 
@@ -65,6 +70,25 @@ export { executeCliInvocation, parseArgs, printCliError, printHelp };
 export { executeCommand } from "vos-core";
 export { startAgentServer } from "vos-core";
 export type { CommandOutcome, ExecContext, ExecuteCliOptions } from "vos-core";
+
+export function isDemoInvocation(argv: string[]): boolean {
+  const tokens = argv.slice(2);
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token === "--project-root" || token === "--progress" || token === "--agent-session" || token === "--report" || token === "--evidence-dir") {
+      i++;
+      continue;
+    }
+    if (token.startsWith("--project-root=") || token.startsWith("--progress=")) {
+      continue;
+    }
+    if (token === "--json" || token === "-v" || token === "--verbose") {
+      continue;
+    }
+    return token === "demo";
+  }
+  return false;
+}
 
 if (import.meta.main) {
   main();

@@ -4,6 +4,7 @@
   "type": "module",
   "dependencies": {
     "vos-core": "workspace:*",
+    "vos-demo": "workspace:*",
     "vos-server": "workspace:*",
     "vos-kb": "workspace:*"
   },
