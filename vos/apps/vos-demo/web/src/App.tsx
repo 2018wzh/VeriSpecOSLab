@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Bot,
   Bug,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
@@ -11,6 +13,8 @@ import {
   MessageSquare,
   PanelRight,
   Plus,
+  PanelLeftClose,
+  PanelLeftOpen,
   Send,
   Sparkles,
   User,
@@ -49,6 +53,9 @@ export function App() {
   const [targetRunId, setTargetRunId] = useState("");
   const [busy, setBusy] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(() => window.matchMedia("(min-width: 1101px)").matches);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(320);
+  const [canvasWidth, setCanvasWidth] = useState(390);
   const [error, setError] = useState<string>();
 
   const active = conversations.find((item) => item.id === activeId) ?? conversations[0];
@@ -57,7 +64,6 @@ export function App() {
     api.session().then(setSession).catch(() => setSession(null));
     api.debugTargets().then((value) => {
       setTargets(value.targets);
-      setTargetRunId((current) => current || pickTarget(value.targets));
     }).catch(() => undefined);
   }, []);
 
@@ -88,29 +94,34 @@ export function App() {
     setError(undefined);
     setInput("");
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", text };
-    updateConversation(active.id, { messages: [...active.messages, userMessage] });
+    const assistantId = crypto.randomUUID();
+    const runningAssistant: ChatMessage = {
+      id: assistantId,
+      role: "assistant",
+      text: "Agent is working through the flow...",
+    };
+    updateConversation(active.id, { messages: [...active.messages, userMessage, runningAssistant] });
     try {
       const created = active.mode === "ask"
         ? await api.ask({ question: text, scope, threadId: active.threadId })
-        : await api.debug({ runId: active.targetRunId ?? targetRunId, message: text, threadId: active.threadId });
-      const run = await waitForRun(created.id);
-      const assistant: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        text: summarizeRun(run),
-        run,
-      };
+        : await api.debug({ runId: (active.targetRunId ?? targetRunId) || undefined, message: text, threadId: active.threadId });
+      setCanvasOpen(true);
+      const run = await waitForRun(created.id, (next) => {
+        replaceMessage(active.id, assistantId, {
+          text: summarizeRun(next),
+          run: next,
+        });
+      });
       updateConversation(active.id, {
         title: titleFrom(text),
         threadId: run.threadId ?? active.threadId,
-        targetRunId: active.mode === "debug" ? (active.targetRunId ?? targetRunId) : undefined,
-        messages: [...active.messages, userMessage, assistant],
+        targetRunId: active.mode === "debug" ? ((active.targetRunId ?? targetRunId) || undefined) : undefined,
       });
       if (run.visualizations?.length) setCanvasOpen(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-      updateConversation(active.id, {
-        messages: [...active.messages, userMessage, { id: crypto.randomUUID(), role: "assistant", text: `Run failed: ${err instanceof Error ? err.message : String(err)}` }],
+      replaceMessage(active.id, assistantId, {
+        text: `Run failed: ${err instanceof Error ? err.message : String(err)}`,
       });
     } finally {
       setBusy(false);
@@ -121,12 +132,78 @@ export function App() {
     setConversations((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
   }
 
+  function replaceMessage(conversationId: string, messageId: string, patch: Partial<ChatMessage>) {
+    setConversations((items) => items.map((item) => item.id === conversationId
+      ? {
+        ...item,
+        messages: item.messages.map((message) => message.id === messageId ? { ...message, ...patch } : message),
+      }
+      : item));
+  }
+
+  function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (sidebarCollapsed) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = sidebarWidth;
+    const maxWidth = Math.max(320, Math.min(560, window.innerWidth - 620));
+    const resize = (moveEvent: PointerEvent) => {
+      setSidebarWidth(Math.min(maxWidth, Math.max(260, startWidth + moveEvent.clientX - startX)));
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", resize);
+      window.removeEventListener("pointerup", stop);
+    };
+    window.addEventListener("pointermove", resize);
+    window.addEventListener("pointerup", stop, { once: true });
+  }
+
+  function startCanvasResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!canvasOpen) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = canvasWidth;
+    const minWidth = 320;
+    const maxWidth = Math.max(minWidth, Math.min(720, window.innerWidth - 520));
+    const resize = (moveEvent: PointerEvent) => {
+      setCanvasWidth(Math.min(maxWidth, Math.max(minWidth, startWidth + startX - moveEvent.clientX)));
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", resize);
+      window.removeEventListener("pointerup", stop);
+    };
+    window.addEventListener("pointermove", resize);
+    window.addEventListener("pointerup", stop, { once: true });
+  }
+
   return (
-    <main className="app-shell">
+    <main
+      className={[
+        "app-shell",
+        sidebarCollapsed ? "sidebar-collapsed" : "",
+        canvasOpen ? "canvas-open" : "canvas-closed",
+      ].filter(Boolean).join(" ")}
+      style={{ "--sidebar-width": `${sidebarWidth}px`, "--canvas-width": `${canvasWidth}px` } as CSSProperties}
+    >
+      {sidebarCollapsed ? (
+        <button className="sidebar-float" onClick={() => setSidebarCollapsed(false)} aria-label="Expand sidebar">
+          <PanelLeftOpen size={18} />
+        </button>
+      ) : null}
       <aside className="sidebar">
-        <div className="brand"><Sparkles size={18} /> VOS Demo</div>
-        <button className="new-chat" onClick={() => startConversation("ask")}><Plus size={16} /> New Ask</button>
-        <button className="new-chat" onClick={() => startConversation("debug")}><Bug size={16} /> New Debug</button>
+        <div className="brand">
+          <Sparkles size={18} />
+          <span>VOS Demo</span>
+          <button
+            className="icon-button sidebar-toggle"
+            onClick={() => setSidebarCollapsed((value) => !value)}
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+          </button>
+        </div>
+        <button className="new-chat" onClick={() => startConversation("ask")} title="New Ask"><Plus size={16} /> <span>New Ask</span></button>
+        <button className="new-chat" onClick={() => startConversation("debug")} title="New Debug"><Bug size={16} /> <span>New Debug</span></button>
         <div className="history">
           {conversations.map((item) => (
             <button key={item.id} className={item.id === active?.id ? "history-item active" : "history-item"} onClick={() => setActiveId(item.id)}>
@@ -139,6 +216,7 @@ export function App() {
           <strong>{session.quota.used}/{session.quota.sessionLimit}</strong>
           <span>session quota</span>
         </div>
+        <div className="sidebar-resizer" onPointerDown={startSidebarResize} aria-hidden="true" />
       </aside>
 
       <section className="chat">
@@ -163,15 +241,15 @@ export function App() {
           <>
             <div className="messages">
               {active.messages.map((message) => <Message key={message.id} message={message} />)}
-              {busy ? <div className="message assistant"><Bot className="avatar" size={22} /><div className="bubble muted"><Loader2 className="spin" size={16} /> Agent is working through the flow...</div></div> : null}
             </div>
             <div className="composer-wrap">
               {active.mode === "debug" ? (
                 <select value={active.targetRunId ?? targetRunId} onChange={(event) => {
                   setTargetRunId(event.target.value);
-                  updateConversation(active.id, { targetRunId: event.target.value });
+                  updateConversation(active.id, { targetRunId: event.target.value || undefined });
                 }}>
-                  {targets.map((target) => (
+                  <option value="">Default Debug REPL - no runId</option>
+                  {validationFailedTargets(targets).map((target) => (
                     <option key={target.runId} value={target.runId}>{target.runId} - {target.status}</option>
                   ))}
                 </select>
@@ -199,6 +277,7 @@ export function App() {
       </section>
 
       <aside className={canvasOpen ? "canvas open" : "canvas"}>
+        <div className="canvas-resizer" onPointerDown={startCanvasResize} aria-hidden="true" />
         <button className="canvas-toggle" onClick={() => setCanvasOpen(false)}><ChevronRight size={16} /> Close</button>
         <Canvas run={canvasRun} />
       </aside>
@@ -232,7 +311,7 @@ function Message({ message }: { message: ChatMessage }) {
     <article className={`message ${message.role}`}>
       <Icon className="avatar" size={22} />
       <div className="bubble">
-        <ReactMarkdown>{message.text}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown>
         {message.run ? <RunDetails run={message.run} /> : null}
       </div>
     </article>
@@ -243,8 +322,19 @@ function RunDetails({ run }: { run: DemoRun }) {
   const items = run.kind === "ask"
     ? arrayValue(run.answer?.citations)
     : arrayValue(run.debug?.evidence_chain);
+  const progress = run.status === "running" ? progressItems(run).slice(-4) : [];
   return (
     <div className="run-details">
+      {progress.length ? (
+        <div className="chat-progress" aria-label="Run progress">
+          {progress.map((item, index) => (
+            <div className={item.current ? "chat-progress-item current" : "chat-progress-item"} key={`${item.label}-${index}`}>
+              {item.current ? <Loader2 className="spin" size={14} /> : <CheckCircle2 size={14} />}
+              <span>{item.label}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {items.length ? (
         <details open>
           <summary>{run.kind === "ask" ? "Citations" : "Evidence chain"}</summary>
@@ -264,27 +354,82 @@ function RunDetails({ run }: { run: DemoRun }) {
 }
 
 function Canvas({ run }: { run?: DemoRun }) {
-  if (!run) return <div className="canvas-empty"><ChevronLeft size={20} /> Progress, evidence, and visualizations appear here.</div>;
+  if (!run) return <div className="canvas-empty"><ChevronLeft size={20} /> Visualizations and artifacts appear here.</div>;
   const viz = run.visualizations?.[0];
   return (
     <div className="canvas-body">
-      <h2>Canvas</h2>
+      <div className="canvas-head">
+        <div>
+          <h2>Canvas</h2>
+          <span>{run.kind} · {run.status} · {run.targetRunId ?? run.id}</span>
+        </div>
+        {run.status === "running" ? <Loader2 className="spin" size={18} /> : <CheckCircle2 size={18} />}
+      </div>
       {viz ? <iframe title={viz.title} sandbox="allow-scripts" src={`/api/demo/visualizations/${viz.id}`} /> : <p className="muted">No visualization for this run.</p>}
       <section>
-        <h3>Progress</h3>
-        {(run.events ?? []).map((event, index) => <div className="event-row" key={index}>{event.type}: {JSON.stringify(event.payload ?? {})}</div>)}
-      </section>
-      <section>
         <h3>Artifacts</h3>
-        {(run.artifacts ?? []).map((artifact) => <div className="event-row" key={artifact.path}>{artifact.kind}: {artifact.path}</div>)}
+        {(run.artifacts ?? []).length
+          ? (run.artifacts ?? []).map((artifact) => <div className="event-row" key={artifact.path}>{artifact.kind}: {artifact.path}</div>)
+          : <p className="muted">Artifacts appear after the run produces them.</p>}
       </section>
     </div>
   );
 }
 
-async function waitForRun(id: string): Promise<DemoRun> {
+function progressItems(run: DemoRun): Array<{ label: string; detail: string; current: boolean }> {
+  const events = run.events ?? [];
+  const items = events.map((event) => {
+    const payload = event.payload ?? {};
+    const agentEvent = typeof payload.agent_event === "string" ? payload.agent_event : "";
+    const message = typeof payload.message === "string" ? payload.message : "";
+    return {
+      label: agentEvent ? agentEvent.replaceAll(".", " ") : event.type.replaceAll("_", " "),
+      detail: message || progressDetail(agentEvent, payload),
+      current: false,
+    };
+  }).filter((item) => item.label);
+  const compact = compactProgress(items);
+  if (!compact.length) {
+    compact.push({
+      label: run.status === "running" ? "waiting for agent" : run.status,
+      detail: run.status === "running" ? "The run has been accepted and will report progress shortly." : "Run finished.",
+      current: run.status === "running",
+    });
+  }
+  compact[compact.length - 1].current = run.status === "running";
+  return compact.slice(-12);
+}
+
+function progressDetail(agentEvent: string, payload: Record<string, unknown>): string {
+  if (agentEvent === "thread.created") return "Conversation thread is ready.";
+  if (agentEvent === "model.usage") return "Model usage was recorded.";
+  if (agentEvent === "assistant.message") return "Assistant produced an intermediate message.";
+  if (agentEvent === "tool.call") return "Agent requested project context or evidence.";
+  if (agentEvent === "tool.result") return "Project context or evidence returned to the agent.";
+  return Object.keys(payload).length ? JSON.stringify(payload) : "Progress event received.";
+}
+
+function compactProgress(items: Array<{ label: string; detail: string; current: boolean }>) {
+  const out: Array<{ label: string; detail: string; current: boolean; count?: number }> = [];
+  for (const item of items) {
+    const last = out.at(-1);
+    if (last?.label === item.label && last.detail === item.detail) {
+      last.count = (last.count ?? 1) + 1;
+      continue;
+    }
+    out.push({ ...item });
+  }
+  return out.map((item) => ({
+    label: item.count ? `${item.label} x${item.count}` : item.label,
+    detail: item.detail,
+    current: item.current,
+  }));
+}
+
+async function waitForRun(id: string, onUpdate?: (run: DemoRun) => void): Promise<DemoRun> {
   for (let i = 0; i < 600; i++) {
     const run = await api.run(id);
+    onUpdate?.(run);
     if (run.status !== "running") return run;
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
@@ -293,6 +438,7 @@ async function waitForRun(id: string): Promise<DemoRun> {
 
 function summarizeRun(run: DemoRun): string {
   if (run.error) return run.error;
+  if (run.status === "running") return "Agent is working through the flow...";
   if (run.kind === "ask") return String(run.answer?.answer ?? "Ask completed.");
   return String(run.debug?.summary ?? "Debug completed.");
 }
@@ -316,15 +462,13 @@ function starterConversation(mode: Mode): Conversation {
       role: "system",
       text: mode === "ask"
         ? "Ask a spec-grounded question. The agent will show context, citations, and next steps."
-        : "Pick a failed build/verify run, then ask the debug agent for the evidence chain and visualization.",
+        : "Pick a validation_failed run, or leave the default Debug REPL with no runId.",
     }],
   };
 }
 
-function pickTarget(targets: DebugTarget[]): string {
-  return targets.find((target) => ["failed", "validation_failed"].includes(target.status) && (target.artifactsCount ?? 0) > 0)?.runId
-    ?? targets[0]?.runId
-    ?? "";
+function validationFailedTargets(targets: DebugTarget[]): DebugTarget[] {
+  return targets.filter((target) => target.status === "validation_failed" && (target.artifactsCount ?? 0) > 0);
 }
 
 function titleFrom(value: string): string {

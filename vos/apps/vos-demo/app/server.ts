@@ -138,11 +138,12 @@ export function createDemoHandler(options: DemoServerOptions): (request: Request
         if (!quota.ok) return json({ error: quota.reason }, 429);
         const body = await readJson(request);
         const runId = typeof body.runId === "string" ? body.runId.trim() : "";
-        if (!runId) return json({ error: "run_id_required" }, 400);
-        const message = typeof body.message === "string" && body.message.trim() ? body.message.trim() : `Debug run ${runId}.`;
+        const message = typeof body.message === "string" && body.message.trim()
+          ? body.message.trim()
+          : runId ? `Debug run ${runId}.` : "Start debug REPL.";
         const threadId = typeof body.threadId === "string" && body.threadId.trim() ? body.threadId.trim() : undefined;
-        const run = createRun(runs, "debug", { targetRunId: runId, question: message, threadId });
-        const targetRun = await loadRunManifest(projectRoot, runId);
+        const run = createRun(runs, "debug", { targetRunId: runId || undefined, question: message, threadId });
+        const targetRun = runId ? await loadRunManifest(projectRoot, runId) : undefined;
         void runReplTurn(run, {
           projectRoot,
           replRunner,
@@ -151,20 +152,22 @@ export function createDemoHandler(options: DemoServerOptions): (request: Request
           task: buildDebugDemoTask(message),
           context: {
             mode: "debug_repl",
-            target_run_id: runId,
+            target_run_id: runId || undefined,
             target_run: publicRunSummary(targetRun),
-            artifact_excerpts: await collectDebugArtifactExcerpts(
-              projectRoot,
-              runId,
-              Array.isArray(targetRun?.artifacts) ? targetRun.artifacts as Array<{ kind?: unknown; path?: unknown }> : [],
-            ),
+            artifact_excerpts: runId
+              ? await collectDebugArtifactExcerpts(
+                projectRoot,
+                runId,
+                Array.isArray(targetRun?.artifacts) ? targetRun.artifacts as Array<{ kind?: unknown; path?: unknown }> : [],
+              )
+              : [],
             demo_flow: {
               audience: "public demo viewer",
               expected_sections: ["failure overview", "evidence chain", "timeline", "GDB/trace status", "visualization", "next commands"],
             },
           },
-          evidenceRefs: [runId],
-          command: ["agent", "debug", "--repl", "--run", runId],
+          evidenceRefs: runId ? [runId] : undefined,
+          command: runId ? ["agent", "debug", "--repl", "--run", runId] : ["agent", "debug", "--repl"],
           db,
         });
         return json({ id: run.id, status: run.status }, 202);
@@ -304,13 +307,13 @@ async function replResultToCommandResult(
     ? { answer: structuredOutput, repl: true, threadId: run.threadId }
     : { debug: structuredOutput, repl: true, threadId: run.threadId };
   const artifacts: BaseCommandResult["artifacts"] = [];
-  if (run.kind === "debug" && isRecord(structuredOutput) && typeof structuredOutput.visualization_html === "string") {
-    const relative = path.join(".vos", "runs", run.id, "artifacts", "agent-debug", "visualization.html");
+  if (isRecord(structuredOutput) && typeof structuredOutput.visualization_html === "string") {
+    const relative = path.join(".vos", "runs", run.id, "artifacts", `agent-${run.kind}`, "visualization.html");
     const full = path.join(projectRoot, relative);
     await mkdir(path.dirname(full), { recursive: true });
     await writeFile(full, structuredOutput.visualization_html);
     details.visualization = relative;
-    artifacts.push({ kind: "agent-debug-visualization", path: relative });
+    artifacts.push({ kind: `agent-${run.kind}-visualization`, path: relative });
   }
   return {
     ok: true,

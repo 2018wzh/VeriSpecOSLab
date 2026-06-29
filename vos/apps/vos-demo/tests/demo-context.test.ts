@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
-import { collectDebugArtifactExcerpts } from "../app/demo-context.ts";
+import { buildAskDemoTask, buildDebugDemoTask, collectDebugArtifactExcerpts } from "../app/demo-context.ts";
 
 describe("vos-demo debug context", () => {
   test("collects safe text artifact excerpts and skips binary or escaped paths", async () => {
@@ -27,5 +27,23 @@ describe("vos-demo debug context", () => {
     expect(excerpts[0].text).toContain("line one");
     expect(JSON.stringify(excerpts)).not.toContain("kernel.bin");
     expect(JSON.stringify(excerpts)).not.toContain("secret");
+  });
+
+  test("debug prompt forbids published visualization URLs", () => {
+    const task = buildDebugDemoTask("show the boot flow");
+
+    expect(task).toContain("visualization_html must be literal HTML");
+    expect(task).toContain("Do not claim that you started, hosted, published, or opened a local visualization page");
+    expect(task).toContain("Do not include localhost, 127.0.0.1, or external visualization links");
+  });
+
+  test("ask prompt prefers html visualization without published URLs", () => {
+    const task = buildAskDemoTask("请详细可视化解析整个系统从上电开始的启动流程");
+
+    expect(task).toContain("prefer a complete self-contained visualization_html document");
+    expect(task).toContain("visualization_html must be literal HTML");
+    expect(task).toContain("summarize the same visual narrative in rich markdown tables");
+    expect(task).toContain("Do not claim that you started, hosted, published, or opened a local visualization page");
+    expect(task).toContain("Do not include localhost, 127.0.0.1, or external visualization links");
   });
 });

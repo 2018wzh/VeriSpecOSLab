@@ -51,6 +51,7 @@ describe("vos-demo server", () => {
             answer: "Keep ownership explicit.",
             citations: [{ title: "memory spec", source_id: "spec/memory.yaml" }],
             suggested_next_steps: ["run public verify"],
+            visualization_html: "<!doctype html><html><body>ask viz</body></html>",
           },
         };
       },
@@ -64,7 +65,7 @@ describe("vos-demo server", () => {
 
     expect(created.status).toBe(202);
     const body = await created.json() as { id: string };
-    const result = await waitForRun(handler, cookie, body.id) as { answer: { answer: string }; threadId: string };
+    const result = await waitForRun(handler, cookie, body.id) as { answer: { answer: string }; threadId: string; visualizations: Array<{ id: string }> };
     expect(seen).toEqual(["knowledgebase_qa"]);
     expect(capturedTask).toContain("VOS public demo full-flow Ask turn");
     expect(capturedTask).toContain("project context");
@@ -77,6 +78,11 @@ describe("vos-demo server", () => {
     });
     expect(result.answer.answer).toBe("Keep ownership explicit.");
     expect(result.threadId).toBe("thread-ask");
+    expect(result.visualizations).toHaveLength(1);
+
+    const page = await handler(req(`/api/demo/visualizations/${result.visualizations[0].id}`, { headers: { cookie } }));
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain("ask viz");
 
     const events = await (await handler(req(`/api/demo/runs/${body.id}/events`, { headers: { cookie } }))).text();
     expect(events).toContain("event: progress");
@@ -162,6 +168,51 @@ describe("vos-demo server", () => {
     expect(await page.text()).toContain("states=[]");
 
     expect((await handler(req("/api/demo/visualizations/../../package.json", { headers: { cookie } }))).status).toBe(404);
+  });
+
+  test("runs debug REPL without a selected run id", async () => {
+    let capturedContext: unknown;
+    let capturedEvidenceRefs: unknown;
+    const handler = createDemoHandler({
+      projectRoot: fixtureProject(),
+      accessCodes: ["code"],
+      dbPath: ":memory:",
+      replRunner: async (request) => {
+        capturedContext = request.context;
+        capturedEvidenceRefs = request.evidenceRefs;
+        return {
+          content: null,
+          threadId: "thread-debug-default",
+          events: [],
+          agentProfile: {} as never,
+          model: "fake",
+          prompt: "fake",
+          structuredOutput: {
+            summary: "Default debug REPL started.",
+            evidence_chain: [],
+            next_diagnostic_commands: [],
+            visualization_html: "<!doctype html><html><body>debug</body></html>",
+          },
+        };
+      },
+    });
+    const cookie = await loginCookie(handler);
+    const created = await handler(req("/api/demo/debug", {
+      method: "POST",
+      headers: { cookie },
+      body: { message: "What should I inspect?" },
+    }));
+    expect(created.status).toBe(202);
+    const body = await created.json() as { id: string };
+    const run = await waitForRun(handler, cookie, body.id) as { targetRunId?: string; threadId: string };
+    expect(capturedContext).toMatchObject({
+      mode: "debug_repl",
+      artifact_excerpts: [],
+    });
+    expect(JSON.stringify(capturedContext)).not.toContain("target_run_id");
+    expect(capturedEvidenceRefs).toBeUndefined();
+    expect(run.targetRunId).toBeUndefined();
+    expect(run.threadId).toBe("thread-debug-default");
   });
 });
 

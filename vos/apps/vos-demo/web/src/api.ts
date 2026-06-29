@@ -55,7 +55,7 @@ export function createDemoApiClient(fetcher: Fetcher = defaultFetch) {
         method: "POST",
         body: JSON.stringify(clean(body)),
       }),
-    debug: (body: { runId: string; message?: string; threadId?: string | null }) =>
+    debug: (body: { runId?: string | null; message?: string; threadId?: string | null }) =>
       request<CreatedRun>(fetcher, "/api/demo/debug", {
         method: "POST",
         body: JSON.stringify(clean(body)),

@@ -13,9 +13,12 @@ describe("vos-demo web api client", () => {
       .toEqual({ id: "ask-run", status: "running" });
     expect(await client.debug({ runId: "run-a", message: "explain", threadId: "debug-thread" }))
       .toEqual({ id: "debug-run", status: "running" });
+    expect(await client.debug({ runId: "", message: "default debug" }))
+      .toEqual({ id: "debug-run", status: "running" });
     expect(calls).toEqual([
       { path: "/api/demo/ask", body: { question: "why failed?", scope: "memory", threadId: "ask-thread" } },
       { path: "/api/demo/debug", body: { runId: "run-a", message: "explain", threadId: "debug-thread" } },
+      { path: "/api/demo/debug", body: { message: "default debug" } },
     ]);
   });
 

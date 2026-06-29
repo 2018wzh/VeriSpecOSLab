@@ -29,26 +29,41 @@
 }
 
 * { box-sizing: border-box; }
-html, body, #root { min-height: 100%; }
+html, body, #root { min-height: 100%; height: 100%; }
 body { margin: 0; background: var(--bg); }
 button, textarea, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 
 .app-shell {
-  min-height: 100vh;
+  height: 100dvh;
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr) 390px;
+  grid-template-columns: var(--sidebar-width, 320px) minmax(0, 1fr);
   background: var(--bg);
+  overflow: hidden;
+}
+
+.app-shell.canvas-open {
+  grid-template-columns: var(--sidebar-width, 320px) minmax(0, 1fr) var(--canvas-width, 390px);
+}
+
+.app-shell.sidebar-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app-shell.sidebar-collapsed.canvas-open {
+  grid-template-columns: minmax(0, 1fr) var(--canvas-width, 390px);
 }
 
 .sidebar {
+  position: relative;
   background: var(--panel);
   border-right: 1px solid var(--border);
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-height: 100vh;
+  height: 100dvh;
+  min-height: 0;
 }
 
 .brand {
@@ -57,6 +72,22 @@ button { cursor: pointer; }
   gap: 8px;
   font-weight: 700;
   padding: 10px 8px;
+}
+
+.brand span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-toggle {
+  margin-left: auto;
+  min-width: 34px;
+  width: 34px;
+  height: 34px;
+  justify-content: center;
+  padding: 0;
 }
 
 .new-chat, .history-item, .icon-button, .canvas-toggle {
@@ -108,11 +139,51 @@ button { cursor: pointer; }
 
 .quota strong { color: var(--text); font-size: 14px; }
 
+.sidebar-collapsed .sidebar {
+  display: none;
+}
+
+.sidebar-float {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 8;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -8px;
+  width: 16px;
+  height: 100%;
+  z-index: 3;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.sidebar-resizer:hover {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.sidebar-collapsed .sidebar-resizer {
+  display: none;
+}
+
 .chat {
   min-width: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  min-height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .chat-top {
@@ -136,6 +207,7 @@ button { cursor: pointer; }
 .messages {
   overflow: auto;
   padding: 24px max(18px, calc((100% - 820px) / 2));
+  min-height: 0;
 }
 
 .message {
@@ -166,6 +238,31 @@ button { cursor: pointer; }
 
 .bubble p { margin: 0 0 10px; }
 .bubble p:last-child { margin-bottom: 0; }
+.bubble :where(ul, ol) { padding-left: 24px; }
+.bubble :where(pre, table) {
+  max-width: 100%;
+  overflow: auto;
+}
+.bubble pre {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 12px;
+}
+.bubble code {
+  overflow-wrap: anywhere;
+}
+.bubble table {
+  border-collapse: collapse;
+  display: block;
+  margin: 12px 0;
+}
+.bubble th, .bubble td {
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
 .muted { color: var(--muted); }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -195,12 +292,39 @@ button { cursor: pointer; }
   overflow-wrap: anywhere;
 }
 
+.chat-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chat-progress-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 9px;
+  color: var(--muted);
+  background: var(--panel);
+  font-size: 12px;
+}
+
+.chat-progress-item.current {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 .composer-wrap {
   border-top: 1px solid var(--border);
   padding: 12px max(18px, calc((100% - 820px) / 2)) 18px;
   display: grid;
   gap: 8px;
   background: linear-gradient(to top, var(--bg) 88%, transparent);
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
 }
 
 .composer-wrap > input, .composer-wrap > select {
@@ -250,6 +374,7 @@ button { cursor: pointer; }
 }
 
 .canvas {
+  position: relative;
   border-left: 1px solid var(--border);
   background: var(--panel);
   min-width: 0;
@@ -264,6 +389,21 @@ button { cursor: pointer; }
   margin: 12px;
 }
 
+.canvas-resizer {
+  position: absolute;
+  top: 0;
+  left: -8px;
+  width: 16px;
+  height: 100%;
+  z-index: 3;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.canvas-resizer:hover {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
 .canvas-body {
   padding: 0 14px 18px;
   display: grid;
@@ -271,6 +411,19 @@ button { cursor: pointer; }
 }
 
 .canvas-body h2, .canvas-body h3 { margin: 0; }
+
+.canvas-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.canvas-head span {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 
 .canvas iframe {
   width: 100%;
@@ -344,7 +497,14 @@ button { cursor: pointer; }
 
 @media (max-width: 1100px) {
   .app-shell {
-    grid-template-columns: 230px minmax(0, 1fr);
+    grid-template-columns: minmax(260px, min(var(--sidebar-width, 320px), 38vw)) minmax(0, 1fr);
+  }
+  .app-shell.canvas-open {
+    grid-template-columns: minmax(260px, min(var(--sidebar-width, 320px), 38vw)) minmax(0, 1fr);
+  }
+  .app-shell.sidebar-collapsed,
+  .app-shell.sidebar-collapsed.canvas-open {
+    grid-template-columns: minmax(0, 1fr);
   }
   .canvas {
     position: fixed;
@@ -353,21 +513,34 @@ button { cursor: pointer; }
     z-index: 5;
     box-shadow: -20px 0 40px rgba(0, 0, 0, 0.18);
   }
+  .canvas-resizer {
+    display: none;
+  }
 }
 
 @media (max-width: 720px) {
-  .app-shell {
+  .app-shell, .app-shell.sidebar-collapsed {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .app-shell.canvas-open, .app-shell.sidebar-collapsed.canvas-open {
     grid-template-columns: 1fr;
   }
   .sidebar {
     min-height: auto;
+    max-height: 145px;
+    overflow: hidden;
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
   .history, .quota {
     display: none;
   }
+  .sidebar-resizer {
+    display: none;
+  }
   .chat {
-    min-height: calc(100vh - 150px);
+    height: auto;
+    min-height: 0;
   }
 }
