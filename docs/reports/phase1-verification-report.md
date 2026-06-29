@@ -676,7 +676,7 @@ vos submit pack                            # 打包提交
 | Agent 问答 | `docs/reports/phase1-agent-ask.json` | KB 驱动问答 + citations（干净复现中执行） |
 | Agent 调试 | `docs/reports/phase1-agent-debug.json` | 5 步证据链 + 可视化 + GDB 合约（2026-06-25 补测） |
 | 平台设计 | `docs/design/platform/*.md` | 平台架构、边界、阶段门禁 |
-| 用户手册 | `docs/user-manual.md` | spec-first 工作流说明 |
+| 用户手册 | `docs/manual/` | spec-first 工作流说明 |
 
 ### B. 关键数据统计
 

@@ -1,0 +1,89 @@
+# 示例：写操作 syscall OperationContract
+# 注意：这是一个通用示例。你的具体 syscall 编号、参数约定、错误码
+# 都取决于你的 ABI 设计。此示例仅展示 OperationContract 的结构。
+
+id: "kernel/syscall.sys_write"
+module: "kernel/syscall"
+operation: "sys_write"
+stage: "syscall-ipc"
+purpose: "向一个打开的资源写入数据"
+
+depends_on:
+  requires_modules: ["kernel/process", "kernel/resource"]
+  requires_ops: ["kernel/syscall.syscall_dispatch", "kernel/resource.resource_write"]
+
+rely:
+  state_assumptions:
+    - "当前进程存在且有效"
+    - "调用来自用户态（通过 trap/syscall 路径）"
+  callable_interfaces:
+    - "kernel/resource.resource_write"
+    - "kernel/memory.copyin"
+  resource_assumptions:
+    - "传入的资源句柄可能有效或无效"
+  lock_assumptions:
+    - "调用时不持有任何锁"
+
+guarantee:
+  returns: "成功时返回实际写入的字节数（>= 0）；失败时返回负的错误码"
+  state_updates:
+    - "目标资源的内容或状态被更新"
+  side_effects:
+    - "可能触发 I/O 操作"
+
+preconditions:
+  - "进程的用户地址空间中 buf 指向的内存可读且长度为 count 字节"
+postconditions:
+  - "如果返回值 >= 0，则成功写入了 return_value 个字节"
+  - "如果返回值 < 0，则目标资源的状态未改变"
+invariants_preserved:
+  - "资源句柄的生命周期不变量（如在有效期内始终可访问）"
+  - "进程的资源配额不变量（如写入不超出配额）"
+
+failure_semantics:
+  - condition: "资源句柄无效"
+    result: "返回 EBADF"
+  - condition: "buf 指向无效的用户内存"
+    result: "返回 EFAULT"
+  - condition: "资源不支持写操作"
+    result: "返回 EBADF 或 EPERM"
+  - condition: "资源暂时不可写"
+    result: "返回 EAGAIN 或阻塞等待（取决于资源类型的设计）"
+  - condition: "资源已关闭"
+    result: "返回 EBADF"
+
+concurrency:
+  atomicity: "对单个资源的写入是原子的（不被其他写入交叉）"
+  lock_order: "先验证用户指针，再获取资源锁，再执行写入"
+  interrupt_state: "操作期间中断可启用"
+  wait_wakeup_rules:
+    - "如果资源不可写且选择阻塞等待，进程进入睡眠，资源可写时被唤醒"
+
+security:
+  authority_check: "验证调用进程对该资源句柄的访问权限"
+  isolation_boundary: "buf 指针必须在用户地址空间范围内"
+  user_pointer_policy: "通过 copyin 安全地从用户空间读取数据"
+
+test_obligations:
+  public:
+    - "向有效资源写入数据并验证返回值"
+    - "向无效资源句柄写入，验证返回 EBADF"
+    - "传入无效用户指针，验证返回 EFAULT"
+    - "向不支持写操作的资源写入，验证返回适当错误"
+  generated:
+    - "随机句柄和缓冲区的组合测试"
+    - "并发写入同一资源的原子性测试"
+
+codegen:
+  targets:
+    - kind: "symbol"
+      path: "kernel/syscall.c"
+      symbols: ["sys_write"]
+      owner: "student"
+      mode: "implement"
+  forbidden_changes:
+    - "不允许跳过用户指针验证"
+    - "不允许在未持有资源锁的情况下修改资源状态"
+  required_followup_checks:
+    - "运行 syscall 测试套件"
+    - "运行用户指针安全验证测试"

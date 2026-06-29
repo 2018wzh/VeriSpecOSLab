@@ -1,0 +1,85 @@
+# 示例：调度器 OperationContract
+# 注意：此示例描述调度器操作的基本契约，不预设具体的调度策略
+# （round-robin / MLFQ / CFS 等）、不预设进程状态机的具体状态数和转换规则。
+
+id: "kernel/process.schedule"
+module: "kernel/process"
+operation: "schedule"
+stage: "execution"
+purpose: "选择下一个可运行的进程并切换执行"
+
+depends_on:
+  requires_modules: ["kernel/process", "kernel/trap"]
+  requires_ops: ["kernel/process.context_switch", "kernel/process.yield"]
+
+rely:
+  state_assumptions:
+    - "当前 CPU 上正在执行一个进程或 idle"
+    - "进程表处于一致状态"
+  callable_interfaces:
+    - "kernel/process.context_switch"
+    - "kernel/memory.switch_page_table"
+  resource_assumptions:
+    - "目标进程的用户页表已正确设置"
+  lock_assumptions:
+    - "调用者持有调度器锁"
+
+guarantee:
+  returns: "不返回（通过 context_switch 切换到目标进程）"
+  state_updates:
+    - "当前 CPU 的 current_process 更新为目标进程"
+    - "被切换出的进程状态可能被更新（取决于调度策略）"
+  side_effects:
+    - "切换页表到目标进程的地址空间"
+    - "恢复目标进程的寄存器状态"
+
+preconditions:
+  - "至少存在一个可运行的进程或 idle 进程"
+postconditions:
+  - "CPU 正在执行被选中的进程"
+  - "被选中的进程是'可运行'状态"
+invariants_preserved:
+  - "同一时刻一个进程只在一个 CPU 上运行"
+  - "进程的累计 CPU 时间与实际运行时间一致"
+  - "调度器不会选择状态不是'可运行'的进程"
+
+failure_semantics:
+  - condition: "没有可运行的进程"
+    result: "选择 idle 进程（如果实现）或自旋等待"
+  - condition: "目标进程的页表损坏"
+    result: "kernel panic（不可恢复的内部错误）"
+
+concurrency:
+  atomicity: "选择目标进程和 context_switch 之间是一个原子决策窗口"
+  lock_order: "调度器锁在内存分配锁之前、文件系统锁之前获取"
+  interrupt_state: "调度决策期间 timer 中断应被阻止（防止重入 schedule）"
+  wait_wakeup_rules:
+    - "idle 进程在没有可运行进程时进入睡眠，被 wakeup 唤醒"
+
+security:
+  authority_check: "只有内核调度路径可以调用此操作"
+  isolation_boundary: "切换页表确保新进程无法访问旧进程的内存"
+  user_pointer_policy: "不适用"
+
+test_obligations:
+  public:
+    - "多个可运行进程被按某种公平顺序调度"
+    - "进程 yield 后不会被立即重新调度（除非是唯一可运行进程）"
+    - "等待中的进程不会被调度"
+  generated:
+    - "随机进程创建/销毁后的调度一致性"
+    - "长时间运行下的进程饥饿检测"
+
+codegen:
+  targets:
+    - kind: "symbol"
+      path: "kernel/process.c"
+      symbols: ["schedule"]
+      owner: "student"
+      mode: "implement"
+  forbidden_changes:
+    - "不允许在不持有调度器锁的情况下操作进程表"
+    - "不允许调度非'可运行'状态的进程"
+  required_followup_checks:
+    - "运行调度器测试套件"
+    - "运行进程生命周期测试"

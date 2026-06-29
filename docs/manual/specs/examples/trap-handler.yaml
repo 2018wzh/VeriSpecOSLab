@@ -1,0 +1,91 @@
+# 示例：用户态 Trap 处理 OperationContract
+# 注意：此示例描述 trap 分发逻辑的契约，不预设具体的 trap 编号分配、
+# 数据结构布局或处理策略。你的设计可能将 user trap 和 kernel trap
+# 合并或分离，可能有不同的分发策略。
+
+id: "kernel/trap.handle_user_trap"
+module: "kernel/trap"
+operation: "handle_user_trap"
+stage: "trap-privilege"
+purpose: "处理来自用户态的 trap（异常、syscall 或中断）"
+
+depends_on:
+  requires_modules: ["kernel/process", "kernel/syscall", "kernel/memory"]
+  requires_ops: ["kernel/trap.trap_entry", "kernel/trap.trap_return"]
+
+rely:
+  state_assumptions:
+    - "CPU 处于 S-mode，trap 来自 U-mode"
+    - "stvec 指向正确的 trap vector"
+    - "当前进程的 trapframe 已正确设置"
+  callable_interfaces:
+    - "kernel/syscall.syscall_dispatch"
+    - "kernel/process.yield"
+    - "kernel/memory.handle_page_fault"
+  resource_assumptions:
+    - "用户栈有效且可访问"
+  lock_assumptions:
+    - "进入时不持有任何锁"
+
+guarantee:
+  returns: "不返回（通过 trap_return 恢复用户态执行）或终止进程"
+  state_updates:
+    - "如果是 syscall，对应操作已执行"
+    - "如果是 timer 中断，可能触发进程调度"
+    - "如果是页错误，可能修改页表"
+  side_effects:
+    - "sepc 被设置为返回用户态的地址"
+    - "sstatus 被恢复为用户态前的状态"
+
+preconditions:
+  - "scause 包含有效的 trap 原因码"
+  - "sepc 指向触发 trap 的用户态指令"
+postconditions:
+  - "进程要么被恢复执行（sepc 处的指令或下一条指令），要么被终止"
+  - "内核数据结构保持一致"
+invariants_preserved:
+  - "内核栈不被用户态访问"
+  - "trapframe 中的寄存器保存与恢复一致"
+  - "用户态无法观测到内核态中间状态"
+
+failure_semantics:
+  - condition: "无法恢复的页错误（如内核地址被用户访问）"
+    result: "终止当前进程"
+  - condition: "无法识别的 trap 原因"
+    result: "终止当前进程并记录诊断信息"
+  - condition: "trap 处理期间发生嵌套异常"
+    result: "进入内核 panic（严重的内核 bug）"
+
+concurrency:
+  atomicity: "整个 trap 处理过程在单个 CPU 上不可被同 CPU 的用户态代码打断"
+  lock_order: "如果需要获取进程锁，在 trap 处理早期获取"
+  interrupt_state: "处理 syscall 和异常时中断可启用；处理设备中断时需按中断控制器规则处理"
+  wait_wakeup_rules: []
+
+security:
+  authority_check: "验证 trap 确实来自用户态（检查 sstatus.SPP）"
+  isolation_boundary: "trap 处理中的所有操作在内核态执行，用户态不可见"
+  user_pointer_policy: "所有来自用户态的指针在使用前必须验证"
+
+test_obligations:
+  public:
+    - "用户态执行 ecall 后正确分发到对应 syscall"
+    - "用户态访问非法地址触发页错误且进程被终止"
+    - "timer 中断触发进程 yield"
+  generated:
+    - "随机异常类型的正确分发"
+    - "嵌套 trap 场景的处理"
+
+codegen:
+  targets:
+    - kind: "symbol"
+      path: "kernel/trap.c"
+      symbols: ["handle_user_trap"]
+      owner: "student"
+      mode: "implement"
+  forbidden_changes:
+    - "不允许在不保存全部寄存器的情况下处理 trap"
+    - "不允许将内核态异常当作用户态异常处理"
+  required_followup_checks:
+    - "运行 trap 测试套件"
+    - "运行页错误处理测试"

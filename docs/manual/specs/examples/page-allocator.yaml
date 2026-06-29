@@ -1,0 +1,82 @@
+# 示例：物理页分配器 OperationContract
+# 注意：这是一个通用示例，展示 OperationContract 的格式和抽象层级。
+# 你的实际字段值取决于你的设计选择（算法、数据结构、错误处理策略等）。
+
+id: "kernel/memory.alloc_page"
+module: "kernel/memory"
+operation: "alloc_page"
+stage: "memory-management"
+purpose: "分配一个物理内存页"
+
+depends_on:
+  requires_modules: ["kernel/lock"]
+  requires_ops: ["kernel/memory.init_allocator"]
+
+rely:
+  state_assumptions:
+    - "init_allocator 已被调用且成功返回"
+    - "分配器的内部数据结构处于一致状态"
+  callable_interfaces:
+    - "kernel/lock.acquire"
+    - "kernel/lock.release"
+  resource_assumptions:
+    - "目标物理页满足平台页对齐要求"
+  lock_assumptions:
+    - "调用者不持有分配器内部锁"
+
+guarantee:
+  returns: "成功时返回指向可用物理页的指针；无可用页时返回空指针"
+  state_updates:
+    - "分配的页从可用页集合中移除"
+  side_effects:
+    - "返回的页内容已初始化为已知状态（通常为零）"
+
+preconditions:
+  - "init_allocator 已完成初始化"
+postconditions:
+  - "返回值要么是有效的物理页指针，要么是空指针"
+  - "成功时，返回的页不在可用页集合中"
+invariants_preserved:
+  - "同一页不会被重复分配"
+  - "保留区域中的页不会被分配"
+  - "分配器内部数据结构一致性"
+
+failure_semantics:
+  - condition: "无可用物理页"
+    result: "返回空指针，不修改分配器状态"
+  - condition: "内部数据结构损坏"
+    result: "触发 kernel panic（不可恢复的内部错误）"
+
+concurrency:
+  atomicity: "整个操作在分配器锁保护下是原子的"
+  lock_order: "在锁层次结构中，分配器锁处于底层"
+  interrupt_state: "操作期间中断可保持启用"
+  wait_wakeup_rules: []
+
+security:
+  authority_check: "内核内部调用，无额外权限检查"
+  isolation_boundary: "返回的物理地址不得泄漏到用户态"
+  user_pointer_policy: "不适用"
+
+test_obligations:
+  public:
+    - "顺序分配直到耗尽，验证每次返回不同的有效页"
+    - "分配-释放-重新分配循环，验证页可被复用"
+    - "验证保留区域页永不返回"
+  generated:
+    - "随机分配/释放序列后的不变量自检"
+    - "并发分配/释放下的不变量保持"
+
+codegen:
+  targets:
+    - kind: "symbol"
+      path: "kernel/memory.c"
+      symbols: ["alloc_page"]
+      owner: "student"
+      mode: "implement"
+  forbidden_changes:
+    - "不允许移除此操作对分配器内部锁的获取"
+    - "不允许跳过对保留区域的检查"
+  required_followup_checks:
+    - "运行内存分配测试套件"
+    - "运行分配器不变量自检"
