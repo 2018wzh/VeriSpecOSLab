@@ -58,6 +58,45 @@ function manifestV2(options: {
 }
 
 describe("xv6-spec offline runtime flow", () => {
+  test("repository fixture tracks VOS agent and KB configuration", () => {
+    const repoRoot = join(import.meta.dir, "../../../..");
+    const xv6Root = join(repoRoot, "examples", "xv6-spec");
+    const policy = readFileSync(join(xv6Root, ".vos", "policy.yaml"), "utf8");
+    const config = readFileSync(join(xv6Root, ".vos", "config.toml"), "utf8");
+    const gitignore = readFileSync(join(xv6Root, ".gitignore"), "utf8");
+
+    for (const command of [
+      "agent ask",
+      "agent debug",
+      "agent review-spec",
+      "agent validate-generated",
+      "kb add",
+      "kb search",
+      "kb export-manifest",
+      "kb import-manifest",
+    ]) {
+      expect(policy).toContain(`  - ${command}`);
+    }
+    for (const allowedPath of ["spec", "kernel", "user", "mkfs", "tests", ".vos", "Makefile", "AGENTS.md"]) {
+      expect(policy).toContain(`  - ${allowedPath}`);
+    }
+
+    expect(config).toContain("provider = \"deepseek\"");
+    expect(config).toContain("model = \"deepseek-v4-pro\"");
+    expect(config).toContain("env = \"DEEPSEEK_API_KEY\"");
+    expect(config).toContain("model = \"ecnu-embedding-small\"");
+    expect(config).toContain("env = \"ECNU_API_KEY\"");
+
+    for (const trackedConfig of [
+      "!.vos/project.yaml",
+      "!.vos/policy.yaml",
+      "!.vos/config.toml",
+      "!.vos/toolchain.json",
+    ]) {
+      expect(gitignore).toContain(trackedConfig);
+    }
+  });
+
   test("supports dry-run build, run, and public verify without LLM/toolchain/QEMU", async () => {
     const projectRoot = makeXv6Fixture();
     const evidence = await EvidenceWriter.create({

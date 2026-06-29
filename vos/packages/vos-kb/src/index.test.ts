@@ -161,6 +161,10 @@ describe("vos-kb local registry", () => {
     await expect(searchKb(root, "allocator")).rejects.toThrow(/embedding/i);
   });
 
+  test("returns no search hits for an empty knowledge base", async () => {
+    expect(await searchKb(root, "allocator", { embedder: fakeEmbedder })).toEqual([]);
+  });
+
   test("rejects branch and tag specified together", async () => {
     await expect(addKbSource(root, {
       source: "manual.md",

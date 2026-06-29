@@ -219,6 +219,7 @@ export async function searchKb(
   const index = await readKbIndex(projectRoot);
   const sources = new Map(index.sources.map((source) => [source.id, source]));
   const chunks = index.chunks ?? await hydrateChunks(projectRoot, index.sources);
+  if (chunks.length === 0) return [];
   if (chunks.length > 0 && !existsSync(vectorDbPath(projectRoot))) {
     await rebuildVectorIndex(projectRoot, chunks, embedder);
   }
