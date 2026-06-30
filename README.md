@@ -4,6 +4,8 @@ VeriSpecOSLab 是一个面向操作系统课程与实验的 spec-first 工作区
 
 如果你第一次使用这个仓库，先读 [用户手册](docs/manual/index.md)。如果你想直接看一个完整 OS 示例，从 [xv6-spec](examples/xv6-spec/README.md) 开始。
 
+参赛文档在 [docs/comp/report.md](docs/comp/report.md) 和 [docs/comp/VeriSpecOSLab.pptx](docs/comp/VeriSpecOSLab.pptx) 里。
+
 ## 快速开始
 
 ```bash
