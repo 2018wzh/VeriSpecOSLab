@@ -5,6 +5,7 @@ import { runCommand } from "./executor.ts";
 import { loadToolchainManifest, type TestSuiteV2, type ToolchainManifestV2 } from "./manifest.ts";
 import { runBuildCommand } from "./build.ts";
 import { runQemuCommand } from "./qemu.ts";
+import { relativeProjectPath } from "../utils/paths.ts";
 
 export interface TestSuiteVerdict {
   name: string;
@@ -115,7 +116,7 @@ async function runSuite(params: {
           kind: params.suite.kind,
           status: build.status,
           durationMs: Date.now() - started,
-          evidenceRefs: build.artifacts.map((artifact) => path.relative(params.evidence.run_root, artifact)),
+          evidenceRefs: build.artifacts.map((artifact) => relativeProjectPath(params.evidence.run_root, artifact)),
           output: build.output,
         };
       }
@@ -171,7 +172,7 @@ async function runCommandSuite(params: {
       kind: "command",
       status: "ok",
       durationMs: Date.now() - started,
-      evidenceRefs: [path.relative(params.evidence.run_root, planPath)],
+      evidenceRefs: [relativeProjectPath(params.evidence.run_root, planPath)],
       output: "dry run",
     };
   }
@@ -207,7 +208,7 @@ async function runCommandSuite(params: {
     kind: "command",
     status,
     durationMs: commandResult.durationMs,
-    evidenceRefs: [stdoutPath, stderrPath, resultPath].map((file) => path.relative(params.evidence.run_root, file)),
+    evidenceRefs: [stdoutPath, stderrPath, resultPath].map((file) => relativeProjectPath(params.evidence.run_root, file)),
     output: `${commandResult.stdout}\n${commandResult.stderr}`,
   };
 }
@@ -234,7 +235,7 @@ async function runQemuCaseSuite(params: {
     status: run.status,
     durationMs: run.durationMs || Date.now() - started,
     evidenceRefs: [run.serialPath, run.stderrPath, run.resultPath].filter((value): value is string => !!value)
-      .map((file) => path.relative(params.evidence.run_root, file)),
+      .map((file) => relativeProjectPath(params.evidence.run_root, file)),
     output: run.output,
   };
 }

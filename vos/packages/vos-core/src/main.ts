@@ -73,6 +73,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { isWindows } from "vos-platform";
 import { renderOutput } from "./output.ts";
 import { createCommandProgress } from "./progress/index.ts";
 import type { CommandProgress, ProgressUpdate } from "./progress/types.ts";
@@ -3557,7 +3558,7 @@ export function commandToArray(command: CliCommand): string[] {
 
 function commandExists(cmd: string): boolean {
   const envPath = process.env.PATH?.split(path.delimiter) ?? [];
-  const candidates = process.platform === "win32"
+  const candidates = isWindows()
     ? [".exe", ".cmd", "", ".bat"].map((suffix) => cmd + suffix)
     : [cmd];
   return envPath.some((dir) => {

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, writeFile, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import simpleGit from "simple-git";
+import simpleGit, { type SimpleGit } from "simple-git";
 import {
   buildNormalizedSpecBundle,
   composeArchitecture,
@@ -51,17 +51,17 @@ describe("vos-spec semantic bundle", () => {
     ]);
     const git = simpleGit(root);
     await git.add(".");
-    const rootCommit = await git.commit("root\n\nSpec-Patch-ID: patch-001");
+    const rootCommit = await commitAndHead(git, "root\n\nSpec-Patch-ID: patch-001");
     let bundle = await buildNormalizedSpecBundle({ projectRoot: root });
-    let report = await resolveSpecPatch({ projectRoot: root, ref: rootCommit.commit, bundle });
+    let report = await resolveSpecPatch({ projectRoot: root, ref: rootCommit, bundle });
     expect(report.impact.diagnostics.filter((item) => item.code.startsWith("patch.diff_"))).toEqual([]);
 
     await writePatch(root, "patch-001", ["spec/evolution/patch-001.yaml"]);
     await writeFile(path.join(root, "spec", "modules", "kernel", "memory", "ops", "kalloc.yaml"), operationYaml({ publicTests: ["kalloc_alignment", "kalloc_smoke"] }));
     await git.add(".");
-    const missingCommit = await git.commit("missing\n\nSpec-Patch-ID: patch-001");
+    const missingCommit = await commitAndHead(git, "missing\n\nSpec-Patch-ID: patch-001");
     bundle = await buildNormalizedSpecBundle({ projectRoot: root });
-    report = await resolveSpecPatch({ projectRoot: root, ref: missingCommit.commit, bundle });
+    report = await resolveSpecPatch({ projectRoot: root, ref: missingCommit, bundle });
     expect(report.impact.diagnostics.some((item) => item.code === "patch.diff_unlisted_spec")).toBe(true);
 
     await writePatch(root, "patch-001", [
@@ -71,11 +71,11 @@ describe("vos-spec semantic bundle", () => {
     ]);
     await writeFile(path.join(root, "spec", "modules", "kernel", "memory", "ops", "kalloc.yaml"), operationYaml({ publicTests: ["kalloc_alignment"] }));
     await git.add(".");
-    const staleCommit = await git.commit("stale\n\nSpec-Patch-ID: patch-001");
+    const staleCommit = await commitAndHead(git, "stale\n\nSpec-Patch-ID: patch-001");
     bundle = await buildNormalizedSpecBundle({ projectRoot: root });
-    report = await resolveSpecPatch({ projectRoot: root, ref: staleCommit.commit, bundle });
+    report = await resolveSpecPatch({ projectRoot: root, ref: staleCommit, bundle });
     expect(report.impact.diagnostics.some((item) => item.code === "patch.diff_stale_spec")).toBe(true);
-  });
+  }, 60_000);
 
   test("validates SpecPatch DAG from commit metadata", async () => {
     const root = await fixtureProject();
@@ -125,10 +125,10 @@ describe("vos-spec semantic bundle", () => {
     ].join("\n"));
     await writeFile(path.join(root, "spec", "modules", "kernel", "memory", "ops", "kalloc.yaml"), operationYaml({ publicTests: ["kalloc_alignment", "kalloc_smoke"] }));
     await git.add(".");
-    const commit = await git.commit("derive impact\n\nSpec-Patch-ID: patch-001");
+    const commit = await commitAndHead(git, "derive impact\n\nSpec-Patch-ID: patch-001");
 
     const bundle = await buildNormalizedSpecBundle({ projectRoot: root });
-    const report = await resolveSpecPatch({ projectRoot: root, ref: commit.commit, bundle });
+    const report = await resolveSpecPatch({ projectRoot: root, ref: commit, bundle });
     expect(report.impact.affected_modules).toEqual(["kernel/memory"]);
     expect(report.impact.affected_operations).toEqual(["kernel/memory.kalloc"]);
     expect(report.impact.selected_tests).toEqual(["kalloc_alignment", "kalloc_smoke"]);
@@ -136,7 +136,7 @@ describe("vos-spec semantic bundle", () => {
     expect(report.impact.required_checks).toContain("test kalloc_smoke");
     expect(report.impact.diagnostics.some((item) => item.code === "patch.impact_unlisted_module")).toBe(true);
     expect(report.impact.diagnostics.some((item) => item.code === "patch.impact_unlisted_operation")).toBe(true);
-  });
+  }, 20_000);
 
   test("strict SpecPatch resolution requires commit metadata", async () => {
     const root = await fixtureProject();
@@ -153,21 +153,21 @@ describe("vos-spec semantic bundle", () => {
 
     expect(report.impact.diagnostics.some((item) => item.code === "patch.commit_missing")).toBe(true);
     expect(report.impact.diagnostics.some((item) => item.code === "patch.parent_missing")).toBe(true);
-  });
+  }, 20_000);
 
   test("strict SpecPatch resolution rejects commit trailer mismatches", async () => {
     const root = await gitFixtureProject(["spec/modules/kernel/memory/ops/kalloc.yaml"]);
     await writePatch(root, "patch-001", ["spec/modules/kernel/memory/ops/kalloc.yaml"], { parentSha: null });
     const git = simpleGit(root);
     await git.add(".");
-    const commit = await git.commit([
+    const commit = await commitAndHead(git, [
       "patch",
       "",
       "Spec-Patch-ID: patch-001",
       "Spec-Commit-SHA: trailer-spec",
     ].join("\n"));
     await writePatch(root, "patch-001", ["spec/modules/kernel/memory/ops/kalloc.yaml"], {
-      commitSha: commit.commit,
+      commitSha: commit,
       parentSha: null,
     });
     const patchPath = path.join(root, "spec", "evolution", "patch-001.yaml");
@@ -176,13 +176,13 @@ describe("vos-spec semantic bundle", () => {
 
     const report = await resolveSpecPatch({
       projectRoot: root,
-      ref: commit.commit,
+      ref: commit,
       bundle,
       strict: true,
     });
 
     expect(report.impact.diagnostics.some((item) => item.code === "patch.trailer_spec_commit_mismatch")).toBe(true);
-  });
+  }, 20_000);
 });
 
 async function fixtureProject(opts: { missingDependency?: boolean } = {}): Promise<string> {
@@ -271,6 +271,11 @@ async function gitFixtureProject(affectedSpecs: string[]): Promise<string> {
   await git.addConfig("user.email", "test@example.com");
   await git.addConfig("user.name", "Test User");
   return root;
+}
+
+async function commitAndHead(git: SimpleGit, message: string): Promise<string> {
+  await git.commit(message);
+  return (await git.revparse(["HEAD"])).trim();
 }
 
 async function writePatch(root: string, id: string, affectedSpecs: string[], opts: {

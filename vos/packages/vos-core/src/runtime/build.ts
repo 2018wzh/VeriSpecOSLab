@@ -6,6 +6,7 @@ import { EvidenceWriter } from "../evidence/index.ts";
 import { runCommand } from "./executor.ts";
 import { probeRequiredTools, type ToolVersionProbe } from "./environment.ts";
 import { collectStringListByKey, parseTopLevelYaml } from "../utils/yaml.ts";
+import { relativeProjectPath } from "../utils/paths.ts";
 import { withResourceLock } from "./locks.ts";
 import { getBuildVariant, loadToolchainManifest, type ToolchainCommandV2, type ToolchainManifestV2 } from "./manifest.ts";
 
@@ -96,7 +97,7 @@ async function runBuildCommandUnlocked(params: {
     params.evidence.addArtifactFromPath("build-plan", planPath, "dry-run plan");
     return {
       status: "ok",
-      artifacts: [path.relative(params.projectRoot, planPath)],
+      artifacts: [relativeProjectPath(params.projectRoot, planPath)],
       output: dryPlan.join("\n"),
       toolVersions,
     };
@@ -133,14 +134,14 @@ async function runBuildCommandUnlocked(params: {
       const cancelled = params.signal?.aborted;
       return {
         status: childResult.timedOut ? "timed_out" : cancelled ? "failed" : "failed",
-        artifacts: [path.relative(params.projectRoot, logPath)],
+        artifacts: [relativeProjectPath(params.projectRoot, logPath)],
         output: cancelled ? "cancelled" : output || "build command failed",
         failedStep: step.id,
       };
     }
 
-    await params.evidence.addEvidenceRef(`${params.evidence.run_id}:${step.id}`, "build-step", path.relative(params.projectRoot, logPath));
-    params.evidence.addArtifact("build", path.relative(params.projectRoot, logPath), `step ${step.id}`);
+    await params.evidence.addEvidenceRef(`${params.evidence.run_id}:${step.id}`, "build-step", relativeProjectPath(params.projectRoot, logPath));
+    params.evidence.addArtifact("build", relativeProjectPath(params.projectRoot, logPath), `step ${step.id}`);
   }
 
   if (variant.artifacts) {
@@ -148,7 +149,7 @@ async function runBuildCommandUnlocked(params: {
       const p = path.resolve(params.projectRoot, rel);
       if (existsSync(p) && (await lstat(p)).isFile()) {
         const hash = await hashFile(p);
-        params.evidence.addArtifact("artifact", path.relative(params.projectRoot, p), `sha256:${hash}`);
+        params.evidence.addArtifact("artifact", relativeProjectPath(params.projectRoot, p), `sha256:${hash}`);
         artifacts.push(p);
       }
     }

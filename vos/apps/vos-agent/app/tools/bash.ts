@@ -1,4 +1,5 @@
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
+import { shellInvocation } from "vos-platform";
 import type { Tool } from "./types.ts";
 import {
   appendDiagnostic,
@@ -51,7 +52,8 @@ export function createBashTool(opts: BashOptions = {}): Tool {
       });
       if (!command.ok) return command.error;
 
-      const result = spawnSync("sh", ["-c", command.value], {
+      const shell = shellInvocation(command.value);
+      const result = spawnSync(shell.executable, shell.args, {
         cwd: cwd ?? process.cwd(),
         encoding: "utf8",
         timeout: timeoutMs,

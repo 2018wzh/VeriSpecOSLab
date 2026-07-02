@@ -11,6 +11,7 @@
     "tar": "^7.5.16",
     "vos-agent": "workspace:*",
     "vos-kb": "workspace:*",
+    "vos-platform": "workspace:*",
     "vos-runtime": "workspace:*",
     "vos-spec": "workspace:*",
     "yaml": "^2.9.0",

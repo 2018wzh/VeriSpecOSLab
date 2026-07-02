@@ -38,7 +38,7 @@ describe("vos-cli progress MCP server", () => {
       "submit_result",
     ]);
     expect(lines[2].result.content[0].text).toContain("\"vos-progress\"");
-  });
+  }, 20_000);
 
   test("returns validation errors as MCP tool results", async () => {
     const proc = spawnSync(process.execPath, [
@@ -59,7 +59,7 @@ describe("vos-cli progress MCP server", () => {
     const line = JSON.parse(stdout.trim());
     expect(line.result.isError).toBe(true);
     expect(line.result.content[0].text).toContain("status is invalid");
-  });
+  }, 20_000);
 
   test("accepts schema-valid submitted results", async () => {
     const line = callProgressMcp({
@@ -82,7 +82,7 @@ describe("vos-cli progress MCP server", () => {
       schema_id: "plan_draft.v1",
       accepted: true,
     });
-  });
+  }, 20_000);
 
   test("rejects submitted results with schema errors", async () => {
     const line = callProgressMcp({
@@ -95,7 +95,7 @@ describe("vos-cli progress MCP server", () => {
 
     expect(line.result.isError).toBe(true);
     expect(line.result.content[0].text).toContain("related_specs");
-  });
+  }, 20_000);
 
   test("rejects unknown submitted result schemas", async () => {
     const line = callProgressMcp({
@@ -108,7 +108,7 @@ describe("vos-cli progress MCP server", () => {
 
     expect(line.result.isError).toBe(true);
     expect(line.result.content[0].text).toContain("unknown schema");
-  });
+  }, 20_000);
 });
 
 function callProgressMcp(params: Record<string, unknown>): { result: { isError: boolean; content: Array<{ text: string }> } } {

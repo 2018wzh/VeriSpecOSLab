@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runAgentTask } from "../app/headless.ts";
 import type { SessionEvent } from "../app/session/types.ts";
@@ -121,11 +122,11 @@ describe("headless profile tasks", () => {
     expect(created?.tools).toContain("mcp__project-context__spec_summary");
     expect(created?.tools).toContain("mcp__project-context__evidence_summary");
     expect(chat.requests[0].tools.map((tool) => tool.function.name)).toContain("mcp__project-context__spec_summary");
-  });
+  }, 20_000);
 });
 
 function makeRoot(): string {
-  const root = join("/tmp", `vos-agent-headless-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  const root = join(tmpdir(), `vos-agent-headless-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   mkdirSync(root, { recursive: true });
   roots.push(root);
   return root;

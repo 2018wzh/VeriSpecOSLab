@@ -14,6 +14,7 @@ import {
   startAgentHttpServer,
   startReadonlyAgentDisplay,
 } from "vos-agent/headless";
+import { isWindows } from "vos-platform";
 import { CallbackChatClient, textResponse, toolCallResponse } from "./helpers/stub-chat.ts";
 
 const tmpRoots: string[] = [];
@@ -193,7 +194,9 @@ describe("package metadata", () => {
   test("vos-agent binary entry has a Bun shebang and executable bit", () => {
     const entry = join(packageRoot, "app", "main.ts");
     expect(readFileSync(entry, "utf8").startsWith("#!/usr/bin/env bun")).toBe(true);
-    expect(statSync(entry).mode & 0o111).not.toBe(0);
+    if (!isWindows()) {
+      expect(statSync(entry).mode & 0o111).not.toBe(0);
+    }
   });
 
   test("root bun workspace lockfile includes vos-agent", () => {

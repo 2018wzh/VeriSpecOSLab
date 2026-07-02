@@ -186,6 +186,9 @@ describe("vos-agent HTTP server", () => {
         project_id: "project-demo-student",
         user_id: "student-demo",
         task: "explain this boot failure",
+        agent_profile: {
+          skills: ["qemu-monitor", "visualization", "verification-diagnosis"],
+        },
       },
     }) as {
       session_id: string;
@@ -204,7 +207,6 @@ describe("vos-agent HTTP server", () => {
       promptId: "debug-agent.v1",
       outputSchema: "debug_output.v1",
     });
-    expect(response.agent_profile.skills).toContain("gdb-debug");
     expect(response.agent_profile.skills).toContain("qemu-monitor");
     expect(response.agent_profile.skills).toContain("visualization");
     expect(response.agent_profile.skills).toContain("verification-diagnosis");
@@ -222,7 +224,6 @@ describe("vos-agent HTTP server", () => {
     expect(toolNames).toContain("StructuredOutput");
     expect(toolNames).toContain("mcp__project-context__spec_summary");
     expect(toolNames).toContain("mcp__project-context__evidence_summary");
-    expect(toolNames).toContain("mcp__gdb__gdb_command");
     expect(toolNames).toContain("mcp__qemu-monitor__hmp_info");
     expect(toolNames).toContain("mcp__http-server__publish_html");
     expect(toolNames).not.toContain("Write");

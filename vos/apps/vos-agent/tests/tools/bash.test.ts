@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { isWindows } from "vos-platform";
 import { bashTool, createBashTool } from "../../app/tools/bash.ts";
 import { makeTmpDir, removeTmpDir, writeFixture } from "../helpers/tmp.ts";
 
@@ -27,14 +28,19 @@ describe("bashTool", () => {
 
   test("captures stdout of a successful command", async () => {
     const result = await bashTool.execute(
-      JSON.stringify({ command: "echo hello" }),
+      JSON.stringify({ command: shellCommand("echo hello", "Write-Output \"hello\"") }),
     );
-    expect(result).toBe("hello\n");
+    expect(normalizeNewlines(result)).toBe("hello\n");
   });
 
   test("captures stderr of a failing command and does not throw", async () => {
     const result = await bashTool.execute(
-      JSON.stringify({ command: "echo to-out; echo to-err 1>&2; exit 3" }),
+      JSON.stringify({
+        command: shellCommand(
+          "echo to-out; echo to-err 1>&2; exit 3",
+          "[Console]::Out.WriteLine(\"to-out\"); [Console]::Error.WriteLine(\"to-err\"); exit 3",
+        ),
+      }),
     );
     expect(result).toContain("to-out");
     expect(result).toContain("to-err");
@@ -44,7 +50,9 @@ describe("bashTool", () => {
   test("runs commands in the configured cwd", async () => {
     writeFixture(tmp, "marker.txt", "x");
     const tool = createBashTool({ cwd: tmp });
-    const result = await tool.execute(JSON.stringify({ command: "ls" }));
+    const result = await tool.execute(JSON.stringify({
+      command: shellCommand("ls", "Get-ChildItem -Name"),
+    }));
     expect(result).toContain("marker.txt");
   });
 
@@ -52,7 +60,9 @@ describe("bashTool", () => {
     const path = writeFixture(tmp, "to-delete.txt", "bye");
     const tool = createBashTool({ cwd: tmp });
     const result = await tool.execute(
-      JSON.stringify({ command: "rm to-delete.txt" }),
+      JSON.stringify({
+        command: shellCommand("rm to-delete.txt", "Remove-Item -LiteralPath \"to-delete.txt\""),
+      }),
     );
     expect(result).toBe("");
     expect(existsSync(path)).toBe(false);
@@ -60,14 +70,20 @@ describe("bashTool", () => {
 
   test("respects per-command timeout (returns error string, no throw)", async () => {
     const fast = createBashTool({ timeoutMs: 50 });
-    const result = await fast.execute(JSON.stringify({ command: "sleep 1" }));
+    const result = await fast.execute(JSON.stringify({
+      command: shellCommand("sleep 1", "Start-Sleep -Seconds 1"),
+    }));
     expect(result).toContain("Command timed out after 50ms");
   });
 
   test("handles pipes and chained commands", async () => {
-    // printf is portable across sh/bash/dash; echo's \n handling is not.
     const result = await bashTool.execute(
-      JSON.stringify({ command: "printf 'a\\nb\\nc\\n' | wc -l | tr -d ' '" }),
+      JSON.stringify({
+        command: shellCommand(
+          "printf 'a\\nb\\nc\\n' | wc -l | tr -d ' '",
+          "\"a\", \"b\", \"c\" | Measure-Object | ForEach-Object { $_.Count }",
+        ),
+      }),
     );
     expect(result.trim()).toBe("3");
   });
@@ -87,16 +103,26 @@ describe("bashTool", () => {
   });
 
   test("reports non-zero exit status even when output is empty", async () => {
-    const result = await bashTool.execute(JSON.stringify({ command: "false" }));
-    expect(result).toContain("Command exited with status 1");
+    const result = await bashTool.execute(JSON.stringify({ command: "exit 7" }));
+    expect(result).toContain("Command exited with status 7");
   });
 
   test("truncates large output with an explicit marker", async () => {
     const tool = createBashTool({ maxOutputBytes: 5 });
     const result = await tool.execute(
-      JSON.stringify({ command: "printf 'hello world'" }),
+      JSON.stringify({
+        command: shellCommand("printf 'hello world'", "[Console]::Out.Write(\"hello world\")"),
+      }),
     );
     expect(result).toContain("hello");
     expect(result).toContain("output truncated");
   });
 });
+
+function shellCommand(posix: string, windows: string): string {
+  return isWindows() ? windows : posix;
+}
+
+function normalizeNewlines(value: string): string {
+  return value.replace(/\r\n/g, "\n");
+}

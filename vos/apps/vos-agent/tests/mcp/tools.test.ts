@@ -65,11 +65,17 @@ const rl = readline.createInterface({ input: process.stdin });
 setInterval(() => {}, 1000);
 function send(message) { process.stdout.write(JSON.stringify(message) + "\n"); }
 process.on("SIGTERM", () => {
+  closeGracefully();
+});
+rl.on("close", () => {
+  closeGracefully();
+});
+function closeGracefully() {
   setTimeout(() => {
     fs.writeFileSync(process.env.CLOSE_MARKER, "closed");
     process.exit(0);
   }, 20);
-});
+}
 rl.on("line", (line) => {
   const message = JSON.parse(line);
   if (message.method === "initialize") {
@@ -117,12 +123,8 @@ describe("MCP tool provider", () => {
         properties: { text: { type: "string" } },
         required: ["text"],
       });
-      await expect(provider.tools[0].execute(JSON.stringify({ text: "hello" }))).resolves.toBe(
-        "echo:hello",
-      );
-      await expect(provider.tools[0].execute(JSON.stringify({ text: "empty-result" }))).resolves.toBe(
-        "undefined",
-      );
+      expect(await provider.tools[0].execute(JSON.stringify({ text: "hello" }))).toBe("echo:hello");
+      expect(await provider.tools[0].execute(JSON.stringify({ text: "empty-result" }))).toBe("undefined");
     } finally {
       await provider.close();
     }

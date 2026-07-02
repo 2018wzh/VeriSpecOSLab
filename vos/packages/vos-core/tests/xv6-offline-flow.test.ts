@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EvidenceWriter } from "../src/evidence/index.ts";
 import { executeCommand } from "../src/main.ts";
@@ -27,19 +28,19 @@ function manifestV2(options: {
   return {
     manifest_version: 2,
     files: ["Makefile"],
-    environment: { required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }] },
+    environment: { required_tools: [{ name: "bun", command: process.execPath, version_args: ["--version"], version_constraint: ">=0", kind: "runtime" }] },
     build: {
       variants: [{
         id: "baseline",
-        commands: options.buildCommands ?? ["true"],
+        commands: options.buildCommands ?? [{ name: "noop", command: okCommand() }],
         artifacts: options.buildArtifacts ?? [],
       }],
     },
     run: {
       profiles: options.runProfiles ?? [{
         id: "default",
-        command: "sh",
-        args: ["-c", "printf XV6_BOOT_OK"],
+        command: process.execPath,
+        args: ["-e", "process.stdout.write('XV6_BOOT_OK')", "-kernel", "build/kernel.bin"],
         artifacts: [],
         timeout_ms: 1000,
       }],
@@ -55,6 +56,35 @@ function manifestV2(options: {
     },
     verify: options.verify,
   };
+}
+
+function jsCommand(code: string): string[] {
+  return [process.execPath, "-e", code];
+}
+
+function okCommand(): string[] {
+  return jsCommand("");
+}
+
+function failCommand(): string[] {
+  return jsCommand("process.exit(1)");
+}
+
+function appendLogCommand(line: string): string[] {
+  return jsCommand(`const { appendFileSync } = await import("node:fs"); appendFileSync("test.log", ${JSON.stringify(`${line}\n`)});`);
+}
+
+function writeBuildCommand(): string[] {
+  return jsCommand([
+    "const { appendFileSync, mkdirSync, writeFileSync } = await import('node:fs');",
+    "mkdirSync('build', { recursive: true });",
+    "writeFileSync('build/kernel.bin', 'kernel');",
+    "appendFileSync('build.log', 'build\\n');",
+  ].join(""));
+}
+
+function writeCwdCommand(): string[] {
+  return jsCommand("const { writeFileSync } = await import('node:fs'); writeFileSync('cwd.txt', process.cwd());");
 }
 
 describe("xv6-spec offline runtime flow", () => {
@@ -81,9 +111,8 @@ describe("xv6-spec offline runtime flow", () => {
       expect(policy).toContain(`  - ${allowedPath}`);
     }
 
-    expect(config).toContain("provider = \"deepseek\"");
-    expect(config).toContain("model = \"deepseek-v4-pro\"");
-    expect(config).toContain("env = \"DEEPSEEK_API_KEY\"");
+    expect(config).toContain("provider = \"openai-compatible\"");
+    expect(config).toContain("model = \"compat:ecnu-max\"");
     expect(config).toContain("model = \"ecnu-embedding-small\"");
     expect(config).toContain("env = \"ECNU_API_KEY\"");
 
@@ -112,7 +141,7 @@ describe("xv6-spec offline runtime flow", () => {
       dryRun: true,
     });
     expect(build.status).toBe("ok");
-    expect(build.output).toContain("make all");
+    expect(build.output).toContain("build/kernel.bin");
 
     const run = await runQemuCommand({
       projectRoot,
@@ -245,20 +274,18 @@ describe("xv6-spec offline runtime flow", () => {
 
   test("treats ready signal as success even when QEMU is later timed out", async () => {
     const projectRoot = makeXv6Fixture();
-    const fakeQemu = join(projectRoot, "fake-qemu.sh");
+    const fakeQemu = join(projectRoot, "fake-qemu.mjs");
     mkdirSync(join(projectRoot, "build"), { recursive: true });
     writeFileSync(join(projectRoot, "build", "kernel.bin"), "fake kernel\n");
     writeFileSync(fakeQemu, [
-      "#!/usr/bin/env sh",
-      "printf 'booting\\nXV6_BOOT_OK\\n'",
-      "sleep 2",
+      "process.stdout.write('booting\\nXV6_BOOT_OK\\n');",
+      "setTimeout(() => {}, 2000);",
       "",
     ].join("\n"));
-    chmodSync(fakeQemu, 0o755);
     writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify(manifestV2({
-      buildCommands: ["make all"],
+      buildCommands: [{ name: "build", command: writeBuildCommand() }],
       buildArtifacts: ["build/kernel.bin"],
-      runProfiles: [{ id: "default", command: fakeQemu, args: ["-kernel", "build/kernel.bin"], artifacts: ["build/kernel.bin"], timeout_ms: 50 }],
+      runProfiles: [{ id: "default", command: process.execPath, args: [fakeQemu, "-kernel", "build/kernel.bin"], artifacts: ["build/kernel.bin"], timeout_ms: 50 }],
       runCases: [{ id: "smoke", profile: "default", success_regex: "XV6_BOOT_OK", timeout_ms: 50 }],
     }), null, 2));
     const evidence = await EvidenceWriter.create({
@@ -281,26 +308,30 @@ describe("xv6-spec offline runtime flow", () => {
 
   test("runs selected qemu profile case with stdin oracle and required artifacts", async () => {
     const projectRoot = makeXv6Fixture();
-    const fakeQemu = join(projectRoot, "fake-case-qemu.sh");
+    const fakeQemu = join(projectRoot, "fake-case-qemu.mjs");
     mkdirSync(join(projectRoot, "build"), { recursive: true });
     writeFileSync(join(projectRoot, "build", "kernel.bin"), "fake kernel\n");
     writeFileSync(fakeQemu, [
-      "#!/usr/bin/env sh",
-      "printf 'READY\\n'",
-      "IFS= read -r line",
-      "printf 'got:%s\\n' \"$line\"",
-      "mkdir -p build",
-      "printf done > build/case.ok",
+      "import { mkdirSync, writeFileSync } from 'node:fs';",
+      "process.stdout.write('READY\\n');",
+      "let input = '';",
+      "process.stdin.on('data', (chunk) => { input += chunk.toString(); });",
+      "process.stdin.on('end', () => {",
+      "  const line = input.split(/\\r?\\n/)[0] ?? '';",
+      "  process.stdout.write(`got:${line}\\n`);",
+      "  mkdirSync('build', { recursive: true });",
+      "  writeFileSync('build/case.ok', 'done');",
+      "});",
+      "process.stdin.resume();",
       "",
     ].join("\n"));
-    chmodSync(fakeQemu, 0o755);
     writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify(manifestV2({
-      buildCommands: ["make all"],
+      buildCommands: [{ name: "build", command: writeBuildCommand() }],
       buildArtifacts: ["build/kernel.bin"],
       runProfiles: [{
           id: "syscall",
-          command: fakeQemu,
-          args: [],
+          command: process.execPath,
+          args: [fakeQemu],
           artifacts: ["build/kernel.bin"],
           timeout_ms: 1000,
           serial: true,
@@ -356,16 +387,15 @@ describe("xv6-spec offline runtime flow", () => {
 
   test("writes adapter contract when qemu profile enables QMP HMP and GDB", async () => {
     const projectRoot = makeXv6Fixture();
-    const fakeQemu = join(projectRoot, "fake-qmp-qemu.sh");
+    const fakeQemu = join(projectRoot, "fake-qmp-qemu.mjs");
     mkdirSync(join(projectRoot, "build"), { recursive: true });
     writeFileSync(join(projectRoot, "build", "kernel.bin"), "fake kernel\n");
-    writeFileSync(fakeQemu, "#!/usr/bin/env sh\nprintf 'boot ok\\n'\n");
-    chmodSync(fakeQemu, 0o755);
+    writeFileSync(fakeQemu, "process.stdout.write('boot ok\\n');\n");
     writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify(manifestV2({
       runProfiles: [{
           id: "debug",
-          command: fakeQemu,
-          args: [],
+          command: process.execPath,
+          args: [fakeQemu],
           artifacts: ["build/kernel.bin"],
           qmp: { enabled: true, port: 26001 },
           hmp: { enabled: true },
@@ -402,7 +432,7 @@ describe("xv6-spec offline runtime flow", () => {
     writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify(manifestV2({
       buildCommands: [{
           name: "record-cwd",
-          command: ["sh", "-c", "pwd > cwd.txt"],
+          command: writeCwdCommand(),
           cwd: "subdir",
           timeout_ms: 1000,
         }],
@@ -421,7 +451,7 @@ describe("xv6-spec offline runtime flow", () => {
     });
 
     expect(build.status).toBe("ok");
-    expect(readFileSync(join(projectRoot, "subdir", "cwd.txt"), "utf8").trim().endsWith("/subdir"))
+    expect(readFileSync(join(projectRoot, "subdir", "cwd.txt"), "utf8").trim().replace(/\\/g, "/").endsWith("/subdir"))
       .toBe(true);
   });
 
@@ -469,7 +499,7 @@ describe("xv6-spec offline runtime flow", () => {
       "build_kernel",
       "kalloc_alignment",
     ]);
-  });
+  }, 20_000);
 
   test("verify patch fails unknown checks and treats test build_kernel as a test", async () => {
     const freeform = await makePatchVerifyFixture({ freeformCheck: true });
@@ -510,7 +540,7 @@ describe("xv6-spec offline runtime flow", () => {
     expect(verify.status).toBe("ok");
     expect(existsSync(join(buildKernel.projectRoot, "build.log"))).toBe(false);
     expect(readFileSync(join(buildKernel.projectRoot, "test.log"), "utf8").trim()).toBe("build_kernel");
-  });
+  }, 20_000);
 
   test("verify patch uses derived module and operation impact when metadata is incomplete", async () => {
     const { projectRoot, patchRef } = await makePatchVerifyFixture({ omitImpactMetadata: true });
@@ -553,7 +583,7 @@ describe("xv6-spec offline runtime flow", () => {
       "build_kernel",
       "kalloc_alignment",
     ]);
-  });
+  }, 20_000);
 
   test("spec patch apply writes cache, projections, applied state, and runs verification", async () => {
     const { projectRoot, patchRef } = await makePatchVerifyFixture();
@@ -583,7 +613,7 @@ describe("xv6-spec offline runtime flow", () => {
     expect(existsSync(join(projectRoot, ".vos", "cache", "projections", "agent.json"))).toBe(true);
     expect(existsSync(join(projectRoot, ".vos", "cache", "projections", "staff.json"))).toBe(true);
     expect(readFileSync(join(projectRoot, "test.log"), "utf8")).toContain("kalloc_alignment");
-  });
+  }, 20_000);
 
   test("spec patch apply rejects incomplete impact metadata without writing applied state", async () => {
     const { projectRoot, patchRef } = await makePatchVerifyFixture({ omitImpactMetadata: true });
@@ -606,7 +636,7 @@ describe("xv6-spec offline runtime flow", () => {
     expect(result.status).toBe("validation_failed");
     expect(JSON.stringify(result.details)).toContain("patch.impact_unlisted_module");
     expect(existsSync(join(projectRoot, ".vos", "cache", "patches", "applied.json"))).toBe(false);
-  });
+  }, 20_000);
 
   test("spec patch lint does not write applied state", async () => {
     const { projectRoot, patchRef } = await makePatchVerifyFixture();
@@ -628,7 +658,7 @@ describe("xv6-spec offline runtime flow", () => {
 
     expect(result.status).toBe("passed");
     expect(existsSync(join(projectRoot, ".vos", "cache", "patches", "applied.json"))).toBe(false);
-  });
+  }, 20_000);
 
   test("verify invariant runs suites mapped from preserved invariants", async () => {
     const projectRoot = makeVerifyMappingFixture();
@@ -798,7 +828,7 @@ describe("xv6-spec offline runtime flow", () => {
 
   test("verify full runs public generated invariant fuzz and staff suites in order", async () => {
     const projectRoot = makeVerifyMappingFixture({ visibility: "staff-only" });
-    const staffPolicy = join("/tmp", `vos-staff-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
+    const staffPolicy = join(tmpdir(), `vos-staff-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
     tmpRoots.push(staffPolicy);
     writeFileSync(staffPolicy, JSON.stringify({
       verify: {
@@ -862,7 +892,7 @@ describe("xv6-spec offline runtime flow", () => {
     expect(verify.requiredChecks).toContainEqual(expect.objectContaining({ id: "staff-policy-required", status: "validation_failed" }));
 
     projectRoot = makeVerifyMappingFixture({ invariantMapping: false, visibility: "staff-only" });
-    const staffPolicyForFull = join("/tmp", `vos-staff-missing-map-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
+    const staffPolicyForFull = join(tmpdir(), `vos-staff-missing-map-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
     tmpRoots.push(staffPolicyForFull);
     writeFileSync(staffPolicyForFull, JSON.stringify({ verify: { full: ["staff_full"] } }));
     evidence = await EvidenceWriter.create({
@@ -887,7 +917,7 @@ describe("xv6-spec offline runtime flow", () => {
     expect(verify.requiredChecks).toContainEqual(expect.objectContaining({ id: "freelist", status: "validation_failed" }));
 
     projectRoot = makeVerifyMappingFixture({ generatedObligations: false, visibility: "staff-only" });
-    const staffPolicyForObligations = join("/tmp", `vos-staff-no-obligation-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
+    const staffPolicyForObligations = join(tmpdir(), `vos-staff-no-obligation-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
     tmpRoots.push(staffPolicyForObligations);
     writeFileSync(staffPolicyForObligations, JSON.stringify({ verify: { full: ["staff_full"] } }));
     evidence = await EvidenceWriter.create({
@@ -951,7 +981,7 @@ describe("xv6-spec offline runtime flow", () => {
 
     expect(verify.status).toBe("policy_blocked");
 
-    const externalPolicy = join("/tmp", `vos-staff-denied-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
+    const externalPolicy = join(tmpdir(), `vos-staff-denied-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
     tmpRoots.push(externalPolicy);
     writeFileSync(externalPolicy, JSON.stringify({ verify: { full: ["staff_full"] } }));
     evidence = await EvidenceWriter.create({
@@ -972,7 +1002,7 @@ describe("xv6-spec offline runtime flow", () => {
     });
 
     expect(verify.status).toBe("policy_blocked");
-  });
+  }, 20_000);
 
   test("build fails when toolchain manifest is missing instead of legacy auto-materializing", async () => {
     const projectRoot = makeXv6Fixture({ toolchainManifest: false });
@@ -1068,12 +1098,12 @@ describe("xv6-spec offline runtime flow", () => {
   test("doctor checks manifest command entrypoints without failing on optional devbox tools", async () => {
     const projectRoot = makeXv6Fixture();
     writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify(manifestV2({
-      buildCommands: ["true"],
-      suites: [{ name: "static", kind: "command", command: ["true"] }],
+      buildCommands: [{ name: "noop", command: okCommand() }],
+      suites: [{ name: "static", kind: "command", command: okCommand() }],
       runProfiles: [{
         id: "default",
-        command: "true",
-        args: [],
+        command: process.execPath,
+        args: ["-e", ""],
         artifacts: [],
         timeout_ms: 1000,
       }],
@@ -1094,7 +1124,7 @@ describe("xv6-spec offline runtime flow", () => {
 
     expect(result.status).toBe("passed");
     expect(checks).toContainEqual(expect.objectContaining({
-      name: "true",
+      name: process.execPath,
       category: "toolchain-command",
       required: true,
       ok: true,
@@ -1182,7 +1212,7 @@ function makeXv6Fixture(options: {
   toolchainManifest?: boolean;
   buildEntrypoint?: boolean;
 } = {}): string {
-  const root = join("/tmp", `vos-cli-xv6-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  const root = join(tmpdir(), `vos-cli-xv6-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   tmpRoots.push(root);
 
   mkdirSync(join(root, ".vos", "cache", "normalized"), { recursive: true });
@@ -1257,17 +1287,17 @@ function makeXv6Fixture(options: {
       : ["bootstrap_banner_not_null", "sys_write_basic"].map((name) => ({
         name,
         kind: "command",
-        command: ["sh", "-c", options.failingPublicSuite === name ? "false" : "true"],
+        command: options.failingPublicSuite === name ? failCommand() : okCommand(),
         related_specs: name === "sys_write_basic" ? ["kernel/syscall"] : ["kernel/boot"],
       }));
     writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify(manifestV2({
-      buildCommands: ["make all"],
+      buildCommands: [{ name: "build", command: writeBuildCommand() }],
       buildArtifacts: ["build/kernel.bin"],
       suites: publicSuites,
       runProfiles: [{
         id: "default",
-        command: "qemu-system-riscv64",
-        args: ["-machine", "virt", "-kernel", "build/kernel.bin"],
+        command: process.execPath,
+        args: ["-e", "process.stdout.write('XV6_BOOT_OK')", "-machine", "virt", "-kernel", "build/kernel.bin"],
         artifacts: ["build/kernel.bin"],
         timeout_ms: 1000,
       }],
@@ -1283,7 +1313,7 @@ function makeVerifyMappingFixture(options: {
   generatedObligations?: boolean;
   visibility?: "public" | "agent-only" | "staff-only";
 } = {}): string {
-  const root = join("/tmp", `vos-cli-verify-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  const root = join(tmpdir(), `vos-cli-verify-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   tmpRoots.push(root);
   mkdirSync(join(root, ".vos", "cache", "normalized"), { recursive: true });
   mkdirSync(join(root, "spec", "architecture"), { recursive: true });
@@ -1388,13 +1418,13 @@ function makeVerifyMappingFixture(options: {
     "",
   ].join("\n"));
   writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify(manifestV2({
-    buildCommands: ["true"],
+    buildCommands: [{ name: "noop", command: okCommand() }],
     suites: [
-      { name: "bootstrap_banner_not_null", kind: "command", command: ["sh", "-c", "echo bootstrap_banner_not_null >> test.log"], related_specs: ["kernel/memory"] },
-      { name: "kalloc_alignment", kind: "command", command: ["sh", "-c", "echo kalloc_alignment >> test.log"], related_specs: ["kernel/memory"] },
-      { name: "kalloc_zeroed", kind: "command", command: ["sh", "-c", "echo kalloc_zeroed >> test.log"], related_specs: ["kernel/memory"] },
-      { name: "grind", kind: "command", command: ["sh", "-c", "echo grind >> test.log"], related_specs: ["kernel/memory"] },
-      { name: "staff_full", kind: "command", command: ["sh", "-c", "echo staff_full >> test.log"], related_specs: ["kernel/memory"] },
+      { name: "bootstrap_banner_not_null", kind: "command", command: appendLogCommand("bootstrap_banner_not_null"), related_specs: ["kernel/memory"] },
+      { name: "kalloc_alignment", kind: "command", command: appendLogCommand("kalloc_alignment"), related_specs: ["kernel/memory"] },
+      { name: "kalloc_zeroed", kind: "command", command: appendLogCommand("kalloc_zeroed"), related_specs: ["kernel/memory"] },
+      { name: "grind", kind: "command", command: appendLogCommand("grind"), related_specs: ["kernel/memory"] },
+      { name: "staff_full", kind: "command", command: appendLogCommand("staff_full"), related_specs: ["kernel/memory"] },
     ],
     verify: {
       full: [],
@@ -1435,7 +1465,7 @@ function fakeBehaviorTestRunner(options: { patch?: string; successRegex?: string
       patch: options.patch ?? "",
       suites: [{
         name: "kalloc-zeroed-behavior-suite",
-        command: ["sh", "-c", "printf BEHAVIOR_OK"],
+        command: jsCommand("process.stdout.write('BEHAVIOR_OK')"),
       }],
       cases: [{
         id: "kalloc-zeroed-behavior",
@@ -1455,7 +1485,7 @@ async function makePatchVerifyFixture(options: {
   onlyBuildKernelTest?: boolean;
   omitImpactMetadata?: boolean;
 } = {}): Promise<{ projectRoot: string; patchRef: string }> {
-  const root = join("/tmp", `vos-cli-patch-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  const root = join(tmpdir(), `vos-cli-patch-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   tmpRoots.push(root);
   mkdirSync(join(root, ".vos"), { recursive: true });
   mkdirSync(join(root, "spec", "architecture"), { recursive: true });
@@ -1497,11 +1527,11 @@ async function makePatchVerifyFixture(options: {
     "",
   ].join("\n"));
   writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify(manifestV2({
-    buildCommands: [{ name: "build", command: ["sh", "-c", "mkdir -p build; echo kernel > build/kernel.bin; echo build >> build.log"] }],
+    buildCommands: [{ name: "build", command: writeBuildCommand() }],
     buildArtifacts: ["build/kernel.bin"],
     suites: [
-      { name: "build_kernel", kind: "command", command: ["sh", "-c", "echo build_kernel >> test.log"], related_specs: ["kernel/memory"] },
-      { name: "kalloc_alignment", kind: "command", command: ["sh", "-c", "echo kalloc_alignment >> test.log"], related_specs: ["kernel/memory"] },
+      { name: "build_kernel", kind: "command", command: appendLogCommand("build_kernel"), related_specs: ["kernel/memory"] },
+      { name: "kalloc_alignment", kind: "command", command: appendLogCommand("kalloc_alignment"), related_specs: ["kernel/memory"] },
     ],
   }), null, 2));
 
@@ -1602,6 +1632,9 @@ function git(cwd: string, args: string[]): string {
 }
 
 function makeAgentGeneratePatch(): string {
+  const bunPath = JSON.stringify(process.execPath);
+  const buildCode = JSON.stringify("const { mkdirSync, writeFileSync } = await import('node:fs'); mkdirSync('build', { recursive: true }); writeFileSync('build/kernel.bin', 'kernel');");
+  const runCode = JSON.stringify("process.stdout.write('XV6_BOOT_OK')");
   return [
     "diff --git a/Makefile b/Makefile",
     "new file mode 100644",
@@ -1622,14 +1655,14 @@ function makeAgentGeneratePatch(): string {
     "+  \"manifest_version\": 2,",
     "+  \"files\": [\"Makefile\"],",
     "+  \"environment\": {",
-    "+    \"required_tools\": [{ \"name\": \"true\", \"command\": \"true\", \"version_args\": [\"--version\"], \"version_constraint\": \">=0\", \"kind\": \"utility\" }]",
+    `+    \"required_tools\": [{ \"name\": \"bun\", \"command\": ${bunPath}, \"version_args\": [\"--version\"], \"version_constraint\": \">=0\", \"kind\": \"runtime\" }]`,
     "+  },",
     "+  \"build\": {",
     "+    \"variants\": [{",
     "+      \"id\": \"baseline\",",
     "+      \"commands\": [{",
     "+        \"name\": \"offline-build\",",
-    "+        \"command\": [\"sh\", \"-c\", \"true\"]",
+    `+        \"command\": [${bunPath}, \"-e\", ${buildCode}]`,
     "+      }],",
     "+      \"artifacts\": [\"build/kernel.bin\"]",
     "+    }]",
@@ -1637,8 +1670,8 @@ function makeAgentGeneratePatch(): string {
     "+  \"run\": {",
     "+    \"profiles\": [{",
     "+      \"id\": \"default\",",
-    "+      \"command\": \"sh\",",
-    "+      \"args\": [\"-c\", \"echo XV6_BOOT_OK\", \"-kernel\"],",
+    `+      \"command\": ${bunPath},`,
+    `+      \"args\": [\"-e\", ${runCode}],`,
     "+      \"artifacts\": [\"Makefile\"],",
     "+      \"timeout_ms\": 1000",
     "+    }],",

@@ -9,6 +9,7 @@ import { runCommand } from "./executor.ts";
 import { runBuildCommand } from "./build.ts";
 import { loadToolchainManifest } from "./manifest.ts";
 import { isRecord, parseTopLevelYaml, stringArray } from "../utils/yaml.ts";
+import { relativeProjectPath } from "../utils/paths.ts";
 
 const TRACE_PREFIX = "VOS_TRACE ";
 const DEFAULT_ALLOWED_INSTRUMENTATION_PATHS = [
@@ -191,7 +192,7 @@ export async function runAgentDebugTrace(params: {
     const summary = {
       target: params.target,
       status,
-      worktree: path.relative(params.projectRoot, worktreePath),
+      worktree: relativeProjectPath(params.projectRoot, worktreePath),
       worktree_branch: worktreeBranch,
       worktree_kept: worktreeKept,
       public_requirement_count: input.publicRequirements.length,
@@ -361,7 +362,7 @@ export async function collectModuleTestSurfaces(projectRoot: string): Promise<Mo
     out.push({
       module: moduleName,
       tests,
-      source: path.relative(projectRoot, file),
+      source: relativeProjectPath(projectRoot, file),
     });
   }
   return out;
@@ -545,8 +546,8 @@ async function runDebugTraceCase(params: {
     failure_matched: failureMatched,
     trace_events_satisfied: traceEventsSatisfied,
     trace_count: traces.length,
-    serial_log: path.relative(params.evidence.run_root, serialPath),
-    trace_log: path.relative(params.evidence.run_root, tracePath),
+    serial_log: relativeProjectPath(params.evidence.run_root, serialPath),
+    trace_log: relativeProjectPath(params.evidence.run_root, tracePath),
   };
   await writeFile(resultPath, `${JSON.stringify(result, null, 2)}\n`);
   params.evidence.addArtifactFromPath("agent-debug-trace-log", serialPath, debugCase.id);
@@ -559,9 +560,9 @@ async function runDebugTraceCase(params: {
     requirement_id: debugCase.requirement_id,
     status,
     duration_ms: commandResult.durationMs,
-    serial_log: path.relative(params.evidence.run_root, serialPath),
-    trace_log: path.relative(params.evidence.run_root, tracePath),
-    result_json: path.relative(params.evidence.run_root, resultPath),
+    serial_log: relativeProjectPath(params.evidence.run_root, serialPath),
+    trace_log: relativeProjectPath(params.evidence.run_root, tracePath),
+    result_json: relativeProjectPath(params.evidence.run_root, resultPath),
     trace_count: traces.length,
     success_matched: successMatched,
     failure_matched: failureMatched,

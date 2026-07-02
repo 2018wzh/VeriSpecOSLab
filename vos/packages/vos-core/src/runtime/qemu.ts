@@ -5,6 +5,7 @@ import path from "node:path";
 import { EvidenceWriter } from "../evidence/index.ts";
 import { runCommand } from "./executor.ts";
 import { withResourceLock } from "./locks.ts";
+import { relativeProjectPath } from "../utils/paths.ts";
 import {
   escapeRunShellArg,
   resolveRunTimeoutMs,
@@ -412,9 +413,9 @@ function buildResultJson(params: {
     signal: params.commandResult?.signal,
     timed_out: params.commandResult?.timedOut ?? false,
     duration_ms: params.commandResult?.durationMs ?? 0,
-    serial_log: path.relative(params.runRoot, params.serialPath),
-    stderr_log: path.relative(params.runRoot, params.stderrPath),
-    adapter_contract: params.adapterPath ? path.relative(params.runRoot, params.adapterPath) : undefined,
+    serial_log: relativeProjectPath(params.runRoot, params.serialPath),
+    stderr_log: relativeProjectPath(params.runRoot, params.stderrPath),
+    adapter_contract: params.adapterPath ? relativeProjectPath(params.runRoot, params.adapterPath) : undefined,
     qmp_events: params.qmpEvents,
     oracle: params.oracle
       ? {

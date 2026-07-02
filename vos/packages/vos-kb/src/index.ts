@@ -8,6 +8,7 @@ import mime from "mime";
 import officeparser from "officeparser";
 import simpleGit, { type SimpleGit } from "simple-git";
 import * as sqliteVec from "sqlite-vec";
+import { relativePosixPath } from "vos-platform";
 import { z } from "zod";
 
 export type KbSourceKind = "course" | "project" | "external";
@@ -422,7 +423,7 @@ async function expandGitRemoteSource(
     for (const entry of await readdir(cacheDir, { withFileTypes: true })) {
       if (entry.isDirectory() && shouldSkipDirectory(entry.name)) continue;
       if (entry.isFile() && isIndexableFile(path.join(cacheDir, entry.name))) {
-        out.push(path.relative(projectRoot, path.join(cacheDir, entry.name)));
+        out.push(relativePosixPath(projectRoot, path.join(cacheDir, entry.name)));
       }
     }
     return out.sort();
@@ -433,7 +434,7 @@ async function expandGitRemoteSource(
   if (gitFiles) {
     return gitFiles
       .filter((file) => !isIgnoredKbPath(file) && isIndexableFile(path.join(cacheDir, file)))
-      .map((file) => path.relative(projectRoot, path.join(cacheDir, file)))
+      .map((file) => relativePosixPath(projectRoot, path.join(cacheDir, file)))
       .sort();
   }
   // Fallback: manual recursive walk
@@ -443,7 +444,7 @@ async function expandGitRemoteSource(
       if (entry.isDirectory() && shouldSkipDirectory(entry.name)) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) await walk(full);
-      if (entry.isFile() && isIndexableFile(full)) out.push(path.relative(projectRoot, full));
+      if (entry.isFile() && isIndexableFile(full)) out.push(relativePosixPath(projectRoot, full));
     }
   };
   await walk(cacheDir);
@@ -462,11 +463,11 @@ async function expandSources(projectRoot: string, source: string, recursive: boo
   const stat = await Bun.file(resolved).stat();
   if (stat.isFile()) return [source];
   if (!stat.isDirectory() || !recursive) return [source];
-  const gitFiles = gitListFiles(resolved);
+  const gitFiles = existsSync(path.join(resolved, ".git")) ? gitListFiles(resolved) : undefined;
   if (gitFiles) {
     return gitFiles
       .filter((file) => !isIgnoredKbPath(file) && isIndexableFile(path.join(resolved, file)))
-      .map((file) => path.relative(projectRoot, path.join(resolved, file)))
+      .map((file) => relativePosixPath(projectRoot, path.join(resolved, file)))
       .sort();
   }
   const out: string[] = [];
@@ -475,7 +476,7 @@ async function expandSources(projectRoot: string, source: string, recursive: boo
       if (entry.isDirectory() && shouldSkipDirectory(entry.name)) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) await walk(full);
-      if (entry.isFile() && isIndexableFile(full)) out.push(path.relative(projectRoot, full));
+      if (entry.isFile() && isIndexableFile(full)) out.push(relativePosixPath(projectRoot, full));
     }
   };
   await walk(resolved);
@@ -642,11 +643,16 @@ function isIgnoredKbPath(file: string): boolean {
 }
 
 function gitListFiles(dir: string): string[] | undefined {
-  const result = Bun.spawnSync(["git", "ls-files", "--cached", "--others", "--exclude-standard"], {
-    cwd: dir,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  let result;
+  try {
+    result = Bun.spawnSync(["git", "ls-files", "--cached", "--others", "--exclude-standard"], {
+      cwd: dir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+  } catch {
+    return undefined;
+  }
   if (result.exitCode !== 0) return undefined;
   return new TextDecoder().decode(result.stdout).split(/\r?\n/).filter(Boolean);
 }

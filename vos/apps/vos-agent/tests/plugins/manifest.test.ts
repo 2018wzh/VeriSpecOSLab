@@ -31,7 +31,7 @@ describe("plugin manifests", () => {
 
     expect(loadPluginManifests({ workspaceRoot: tmp })).toEqual([{
       name: "fake",
-      path: expect.stringContaining(".agents/plugins/fake.json"),
+      path: expect.stringMatching(/\.agents[\\/]plugins[\\/]fake\.json$/),
       mcpServers: [{
         name: "echo",
         command: "bun",

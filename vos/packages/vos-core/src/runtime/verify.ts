@@ -12,6 +12,7 @@ import {
   buildAgentBehaviorTestPatchPrompt,
   buildAgentBehaviorTestPlanPrompt,
 } from "../agent/prompt.ts";
+import { relativeProjectPath } from "../utils/paths.ts";
 import {
   buildNormalizedSpecBundle,
   composeArchitecture,
@@ -610,8 +611,8 @@ async function writePublicSummary(
   await mkdir(path.dirname(summaryPath), { recursive: true });
   await writeFile(summaryPath, `${JSON.stringify(payload, null, 2)}\n`);
   evidence.addArtifactFromPath("verify-summary", summaryPath, "public verification summary");
-  evidence.addEvidenceRef(`${evidence.run_id}:verify-public`, "verify-summary", path.relative(evidence.run_root, summaryPath));
-  return path.relative(evidence.run_root, summaryPath);
+  evidence.addEvidenceRef(`${evidence.run_id}:verify-public`, "verify-summary", relativeProjectPath(evidence.run_root, summaryPath));
+  return relativeProjectPath(evidence.run_root, summaryPath);
 }
 
 async function runMappedVerifySuites(params: {
@@ -796,7 +797,7 @@ async function runBehaviorTestsForObligations(params: {
     const planPath = path.join(root, `${params.phase}-plan.json`);
     await writeFile(planPath, `${JSON.stringify({ scope: params.scope, phase: params.phase, obligations: params.obligations, suites: params.suites, plan }, null, 2)}\n`);
     params.evidence.addArtifactFromPath("verify-behavior-plan", planPath, `${params.phase} behavior TestPlan`);
-    evidenceRefs.push(path.relative(params.evidence.run_root, planPath));
+    evidenceRefs.push(relativeProjectPath(params.evidence.run_root, planPath));
     if (params.dryRun) return { status: "ok", evidenceRefs };
 
     const patchPrompt = buildAgentBehaviorTestPatchPrompt({
@@ -815,15 +816,15 @@ async function runBehaviorTestsForObligations(params: {
     const patchPath = path.join(root, `${params.phase}-patch.json`);
     await writeFile(patchPath, `${JSON.stringify({ scope: params.scope, phase: params.phase, patch }, null, 2)}\n`);
     params.evidence.addArtifactFromPath("verify-behavior-patch", patchPath, `${params.phase} behavior patch`);
-    evidenceRefs.push(path.relative(params.evidence.run_root, patchPath));
+    evidenceRefs.push(relativeProjectPath(params.evidence.run_root, patchPath));
 
     const worktree = await mkdtemp(path.join(tmpdir(), "vos-verify-behavior-"));
     try {
       await cp(params.projectRoot, worktree, {
         recursive: true,
         filter: (source) => {
-          const rel = path.relative(params.projectRoot, source);
-          return !rel.startsWith(path.join(".vos", "runs")) && !rel.startsWith(path.join(".vos", "worktrees")) && rel !== ".git";
+          const rel = relativeProjectPath(params.projectRoot, source);
+          return !rel.startsWith(".vos/runs") && !rel.startsWith(".vos/worktrees") && rel !== ".git";
         },
       });
       const patchPolicy = validateBehaviorPatch(patch.patch);
@@ -975,7 +976,7 @@ async function runBehaviorCase(params: {
   params.evidence.addArtifactFromPath("verify-behavior-stdout", stdoutPath, params.testCase.id);
   params.evidence.addArtifactFromPath("verify-behavior-stderr", stderrPath, params.testCase.id);
   params.evidence.addArtifactFromPath("verify-behavior-result", resultPath, params.testCase.id);
-  return { status, resultRef: path.relative(params.evidence.run_root, resultPath) };
+  return { status, resultRef: relativeProjectPath(params.evidence.run_root, resultPath) };
 }
 
 function validateBehaviorPatch(patchText: string): { ok: true } | { ok: false } {
@@ -1003,8 +1004,8 @@ async function collectProjectTree(projectRoot: string): Promise<string[]> {
   async function visit(dir: string): Promise<void> {
     for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
       const absolute = path.join(dir, entry.name);
-      const relative = path.relative(projectRoot, absolute);
-      if (relative === ".git" || relative.startsWith(`${path.join(".vos", "runs")}${path.sep}`)) continue;
+      const relative = relativeProjectPath(projectRoot, absolute);
+      if (relative === ".git" || relative.startsWith(".vos/runs/")) continue;
       if (entry.isDirectory()) {
         await visit(absolute);
       } else {

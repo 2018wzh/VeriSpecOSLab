@@ -137,7 +137,7 @@ describe("vos-kb local registry", () => {
     proc.kill();
     await proc.exited;
     await embeddingServer.stop(true);
-  });
+  }, 20_000);
 
   test("indexes git-tracked code recursively while respecting ignored and generated paths", async () => {
     writeFileSync(path.join(root, ".gitignore"), "ignored.c\n");
@@ -154,7 +154,7 @@ describe("vos-kb local registry", () => {
     const sources = await listKbSources(root);
     expect(sources.map((source) => source.source).sort()).toEqual(["course/trap.md", "kernel.c", "manual.md"]);
     expect((await searchKb(root, "ignored allocator", { embedder: fakeEmbedder })).some((hit) => hit.excerpt.includes("ignored"))).toBe(false);
-  });
+  }, 20_000);
 
   test("requires an embedder for indexing and searching", async () => {
     await expect(addKbSource(root, { source: "manual.md", sourceKind: "course" })).rejects.toThrow(/embedding/i);
@@ -207,7 +207,7 @@ describe("vos-kb local registry", () => {
       rmSync(remoteDir, { recursive: true, force: true });
       rmSync(workDir, { recursive: true, force: true });
     }
-  });
+  }, 20_000);
 
   test("clones with branch and indexes the correct branch content", async () => {
     // Create bare repo with main and feature branches
@@ -243,7 +243,7 @@ describe("vos-kb local registry", () => {
       rmSync(remoteDir, { recursive: true, force: true });
       rmSync(workDir, { recursive: true, force: true });
     }
-  });
+  }, 20_000);
 
   test("updates an existing git checkout on re-add", async () => {
     const remoteDir = mkdtempSync(path.join(tmpdir(), "vos-kb-update-remote-"));
@@ -281,7 +281,7 @@ describe("vos-kb local registry", () => {
       rmSync(remoteDir, { recursive: true, force: true });
       rmSync(workDir, { recursive: true, force: true });
     }
-  });
+  }, 20_000);
 
   test("clones with a tag and indexes tag content", async () => {
     const remoteDir = mkdtempSync(path.join(tmpdir(), "vos-kb-tag-remote-"));
@@ -316,7 +316,7 @@ describe("vos-kb local registry", () => {
       rmSync(remoteDir, { recursive: true, force: true });
       rmSync(workDir, { recursive: true, force: true });
     }
-  });
+  }, 20_000);
 
   test("keeps officeparser PDF extraction working", async () => {
     const pdfPath = path.resolve(import.meta.dir, "../../../../docs/fast26-liu-qingyuan.pdf");

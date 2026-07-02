@@ -93,6 +93,7 @@ export class McpStdioClient {
     } catch {
       // Ignore close-time stream errors; the process is being torn down.
     }
+    if (await this.waitForClose(Math.min(timeoutMs, 250))) return;
     this.kill("SIGTERM");
     if (await this.waitForClose(timeoutMs)) return;
     this.kill("SIGKILL");

@@ -6,6 +6,7 @@ import type { RunArtifact, EvidenceRef, RunManifest } from "./manifest.ts";
 import { createRunEvent, eventToLine, type RunEvent } from "./events.ts";
 import type { RunAuthContext } from "../types.ts";
 import { writeEvidenceIndex } from "../repro/ledger.ts";
+import { relativeProjectPath } from "../utils/paths.ts";
 
 export interface EvidenceWriterOptions {
   projectRoot: string;
@@ -131,7 +132,7 @@ export class EvidenceWriter {
       : path.join(this.projectRoot, relativePath);
     const artifact: RunArtifact = {
       kind,
-      path: path.relative(this.projectRoot, absolute),
+      path: relativeProjectPath(this.projectRoot, absolute),
       summary,
     };
     this.artifacts.push(artifact);
@@ -141,7 +142,7 @@ export class EvidenceWriter {
   addArtifactFromPath(kind: string, absolutePath: string, summary?: string): string {
     const artifact: RunArtifact = {
       kind,
-      path: path.relative(this.projectRoot, absolutePath),
+      path: relativeProjectPath(this.projectRoot, absolutePath),
       summary,
     };
     this.artifacts.push(artifact);

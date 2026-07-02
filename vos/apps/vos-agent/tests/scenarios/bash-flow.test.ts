@@ -1,11 +1,12 @@
 // End-to-end scenario: Bash filesystem manipulation.
-// Agent lists files via `ls`, then removes one of them via `rm`.
+// Agent lists files via the platform shell, then removes one of them.
 // Verifies that shell side-effects are observable on disk and that
 // unrelated files are not disturbed.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { isWindows } from "vos-platform";
 import { runAgent } from "../../app/agent/loop.ts";
 import { createBashTool } from "../../app/tools/bash.ts";
 import { ToolRegistry } from "../../app/tools/types.ts";
@@ -49,12 +50,21 @@ describe("scenario: bash filesystem manipulation", () => {
     const chat = new CallbackChatClient((_req, i) => {
       if (i === 0) {
         return toolCallResponse([
-          { name: "Bash", args: { command: "ls" }, id: "b1" },
+          { name: "Bash", args: { command: shellCommand("ls", "Get-ChildItem -Name") }, id: "b1" },
         ]);
       }
       if (i === 1) {
         return toolCallResponse([
-          { name: "Bash", args: { command: "rm README_old.md" }, id: "b2" },
+          {
+            name: "Bash",
+            args: {
+              command: shellCommand(
+                "rm README_old.md",
+                "Remove-Item -LiteralPath \"README_old.md\"",
+              ),
+            },
+            id: "b2",
+          },
         ]);
       }
       return textResponse("Deleted old readme file.");
@@ -71,5 +81,9 @@ describe("scenario: bash filesystem manipulation", () => {
     expect(existsSync(join(tmp, "README_old.md"))).toBe(false);
     expect(readFileSync(join(tmp, "README.md"), "utf8")).toBe(README);
     expect(readFileSync(join(tmp, "app/main.js"), "utf8")).toBe(MAIN_JS);
-  });
+  }, 20_000);
 });
+
+function shellCommand(posix: string, windows: string): string {
+  return isWindows() ? windows : posix;
+}

@@ -290,6 +290,7 @@ function makeTraceProject(): string {
   tmpRoots.push(root);
   mkdirSync(join(root, ".vos"), { recursive: true });
   mkdirSync(join(root, "kernel"), { recursive: true });
+  mkdirSync(join(root, "scripts"), { recursive: true });
   mkdirSync(join(root, "spec", "verification"), { recursive: true });
   mkdirSync(join(root, "spec", "modules", "kernel", "boot"), { recursive: true });
   mkdirSync(join(root, "spec", "modules", "kernel", "fs"), { recursive: true });
@@ -316,25 +317,33 @@ function makeTraceProject(): string {
     "",
   ].join("\n"));
   writeFileSync(join(root, "kernel", "probe.c"), "int probe = 0;\n");
-  writeFileSync(join(root, "Makefile"), "all:\n\tmkdir -p build\n\tprintf kernel > build/kernel.bin\n");
-  writeFileSync(join(root, "fake-qemu.sh"), [
-    "#!/usr/bin/env sh",
-    "cat >/dev/null",
-    "printf 'booting\\n'",
-    "printf 'VOS_TRACE {\"event\":\"boot\",\"case\":\"boot-case\"}\\n'",
-    "printf 'TRACE_OK\\n'",
-    "printf 'VOS_TRACE {\"event\":\"shell\",\"case\":\"shell-case\"}\\n'",
-    "printf 'SHELL_OK\\n'",
+  writeFileSync(join(root, "Makefile"), "all:\n\t@echo use scripts/build.mjs\n");
+  writeFileSync(join(root, "scripts", "build.mjs"), [
+    "import { mkdirSync, writeFileSync } from 'node:fs';",
+    "mkdirSync('build', { recursive: true });",
+    "writeFileSync('build/kernel.bin', 'kernel');",
     "",
   ].join("\n"));
-  chmodSync(join(root, "fake-qemu.sh"), 0o755);
+  writeFileSync(join(root, "scripts", "fake-qemu.mjs"), [
+    "process.stdin.resume();",
+    "process.stdin.on('data', () => {});",
+    "process.stdin.on('end', () => {",
+    "  process.stdout.write('booting\\n');",
+    "  process.stdout.write('VOS_TRACE {\"event\":\"boot\",\"case\":\"boot-case\"}\\n');",
+    "  process.stdout.write('TRACE_OK\\n');",
+    "  process.stdout.write('VOS_TRACE {\"event\":\"shell\",\"case\":\"shell-case\"}\\n');",
+    "  process.stdout.write('SHELL_OK\\n');",
+    "});",
+    "",
+  ].join("\n"));
+  chmodSync(join(root, "scripts", "fake-qemu.mjs"), 0o755);
   writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify({
     manifest_version: 2,
     files: ["Makefile"],
-    environment: { required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }] },
-    build: { variants: [{ id: "baseline", commands: ["make all"], artifacts: ["build/kernel.bin"] }] },
+    environment: { required_tools: [{ name: "bun", command: process.execPath, version_args: ["--version"], version_constraint: ">=0", kind: "runtime" }] },
+    build: { variants: [{ id: "baseline", commands: [{ name: "build", command: [process.execPath, "scripts/build.mjs"] }], artifacts: ["build/kernel.bin"] }] },
     run: {
-      profiles: [{ id: "default", command: "./fake-qemu.sh", args: [], artifacts: ["build/kernel.bin"], timeout_ms: 1000 }],
+      profiles: [{ id: "default", command: process.execPath, args: ["scripts/fake-qemu.mjs"], artifacts: ["build/kernel.bin"], timeout_ms: 1000 }],
       cases: [{ id: "smoke", profile: "default", timeout_ms: 1000 }],
     },
     test: { suites: [] },
