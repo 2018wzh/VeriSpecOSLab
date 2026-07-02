@@ -34,7 +34,7 @@ export function createStructuredOutputTool(options: {
   };
 }
 
-function validateSchema(value: unknown, schema: JsonSchema, path: string): string[] {
+export function validateSchema(value: unknown, schema: JsonSchema, path: string): string[] {
   if (schema.type === "object") {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return [`${path} must be object`];
@@ -67,5 +67,6 @@ function validateSchema(value: unknown, schema: JsonSchema, path: string): strin
   if (schema.type === "boolean") return typeof value === "boolean" ? [] : [`${path} must be boolean`];
   if (schema.type === "number") return typeof value === "number" ? [] : [`${path} must be number`];
   if (schema.type === "integer") return Number.isInteger(value) ? [] : [`${path} must be integer`];
+  if (schema.type === "any") return [];
   return [];
 }

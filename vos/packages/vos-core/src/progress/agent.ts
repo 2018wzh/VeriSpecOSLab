@@ -5,6 +5,7 @@ import type { ProgressUpdate } from "./types.ts";
 
 export const PROGRESS_MCP_SERVER_NAME = "vos-progress";
 export const PROGRESS_MCP_TOOL_NAME = "mcp__vos-progress__report_progress";
+export const SUBMIT_RESULT_MCP_TOOL_NAME = "mcp__vos-progress__submit_result";
 
 export function createProgressMcpServerConfig(projectRoot: string): McpServerConfig {
   const mainPath = fileURLToPath(new URL("../main.ts", import.meta.url));
@@ -18,16 +19,23 @@ export function createProgressMcpServerConfig(projectRoot: string): McpServerCon
   };
 }
 
-export function appendAgentProgressInstructions(prompt: string): string {
+export function appendAgentProgressInstructions(prompt: string, resultSchemaId?: string): string {
   return [
     prompt,
     "",
-    "VOS CLI progress reporting:",
-    `- When the tool ${PROGRESS_MCP_TOOL_NAME} is available, call it at key milestones only.`,
-    "- Report start, context understanding, before/after major tool or validation work, and before final output.",
+    "VOS CLI MCP hard protocol:",
+    `- You MUST call ${PROGRESS_MCP_TOOL_NAME} at the start, after understanding context, before and after each major phase, before and after validation work, and immediately before final submission.`,
     "- Keep message concise, single-line, and safe for a terminal status line.",
     "- Do not call the progress tool for every small action.",
-    "- The progress report is auxiliary and must not replace the requested final JSON output.",
+    resultSchemaId
+      ? `- You MUST submit the final result by calling ${SUBMIT_RESULT_MCP_TOOL_NAME} with schema_id "${resultSchemaId}".`
+      : "",
+    resultSchemaId
+      ? "- If submit_result returns an error, fix the same schema payload and call submit_result again."
+      : "",
+    resultSchemaId
+      ? "- Final assistant text is ignored by vos-cli; only an accepted submit_result payload is read."
+      : "- The progress report is auxiliary and must not replace the requested final JSON output.",
   ].join("\n");
 }
 
@@ -86,7 +94,7 @@ export function progressUpdateFromAgentEvent(
   }
   if (type === "tool.result") {
     const name = readString(event.name);
-    if (name === PROGRESS_MCP_TOOL_NAME) return undefined;
+    if (name === PROGRESS_MCP_TOOL_NAME || name === SUBMIT_RESULT_MCP_TOOL_NAME) return undefined;
     return {
       stage: fallbackStage,
       status: "running",

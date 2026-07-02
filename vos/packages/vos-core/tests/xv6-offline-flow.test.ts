@@ -1133,17 +1133,18 @@ describe("xv6-spec offline runtime flow", () => {
     let captured: AgentTaskRequest | undefined;
     const runner = async (options: AgentTaskRequest) => {
       captured = options;
+      const submitted = {
+        task: "generate syscall build entrypoint",
+        patch: makeAgentGeneratePatch(),
+        bound_clauses: ["spec/stages/syscall.yaml"],
+        changed_paths: ["Makefile", ".vos/toolchain.json"],
+        changed_code_files: ["Makefile"],
+        output_kind: "unified_diff",
+        self_reported_risks: [],
+      };
       return {
-        content: JSON.stringify({
-          task: "generate syscall build entrypoint",
-          patch: makeAgentGeneratePatch(),
-          bound_clauses: ["spec/stages/syscall.yaml"],
-          changed_paths: ["Makefile", ".vos/toolchain.json"],
-          changed_code_files: ["Makefile"],
-          output_kind: "unified_diff",
-          self_reported_risks: [],
-        }),
-        events: [],
+        content: "ignored",
+        events: acceptedSubmitEvents("spec_compiler_output.v1", submitted),
       };
     };
 
@@ -1652,4 +1653,25 @@ function makeAgentGeneratePatch(): string {
     "+}",
     "",
   ].join("\n");
+}
+
+function acceptedSubmitEvents(schemaId: string, result: unknown): Array<Record<string, unknown>> {
+  return [
+    {
+      type: "tool.call",
+      name: "mcp__vos-progress__submit_result",
+      id: "call_submit",
+      arguments: JSON.stringify({ schema_id: schemaId, result }),
+    },
+    {
+      type: "tool.result",
+      name: "mcp__vos-progress__submit_result",
+      id: "call_submit",
+      content: JSON.stringify({
+        type: "vos-result-submission",
+        schema_id: schemaId,
+        accepted: true,
+      }),
+    },
+  ];
 }

@@ -1,7 +1,9 @@
 import { createInterface } from "node:readline";
+import { outputSchemaForId, validateSchema } from "vos-agent/headless";
 import type { ProgressStatus, ProgressUpdate } from "./types.ts";
 
-const TOOL_NAME = "report_progress";
+const REPORT_PROGRESS_TOOL_NAME = "report_progress";
+const SUBMIT_RESULT_TOOL_NAME = "submit_result";
 const STATUSES = new Set<ProgressStatus>([
   "starting",
   "running",
@@ -45,28 +47,42 @@ async function handleMessage(message: JsonRpcMessage): Promise<void> {
   }
   if (message.method === "tools/list") {
     respond(message.id, {
-      tools: [{
-        name: TOOL_NAME,
-        description: "Report concise task progress to the VOS CLI progress UI.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            stage: { type: "string" },
-            phase: { type: "string" },
-            step: { type: "string" },
-            current: { type: "number" },
-            total: { type: "number" },
-            percent: { type: "number", minimum: 0, maximum: 100 },
-            status: {
-              type: "string",
-              enum: ["starting", "running", "blocked", "completed", "failed"],
+      tools: [
+        {
+          name: REPORT_PROGRESS_TOOL_NAME,
+          description: "Report concise task progress to the VOS CLI progress UI.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              stage: { type: "string" },
+              phase: { type: "string" },
+              step: { type: "string" },
+              current: { type: "number" },
+              total: { type: "number" },
+              percent: { type: "number", minimum: 0, maximum: 100 },
+              status: {
+                type: "string",
+                enum: ["starting", "running", "blocked", "completed", "failed"],
+              },
+              message: { type: "string" },
+              confidence: { type: "number", minimum: 0, maximum: 1 },
             },
-            message: { type: "string" },
-            confidence: { type: "number", minimum: 0, maximum: 1 },
+            required: ["stage", "status", "message"],
           },
-          required: ["stage", "status", "message"],
         },
-      }],
+        {
+          name: SUBMIT_RESULT_TOOL_NAME,
+          description: "Submit the final VOS agent result. The MCP server validates the schema and returns errors to fix.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              schema_id: { type: "string" },
+              result: { type: "object", additionalProperties: true },
+            },
+            required: ["schema_id", "result"],
+          },
+        },
+      ],
     });
     return;
   }
@@ -85,15 +101,18 @@ async function handleMessage(message: JsonRpcMessage): Promise<void> {
 
 function handleToolCall(params: unknown): string {
   if (!params || typeof params !== "object" || Array.isArray(params)) {
-    return "Error validating report_progress arguments: params must be an object";
+    return "Error validating MCP tool arguments: params must be an object";
   }
   const raw = params as { name?: unknown; arguments?: unknown };
-  if (raw.name !== TOOL_NAME) {
-    return `Error validating report_progress arguments: unknown tool ${String(raw.name)}`;
+  if (raw.name === REPORT_PROGRESS_TOOL_NAME) {
+    const parsed = parseProgressUpdate(raw.arguments);
+    if (!parsed.ok) return parsed.error;
+    return JSON.stringify({ type: "vos-progress", progress: parsed.value });
   }
-  const parsed = parseProgressUpdate(raw.arguments);
-  if (!parsed.ok) return parsed.error;
-  return JSON.stringify({ type: "vos-progress", progress: parsed.value });
+  if (raw.name === SUBMIT_RESULT_TOOL_NAME) {
+    return handleSubmitResult(raw.arguments);
+  }
+  return `Error validating MCP tool arguments: unknown tool ${String(raw.name)}`;
 }
 
 function parseProgressUpdate(value: unknown): { ok: true; value: ProgressUpdate } | { ok: false; error: string } {
@@ -122,6 +141,32 @@ function parseProgressUpdate(value: unknown): { ok: true; value: ProgressUpdate 
   copyOptionalNumber(raw, update, "percent");
   copyOptionalNumber(raw, update, "confidence");
   return { ok: true, value: update };
+}
+
+function handleSubmitResult(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return "Error validating submit_result arguments: arguments must be an object";
+  }
+  const raw = value as Record<string, unknown>;
+  const schemaId = stringField(raw, "schema_id");
+  if (!schemaId) return "Error validating submit_result arguments: schema_id is required";
+  if (!("result" in raw)) return "Error validating submit_result arguments: result is required";
+
+  let schema;
+  try {
+    schema = outputSchemaForId(schemaId);
+  } catch {
+    return `Error validating submit_result arguments: unknown schema ${schemaId}`;
+  }
+  const errors = validateSchema(raw.result, schema.schema, "result");
+  if (errors.length > 0) {
+    return `Error validating submit_result arguments for ${schemaId}:\n${errors.join("\n")}`;
+  }
+  return JSON.stringify({
+    type: "vos-result-submission",
+    schema_id: schemaId,
+    accepted: true,
+  });
 }
 
 function stringField(raw: Record<string, unknown>, key: string): string | undefined {

@@ -8,7 +8,7 @@ import type { RunManifest } from "../evidence/manifest.ts";
 import { CliError, AgentOutputError } from "../errors.ts";
 import { appendLogEntry, readLogEntries } from "../agent/helpers.ts";
 import { AGENTS_READONLY_GUIDANCE_PROMPT } from "../agent/prompt.ts";
-import { parseJsonFromText, runAgentWithPrompt, type HeadlessAgentTaskRunner } from "../agent/runner.ts";
+import { runAgentWithPrompt, type HeadlessAgentTaskRunner } from "../agent/runner.ts";
 import { currentStageForProject } from "../utils/project.ts";
 import { parseTopLevelYaml } from "../utils/yaml.ts";
 import {
@@ -427,13 +427,10 @@ async function generateAgentNarrative(params: {
     context: params.draft,
     courseMode: true,
     disabledTools: ["bash", "edit", "write"],
+    resultSubmissionSchema: "report_narrative.v1",
     taskRunner: params.agentRunner,
   });
-  const parsed = result.parsedResult ?? parseJsonFromText(result.resultText);
-  if (!parsed) {
-    throw new AgentOutputError("report agent narrative output is not parseable JSON");
-  }
-  const narrative = narrativeSchema.safeParse(parsed);
+  const narrative = narrativeSchema.safeParse(result.parsedResult);
   if (!narrative.success) {
     throw new AgentOutputError(`report agent narrative output does not match schema: ${narrative.error.message}`);
   }

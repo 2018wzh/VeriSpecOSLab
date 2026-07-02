@@ -19,11 +19,17 @@ import {
   startReadonlyAgentDisplay,
   startAgentHttpServer,
 } from "vos-agent/headless";
+import { AgentOutputError } from "../errors.ts";
+import {
+  appendAgentProgressInstructions,
+  createProgressMcpServerConfig,
+  SUBMIT_RESULT_MCP_TOOL_NAME,
+} from "../progress/agent.ts";
 import { readProjectEnv } from "../utils/dotenv.ts";
 
 export interface AgentRunResult {
   resultText: string;
-  parsedResult?: unknown;
+  parsedResult: unknown;
   rawEvents: Array<Record<string, unknown>>;
   agentProfile?: AgentTaskResult["agentProfile"];
   exitCode: number | null;
@@ -59,6 +65,7 @@ export async function runAgentWithPrompt(params: {
   courseMode?: boolean;
   toolPolicy?: ToolPolicy;
   allowedVosCommands?: readonly string[];
+  resultSubmissionSchema: string;
   extraMcpServers?: readonly McpServerConfig[];
   onEvent?: (event: Record<string, unknown>) => void | Promise<void>;
   taskRunner?: HeadlessAgentTaskRunner;
@@ -70,7 +77,7 @@ export async function runAgentWithPrompt(params: {
 
   const result = await (params.taskRunner ?? runAgentTask)({
     projectRoot: params.projectRoot,
-    task: params.taskPrompt,
+    task: appendAgentProgressInstructions(params.taskPrompt, params.resultSubmissionSchema),
     taskKind: params.taskKind,
     requestedScope: params.requestedScope,
     agentProfile: params.agentProfile,
@@ -88,22 +95,118 @@ export async function runAgentWithPrompt(params: {
     courseMode: params.courseMode,
     toolPolicy: params.toolPolicy,
     allowedVosCommands: params.allowedVosCommands,
-    extraMcpServers: params.extraMcpServers,
+    structuredOutput: false,
+    extraMcpServers: mergeMcpServers([
+      createProgressMcpServerConfig(params.projectRoot),
+      ...(params.extraMcpServers ?? []),
+    ]),
     env: bootstrap.env,
     onEvent: async (event) => {
       if (event) {
-        await (params.onEvent?.(event as Record<string, unknown>));
+        const raw = event as Record<string, unknown>;
+        await (params.onEvent?.(raw));
       }
     },
   });
+  const rawEvents = result.events.map((event) => event as Record<string, unknown>);
+  const submitted = extractAcceptedMcpSubmission(rawEvents, params.resultSubmissionSchema);
 
   return {
-    resultText: result.content ?? "",
-    parsedResult: "structuredOutput" in result ? result.structuredOutput : undefined,
-    rawEvents: result.events.map((event) => event as Record<string, unknown>),
+    resultText: `${JSON.stringify(submitted, null, 2)}\n`,
+    parsedResult: submitted,
+    rawEvents,
     agentProfile: result.agentProfile,
     exitCode: 0,
   };
+}
+
+function mergeMcpServers(servers: readonly McpServerConfig[]): McpServerConfig[] {
+  const seen = new Set<string>();
+  return servers.filter((server) => {
+    const name = server.name.toLowerCase();
+    if (seen.has(name)) return false;
+    seen.add(name);
+    return true;
+  });
+}
+
+function extractAcceptedMcpSubmission(events: readonly Record<string, unknown>[], expectedSchemaId: string): unknown {
+  const calls = new Map<string, { schemaId?: string; result?: unknown }>();
+  let sawSubmission = false;
+  let last: { accepted: boolean; result?: unknown; error: string } | undefined;
+
+  for (const event of events) {
+    if (event.name !== SUBMIT_RESULT_MCP_TOOL_NAME) continue;
+    const id = typeof event.id === "string" ? event.id : undefined;
+    if (!id) continue;
+    if (event.type === "tool.call") {
+      sawSubmission = true;
+      const parsed = parseSubmitArguments(event.arguments);
+      calls.set(id, parsed);
+      last = { accepted: false, error: validateSubmitCall(parsed, expectedSchemaId) };
+      continue;
+    }
+    if (event.type === "tool.result") {
+      sawSubmission = true;
+      const call = calls.get(id);
+      const error = validateSubmitCall(call, expectedSchemaId);
+      const accepted = !error && isAcceptedSubmitResult(event.content, expectedSchemaId);
+      last = accepted
+        ? { accepted: true, result: call?.result, error: "" }
+        : { accepted: false, error: error || "submit_result was rejected" };
+    }
+  }
+
+  if (!sawSubmission) {
+    throw new AgentOutputError(`agent did not call accepted MCP submit_result for ${expectedSchemaId}`);
+  }
+  if (!last?.accepted) {
+    throw new AgentOutputError(last?.error
+      ? `last MCP submit_result was not accepted: ${last.error}`
+      : "last MCP submit_result was not accepted");
+  }
+  return last.result;
+}
+
+function parseSubmitArguments(value: unknown): { schemaId?: string; result?: unknown } {
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const raw = parsed as Record<string, unknown>;
+    return {
+      schemaId: typeof raw.schema_id === "string" ? raw.schema_id : undefined,
+      result: raw.result,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function validateSubmitCall(
+  call: { schemaId?: string; result?: unknown } | undefined,
+  expectedSchemaId: string,
+): string {
+  if (!call) return "submit_result call arguments are missing";
+  if (call.schemaId !== expectedSchemaId) {
+    return `submit_result schema_id must be ${expectedSchemaId}`;
+  }
+  if (call.result === undefined) return "submit_result result is required";
+  return "";
+}
+
+function isAcceptedSubmitResult(value: unknown, expectedSchemaId: string): boolean {
+  if (typeof value !== "string") return false;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+    const raw = parsed as Record<string, unknown>;
+    return raw.type === "vos-result-submission" &&
+      raw.schema_id === expectedSchemaId &&
+      raw.accepted === true;
+  } catch {
+    return false;
+  }
 }
 
 export function startAgentServer(
@@ -143,30 +246,6 @@ export function startAgentReadonlyDisplay(
 ): ReadonlyAgentDisplayHandle {
   const { starter, ...options } = params;
   return (starter ?? startReadonlyAgentDisplay)(options);
-}
-
-export function parseJsonFromText(text: string): unknown | undefined {
-  if (!text.trim()) return undefined;
-  // Strip markdown fences (```json / ```) that LLMs often wrap around JSON
-  let cleaned = text.trim();
-  const fenceMatch = cleaned.match(/^```(?:json)?\s*\n([\s\S]*?)\n```\s*$/);
-  if (fenceMatch) {
-    cleaned = fenceMatch[1].trim();
-  }
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    const firstBrace = cleaned.indexOf("{");
-    const lastBrace = cleaned.lastIndexOf("}");
-    if (firstBrace === -1 || lastBrace === -1) {
-      return undefined;
-    }
-    try {
-      return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
-    } catch {
-      return undefined;
-    }
-  }
 }
 
 interface ProjectAgentToml {

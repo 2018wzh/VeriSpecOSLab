@@ -153,7 +153,7 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
     ], { print: false });
 
     expect(result.status).toBe("failed");
-    expect(result.message).toContain(".vos/toolchain.json");
+    expect(result.message?.replace(/\\/g, "/")).toContain(".vos/toolchain.json");
     expect(existsSync(join(projectRoot, ".vos", "toolchain.json"))).toBe(false);
   });
 
@@ -163,29 +163,30 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
     let captured: AgentTaskRequest | undefined;
     const agentRunner = async (options: AgentTaskRequest) => {
       captured = options;
-      return {
-        content: JSON.stringify({
-          files: [{
-            path: "Makefile",
-            content: "all:\n\tprintf generated\n",
-          }],
-          manifest: {
-            manifest_version: 2,
-            generator: { name: "vos-agent", version: "toolchain-draft-v1" },
-            files: ["Makefile"],
-            environment: { required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }] },
-            build: { variants: [{ id: "baseline", commands: ["make all"], artifacts: ["build/kernel.bin"] }] },
-            run: {
-              profiles: [{ id: "default", command: "printf", args: ["boot ok"], artifacts: ["build/kernel.bin"], timeout_secs: 1 }],
-              cases: [{ id: "smoke", profile: "default", success_regex: "boot ok" }],
-            },
-            test: { suites: [] },
+      const submitted = {
+        files: [{
+          path: "Makefile",
+          content: "all:\n\tprintf generated\n",
+        }],
+        manifest: {
+          manifest_version: 2,
+          generator: { name: "vos-agent", version: "toolchain-draft-v1" },
+          files: ["Makefile"],
+          environment: { required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }] },
+          build: { variants: [{ id: "baseline", commands: ["make all"], artifacts: ["build/kernel.bin"] }] },
+          run: {
+            profiles: [{ id: "default", command: "printf", args: ["boot ok"], artifacts: ["build/kernel.bin"], timeout_secs: 1 }],
+            cases: [{ id: "smoke", profile: "default", success_regex: "boot ok" }],
           },
-          build_instructions: "Run `vos build` after generation.",
-          spec_refs: ["spec/toolchain/build.yaml"],
-          changed_targets: ["Makefile", ".vos/toolchain.json"],
-        }),
-        events: [],
+          test: { suites: [] },
+        },
+        build_instructions: "Run `vos build` after generation.",
+        spec_refs: ["spec/toolchain/build.yaml"],
+        changed_targets: ["Makefile", ".vos/toolchain.json"],
+      };
+      return {
+        content: "ignored",
+        events: acceptedSubmitEvents("toolchain_generation_draft.v1", submitted),
       };
     };
 
@@ -304,12 +305,15 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
       "boot",
     ], {
       print: false,
-      agentRunner: async () => ({ content: badPlan, events: [] }),
+      agentRunner: async () => ({
+        content: "ignored",
+        events: acceptedSubmitEvents("plan_draft.v1", JSON.parse(badPlan)),
+      }),
     });
 
     expect(result.status).toBe("agent_output_error");
     expect(result.message).toContain("PlanDraft.task must be string");
-    expect(readFileSync(join(projectRoot, ".vos", "runs", result.run_id, "artifacts", "agent", "agent-plan-raw.txt"), "utf8")).toBe(badPlan);
+    expect(readFileSync(join(projectRoot, ".vos", "runs", result.run_id, "artifacts", "agent", "agent-plan-raw.txt"), "utf8")).toBe(`${JSON.stringify(JSON.parse(badPlan), null, 2)}\n`);
   });
 
   test("build generate records raw output when files are not objects", async () => {
@@ -340,19 +344,22 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
       "generate",
     ], {
       print: false,
-      agentRunner: async () => ({ content: badDraft, events: [] }),
+      agentRunner: async () => ({
+        content: "ignored",
+        events: acceptedSubmitEvents("toolchain_generation_draft.v1", JSON.parse(badDraft)),
+      }),
     });
 
     expect(result.status).toBe("agent_output_error");
     expect(result.message).toContain("toolchain draft file must be an object");
-    expect(readFileSync(join(projectRoot, ".vos", "runs", result.run_id, "artifacts", "toolchain", "build-generate-raw.txt"), "utf8")).toBe(badDraft);
+    expect(readFileSync(join(projectRoot, ".vos", "runs", result.run_id, "artifacts", "toolchain", "build-generate-raw.txt"), "utf8")).toBe(`${JSON.stringify(JSON.parse(badDraft), null, 2)}\n`);
   });
 
   test("build generate rejects drafts missing manifest required tools", async () => {
     const projectRoot = makeGitProject({ manifest: false });
     await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
-    const agentRunner = async () => ({
-      content: JSON.stringify({
+    const agentRunner = async () => {
+      const submitted = {
         files: [{ path: "Makefile", content: "all:\n\ttrue\n" }],
         manifest: {
           manifest_version: 2,
@@ -365,9 +372,12 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
         build_instructions: "missing tools",
         spec_refs: ["spec/toolchain/build.yaml"],
         changed_targets: ["Makefile"],
-      }),
-      events: [],
-    });
+      };
+      return {
+        content: "ignored",
+        events: acceptedSubmitEvents("toolchain_generation_draft.v1", submitted),
+      };
+    };
 
     const result = await executeCliInvocation([
       "bun",
@@ -388,8 +398,8 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
   test("build generate rejects drafts that write outside allowed_output_path", async () => {
     const projectRoot = makeGitProject({ manifest: false });
     await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
-    const agentRunner = async () => ({
-      content: JSON.stringify({
+    const agentRunner = async () => {
+      const submitted = {
         files: [{ path: "scripts/build.sh", content: "echo bad\n" }],
         manifest: {
           manifest_version: 2,
@@ -403,9 +413,12 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
         build_instructions: "bad",
         spec_refs: ["spec/toolchain/build.yaml"],
         changed_targets: ["scripts/build.sh"],
-      }),
-      events: [],
-    });
+      };
+      return {
+        content: "ignored",
+        events: acceptedSubmitEvents("toolchain_generation_draft.v1", submitted),
+      };
+    };
 
     const result = await executeCliInvocation([
       "bun",
@@ -421,6 +434,27 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
     expect(existsSync(join(projectRoot, "scripts", "build.sh"))).toBe(false);
   });
 });
+
+function acceptedSubmitEvents(schemaId: string, result: unknown): Array<Record<string, unknown>> {
+  return [
+    {
+      type: "tool.call",
+      name: "mcp__vos-progress__submit_result",
+      id: "call_submit",
+      arguments: JSON.stringify({ schema_id: schemaId, result }),
+    },
+    {
+      type: "tool.result",
+      name: "mcp__vos-progress__submit_result",
+      id: "call_submit",
+      content: JSON.stringify({
+        type: "vos-result-submission",
+        schema_id: schemaId,
+        accepted: true,
+      }),
+    },
+  ];
+}
 
 function makeGitProject(options: { manifest: boolean; policy?: boolean }): string {
   const root = join("/tmp", `vos-repro-${Date.now()}-${Math.random().toString(16).slice(2)}`);

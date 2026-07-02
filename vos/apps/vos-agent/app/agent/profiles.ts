@@ -6,6 +6,7 @@ import { VISUALIZATION_TOOL_NAMES } from "../skills/visualization.ts";
 import { STRUCTURED_OUTPUT_TOOL_NAME } from "../tools/structured-output.ts";
 
 export const PROGRESS_MCP_TOOL_NAME = "mcp__vos-progress__report_progress";
+export const SUBMIT_RESULT_MCP_TOOL_NAME = "mcp__vos-progress__submit_result";
 
 const PROJECT_CONTEXT_TOOLS = [
   "mcp__project-context__spec_summary",
@@ -258,6 +259,7 @@ export function createProfileToolPolicy(profile: ResolvedAgentTaskProfile): Tool
     [
       ...(TOOL_PROFILE_TOOLS[profile.toolProfile] ?? []),
       PROGRESS_MCP_TOOL_NAME,
+      SUBMIT_RESULT_MCP_TOOL_NAME,
       STRUCTURED_OUTPUT_TOOL_NAME,
     ].map(normalizeToolName),
   );

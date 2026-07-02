@@ -27,6 +27,7 @@ import {
 import { resolveBuiltInSkills } from "./skills/index.ts";
 import { outputSchemaForId } from "./agent/output-schemas.ts";
 import { createStructuredOutputTool } from "./tools/structured-output.ts";
+import { validateSchema } from "./tools/structured-output.ts";
 import { StarsTuiInteractiveView } from "./tui/interactive-view.ts";
 import type { StarsViewSize } from "./tui/stars-view.ts";
 import { TerminalDriver } from "./tui/terminal.ts";
@@ -54,6 +55,7 @@ export interface AgentTaskRequest {
   courseMode?: boolean;
   allowedVosCommands?: readonly string[];
   extraMcpServers?: readonly McpServerConfig[];
+  structuredOutput?: boolean;
   toolPolicy?: ToolPolicy;
   chat?: ChatClient;
   env?: Record<string, string | undefined>;
@@ -191,6 +193,7 @@ export interface AgentHttpPackageServerResult {
 export type { ChatClient, Config, SessionEvent, ToolPolicy };
 export type { AgentTaskProfile, AgentTaskProfileInput };
 export type { McpServerConfig };
+export { outputSchemaForId, validateSchema };
 
 export function resolveAgentTaskProfile(
   options: ResolveAgentTaskProfileOptions = {},
@@ -234,6 +237,7 @@ export async function runAgentTask(
     policyFlags: options.policyFlags,
   });
   const outputSchema = outputSchemaForId(profile.outputSchema);
+  const structuredOutputEnabled = options.structuredOutput !== false;
   let structuredOutput: unknown;
   const structuredOutputTool = createStructuredOutputTool({
     schema: outputSchema,
@@ -262,11 +266,11 @@ export async function runAgentTask(
       ...builtInSkills.mcpServers,
       ...(options.extraMcpServers ?? []),
     ],
-    extraTools: [structuredOutputTool],
+    extraTools: structuredOutputEnabled ? [structuredOutputTool] : [],
     toolPolicy: composeToolPolicies(createProfileToolPolicy(profile), options.toolPolicy),
     startDir: workspaceRoot,
-    fixedSystemPrompt: buildAgentTaskSystemPrompt(profile),
-    responseFormat: jsonSchemaResponseFormat(outputSchema.id, outputSchema.schema),
+    fixedSystemPrompt: buildAgentTaskSystemPrompt(profile, { structuredOutput: structuredOutputEnabled }),
+    responseFormat: structuredOutputEnabled ? jsonSchemaResponseFormat(outputSchema.id, outputSchema.schema) : undefined,
     streamAssistant: options.streamAssistant ?? false,
     signal: options.signal,
     onEvent: async (event) => {
@@ -274,7 +278,7 @@ export async function runAgentTask(
       await options.onEvent?.(event);
     },
   });
-  if (structuredOutput === undefined) {
+  if (structuredOutputEnabled && structuredOutput === undefined) {
     throw new Error(`agent task ${profile.promptId} did not return accepted StructuredOutput for ${profile.outputSchema}`);
   }
 

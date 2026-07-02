@@ -122,8 +122,10 @@ describe("agent task profiles", () => {
 
     expect(await allowed(planPolicy, "mcp__project-context__spec_summary")).toBe(true);
     expect(await allowed(planPolicy, "mcp__project-context__evidence_summary")).toBe(true);
+    expect(await allowed(planPolicy, "mcp__vos-progress__submit_result")).toBe(true);
     expect(await allowed(validatePolicy, "mcp__project-context__spec_summary")).toBe(true);
     expect(await allowed(validatePolicy, "mcp__project-context__evidence_summary")).toBe(true);
+    expect(await allowed(validatePolicy, "mcp__vos-progress__submit_result")).toBe(true);
   });
 
   test("only debug profile can use GDB MCP tools", async () => {

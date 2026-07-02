@@ -35,6 +35,7 @@ describe("headless profile tasks", () => {
       requestedScope: "report.generate",
       task: "Summarize deterministic report evidence.",
       context: { requirements_passed: 1 },
+      agentProfile: { mcpServers: [] },
       chat,
       model: "test-model",
     });
@@ -57,9 +58,30 @@ describe("headless profile tasks", () => {
       taskKind: "report_narrative",
       requestedScope: "report.generate",
       task: "Summarize deterministic report evidence.",
+      agentProfile: { mcpServers: [] },
       chat,
       model: "test-model",
     })).rejects.toThrow(/StructuredOutput/);
+  });
+
+  test("allows headless tasks to skip StructuredOutput when disabled", async () => {
+    const projectRoot = makeRoot();
+    const chat = new ScriptedChatClient([textResponse("done")]);
+
+    const result = await runAgentTask({
+      projectRoot,
+      taskKind: "report_narrative",
+      requestedScope: "report.generate",
+      task: "Summarize deterministic report evidence.",
+      agentProfile: { mcpServers: [] },
+      chat,
+      model: "test-model",
+      structuredOutput: false,
+    });
+
+    expect(result.content).toBe("done");
+    expect(result.structuredOutput).toBeUndefined();
+    expect(chat.requests[0].tools.map((tool) => tool.function.name)).not.toContain("StructuredOutput");
   });
 
   test("injects built-in project context MCP for spec and evidence profile intents", async () => {

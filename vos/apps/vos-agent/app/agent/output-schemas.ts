@@ -10,7 +10,8 @@ export type JsonSchema =
   | { type: "array"; items: JsonSchema }
   | { type: "string"; enum?: string[] }
   | { type: "number" | "integer" | "boolean" }
-  | { type: "object"; additionalProperties?: boolean };
+  | { type: "object"; additionalProperties?: boolean }
+  | { type: "any" };
 
 export interface OutputSchemaDefinition {
   id: string;
@@ -20,6 +21,7 @@ export interface OutputSchemaDefinition {
 
 const stringArray = { type: "array", items: { type: "string" } } as const;
 const stringObject = { type: "object", additionalProperties: true } as const;
+const anyValue = { type: "any" } as const;
 
 const schemas: Record<string, OutputSchemaDefinition> = {
   "gateway_decision.v1": {
@@ -118,6 +120,49 @@ const schemas: Record<string, OutputSchemaDefinition> = {
       cases: { type: "array", items: stringObject },
       coverage_notes: stringArray,
     }, ["target", "instrumentation_patch", "cases"]),
+  },
+  "behavior_test_plan.v1": {
+    id: "behavior_test_plan.v1",
+    description: "Generated or fuzz behavior TestPlan for VOS verification.",
+    schema: objectSchema({
+      cases: {
+        type: "array",
+        items: objectSchema({
+          id: { type: "string" },
+          obligation_id: { type: "string" },
+          purpose: { type: "string" },
+          carrier: { type: "string" },
+          stimulus: anyValue,
+          oracle: anyValue,
+        }, ["id", "obligation_id"]),
+      },
+    }, ["cases"]),
+  },
+  "behavior_test_patch.v1": {
+    id: "behavior_test_patch.v1",
+    description: "Generated or fuzz behavior test patch for VOS verification.",
+    schema: objectSchema({
+      patch: { type: "string" },
+      suites: {
+        type: "array",
+        items: objectSchema({
+          name: { type: "string" },
+          command: anyValue,
+        }, ["name", "command"]),
+      },
+      cases: {
+        type: "array",
+        items: objectSchema({
+          id: { type: "string" },
+          obligation_id: { type: "string" },
+          suite: { type: "string" },
+          stdin: { type: "string" },
+          success_regex: { type: "string" },
+          failure_regex: { type: "string" },
+          timeout_ms: { type: "number" },
+        }, ["id", "obligation_id", "suite"]),
+      },
+    }, ["patch", "suites", "cases"]),
   },
   "knowledgebase_answer.v1": {
     id: "knowledgebase_answer.v1",

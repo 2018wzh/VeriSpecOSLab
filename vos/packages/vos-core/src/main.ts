@@ -78,7 +78,6 @@ import { createCommandProgress } from "./progress/index.ts";
 import type { CommandProgress, ProgressUpdate } from "./progress/types.ts";
 import { runProgressMcpServer } from "./progress/mcp-server.ts";
 import {
-  appendAgentProgressInstructions,
   createProgressMcpServerConfig,
   progressUpdateFromAgentEvent,
 } from "./progress/agent.ts";
@@ -106,7 +105,6 @@ import {
   resolvePromptProfileEnvelope,
 } from "./agent/prompt.ts";
 import {
-  parseJsonFromText,
   runAgentWithPrompt,
   runAgentInteractiveTask,
   startAgentReadonlyDisplay,
@@ -1442,6 +1440,7 @@ export async function executeAgentPlan(
     policyFlags: bundle.policy_flags,
     courseMode: true,
     allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+    resultSubmissionSchema: "plan_draft.v1",
     extraMcpServers: agentProgress.extraMcpServers,
     onEvent: agentProgress.onEvent,
     taskRunner: context.agentRunner,
@@ -1761,6 +1760,7 @@ export async function executeBuildGenerate(
     context: spec,
     allowedPaths: spec.allowedOutputPaths,
     courseMode: true,
+    resultSubmissionSchema: "toolchain_generation_draft.v1",
     taskRunner: context.agentRunner,
   });
   let draft;
@@ -2095,6 +2095,7 @@ function createVerifyBehaviorTestRunner(context: ExecContext, projectRoot: strin
       requestedScope: `verify.${request.phase}.behavior.${request.kind}`,
       courseMode: true,
       allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      resultSubmissionSchema: request.kind === "plan" ? "behavior_test_plan.v1" : "behavior_test_patch.v1",
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
       taskRunner: context.agentRunner,
@@ -2157,6 +2158,7 @@ export async function executeAgentGenerate(
     policyFlags: bundle.policy_flags,
     courseMode: true,
     allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+    resultSubmissionSchema: "spec_compiler_output.v1",
     extraMcpServers: agentProgress.extraMcpServers,
     onEvent: agentProgress.onEvent,
     taskRunner: context.agentRunner,
@@ -2380,6 +2382,7 @@ export async function executeAgentAsk(
     policyFlags: bundle.policy_flags,
     courseMode: true,
     allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+    resultSubmissionSchema: "knowledgebase_answer.v1",
     extraMcpServers: [
       ...agentProgress.extraMcpServers,
       kbMcpServer,
@@ -2478,6 +2481,7 @@ async function executeDebugTrace(params: {
       context: traceInput,
       courseMode: true,
       allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      resultSubmissionSchema: "debug_trace_plan.v1",
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
       taskRunner: context.agentRunner,
@@ -2609,6 +2613,7 @@ export async function executeAgentDebug(
       ],
       courseMode: true,
       allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      resultSubmissionSchema: "debug_output.v1",
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
       taskRunner: context.agentRunner,
@@ -2700,6 +2705,7 @@ async function prepareAgentDebugTraceEvidence(params: {
       context: traceInput,
       courseMode: true,
       allowedVosCommands: await loadAgentAllowedCommands(params.projectRoot, params.context.effectivePolicy),
+      resultSubmissionSchema: "debug_trace_plan.v1",
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
       taskRunner: params.context.agentRunner,
@@ -3198,6 +3204,7 @@ async function runDefaultAgentSpecReview(params: {
       context: reviewInput,
       courseMode: true,
       allowedVosCommands: await loadAgentAllowedCommands(params.context.projectRoot, params.context.effectivePolicy),
+      resultSubmissionSchema: "spec_review.v1",
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
       taskRunner: params.context.agentRunner,
@@ -3297,7 +3304,7 @@ function createAgentProgressParams(context: ExecContext, stage: string): {
     };
   }
   return {
-    taskPrompt: appendAgentProgressInstructions,
+    taskPrompt: (prompt) => prompt,
     extraMcpServers: [createProgressMcpServerConfig(context.projectRoot)],
     onEvent: async (event) => {
       context.readonlyDisplay?.onSessionEvent(event as never);
@@ -3910,22 +3917,12 @@ async function recordAICollaboration(params: {
   return logPath;
 }
 
-function parseAgentJson(raw: string, source: string): unknown {
-  const parsed = parseJsonFromText(raw);
-  if (!parsed) {
-    throw new AgentOutputError(`agent output for ${source} is not parseable JSON`);
-  }
-  return parsed;
-}
-
-function agentStructuredOutput(result: Awaited<ReturnType<typeof runAgentWithPrompt>>, source: string): unknown {
-  return result.parsedResult ?? parseAgentJson(result.resultText, source);
+function agentStructuredOutput(result: Awaited<ReturnType<typeof runAgentWithPrompt>>, _source: string): unknown {
+  return result.parsedResult;
 }
 
 function agentTracePlanText(result: Awaited<ReturnType<typeof runAgentWithPrompt>>): string {
-  return result.parsedResult
-    ? `${JSON.stringify(result.parsedResult, null, 2)}\n`
-    : result.resultText;
+  return `${JSON.stringify(result.parsedResult, null, 2)}\n`;
 }
 
 async function recordRawAgentOutput(

@@ -36,15 +36,15 @@ describe("report generate", () => {
       final: false,
       visibilityScope: "full",
       evidence,
-      agentRunner: async () => ({
-        content: JSON.stringify({
+      agentRunner: async () => {
+        const submitted = {
           summary: "Memory stage evidence is complete.",
           risks: ["No residual public failures."],
           recommended_next_steps: ["Submit the stage report."],
           limitations: ["Narrative does not decide pass/fail."],
-        }),
-        events: [],
-      }),
+        };
+        return { content: "ignored", events: acceptedSubmitEvents("report_narrative.v1", submitted) };
+      },
     });
 
     expect(existsSync(result.reportPath)).toBe(true);
@@ -90,18 +90,18 @@ describe("report generate", () => {
       final: true,
       visibilityScope: "full",
       evidence,
-      agentRunner: async () => ({
-        content: JSON.stringify({
+      agentRunner: async () => {
+        const submitted = {
           summary: "Final report is complete.",
           risks: [],
           recommended_next_steps: ["Submit the final package."],
           limitations: [],
-        }),
-        events: [],
-      }),
+        };
+        return { content: "ignored", events: acceptedSubmitEvents("report_narrative.v1", submitted) };
+      },
     });
     expect(result.summary.kind).toBe("final");
-    expect(result.reportPath.endsWith("spec/reports/final-synthesis-report.md")).toBe(true);
+    expect(result.reportPath.replace(/\\/g, "/").endsWith("spec/reports/final-synthesis-report.md")).toBe(true);
     expect(readFileSync(result.reportPath, "utf8")).toContain("Final Synthesis Report");
   });
 
@@ -120,7 +120,10 @@ describe("report generate", () => {
       final: false,
       visibilityScope: "full",
       evidence,
-      agentRunner: async () => ({ content: JSON.stringify({ summary: "" }), events: [] }),
+      agentRunner: async () => ({
+        content: "ignored",
+        events: acceptedSubmitEvents("report_narrative.v1", { summary: "" }),
+      }),
     })).rejects.toThrow();
   });
 
@@ -155,15 +158,15 @@ describe("report generate", () => {
       "memory",
     ], {
       print: false,
-      agentRunner: async () => ({
-        content: JSON.stringify({
+      agentRunner: async () => {
+        const submitted = {
           summary: "Memory report is ready.",
           risks: [],
           recommended_next_steps: ["Submit the report."],
           limitations: ["Generated from public evidence."],
-        }),
-        events: [],
-      }),
+        };
+        return { content: "ignored", events: acceptedSubmitEvents("report_narrative.v1", submitted) };
+      },
     });
 
     expect(result.status).toBe("passed");
@@ -177,6 +180,27 @@ describe("report generate", () => {
     expect(git(projectRoot, ["log", "-1", "--pretty=%s"]).trim()).toBe("[vos][report] Generate memory report");
   });
 });
+
+function acceptedSubmitEvents(schemaId: string, result: unknown): Array<Record<string, unknown>> {
+  return [
+    {
+      type: "tool.call",
+      name: "mcp__vos-progress__submit_result",
+      id: "call_submit",
+      arguments: JSON.stringify({ schema_id: schemaId, result }),
+    },
+    {
+      type: "tool.result",
+      name: "mcp__vos-progress__submit_result",
+      id: "call_submit",
+      content: JSON.stringify({
+        type: "vos-result-submission",
+        schema_id: schemaId,
+        accepted: true,
+      }),
+    },
+  ];
+}
 
 function makeReportFixture(): string {
   const root = join("/tmp", `vos-cli-report-${Date.now()}-${Math.random().toString(16).slice(2)}`);

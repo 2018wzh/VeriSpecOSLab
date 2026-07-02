@@ -24,6 +24,7 @@ import type { InteractiveAgentTaskOptions } from "vos-agent/headless";
 import type { ReadonlyAgentDisplayHandle, ReadonlyAgentDisplayOptions } from "vos-agent/headless";
 
 const tmpRoots: string[] = [];
+const SUBMIT_RESULT_TOOL = "mcp__vos-progress__submit_result";
 
 afterEach(() => {
   for (const root of tmpRoots.splice(0)) {
@@ -37,10 +38,11 @@ describe("vos-cli package agent runner", () => {
     let captured: AgentTaskRequest | undefined;
     const runner = async (options: AgentTaskRequest) => {
       captured = options;
+      const submitted = { task: "demo", related_specs: [], suspected_files: [], required_validations: [], notes: [] };
       return {
-        content: "{\"task\":\"demo\",\"related_specs\":[],\"suspected_files\":[],\"required_validations\":[],\"notes\":[]}",
-        structuredOutput: { task: "demo", related_specs: [], suspected_files: [], required_validations: [], notes: [] },
-        events: [],
+        content: "{\"task\":\"ignored\",\"related_specs\":[],\"suspected_files\":[],\"required_validations\":[],\"notes\":[]}",
+        structuredOutput: { task: "ignored", related_specs: [], suspected_files: [], required_validations: [], notes: [] },
+        events: acceptedSubmitEvents("plan_draft.v1", submitted),
       };
     };
 
@@ -49,15 +51,17 @@ describe("vos-cli package agent runner", () => {
       taskPrompt: "hello from vos-cli",
       courseMode: true,
       allowedVosCommands: ["build"],
+      resultSubmissionSchema: "plan_draft.v1",
       taskRunner: runner,
     });
 
     expect(result.exitCode).toBe(0);
     expect(result.parsedResult).toMatchObject({ task: "demo" });
     expect(captured?.projectRoot).toBe(projectRoot);
-    expect(captured?.task).toBe("hello from vos-cli");
+    expect(captured?.task).toContain("hello from vos-cli");
     expect(captured?.courseMode).toBe(true);
     expect(captured?.allowedVosCommands).toEqual(["build"]);
+    expect(captured?.structuredOutput).toBe(false);
     expect(Object.keys(captured ?? {})).not.toContain("binary");
   });
 
@@ -67,9 +71,16 @@ describe("vos-cli package agent runner", () => {
     const taskRunner = async (options: AgentTaskRequest) => {
       captured = options;
       return {
-        content: "{\"ok\":true}",
-        structuredOutput: { ok: true },
-        events: [],
+        content: "{\"ignored\":true}",
+        structuredOutput: { ignored: true },
+        events: acceptedSubmitEvents("debug_output.v1", {
+          failure_class: "build_error",
+          summary: "demo",
+          suspected_clauses: [],
+          related_specs: [],
+          next_diagnostic_commands: [],
+          visualization_html: "<html></html>",
+        }),
       };
     };
 
@@ -79,17 +90,146 @@ describe("vos-cli package agent runner", () => {
       taskKind: "debug",
       courseMode: true,
       allowedVosCommands: ["build"],
+      resultSubmissionSchema: "debug_output.v1",
       taskRunner,
     });
 
     expect(result.exitCode).toBe(0);
-    expect(result.parsedResult).toEqual({ ok: true });
-    expect(captured?.task).toBe("debug this log");
+    expect(result.parsedResult).toMatchObject({ failure_class: "build_error" });
+    expect(captured?.task).toContain("debug this log");
     expect(Object.keys(captured ?? {})).not.toContain("promptOverride");
     expect(Object.keys(captured ?? {})).not.toContain("roleId");
     expect(captured?.taskKind).toBe("debug");
     expect(captured?.courseMode).toBe(true);
     expect(captured?.allowedVosCommands).toEqual(["build"]);
+  });
+
+  test("uses accepted MCP submission as the only structured result source", async () => {
+    const projectRoot = makeProject();
+    const submitted = {
+      task: "mcp result",
+      related_specs: [],
+      suspected_files: [],
+      required_validations: [],
+      notes: [],
+    };
+    let captured: AgentTaskRequest | undefined;
+    const runner = async (options: AgentTaskRequest) => {
+      captured = options;
+      return {
+        content: JSON.stringify({
+          task: "assistant text fallback must be ignored",
+          related_specs: ["wrong"],
+          suspected_files: [],
+          required_validations: [],
+          notes: [],
+        }),
+        structuredOutput: {
+          task: "structured output fallback must be ignored",
+          related_specs: ["wrong"],
+          suspected_files: [],
+          required_validations: [],
+          notes: [],
+        },
+        events: acceptedSubmitEvents("plan_draft.v1", submitted),
+      };
+    };
+
+    const result = await runAgentWithPrompt({
+      projectRoot,
+      taskPrompt: "plan with mcp",
+      taskKind: "plan",
+      resultSubmissionSchema: "plan_draft.v1",
+      taskRunner: runner,
+    });
+
+    expect(result.parsedResult).toEqual(submitted);
+    expect(result.resultText).toBe(`${JSON.stringify(submitted, null, 2)}\n`);
+    expect(captured?.structuredOutput).toBe(false);
+    expect(captured?.extraMcpServers?.map((server) => server.name)).toContain("vos-progress");
+  });
+
+  test("rejects agent results without an accepted MCP submission", async () => {
+    const projectRoot = makeProject();
+    const runner = async () => ({
+      content: JSON.stringify({
+        task: "assistant text is not accepted",
+        related_specs: [],
+        suspected_files: [],
+        required_validations: [],
+        notes: [],
+      }),
+      structuredOutput: {
+        task: "structured output is not accepted",
+        related_specs: [],
+        suspected_files: [],
+        required_validations: [],
+        notes: [],
+      },
+      events: [],
+    });
+
+    await expect(runAgentWithPrompt({
+      projectRoot,
+      taskPrompt: "plan with mcp",
+      taskKind: "plan",
+      resultSubmissionSchema: "plan_draft.v1",
+      taskRunner: runner,
+    })).rejects.toThrow(/accepted MCP submit_result/);
+  });
+
+  test("uses the accepted MCP submission after rejected attempts", async () => {
+    const projectRoot = makeProject();
+    const submitted = {
+      task: "fixed",
+      related_specs: [],
+      suspected_files: [],
+      required_validations: [],
+      notes: [],
+    };
+    const runner = async () => ({
+      content: "ignored",
+      events: [
+        ...rejectedSubmitEvents("plan_draft.v1", { task: "bad" }, "PlanDraft.related_specs must be array"),
+        ...acceptedSubmitEvents("plan_draft.v1", submitted, "call_submit_2"),
+      ],
+    });
+
+    const result = await runAgentWithPrompt({
+      projectRoot,
+      taskPrompt: "plan with mcp",
+      taskKind: "plan",
+      resultSubmissionSchema: "plan_draft.v1",
+      taskRunner: runner,
+    });
+
+    expect(result.parsedResult).toEqual(submitted);
+  });
+
+  test("rejects when the last MCP submission is not accepted", async () => {
+    const projectRoot = makeProject();
+    const submitted = {
+      task: "first",
+      related_specs: [],
+      suspected_files: [],
+      required_validations: [],
+      notes: [],
+    };
+    const runner = async () => ({
+      content: "ignored",
+      events: [
+        ...acceptedSubmitEvents("plan_draft.v1", submitted),
+        ...rejectedSubmitEvents("plan_draft.v1", { task: "last bad" }, "PlanDraft.related_specs must be array", "call_submit_2"),
+      ],
+    });
+
+    await expect(runAgentWithPrompt({
+      projectRoot,
+      taskPrompt: "plan with mcp",
+      taskKind: "plan",
+      resultSubmissionSchema: "plan_draft.v1",
+      taskRunner: runner,
+    })).rejects.toThrow(/last MCP submit_result was not accepted/);
   });
 
   test("calls vos-agent interactive package API through injectable runner", async () => {
@@ -194,22 +334,16 @@ describe("vos-cli package agent runner", () => {
         content: "planning",
         toolCalls: [],
       });
+      const submitted = {
+        task: "inspect syscall",
+        related_specs: [],
+        suspected_files: [],
+        required_validations: [],
+        notes: ["display fake runner"],
+      };
       return {
-        content: JSON.stringify({
-          task: "inspect syscall",
-          related_specs: [],
-          suspected_files: [],
-          required_validations: [],
-          notes: ["display fake runner"],
-        }),
-        structuredOutput: {
-          task: "inspect syscall",
-          related_specs: [],
-          suspected_files: [],
-          required_validations: [],
-          notes: ["display fake runner"],
-        },
-        events: [],
+        content: "ignored",
+        events: acceptedSubmitEvents("plan_draft.v1", submitted),
       };
     };
 
@@ -294,15 +428,16 @@ describe("vos-cli package agent runner", () => {
     let captured: AgentTaskRequest | undefined;
     const runner = async (options: AgentTaskRequest) => {
       captured = options;
+      const submitted = {
+        task: "inspect syscall",
+        related_specs: [],
+        suspected_files: [],
+        required_validations: [],
+        notes: ["offline fake runner"],
+      };
       return {
-        content: JSON.stringify({
-          task: "inspect syscall",
-          related_specs: [],
-          suspected_files: [],
-          required_validations: [],
-          notes: ["offline fake runner"],
-        }),
-        events: [],
+        content: "ignored",
+        events: acceptedSubmitEvents("plan_draft.v1", submitted),
       };
     };
 
@@ -321,7 +456,7 @@ describe("vos-cli package agent runner", () => {
     expect(captured?.courseMode).toBe(true);
     expect(captured?.allowedVosCommands).toEqual(["build --dry-run"]);
     expect(captured && "binary" in captured).toBe(false);
-    expect(captured?.task).toBe("inspect syscall");
+    expect(captured?.task).toContain("inspect syscall");
     expect(captured?.taskKind).toBe("plan");
     expect(Object.keys(captured ?? {})).not.toContain("prompt");
   });
@@ -561,33 +696,34 @@ describe("vos-cli package agent runner", () => {
     let captured: AgentTaskRequest | undefined;
     const runner = async (options: AgentTaskRequest) => {
       captured = options;
+      const submitted = {
+        failure_class: "verification_failure",
+        summary: "Allocator evidence failed.",
+        suspected_clauses: ["kernel/memory.kalloc"],
+        related_specs: ["spec/modules/kernel/memory/ops/kalloc.yaml"],
+        suspected_concepts: ["free-list ownership"],
+        evidence_chain: [{ label: "qemu serial log", artifact: ".vos/runs/failed-run/artifacts/run/boot-smoke/serial.log", observation: "panic" }],
+        visualization_steps: [{ phase: "panic", description: "The allocator reused a page." }],
+        visualization_html: [
+          "<!doctype html>",
+          "<html><body>",
+          "<main data-agent-generated=\"true\">",
+          "<section>Spec / Code from agent</section>",
+          "<section>Verify / Trace Timeline from agent</section>",
+          "<section>GDB State from agent</section>",
+          "<input id=\"scrubber\" type=\"range\">",
+          "<script>// states[]\nconst states=[{phase:'panic'}];</script>",
+          "</main>",
+          "</body></html>",
+        ].join(""),
+        trace_summary: "trace not observed",
+        gdb_summary: "gdb reached kalloc",
+        next_diagnostic_commands: ["vos verify public"],
+        student_visible_limitations: ["full instrumentation diff withheld"],
+      };
       return {
-        content: JSON.stringify({
-          failure_class: "verification_failure",
-          summary: "Allocator evidence failed.",
-          suspected_clauses: ["kernel/memory.kalloc"],
-          related_specs: ["spec/modules/kernel/memory/ops/kalloc.yaml"],
-          suspected_concepts: ["free-list ownership"],
-          evidence_chain: [{ label: "qemu serial log", artifact: ".vos/runs/failed-run/artifacts/run/boot-smoke/serial.log", observation: "panic" }],
-          visualization_steps: [{ phase: "panic", description: "The allocator reused a page." }],
-          visualization_html: [
-            "<!doctype html>",
-            "<html><body>",
-            "<main data-agent-generated=\"true\">",
-            "<section>Spec / Code from agent</section>",
-            "<section>Verify / Trace Timeline from agent</section>",
-            "<section>GDB State from agent</section>",
-            "<input id=\"scrubber\" type=\"range\">",
-            "<script>// states[]\nconst states=[{phase:'panic'}];</script>",
-            "</main>",
-            "</body></html>",
-          ].join(""),
-          trace_summary: "trace not observed",
-          gdb_summary: "gdb reached kalloc",
-          next_diagnostic_commands: ["vos verify public"],
-          student_visible_limitations: ["full instrumentation diff withheld"],
-        }),
-        events: [],
+        content: "ignored",
+        events: acceptedSubmitEvents("debug_output.v1", submitted),
       };
     };
 
@@ -607,10 +743,10 @@ describe("vos-cli package agent runner", () => {
     expect(JSON.stringify(captured?.context)).toContain("panic: allocator reused page");
     expect(captured?.taskKind).toBe("debug");
     expect(Object.keys(captured ?? {})).not.toContain("prompt");
-    expect(result.details.artifact).toMatch(/agent-debug\/debug\.json$/);
-    expect(result.details.visualization).toMatch(/agent-debug\/visualization\.html$/);
-    expect(result.details.gdb_summary).toMatch(/agent-debug\/gdb\/summary\.json$/);
-    expect(result.details.adapter_contract).toMatch(/agent-debug\/gdb\/adapter-contract\.json$/);
+    expect(result.details.artifact).toMatch(/agent-debug[\\/]debug\.json$/);
+    expect(result.details.visualization).toMatch(/agent-debug[\\/]visualization\.html$/);
+    expect(result.details.gdb_summary).toMatch(/agent-debug[\\/]gdb[\\/]summary\.json$/);
+    expect(result.details.adapter_contract).toMatch(/agent-debug[\\/]gdb[\\/]adapter-contract\.json$/);
     const adapter = JSON.parse(readFileSync(join(projectRoot, result.details.adapter_contract as string), "utf8"));
     expect(adapter.qmp_endpoint).toMatch(/^unix:/);
     expect(adapter.hmp_endpoint).toMatch(/^unix:/);
@@ -666,8 +802,8 @@ describe("vos-cli package agent runner", () => {
         global: { projectRoot, json: false },
         evidence,
         agentRunner: async () => ({
-          content: badContent,
-          events: [],
+          content: "ignored",
+          events: acceptedSubmitEvents("debug_output.v1", JSON.parse(badContent)),
         }),
       });
     } catch (error) {
@@ -678,8 +814,8 @@ describe("vos-cli package agent runner", () => {
     const details = (schemaError as { details?: Record<string, unknown> }).details;
     expect(details?.schema).toBe("debug_output.v1");
     expect(String(details?.schema_error)).toContain("visualization_html");
-    expect(details?.raw_artifact).toBe("agent-debug/agent-debug-raw.txt");
-    expect(readFileSync(join(evidence.run_root, "artifacts", "agent-debug", "agent-debug-raw.txt"), "utf8")).toBe(badContent);
+    expect(String(details?.raw_artifact)).toMatch(/agent-debug[\\/]agent-debug-raw\.txt$/);
+    expect(readFileSync(join(evidence.run_root, "artifacts", "agent-debug", "agent-debug-raw.txt"), "utf8")).toBe(`${JSON.stringify(JSON.parse(badContent), null, 2)}\n`);
   });
 
   test("agent debug without inputs starts the interactive debug profile", async () => {
@@ -743,7 +879,7 @@ describe("vos-cli package agent runner", () => {
     });
 
     expect(result.status).toBe("failed");
-    expect(result.details.gdb_failure).toMatch(/agent-debug\/gdb\/failure\.json$/);
+    expect(result.details.gdb_failure).toMatch(/agent-debug[\\/]gdb[\\/]failure\.json$/);
     expect(readFileSync(join(projectRoot, result.details.gdb_failure as string), "utf8")).toContain("failed to start MCP server gdb");
   });
 
@@ -1214,8 +1350,8 @@ describe("vos-cli package agent runner", () => {
       args: ["agent", "generate"],
     });
 
-      const runner = async () => ({
-      content: JSON.stringify({
+      const runner = async () => {
+      const submitted = {
         task: "apply default stage plan",
         patch: [
           "diff --git a/Makefile b/Makefile",
@@ -1231,9 +1367,12 @@ describe("vos-cli package agent runner", () => {
         changed_code_files: ["Makefile"],
         output_kind: "unified_diff",
         self_reported_risks: [],
-      }),
-      events: [],
-    });
+      };
+      return {
+        content: "ignored",
+        events: acceptedSubmitEvents("spec_compiler_output.v1", submitted),
+      };
+    };
 
     const result = await executeCommand({
       kind: "agent_generate",
@@ -1307,8 +1446,7 @@ describe("vos-cli package agent runner", () => {
     let captured: AgentTaskRequest | undefined;
     const runner = async (options: AgentTaskRequest) => {
       captured = options;
-      return {
-      content: JSON.stringify({
+      const submitted = {
         task: "patch entry",
         patch: [
           "diff --git a/kernel/entry.S b/kernel/entry.S",
@@ -1325,8 +1463,10 @@ describe("vos-cli package agent runner", () => {
         changed_code_files: ["kernel/entry.S"],
         output_kind: "unified_diff",
         self_reported_risks: [],
-      }),
-      events: [],
+      };
+      return {
+      content: "ignored",
+      events: acceptedSubmitEvents("spec_compiler_output.v1", submitted),
       };
     };
 
@@ -1427,16 +1567,17 @@ describe("vos-cli package agent runner", () => {
     let captured: AgentTaskRequest | undefined;
     const runner = async (options: AgentTaskRequest) => {
       captured = options;
+      const submitted = {
+        answer: "Keep page ownership explicit.",
+        stage_key: "memory",
+        design_goal_alignment: ["allocator invariant"],
+        citations: [{ source_id: "kb-any", title: "Memory Manual" }],
+        suggested_next_steps: ["run vos verify public --stage memory"],
+        allowed_snippets: [],
+      };
       return {
-        content: JSON.stringify({
-          answer: "Keep page ownership explicit.",
-          stage_key: "memory",
-          design_goal_alignment: ["allocator invariant"],
-          citations: [{ source_id: "kb-any", title: "Memory Manual" }],
-          suggested_next_steps: ["run vos verify public --stage memory"],
-          allowed_snippets: [],
-        }),
-        events: [],
+        content: "ignored",
+        events: acceptedSubmitEvents("knowledgebase_answer.v1", submitted),
       };
     };
 
@@ -1463,7 +1604,10 @@ describe("vos-cli package agent runner", () => {
       args: ["agent", "ask"],
     });
     const badContent = JSON.stringify({ answer: "missing arrays" });
-    const badRunner = async () => ({ content: badContent, events: [] });
+    const badRunner = async () => ({
+      content: "ignored",
+      events: acceptedSubmitEvents("knowledgebase_answer.v1", JSON.parse(badContent)),
+    });
     let schemaError: unknown;
     try {
       await executeCommand({
@@ -1485,8 +1629,8 @@ describe("vos-cli package agent runner", () => {
     const details = (schemaError as { details?: Record<string, unknown> }).details;
     expect(details?.schema).toBe("knowledgebase_answer.v1");
     expect(String(details?.schema_error)).toContain("design_goal_alignment");
-    expect(details?.raw_artifact).toBe("agent/agent-ask-raw.txt");
-    expect(readFileSync(join(badEvidence.run_root, "artifacts", "agent", "agent-ask-raw.txt"), "utf8")).toBe(badContent);
+    expect(String(details?.raw_artifact)).toMatch(/agent[\\/]agent-ask-raw\.txt$/);
+    expect(readFileSync(join(badEvidence.run_root, "artifacts", "agent", "agent-ask-raw.txt"), "utf8")).toBe(`${JSON.stringify(JSON.parse(badContent), null, 2)}\n`);
     await embeddingServer.stop(true);
   });
 });
@@ -1496,6 +1640,44 @@ function makeProject(): string {
   mkdirSync(join(root, ".vos"), { recursive: true });
   tmpRoots.push(root);
   return root;
+}
+
+function acceptedSubmitEvents(schemaId: string, result: unknown, id = "call_submit"): Array<Record<string, unknown>> {
+  return [
+    {
+      type: "tool.call",
+      name: SUBMIT_RESULT_TOOL,
+      id,
+      arguments: JSON.stringify({ schema_id: schemaId, result }),
+    },
+    {
+      type: "tool.result",
+      name: SUBMIT_RESULT_TOOL,
+      id,
+      content: JSON.stringify({
+        type: "vos-result-submission",
+        schema_id: schemaId,
+        accepted: true,
+      }),
+    },
+  ];
+}
+
+function rejectedSubmitEvents(schemaId: string, result: unknown, error: string, id = "call_submit"): Array<Record<string, unknown>> {
+  return [
+    {
+      type: "tool.call",
+      name: SUBMIT_RESULT_TOOL,
+      id,
+      arguments: JSON.stringify({ schema_id: schemaId, result }),
+    },
+    {
+      type: "tool.result",
+      name: SUBMIT_RESULT_TOOL,
+      id,
+      content: `Error validating submit_result arguments: ${error}`,
+    },
+  ];
 }
 
 function makeReadonlyDisplay(): ReadonlyAgentDisplayHandle & {
