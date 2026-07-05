@@ -80,6 +80,8 @@ bun install -g github:2018wzh/VeriSpecOSLab
 vos --help
 ```
 
+这一步只安装 CLI，不要求 clone VeriSpecOSLab 工具仓库。
+
 ### 1.3.2 项目工具链
 
 具体依赖由项目的 `spec/toolchain/profile.yaml` 和 `.vos/toolchain.json` 声明。xv6-spec 示例项目需要：
@@ -105,7 +107,7 @@ env = "YOUR_API_KEY_ENV_VAR"
 
 ## 1.4 命令运行方式
 
-所有命令通过 `--project-root` 指定项目路径：
+所有命令通过 `--project-root` 指定学生项目路径：
 
 ```bash
 vos --project-root <project-root> <command> [options]

@@ -118,7 +118,7 @@ gdb-multiarch --version
 bun install -g github:2018wzh/VeriSpecOSLab
 ```
 
-之后可以直接通过 `vos` 调用。
+这只安装 CLI，不要求 clone VeriSpecOSLab 工具仓库。之后可以直接通过 `vos` 调用，并用 `--project-root` 指向你的学生项目。
 
 验证：
 
