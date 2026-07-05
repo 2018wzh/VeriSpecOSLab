@@ -112,19 +112,18 @@ gdb-multiarch --version
 
 ### vos
 
-进入项目的 `vos/` 目录：
+从 GitHub 仓库安装 `vos`：
 
 ```bash
-cd vos
-bun install
+bun install -g github:2018wzh/VeriSpecOSLab
 ```
 
-之后可以通过 `bun run vos` 调用，或添加到 PATH。
+之后可以直接通过 `vos` 调用。
 
 验证：
 
 ```bash
-bun run vos -- --help
+vos --help
 ```
 
 ## 环境验证清单

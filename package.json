@@ -1,0 +1,38 @@
+{
+  "name": "vos",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "vos": "./vos/apps/vos-cli/app/main.ts"
+  },
+  "workspaces": [
+    "vos/apps/vos-cli",
+    "vos/apps/vos-agent",
+    "vos/apps/vos-demo",
+    "vos/packages/vos-core",
+    "vos/packages/vos-kb",
+    "vos/packages/vos-platform",
+    "vos/packages/vos-runtime",
+    "vos/packages/vos-server",
+    "vos/packages/vos-spec"
+  ],
+  "dependencies": {
+    "vos-agent": "file:./vos/apps/vos-agent",
+    "vos-cli": "file:./vos/apps/vos-cli",
+    "vos-demo": "file:./vos/apps/vos-demo",
+    "vos-core": "file:./vos/packages/vos-core",
+    "vos-kb": "file:./vos/packages/vos-kb",
+    "vos-platform": "file:./vos/packages/vos-platform",
+    "vos-runtime": "file:./vos/packages/vos-runtime",
+    "vos-server": "file:./vos/packages/vos-server",
+    "vos-spec": "file:./vos/packages/vos-spec"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "scripts": {
+    "vos": "bun run vos/apps/vos-cli/app/main.ts",
+    "typecheck": "cd vos && bun run typecheck",
+    "test": "cd vos && bun run test"
+  }
+}

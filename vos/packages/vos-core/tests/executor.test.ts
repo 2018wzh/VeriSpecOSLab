@@ -4,7 +4,7 @@ import { runCommand } from "../src/runtime/executor.ts";
 describe("runtime executor", () => {
   test("passes immediate stdin to commands that read at startup", async () => {
     const result = await runCommand({
-      command: ["python3", "-u", "-c", "import sys; print('GOT:' + sys.stdin.readline().strip())"],
+      command: ["python", "-u", "-c", "import sys; print('GOT:' + sys.stdin.readline().strip())"],
       stdin: "startup\n",
       timeoutMs: 1000,
     });
@@ -15,7 +15,7 @@ describe("runtime executor", () => {
 
   test("can delay stdin until output matches a ready pattern", async () => {
     const result = await runCommand({
-      command: ["python3", "-u", "-c", [
+      command: ["python", "-u", "-c", [
         "import os",
         "import sys;",
         "import time;",

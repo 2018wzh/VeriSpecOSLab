@@ -73,7 +73,12 @@
 ### 1.3.1 运行时
 
 - **Bun** ≥ 1.3：VOS CLI 的运行环境
-- 安装后在仓库 `vos/` 目录执行 `bun install`
+- 使用 GitHub 仓库安装 VOS CLI：
+
+```bash
+bun install -g github:2018wzh/VeriSpecOSLab
+vos --help
+```
 
 ### 1.3.2 项目工具链
 
@@ -100,17 +105,16 @@ env = "YOUR_API_KEY_ENV_VAR"
 
 ## 1.4 命令运行方式
 
-所有命令从 `vos/` 目录运行，通过 `--project-root` 指定项目路径：
+所有命令通过 `--project-root` 指定项目路径：
 
 ```bash
-cd vos
-bun run vos -- --project-root <project-root> <command> [options]
+vos --project-root <project-root> <command> [options]
 ```
 
 例如，对仓库内的 xv6-spec 示例：
 
 ```bash
-bun run vos -- --project-root ../examples/xv6-spec doctor
+vos --project-root examples/xv6-spec doctor
 ```
 
 ### 1.4.1 全局参数
