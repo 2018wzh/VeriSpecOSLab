@@ -70,7 +70,7 @@
 
 ### 2.3 `arch.md`
 
-`arch.md` 负责定义本地 Agent Runtime、DevBox 和 OpenAI-compatible 接入。平台文档只保留：
+`arch.md` 负责定义本地 Agent Runtime、课程运行环境和 OpenAI-compatible 接入。平台文档只保留：
 
 - Agent governance / audit 的平台接口
 - 权限矩阵

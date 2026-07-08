@@ -9,7 +9,7 @@
 
 1. 支持学生在 VS Code、JetBrains、Cursor、Continue、Cline、Aider、Open WebUI、CodeGPT 等支持 OpenAI-compatible API 的 IDE 或工具中接入本地项目专用 Agent。
 2. 将 AI 使用限制在规格、测试、构建、验证反馈和审计日志约束之下，避免学生直接让 AI 代写完整系统。
-3. 提供可复现、可测试、可评分的 DevBox 开发环境。
+3. 提供可复现、可测试、可评分的课程运行环境。
 4. 支持个性化目标验证，例如二进制兼容、性能优化、硬件移植、可验证性增强、安全隔离等。
 5. 自动记录 AI 协作过程，生成可用于教学评价和过程反馈的证据。
 
@@ -34,7 +34,7 @@ Authenticated vos-cli / vos serve
     ↓
 Project repo / spec / toolchain / evidence
     ↓
-DevBox / Toolchain / CI / QEMU / Test / Project Repo
+Course Runtime / Toolchain / CI / QEMU / Test / Project Repo
 
 Portal / Platform Control Plane
     ↔ identity / policy snapshot / audit / runner orchestration
@@ -71,7 +71,7 @@ VS Code / JetBrains / Cursor / Continue / Cline / Aider
         |
         v
 +--------------------------------+
-| DevBox / Sandbox               |
+| Course Runtime / Sandbox       |
 | - clang/gcc/rust/zig           |
 | - qemu-system-*                |
 | - gdb/lldb                     |
@@ -100,9 +100,9 @@ authenticated `vos` CLI 或 `vos serve` HTTP façade。云端平台是 control p
 
 ---
 
-## 3. VeriSpecOSLab DevBox
+## 3. VeriSpecOSLab 课程运行环境
 
-DevBox 用于保证学生环境一致、可复现、可测试、可 CI 化。
+课程运行环境用于保证学生环境一致、可复现、可测试、可 CI 化。
 
 ### 3.1 交付形态
 
@@ -193,7 +193,7 @@ verispecoslab/
 学生仓库，而是保存在 Portal / Spec Service 中，由 authenticated `vos` 按
 policy snapshot 使用，并以结构化 evidence / report 回传。
 
-### 3.3 DevBox 内置工具链
+### 3.3 课程运行环境内置工具链
 
 ```text
 通用构建：

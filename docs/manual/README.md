@@ -15,7 +15,7 @@
 ```text
 Start Here（本页）
     ↓
-附录：环境搭建 → 搭建你的 DevBox
+Lab 1：初始化项目与目标制定 → 准备课程运行环境
     ↓
 Book：按章节阅读 → 理解每个阶段的设计问题
     ↓
@@ -26,7 +26,7 @@ Specs 手册：随时查阅 → 学习如何写好规格
 Final Lab：综合集成、失败分析、最终报告
 ```
 
-**首次进入**：先读本页 → 然后去 [附录：开发环境搭建](appendices/dev-environment.md) 搭好环境 → 回到 [Book 第 0 章](book/ch00-overview.md) 了解课程全貌 → 正式开始 Lab 1。
+**首次进入**：先读本页 → 回到 [Book 第 0 章](book/ch00-overview.md) 了解课程全貌 → 打开 [Lab 1](labs/lab1-seed.md)，按其中的 0 起点流程安装 `vos`、初始化项目、检查课程运行环境并完成 ArchitectureSeed。
 
 **日常实验**：打开当前 Lab 卡片 → 阅读"设计问题"和"设计空间" → 编写对应 Spec 制品 → 实现 → 运行验证命令 → 检查质量门禁。
 
@@ -87,6 +87,49 @@ Final Lab：综合集成、失败分析、最终报告
 1. **描述设计问题，不预设实现方案。** 指导书会告诉你"这个阶段必须解决资源命名和生命周期管理的问题"，但不会告诉你"用 file descriptor table"。
 2. **定义质量门禁，不指定通过方式。** 指导书会告诉你"分配器不能返回已被分配的页"，但不会告诉你"用 freelist 还是 buddy"。
 3. **要求设计理据，不接受"就是这样"。** 每个设计决策都需要记录在 ArchitectureSlice 或 ADR 中：你借鉴了什么？修改了什么？拒绝了什么？为什么？
+
+## PDF 导出
+
+教学交付版 PDF 由仓库内的 Bun workspace 脚本生成，不依赖本机安装的 Pandoc、TeX 或浏览器。首次导出前安装依赖和本地 Chromium：
+
+```sh
+cd vos
+bun install
+bun run manual:pdf:install
+```
+
+按 Lab 组织生成教学交付 PDF：
+
+```sh
+bun run manual:pdf
+```
+
+默认输出到项目根目录下的 `dist/manual/`。入口 `README.md` 不会进入 PDF；每个 Lab 目录包含对应的教材章节和实验卡片，例如：
+
+```text
+dist/manual/
+  lab1/
+    lab1-book.pdf
+    lab1-lab.pdf
+  lab2/
+    lab2-book.pdf
+    lab2-lab.pdf
+  final-lab/
+    final-lab-book.pdf
+    final-lab-lab.pdf
+  shared/
+    shared-specs.pdf
+    shared-appendices.pdf
+    shared-vos.pdf
+  teacher/
+    teacher.pdf
+```
+
+该目录是生成产物，不纳入版本控制。需要指定标题或输出目录时：
+
+```sh
+bun run manual:pdf -- --title "VeriSpecOSLab 实验指导书" --output-dir ../dist/manual
+```
 
 ## 许可证与引用
 

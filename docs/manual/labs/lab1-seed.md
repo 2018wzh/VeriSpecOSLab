@@ -1,127 +1,175 @@
-# Lab 1: 操作系统初步 — 定义你要构建的 OS
+# Lab 1: 项目初始化与操作系统初步
 
-## 1. 设计问题
+## 1. 本 Lab 要解决什么
 
-在写任何代码之前，你必须回答：我要构建一个什么样的操作系统？它的目标是什么？参考了谁？拒绝了什么？
+本 Lab 的重点不是马上写代码，而是把项目从空目录推进到一个可检查、可追踪的 VOS 项目，并写出第一版 ArchitectureSeed。
 
-本 Lab 不涉及任何代码实现。你的所有产出都是规格文件和分析文档。
+你要先回答一个问题：这个 OS 为什么存在？目标确定后，再选择内核架构、目标平台、ABI、参考系统和验证判据。后续阶段遇到取舍时，都要回到这份 seed 看你的目标和 non-goals。
 
-## 2. 设计空间
+## 2. 从 0 起步
 
-你必须在这个阶段做出以下关键设计决策。**没有"标准答案"，只有你自己的答案。**
+以下命令假设你已经安装 Bun，并准备在一个新目录中开始课程项目。
 
-| 决策 | 你需要回答的问题 |
-|------|----------------|
-| 内核架构 | 宏内核、微内核、混合内核还是其他？这个选择如何影响你后续阶段的设计？ |
-| 目标平台 | RISC-V 64？ARM？x86？QEMU 还是真实硬件？什么机器型号？ |
-| 设计目标 | 教学清晰性？兼容已有 ABI？安全性？特定性能指标？优先级如何排序？ |
-| 系统 ABI | 用什么可执行格式？syscall 的调用约定？大概提供哪些 syscall 类别？ |
-| 参考系统 | 参考了哪些 OS？借鉴了什么？修改了什么？拒绝了什么？为什么？ |
-| 范围边界 | 什么在你的 OS 范围内？什么明确不在？ |
+```sh
+bun install -g github:2018wzh/VeriSpecOSLab
 
-## 3. 背景阅读
+mkdir my-os
+cd my-os
 
-在动笔之前，建议你先了解：
-
-- 至少 2 个已有教学 OS 的整体架构（推荐 xv6 和 seL4，它们代表了两种不同的设计哲学）
-- RISC-V 特权规范（至少了解 M/S/U 三级特权的基本概念）
-- 你选择的目标平台的基本信息（QEMU `virt` 机器的内存布局、外设列表）
-- [Spec-first 工作流详解](../specs/spec-workflow.md) — 理解你接下来要做的事情在整体流程中的位置
-
-## 4. 规格要求
-
-### 4.1 ArchitectureSeed（必做）
-
-创建 `spec/architecture/seed.yaml`，包含以下必填字段：
-
-```yaml
-id:             # 你的项目唯一标识
-project:        # 项目名称
-domain:         # "teaching-os"
-target_platform: # 如 "riscv64-qemu-virt"
-architecture_name: # 你的 OS 名称
-architecture_summary: # 一句话描述
-
-reference_systems:  # 至少 1 个参考系统
-  - system:         # 参考系统的名称
-    borrowed_concepts: []  # 借鉴的概念
-    modified_concepts: []  # 修改的概念（可为空）
-    rejected_concepts: []  # 拒绝的概念（至少 1 项）
-    reason:          # 拒绝的理由
-
-goals: []           # 你的目标（至少 3 项）
-non_goals: []       # 你的非目标（至少 3 项）
-constraints: []     # 技术约束
-initial_validation_binding: []  # 验证判据（至少 3 项，可测试）
+vos --project-root . init
+vos --project-root . doctor
 ```
 
-详细字段说明见 [ArchitectureDesignSpec 编写指南](../specs/architecture-design-spec.md)。
+`vos init` 会创建 VOS 本地配置、默认策略、`.gitignore` 和 `AGENTS.md`。如果当前目录还不是 Git 仓库，它会先执行 `git init`。如果仓库还没有初始提交，它只会暂存并提交自己创建或维护的初始化入口文件，不会把你的草稿、下载资料或本地实验文件一起提交。
 
-### 4.2 CompositionSpec 骨架（必做）
+如果 `vos init` 提示缺少 Git 用户名或邮箱，先配置本仓库的 Git identity，再重新运行：
 
-创建 `spec/architecture/composition.yaml`，写出至少 1 条初始的跨组件规则。在阶段 1，这条规则可以很简单，例如：
+```sh
+git config user.name "Your Name"
+git config user.email "you@example.com"
+vos --project-root . init
+```
+
+## 3. 目标先行
+
+在写 `seed.yaml` 之前，先写下三类内容：
+
+- 你最想训练或证明的能力，例如教学清晰性、Linux 静态 ELF 兼容、capability 隔离、启动速度或可验证性。
+- 你明确不做的事情，例如网络、多用户、动态链接、完整 POSIX、真实硬件移植。
+- 你的约束，例如一学期时间、单人项目、RISC-V 64 + QEMU `virt`、C/Rust/Zig 中的一种语言。
+
+目标要能影响设计。比如“教学清晰性优先”会推向更少的抽象层和更简单的 syscall 集；“安全隔离优先”可能推向 capability 或微内核；“兼容 Linux 静态 ELF”会让 ABI、ELF loader 和 syscall 编号更早变成硬约束。
+
+## 4. 规格文件
+
+创建目录：
+
+```sh
+mkdir -p spec/architecture
+```
+
+### 4.1 ArchitectureSeed
+
+创建 `spec/architecture/seed.yaml`。至少包含这些字段：
 
 ```yaml
+id: my-os-seed
+project: my-os
+domain: teaching-operating-system
+target_platform: riscv64-qemu-virt
+architecture_name: my-os
+architecture_summary: >
+  用一句话说明你的 OS 目标和主要取舍。
+
+reference_systems:
+  - system: xv6-riscv
+    borrowed_concepts:
+      - "例如：Sv39 分页和简单进程模型"
+    modified_concepts:
+      - "例如：缩小 syscall 集合"
+    rejected_concepts:
+      - "例如：暂不做多核"
+    reason: "说明为什么借鉴、修改或拒绝这些机制。"
+
+goals:
+  - "至少 3 条，必须具体。"
+non_goals:
+  - "至少 3 条，说明本项目不优化或不实现什么。"
+constraints:
+  - "写清 ISA、目标平台、语言、工具链和时间约束。"
+initial_validation_binding:
+  - "至少 3 条可检查判据，例如 qemu_boot_smoke。"
+```
+
+详细字段见 [ArchitectureDesignSpec 编写指南](../specs/architecture-design-spec.md)。
+
+### 4.2 CompositionSpec 骨架
+
+创建 `spec/architecture/composition.yaml`，写出至少一条跨组件规则。阶段 1 的规则可以很朴素，但要和你的目标一致。
+
+```yaml
+id: my-os-composition
+title: Initial Architecture Composition
+summary: >
+  第一版跨组件规则，用于约束后续 boot、memory 和 syscall 设计。
+
 cross_component_rules:
-  - name: "内核模块通过函数调用交互"
-    description: "所有内核模块编译为单一镜像，模块间通过直接函数调用交互"
+  - name: boot-before-memory
+    description: "启动路径必须先建立可观察输出，再进入后续内存管理工作。"
+    invariant: "boot 阶段失败时必须留下串口日志或 VOS evidence。"
+    affected_modules: [kernel/boot, kernel/memory]
+    tests: [qemu_boot_smoke]
 ```
 
-### 4.3 知识库导入（必做）
+## 5. 导入知识库
 
-使用 `vos kb add` 导入至少 2 份参考资料。例如：
+先把项目 spec 加入本地 KB：
 
-```bash
-vos kb add docs/reference/riscv-privileged-manual.pdf
-vos kb add docs/reference/xv6-book.pdf
+```sh
+vos --project-root . kb add spec --source-kind project --recursive
 ```
 
-## 5. 质量门禁
+再按你的设计目标导入至少一份参考资料。资料可以来自课程发放的本地文件，也可以是你自己选择的公开参考资料。
 
-### 规格门禁
-
-```bash
-vos arch lint    # 检查架构规格的内部一致性
+```sh
+vos --project-root . kb add docs/reference/xv6-book.pdf --source-kind course --title "xv6 book"
+vos --project-root . kb list
 ```
+
+如果你选择微内核、capability、Linux ELF 兼容或硬件移植，参考资料也应对应这些目标。不要只导入和自己路线无关的材料。
+
+## 6. 检查与保存
+
+完成 seed、composition 和 KB 导入后，运行：
+
+```sh
+vos --project-root . doctor
+vos --project-root . spec lint
+vos --project-root . spec check-consistency
+vos --project-root . arch lint
+vos --project-root . kb list
+vos --project-root . stage save --intent "complete architecture seed"
+```
+
+`architecture-seed` 阶段还不要求 `.vos/toolchain.json`。从 boot 阶段开始，`vos doctor` 会继续检查工具链 manifest 和其中声明的构建、运行、验证工具。
+
+## 7. 质量门禁
+
+自动检查：
+
+- [ ] `vos doctor` 通过，或只留下与后续 boot 工具链相关的可解释提示。
+- [ ] `vos spec lint` 通过。
+- [ ] `vos spec check-consistency` 通过。
+- [ ] `vos arch lint` 通过。
+- [ ] `vos kb list` 能看到项目 spec 和至少一份与你目标相关的参考资料。
+- [ ] `vos stage save --intent "complete architecture seed"` 已完成阶段保存。
 
 手动检查：
-- [ ] `goals` 和 `non_goals` 均非空且具体
-- [ ] `reference_systems` 至少 1 个，包含至少 1 项 `rejected_concepts` 且附 `reason`
-- [ ] `initial_validation_binding` 中的每项都是可测试的
-- [ ] `constraints` 包含 ISA 和目标平台
 
-### 知识库门禁
+- [ ] `goals` 和 `non_goals` 都具体，能影响后续设计选择。
+- [ ] 参考系统不是标签式引用，写清借鉴、修改和拒绝的具体机制。
+- [ ] 至少一项拒绝理由说清了代价或边界。
+- [ ] `initial_validation_binding` 都能落到可观测检查，不写“系统稳定”“体验良好”这类空泛目标。
+- [ ] CompositionSpec 至少包含一条和目标相关的跨组件规则。
 
-```bash
-vos kb list       # 确认至少 2 条记录
-```
+## 8. AI 使用边界
 
-## 6. 设计理据要求
+允许：
 
-完成本 Lab 后，你必须能回答以下问题（不需要写在文档里，但最终答辩会被问到）：
+- 让 AI 解释参考系统的机制。
+- 让 AI 审查 seed 草稿是否目标过大、non-goals 太少、验证判据不可测。
+- 让 AI 提醒你某个目标会影响哪些后续阶段。
 
-1. 你选择的架构形式的理由是什么？你考虑过什么替代方案？
-2. 你拒绝了参考系统中的什么概念？如果现在重新选择，还会拒绝吗？
-3. 你的 OS 最大的设计约束是什么？这个约束会如何影响阶段 2（启动）和阶段 3（内存管理）的设计？
-4. 你的 OS 的 `non_goals` 中，哪一项最可能在未来某个阶段因为实际情况变成 `goal`？
+不允许：
 
-## 7. AI 使用边界
+- 让 AI 替你决定目标和设计哲学。
+- 直接跳过 ArchitectureSeed 进入 boot 代码。
+- 把没有理解的参考系统机制写进 borrowed_concepts。
 
-**允许**：
-- 让 AI 审查你的 ArchitectureSeed 草稿，指出可能遗漏的设计维度
-- 让 AI 解释参考系统中的概念（如"seL4 的 capability 模型和 Unix fd 模型的核心区别是什么"）
-- 让 AI 建议可能的 `rejected_concepts`（但你需要自己判断是否真的拒绝）
+## 9. 提交物
 
-**限制**：
-- AI 不能替你写 ArchitectureSeed——目标和设计哲学必须是你的
-
-**禁止**：
-- 跳过 ArchitectureSeed 直接进入阶段 2
-
-## 8. 提交物
-
-- `spec/architecture/seed.yaml` — 你的 ArchitectureSeed
-- `spec/architecture/composition.yaml` — CompositionSpec 骨架
-- 知识库导入确认（`vos kb list` 的输出）
-
-（以下为进阶探索方向，可在 ArchitectureSeed 中预留空间：是否设定可形式化验证的目标？是否考虑多 ISA 移植？如果目标兼容 Linux ELF，哪些 syscall 是必须实现的？）
+- `spec/architecture/seed.yaml`
+- `spec/architecture/composition.yaml`
+- `vos kb list` 输出摘要
+- `vos doctor`、`vos spec lint`、`vos spec check-consistency`、`vos arch lint` 输出摘要
+- `vos stage save --intent "complete architecture seed"` 的完成摘要

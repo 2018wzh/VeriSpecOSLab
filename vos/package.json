@@ -17,11 +17,21 @@
   ],
   "scripts": {
     "vos": "bun run apps/vos-cli/app/main.ts",
+    "manual:pdf": "bun run scripts/manual-pdf.ts",
+    "manual:pdf:install": "bun run scripts/install-manual-pdf-browsers.ts",
     "dev:agent": "cd apps/vos-agent && bun run app/main.ts serve --host 127.0.0.1 --port 8787",
     "dev:web": "cd apps/vos-web && bun run dev",
-    "typecheck": "cd packages/vos-platform && bun run typecheck && cd ../vos-core && bun run typecheck && cd ../vos-runtime && bun run typecheck && cd ../vos-server && bun run typecheck && cd ../vos-kb && bun run typecheck && cd ../vos-spec && bun run typecheck && cd ../../apps/vos-cli && bun run typecheck && cd ../vos-agent && bun run typecheck && cd ../vos-demo && bun run typecheck && cd ../vos-web && bun run typecheck",
-    "test": "cd packages/vos-platform && bun test --pass-with-no-tests && cd ../vos-core && bun test --pass-with-no-tests && cd ../vos-runtime && bun test --pass-with-no-tests && cd ../vos-server && bun test --pass-with-no-tests && cd ../vos-kb && bun test --pass-with-no-tests && cd ../vos-spec && bun test --pass-with-no-tests && cd ../../apps/vos-cli && bun test --pass-with-no-tests && cd ../vos-agent && bun test --pass-with-no-tests && cd ../vos-demo && bun test --pass-with-no-tests && cd ../vos-web && bun test --pass-with-no-tests",
+    "typecheck": "bun run typecheck:scripts && cd packages/vos-platform && bun run typecheck && cd ../vos-core && bun run typecheck && cd ../vos-runtime && bun run typecheck && cd ../vos-server && bun run typecheck && cd ../vos-kb && bun run typecheck && cd ../vos-spec && bun run typecheck && cd ../../apps/vos-cli && bun run typecheck && cd ../vos-agent && bun run typecheck && cd ../vos-demo && bun run typecheck && cd ../vos-web && bun run typecheck",
+    "typecheck:scripts": "tsc --noEmit -p tsconfig.scripts.json",
+    "test": "bun test scripts --pass-with-no-tests && cd packages/vos-platform && bun test --pass-with-no-tests && cd ../vos-core && bun test --pass-with-no-tests && cd ../vos-runtime && bun test --pass-with-no-tests && cd ../vos-server && bun test --pass-with-no-tests && cd ../vos-kb && bun test --pass-with-no-tests && cd ../vos-spec && bun test --pass-with-no-tests && cd ../../apps/vos-cli && bun test --pass-with-no-tests && cd ../vos-agent && bun test --pass-with-no-tests && cd ../vos-demo && bun test --pass-with-no-tests && cd ../vos-web && bun test --pass-with-no-tests",
     "test:demo-real-llm": "cd apps/vos-demo && bun run test:real-llm",
     "build": "cd apps/vos-cli && bun run build && cd ../vos-agent && bun run build && cd ../vos-demo && bun run build && cd ../vos-web && bun run build"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "@types/markdown-it": "^14.1.2",
+    "markdown-it": "^14.3.0",
+    "playwright": "^1.61.1",
+    "typescript": "^6.0.3"
   }
 }

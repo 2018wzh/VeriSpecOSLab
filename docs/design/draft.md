@@ -1533,7 +1533,7 @@ Agent Gateway
     ↓
 Project Agent Runtime
     ↓
-DevBox / Toolchain / CI / QEMU / Test / Spec Repo
+Course Runtime / Toolchain / CI / QEMU / Test / Spec Repo
 ```
 
 Agent Gateway 对 IDE 暴露 OpenAI-compatible API：
@@ -1606,7 +1606,7 @@ SpecLab Platform
 ```text
 SpecLab Core
   - OpenAI-compatible Agent Gateway
-  - Project DevBox
+  - Project Course Runtime
   - Spec parser / spec_lint
   - Test runner
   - Benchmark runner

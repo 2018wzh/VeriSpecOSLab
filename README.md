@@ -2,7 +2,7 @@
 
 VeriSpecOSLab 是一个面向操作系统课程与实验的 spec-first 工作区。它把本地 `spec/`、`vos` 命令入口、构建/运行/验证、evidence 记录和 Agent 协作放在同一条可复现的流程里。
 
-如果你第一次使用这个仓库，先读 [用户手册](docs/manual/index.md)。如果你想直接看一个完整 OS 示例，从 [xv6-spec](examples/xv6-spec/README.md) 开始。
+如果你第一次使用这个仓库，先读 [用户手册](docs/manual/README.md)。如果你想直接看一个完整 OS 示例，从 [xv6-spec](examples/xv6-spec/README.md) 开始。
 
 参赛文档在 [docs/comp/VeriSpecOSLab.pdf](docs/comp/VeriSpecOSLab.pdf) 和 [docs/comp/VeriSpecOSLab.pptx](docs/comp/VeriSpecOSLab.pptx) 里。
 
@@ -93,7 +93,7 @@ vos --project-root <project-root> report generate --stage <stage>
 vos --project-root <project-root> submit pack
 ```
 
-完整说明见 [用户手册](docs/manual/index.md)。
+完整说明见 [用户手册](docs/manual/README.md)。
 
 ## 开发命令
 
@@ -116,7 +116,7 @@ bun run dev:web
 
 ## 推荐阅读
 
-- [用户手册](docs/manual/index.md)：日常使用 `vos` 的入口（命令参考 + Spec Schema）。
+- [用户手册](docs/manual/README.md)：日常使用 `vos` 的入口（命令参考 + Spec Schema）。
 - [xv6-spec 示例](examples/xv6-spec/README.md)：跟着一个完整示例跑构建、QEMU 和公开验证。
 - [Spec 设计文档](docs/design/spec/README.md)：`spec/` 的结构和写法。
 - [VOS Runtime 设计文档](docs/design/toolchain/README.md)：`vos` 如何消费规格并编排命令。

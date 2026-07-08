@@ -86,7 +86,7 @@ VeriSpecOSLab 的做法是反过来的。
 
 确认你的环境：
 
-没搭好环境的话，先去 [Lab 0](../labs/lab0-environment.md)。
+如果还没有项目目录和 `vos`，先去 [Lab 1](../labs/lab1-seed.md)，按 0 起点流程初始化项目并运行 `vos doctor`。
 
 对 RISC-V 不熟的话，花半小时浏览 [RISC-V 参考](../appendices/riscv-reference.md)，不需要背，混个脸熟就行。
 

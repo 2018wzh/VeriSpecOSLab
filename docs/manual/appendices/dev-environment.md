@@ -1,74 +1,66 @@
 # 开发环境搭建
 
-## 方式一：使用 DevBox（推荐）
+VeriSpecOSLab 不要求所有学生使用同一种机器形态。你可以使用课程提供的容器化运行环境，也可以在本机安装工具链。无论选择哪条路径，最终都要让 `vos doctor`、RISC-V 工具链、QEMU、GDB 和 Git 可用。
 
-DevBox 是一个预配置的容器化开发环境，包含所有必需工具。
+## 方式一：课程运行环境
 
-### 前置条件
+如果课程发放了容器镜像或 `compose.yaml`，优先使用它。课程运行环境通常会预装 RISC-V 交叉编译器、QEMU、GDB、Bun 和 `vos` 所需依赖。
 
-- Docker 或 Podman
-- VS Code 及 Dev Containers 扩展（可选，但推荐）
+常见流程如下，具体服务名以课程模板为准：
 
-### 搭建步骤
-
-1. 克隆项目仓库：
-
-```bash
+```sh
 git clone <your-repo-url> student-project
 cd student-project
-```
 
-2. 启动 DevBox：
-
-```bash
 docker compose up -d
+docker compose ps
+docker compose exec <service> sh
 ```
 
-3. 进入容器：
+进入环境后验证工具：
 
-```bash
-docker compose exec devbox fish
-```
-
-4. 验证环境：
-
-```bash
+```sh
 riscv64-unknown-elf-gcc --version
 qemu-system-riscv64 --version
+gdb-multiarch --version
+bun --version
+git --version
+```
+
+如果课程模板没有预装 `vos`，在环境内安装：
+
+```sh
+bun install -g github:2018wzh/VeriSpecOSLab
 vos --help
 ```
 
-### 使用 VS Code Dev Container
-
-如果你使用 VS Code，打开项目后会自动提示"Reopen in Container"，点击即可。
-
 ## 方式二：本地安装
 
-如果你偏好本地环境，需要手动安装以下工具。
+本地安装适合已经熟悉系统工具链的同学。不同系统的包名可能不同，下面只列常见命令；如果课程给了更具体的镜像或脚本，以课程说明为准。
 
 ### RISC-V 交叉编译工具链
 
 Ubuntu / Debian：
 
-```bash
+```sh
 sudo apt install gcc-riscv64-unknown-elf
 ```
 
 Arch Linux：
 
-```bash
+```sh
 sudo pacman -S riscv64-elf-gcc
 ```
 
 macOS：
 
-```bash
+```sh
 brew install riscv64-elf-gcc
 ```
 
 验证：
 
-```bash
+```sh
 riscv64-unknown-elf-gcc --version
 ```
 
@@ -76,75 +68,76 @@ riscv64-unknown-elf-gcc --version
 
 Ubuntu / Debian：
 
-```bash
+```sh
 sudo apt install qemu-system-misc
 ```
 
 Arch Linux：
 
-```bash
+```sh
 sudo pacman -S qemu-system-riscv
 ```
 
 macOS：
 
-```bash
+```sh
 brew install qemu
 ```
 
 验证：
 
-```bash
+```sh
 qemu-system-riscv64 --version
 ```
 
-### GDB（多架构）
+### GDB
 
-```bash
+Ubuntu / Debian：
+
+```sh
 sudo apt install gdb-multiarch
 ```
 
+macOS 可使用 Homebrew 提供的 GDB，或使用课程运行环境中的 `gdb-multiarch`。
+
 验证：
 
-```bash
+```sh
 gdb-multiarch --version
 ```
 
 ### vos
 
-从 GitHub 仓库安装 `vos`：
+从 GitHub 安装 `vos`：
 
-```bash
+```sh
 bun install -g github:2018wzh/VeriSpecOSLab
 ```
 
-这只安装 CLI，不要求 clone VeriSpecOSLab 工具仓库。之后可以直接通过 `vos` 调用，并用 `--project-root` 指向你的学生项目。
+这只安装 CLI，不要求 clone VeriSpecOSLab 工具仓库。之后可以在学生项目中用 `--project-root` 指向项目根目录。
 
 验证：
 
-```bash
+```sh
 vos --help
 ```
 
 ## 环境验证清单
 
-运行以下命令确认所有工具可用：
+在学生项目根目录运行：
 
-```bash
-# 编译器
+```sh
+vos --project-root . init
+vos --project-root . doctor
+```
+
+再确认基础工具：
+
+```sh
 riscv64-unknown-elf-gcc --version
-
-# 模拟器
 qemu-system-riscv64 --version
-
-# 调试器
 gdb-multiarch --version
-
-# vos
-vos --help
-
-# Git
 git --version
 ```
 
-全部通过后，你的开发环境即准备就绪。可以开始 [Lab 0](../labs/lab0-environment.md)。
+这些检查通过后，开始 [Lab 1](../labs/lab1-seed.md)。

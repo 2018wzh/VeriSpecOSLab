@@ -47,7 +47,7 @@ SpecLab Platform
 ```text
 SpecLab Core
   - OpenAI-compatible Agent Gateway
-  - Project DevBox
+  - Project Course Runtime
   - Spec parser / spec_lint
   - Test runner
   - Benchmark runner
@@ -69,7 +69,7 @@ Domain Lab Plugin
 ```text
 - Agent Gateway
 - OpenAI-compatible IDE 接入
-- DevBox / Sandbox
+- Course Runtime / Sandbox
 - 日志审计
 - 测试矩阵
 - 报告生成
@@ -722,7 +722,7 @@ OS 课程：
 ### 阶段一：SpecOSLab 稳定化
 
 ```text
-- 完成 OS DevBox
+- 完成 OS 课程运行环境
 - 完成 OpenAI-compatible Agent Gateway
 - 完成 OS profile 测试矩阵
 - 完成 AICollaborationLog

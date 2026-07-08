@@ -30,7 +30,7 @@ vos report generate  # 生成验证报告
 
 ## 开发环境
 
-推荐使用预配置的 DevBox 容器环境，详见 [开发环境搭建](dev-environment.md)。DevBox 已包含所有必需工具，无需手动安装。
+推荐优先使用课程提供的运行环境，详见 [开发环境搭建](dev-environment.md)。课程运行环境通常会预装必需工具，减少本地安装差异。
 
 如果你偏好本地安装，各工具的安装说明分别见：
 - [QEMU 使用指南](qemu-guide.md)

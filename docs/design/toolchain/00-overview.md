@@ -16,7 +16,7 @@
 - `vos-cli`
 - `vos-runtime`
 - `vos-agent`
-- 平台 CI / DevBox 集成
+- 平台 CI / 课程运行环境集成
 
 ## 1. 定位
 
@@ -65,7 +65,7 @@ Spec -> Agent -> Patch -> Build -> Test -> Verify -> Evidence -> Feedback
 1. 为 Agent、学生 CLI 和平台 CI 提供稳定、结构化、可审计的命令接口。
 2. 将 spec lint、arch lint、build、QEMU、test、verify、trace、debug、report 纳入统一执行模型。
 3. 将每次 patch、测试和诊断绑定到本地 spec、证据和阶段约束。
-4. 让课程平台、在线评测和本地 DevBox 复用同一入口。
+4. 让课程平台、在线评测和本地课程运行环境复用同一入口。
 5. 防止 Agent 绕过规格、测试、权限和审计要求。
 
 ## 4. 非目标

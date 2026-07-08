@@ -63,7 +63,7 @@ Phase 4-9 额外命令：
 
 ---
 
-## Phase 0: 项目初始化（已就绪）
+## Bootstrap: 项目初始化（已就绪）
 
 项目已在独立 repo `/home/wzh/student-lab/`，含完整 spec + kernel + Makefile + .vos 配置。
 当前状态：Phase 3 代码就绪，`.vos/runs/` + `build/` + cache 已清理。

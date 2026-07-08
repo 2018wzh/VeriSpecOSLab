@@ -342,7 +342,6 @@ VeriSpecOSLab
 │   └── Verification
 │
 ├── 2. Labs
-│   ├── Lab 0
 │   ├── Lab 1
 │   ├── ...
 │   └── Final Lab

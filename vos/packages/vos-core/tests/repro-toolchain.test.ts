@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { executeCliInvocation } from "../src/main.ts";
 import type { AgentTaskRequest } from "vos-agent/headless";
@@ -94,6 +95,52 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
     expect(manifest.input_files).toContain(".vos/toolchain.json");
     expect(manifest.input_files).toContain("Makefile");
     expect(manifest.output_files).toContain("build/kernel.bin");
+  });
+
+  test("init bootstraps an empty directory with git, default architecture stage, and a scoped initial commit", async () => {
+    const projectRoot = makeEmptyProject();
+    writeFileSync(join(projectRoot, "notes.txt"), "private scratch\n");
+
+    const result = await withGitIdentity(async () =>
+      await executeCliInvocation([
+        "bun",
+        "vos",
+        "--project-root",
+        projectRoot,
+        "--json",
+        "init",
+      ], { print: false })
+    );
+
+    expect(result.status).toBe("passed");
+    expect(existsSync(join(projectRoot, ".git"))).toBe(true);
+    expect(readFileSync(join(projectRoot, ".vos", "project.yaml"), "utf8")).toContain("current_stage: architecture-seed");
+    expect(readFileSync(join(projectRoot, ".vos", "commit-ledger.jsonl"), "utf8")).toContain("initialize VOS project ledger");
+    expect(git(projectRoot, ["log", "-1", "--pretty=%s"]).stdout.trim()).toBe("[vos][init] Initialize VOS project");
+    expect(git(projectRoot, ["ls-tree", "-r", "--name-only", "HEAD"]).stdout.split(/\r?\n/).filter(Boolean).sort()).toEqual([
+      ".gitignore",
+      "AGENTS.md",
+    ]);
+    expect(git(projectRoot, ["status", "--porcelain", "--untracked-files=all"]).stdout).toContain("?? notes.txt");
+  });
+
+  test("init reports missing git identity instead of inventing an author", async () => {
+    const projectRoot = makeEmptyProject();
+
+    const result = await withoutGitIdentity(async () =>
+      await executeCliInvocation([
+        "bun",
+        "vos",
+        "--project-root",
+        projectRoot,
+        "--json",
+        "init",
+      ], { print: false })
+    );
+
+    expect(result.status).toBe("policy_blocked");
+    expect(result.message).toContain("git identity is required");
+    expect(gitMaybe(projectRoot, ["rev-parse", "--verify", "HEAD"]).ok).toBe(false);
   });
 
   test("init does not overwrite an existing AGENTS.md", async () => {
@@ -527,13 +574,82 @@ function makeGitProject(options: { manifest: boolean; policy?: boolean }): strin
   return root;
 }
 
+function makeEmptyProject(): string {
+  const root = mkdtempSync(join(tmpdir(), "vos-init-empty-"));
+  tmpRoots.push(root);
+  return root;
+}
+
+async function withGitIdentity<T>(fn: () => Promise<T>): Promise<T> {
+  return await withEnv({
+    GIT_AUTHOR_NAME: "VOS Test",
+    GIT_AUTHOR_EMAIL: "vos-test@example.com",
+    GIT_COMMITTER_NAME: "VOS Test",
+    GIT_COMMITTER_EMAIL: "vos-test@example.com",
+  }, fn);
+}
+
+async function withoutGitIdentity<T>(fn: () => Promise<T>): Promise<T> {
+  const isolatedConfigHome = mkdtempSync(join(tmpdir(), "vos-empty-git-config-"));
+  tmpRoots.push(isolatedConfigHome);
+  return await withEnv({
+    GIT_AUTHOR_NAME: undefined,
+    GIT_AUTHOR_EMAIL: undefined,
+    GIT_COMMITTER_NAME: undefined,
+    GIT_COMMITTER_EMAIL: undefined,
+    GIT_CONFIG_GLOBAL: join(tmpdir(), `vos-missing-global-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_COUNT: "2",
+    GIT_CONFIG_KEY_0: "user.name",
+    GIT_CONFIG_VALUE_0: "",
+    GIT_CONFIG_KEY_1: "user.email",
+    GIT_CONFIG_VALUE_1: "",
+    XDG_CONFIG_HOME: isolatedConfigHome,
+  }, fn);
+}
+
+async function withEnv<T>(updates: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {
+  const previous = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(updates)) {
+    previous.set(key, process.env[key]);
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
 function git(cwd: string, args: string[]): { stdout: string; stderr: string } {
-  const proc = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
-  if (proc.exitCode !== 0) {
-    throw new Error(`git ${args.join(" ")} failed: ${proc.stderr.toString()}`);
+  const result = gitMaybe(cwd, args);
+  if (!result.ok) {
+    throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
   }
   return {
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
+}
+
+function gitMaybe(cwd: string, args: string[]): { ok: true; stdout: string; stderr: string } | { ok: false; stdout: string; stderr: string } {
+  const proc = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  const result = {
     stdout: proc.stdout.toString(),
     stderr: proc.stderr.toString(),
   };
+  if (proc.exitCode !== 0) {
+    return { ok: false, ...result };
+  }
+  return { ok: true, ...result };
 }

@@ -199,7 +199,9 @@ export async function executeCliInvocation(
 
   const projectRoot = path.resolve(parsed.global.projectRoot);
   return await withProjectEnv(projectRoot, async () => {
-    await ensureDefaultProjectConfig(projectRoot);
+    if (parsed.command.kind !== "init") {
+      await ensureDefaultProjectConfig(projectRoot);
+    }
     const progress = createCommandProgress({
       mode: parsed.global.progress,
       json: parsed.global.json,
@@ -808,7 +810,13 @@ export async function executeInit(
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
   const evidence = context.evidence;
+  const initialFileSnapshots = snapshotInitCommitTargets(projectRoot);
+  const gitInitialized = ensureProjectGitRepository(projectRoot);
   await ensureDefaultProjectConfig(projectRoot);
+  const initialCommitTargets = changedInitCommitTargets(projectRoot, initialFileSnapshots);
+  const initialCommitCreated = currentHead(projectRoot)
+    ? false
+    : createInitialProjectCommit(projectRoot, initialCommitTargets);
   await ensureHeadLedgerEntry({
     projectRoot,
     actor: "human",
@@ -817,7 +825,116 @@ export async function executeInit(
     changedTargets: [".vos/project.yaml", ".vos/policy.yaml", ".gitignore", "AGENTS.md"],
     runId: evidence.run_id,
   });
-  return { status: "passed", details: { initialized: true, ledger: true } };
+  return {
+    status: "passed",
+    details: {
+      initialized: true,
+      ledger: true,
+      git_initialized: gitInitialized,
+      initial_commit_created: initialCommitCreated,
+    },
+  };
+}
+
+type InitFileSnapshot = Record<string, string | undefined>;
+
+const INIT_COMMIT_TARGETS = [".gitignore", "AGENTS.md"];
+
+function snapshotInitCommitTargets(projectRoot: string): InitFileSnapshot {
+  const snapshots: InitFileSnapshot = {};
+  for (const target of INIT_COMMIT_TARGETS) {
+    const filePath = path.join(projectRoot, target);
+    snapshots[target] = existsSync(filePath) ? readFileSync(filePath, "utf8") : undefined;
+  }
+  return snapshots;
+}
+
+function changedInitCommitTargets(projectRoot: string, snapshots: InitFileSnapshot): string[] {
+  return INIT_COMMIT_TARGETS.filter((target) => {
+    const filePath = path.join(projectRoot, target);
+    if (!existsSync(filePath)) return false;
+    return readFileSync(filePath, "utf8") !== snapshots[target];
+  });
+}
+
+function ensureProjectGitRepository(projectRoot: string): boolean {
+  if (gitInitMaybe(projectRoot, ["rev-parse", "--is-inside-work-tree"]).ok) {
+    return false;
+  }
+  const result = gitInitMaybe(projectRoot, ["init"]);
+  if (!result.ok) {
+    throw new CliError(`git init failed: ${result.stderr.trim()}`, "failed");
+  }
+  return true;
+}
+
+function createInitialProjectCommit(projectRoot: string, targets: string[]): boolean {
+  if (!hasGitIdentity(projectRoot)) {
+    throw new CliError(
+      "git identity is required before vos init can create the initial commit",
+      "policy_blocked",
+      {
+        reason: "git_identity_missing",
+        suggested_next_commands: [
+          "git config user.name \"Your Name\"",
+          "git config user.email \"you@example.com\"",
+          "vos init",
+        ],
+      },
+    );
+  }
+
+  if (targets.length > 0) {
+    const add = gitInitMaybe(projectRoot, ["add", "--", ...targets]);
+    if (!add.ok) {
+      throw new CliError(`git add failed: ${add.stderr.trim()}`, "failed");
+    }
+  }
+  const commitArgs = targets.length > 0
+    ? ["commit", "-m", "[vos][init] Initialize VOS project"]
+    : ["commit", "--allow-empty", "-m", "[vos][init] Initialize VOS project"];
+  const commit = gitInitMaybe(projectRoot, commitArgs);
+  if (!commit.ok) {
+    throw new CliError(`git commit failed: ${commit.stderr.trim()}`, "failed");
+  }
+  return true;
+}
+
+function hasGitIdentity(projectRoot: string): boolean {
+  const name = firstNonEmpty(
+    process.env.GIT_COMMITTER_NAME,
+    process.env.GIT_AUTHOR_NAME,
+    gitConfigValue(projectRoot, "user.name"),
+  );
+  const email = firstNonEmpty(
+    process.env.GIT_COMMITTER_EMAIL,
+    process.env.GIT_AUTHOR_EMAIL,
+    gitConfigValue(projectRoot, "user.email"),
+  );
+  return Boolean(name && email);
+}
+
+function firstNonEmpty(...values: Array<string | undefined>): string | undefined {
+  return values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim();
+}
+
+function gitConfigValue(projectRoot: string, key: string): string | undefined {
+  const result = gitInitMaybe(projectRoot, ["config", "--get", key]);
+  return result.ok ? result.stdout.trim() || undefined : undefined;
+}
+
+function gitInitMaybe(projectRoot: string, args: string[]): { ok: true; stdout: string; stderr: string } | { ok: false; stdout: string; stderr: string } {
+  const proc = Bun.spawnSync(["git", ...args], {
+    cwd: projectRoot,
+    env: process.env,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const result = {
+    stdout: proc.stdout.toString(),
+    stderr: proc.stderr.toString(),
+  };
+  return proc.exitCode === 0 ? { ok: true, ...result } : { ok: false, ...result };
 }
 
 export async function executeDoctor(
@@ -836,8 +953,10 @@ export async function executeDoctor(
   const policyPath = path.join(projectRoot, ".vos", "policy.yaml");
   checks.push(doctorFileCheck("project-config", "project", projectPath, "run `vos init` to create project metadata"));
   checks.push(doctorFileCheck("policy-config", "project", policyPath, "run `vos init` to create default policy metadata"));
+  let currentStage: string | undefined;
   try {
     const project = await loadProjectConfig(projectRoot);
+    currentStage = project.current_stage;
     const specRoot = project.spec_root ?? "spec";
     checks.push(doctorFileCheck("spec-root", "project", path.resolve(projectRoot, specRoot), "create the configured spec root or update .vos/project.yaml"));
   } catch (error) {
@@ -852,6 +971,7 @@ export async function executeDoctor(
   }
 
   let manifest: ToolchainManifestV2 | undefined;
+  const requiresToolchainManifest = currentStage !== "architecture-seed";
   try {
     const loaded = await loadToolchainManifest({ projectRoot });
     manifest = loaded.manifest;
@@ -866,12 +986,14 @@ export async function executeDoctor(
     checks.push({
       name: "toolchain-manifest",
       category: "toolchain",
-      required: true,
+      required: requiresToolchainManifest,
       ok: false,
       message: errorMessage(error),
-      hint: "run `vos build generate` to create .vos/toolchain.json",
+      hint: requiresToolchainManifest ? "run `vos build generate` to create .vos/toolchain.json" : "toolchain manifest is optional during architecture-seed",
     });
-    suggested.add("vos build generate");
+    if (requiresToolchainManifest) {
+      suggested.add("vos build generate");
+    }
   }
 
   if (manifest) {
@@ -885,9 +1007,9 @@ export async function executeDoctor(
     }
   }
 
-  for (const command of OPTIONAL_DEVBOX_COMMANDS) {
+  for (const command of OPTIONAL_TOOL_COMMANDS) {
     if (!requiredCommands.has(command)) {
-      checks.push(doctorCommandCheck(command, "devbox", undefined, false));
+      checks.push(doctorCommandCheck(command, "optional-tools", undefined, false));
     }
   }
 
@@ -3566,7 +3688,7 @@ function commandExists(cmd: string): boolean {
   });
 }
 
-type DoctorCategory = "base" | "project" | "toolchain" | "toolchain-command" | "devbox";
+type DoctorCategory = "base" | "project" | "toolchain" | "toolchain-command" | "optional-tools";
 
 interface DoctorCheck {
   name: string;
@@ -3578,7 +3700,7 @@ interface DoctorCheck {
   hint?: string;
 }
 
-const OPTIONAL_DEVBOX_COMMANDS = [
+const OPTIONAL_TOOL_COMMANDS = [
   "clang",
   "gcc",
   "make",

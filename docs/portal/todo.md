@@ -1,6 +1,6 @@
 # VOS Portal TODO
 
-## Phase 0: Skeleton
+## Bootstrap: Skeleton
 
 - [x] Add TypeScript Portal domain models in the backend/API surface.
 - [x] Add Bun `apps/vos-agent` backend with Portal REST API and Agent Gateway.

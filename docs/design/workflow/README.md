@@ -11,7 +11,7 @@
 - [`../spec/`](../spec/README.md) 定义学生仓库中的本地设计真相。
 - [`../toolchain/`](../toolchain/README.md) 定义 `vos` 如何消费输入并编排验证、证据采集与报告。
 - [`../platform/`](../platform/README.md) 定义课程平台的实现、接口、状态机和服务职责。
-- [`../arch.md`](../arch.md) 定义 Agent Runtime、DevBox 和 OpenAI-compatible 接入实现。
+- [`../arch.md`](../arch.md) 定义 Agent Runtime、课程运行环境和 OpenAI-compatible 接入实现。
 
 本目录只回答“课程过程如何运转、角色如何交接、证据如何在教学中流动”，不重复定义平台内部 API、`vos` 内部执行模型或学生本地 Spec 语义。
 建议阅读顺序：

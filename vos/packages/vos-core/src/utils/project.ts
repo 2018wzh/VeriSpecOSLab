@@ -119,7 +119,7 @@ export async function ensureDefaultProjectConfig(projectRoot: string): Promise<v
   if (!existsSync(projectPath)) {
     writeFileSync(
       projectPath,
-      `project_id: local-project\nspec_root: spec\ncurrent_stage: boot\n`,
+      `project_id: local-project\nspec_root: spec\ncurrent_stage: architecture-seed\n`,
     );
   }
   if (!existsSync(policyPath)) {

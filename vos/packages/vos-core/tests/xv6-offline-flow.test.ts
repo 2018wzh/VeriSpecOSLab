@@ -1063,6 +1063,31 @@ describe("xv6-spec offline runtime flow", () => {
     expect(result.details.suggested_next_commands).toContain("vos build generate");
   });
 
+  test("doctor allows architecture-seed projects before a toolchain manifest exists", async () => {
+    const projectRoot = makeXv6Fixture({ toolchainManifest: false });
+    writeFileSync(join(projectRoot, ".vos", "project.yaml"), [
+      "project_id: xv6-offline",
+      "spec_root: spec",
+      "current_stage: architecture-seed",
+      "",
+    ].join("\n"));
+    const evidence = await EvidenceWriter.create({
+      projectRoot,
+      evidenceDir: ".vos",
+      command: ["doctor"],
+      args: [],
+    });
+
+    const result = await executeCommand({ kind: "doctor" }, {
+      projectRoot,
+      global: { projectRoot, json: false },
+      evidence,
+    });
+
+    expect(result.status).toBe("passed");
+    expect(result.details.missing).not.toContain("toolchain-manifest");
+  });
+
   test("doctor reports missing required manifest tools", async () => {
     const projectRoot = makeXv6Fixture();
     writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify({
@@ -1095,7 +1120,7 @@ describe("xv6-spec offline runtime flow", () => {
     expect(JSON.stringify(result.details.checks)).toContain("vos-doctor-missing-tool");
   });
 
-  test("doctor checks manifest command entrypoints without failing on optional devbox tools", async () => {
+  test("doctor checks manifest command entrypoints without failing on optional tools", async () => {
     const projectRoot = makeXv6Fixture();
     writeFileSync(join(projectRoot, ".vos", "toolchain.json"), JSON.stringify(manifestV2({
       buildCommands: [{ name: "noop", command: okCommand() }],
@@ -1129,7 +1154,7 @@ describe("xv6-spec offline runtime flow", () => {
       required: true,
       ok: true,
     }));
-    expect(checks.filter((check) => check.category === "devbox").every((check) => check.required === false)).toBe(true);
+    expect(checks.filter((check) => check.category === "optional-tools").every((check) => check.required === false)).toBe(true);
   });
 
   test("rejects manifest files that were not generated in the project root", async () => {
