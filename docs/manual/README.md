@@ -119,8 +119,9 @@ dist/manual/
     final-lab-lab.pdf
   shared/
     shared-specs.pdf
-    shared-appendices.pdf
     shared-vos.pdf
+  appendices/
+    appendices.pdf
   teacher/
     teacher.pdf
 ```

@@ -8,11 +8,14 @@
 
 ## 2. 从 0 起步
 
-以下命令假设你已经安装 Bun，并准备在一个新目录中开始课程项目。
+首先需要安装 Bun（[https://bun.sh/](https://bun.sh/)），然后安装工具链
 
 ```sh
-bun install -g github:2018wzh/VeriSpecOSLab
+bun install -g -f github:2018wzh/VeriSpecOSLab
+```
+这条命令需要在每次 lab 开始前运行一次，确保你用的是最新版本的 `vos` 工具链，然后准备在一个新目录中开始课程项目。
 
+```sh
 mkdir my-os
 cd my-os
 
@@ -29,6 +32,105 @@ git config user.name "Your Name"
 git config user.email "you@example.com"
 vos init
 ```
+
+## 2a. 配置 Agent
+
+`vos init` 已经在项目根目录创建了 `AGENTS.md`。这份文件定义了 AI Agent 在本项目中的行为边界——它能读什么、改什么、用什么工具。在你开始写 ArchitectureSeed 之前，花五分钟把 Agent 配置好，后续九个阶段你会反复用到它。
+
+### 2a.1 Agent 是什么
+
+VeriSpecOSLab 内置了一个项目级 AI Agent（基于 `vos-agent`），它不是你平常用的通用聊天 AI。Agent 受三层约束：
+
+1. **身份（Identity）** — 决定 Agent 扮演什么角色。Lab 1 阶段主要用到 `knowledgebase.v1`（设计问答）和 `spec-author.v2`（规格审查）。
+2. **能力包（Capability Pack）** — 限制 Agent 能调用哪些工具、能读写哪些路径。
+3. **阶段门禁（Stage Gate）** — 根据你当前所处的实验阶段，动态开放或关闭 Agent 的能力。阶段 1 只开放知识库查询和规格审查，不允许生成代码。
+
+这三层约束的核心目的：**让 AI 帮你思考，但不替你思考。**
+
+### 2a.2 配置 Provider
+
+Agent 依赖 LLM provider 运行。至少配置一个 provider 的 API key。推荐同时配置两个——`smart` 模式（Anthropic）用于日常问答，`deep` 模式（OpenAI 兼容）用于复杂设计推理。
+
+```sh
+# 方案 A：只用 Anthropic（够用）
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# 方案 B：Anthropic + OpenAI（推荐）
+export ANTHROPIC_API_KEY="sk-ant-..."
+export OPENAI_API_KEY="sk-..."
+```
+
+如果你使用 OpenAI 兼容的第三方 provider（如 Azure、DeepSeek、本地 Ollama），额外配置 `OPENAI_BASE_URL`：
+
+```sh
+export OPENAI_BASE_URL="https://your-provider.com/v1"
+export OPENAI_API_KEY="sk-..."
+```
+
+验证配置是否生效：
+
+```sh
+vos agent ask "解释 xv6 的 Sv39 分页设计中，为什么选择三级页表而不是二级或四级？"
+```
+
+如果 Agent 返回了有引用的回答，配置成功。如果报 `provider not configured`，检查环境变量是否正确 export，以及 key 是否有效。
+
+### 2a.3 理解 AGENTS.md
+
+打开项目根目录的 `AGENTS.md`。初始内容大致如下：
+
+```markdown
+# AGENTS.md
+
+Guidance for agents and humans working in this VOS project.
+
+## Project
+This is a VeriSpecOSLab teaching OS project. ...
+
+## Agent Instructions
+- Inspect relevant specs and existing files before proposing patches.
+- Keep changes scoped to the requested task and allowed paths.
+- Do not edit generated `.vos/runs/` or `.vos/worktrees/` artifacts.
+```
+
+Lab 1 阶段你不需要修改这份文件。但理解它的作用很重要：**Agent 每次被调用时，会先读这份文件来理解你的项目约定和边界。** 后续阶段如果你引入了新的设计规则（比如"所有 syscall 编号必须从 100 开始"），你应该更新 `AGENTS.md` 让 Agent 知道。
+
+### 2a.4 Agent 在设计阶段的使用方式
+
+阶段 1 的核心产出是 ArchitectureSeed——一份设计文档。Agent 在这个阶段的正确用法是**设计对话**，不是**代写答案**。
+
+**推荐的 Agent 使用模式：**
+
+```sh
+# 进入交互式设计问答模式（knowledgebase.v1 身份）
+vos agent ask -i
+
+# 然后尝试这些对话：
+> xv6 的进程模型和 Linux 的进程模型在设计哲学上有什么不同？我的 OS 目标是教学清晰性优先，应该更接近哪个？
+> 我选了宏内核架构。宏内核的哪些设计选择会和"安全隔离"这个 goal 冲突？
+> 看我的 seed.yaml 草稿：我的 goals 和 non_goals 之间有矛盾吗？
+```
+
+**阶段 1 中 Agent 不能做的事：**
+
+- 替你写 seed.yaml（`spec-author.v2` 可以审查你写的草稿，但不能替你起草）
+- 替你决定内核架构（可以列出选项和后果，但不能说"你应该选 X"）
+- 生成任何 `.c`/`.rs`/`.zig` 实现代码（阶段 1 未开放代码生成能力）
+
+**阶段 1 中 Agent 擅长的事：**
+
+- 解释参考系统（xv6、Linux、seL4）的具体机制
+- 审查你的 ArchitectureSeed 草稿——目标是否过大、non-goals 是否太少、验证判据是否可测
+- 提醒你某个设计选择会影响哪些后续阶段
+- 根据你的目标从 KB 中检索相关的设计案例和参考资料
+
+### 2a.5 知识库（KB）准备
+
+Agent 的设计问答依赖知识库。知识库的具体导入步骤见下方 [§7 导入知识库](#7-导入知识库)——
+
+这里先记住一点：**知识库是你的 Agent 的"记忆"。只有你导入的资料，Agent 才能在设计问答中引用。** 后续每个阶段开始前，导入该阶段需要的参考资料——不要一次性导入所有资料，避免 Agent 的检索质量下降。
+
+---
 
 ## 3. 目标先行
 
@@ -83,42 +185,7 @@ initial_validation_binding:
 
 详细字段见 [ArchitectureDesignSpec 编写指南](../specs/architecture-design-spec.md)。
 
-### 4.2 CompositionSpec 骨架
-
-创建 `spec/architecture/composition.yaml`，写出至少一条跨组件规则。阶段 1 的规则可以很朴素，但要和你的目标一致。
-
-```yaml
-id: my-os-composition
-title: Initial Architecture Composition
-summary: >
-  第一版跨组件规则，用于约束后续 boot、memory 和 syscall 设计。
-
-cross_component_rules:
-  - name: boot-before-memory
-    description: "启动路径必须先建立可观察输出，再进入后续内存管理工作。"
-    invariant: "boot 阶段失败时必须留下串口日志或 VOS evidence。"
-    affected_modules: [kernel/boot, kernel/memory]
-    tests: [qemu_boot_smoke]
-```
-
-## 5. 导入知识库
-
-先把项目 spec 加入本地 KB：
-
-```sh
-vos kb add spec --source-kind project --recursive
-```
-
-再按你的设计目标导入至少一份参考资料。资料可以来自课程发放的本地文件，也可以是你自己选择的公开参考资料。
-
-```sh
-vos kb add docs/reference/xv6-book.pdf --source-kind course --title "xv6 book"
-vos kb list
-```
-
-如果你选择微内核、capability、Linux ELF 兼容或硬件移植，参考资料也应对应这些目标。不要只导入和自己路线无关的材料。
-
-## 5a. 可选：裸机编程参考阅读
+## 5. 可选：裸机编程参考阅读
 
 > 如果你有 STM32 或 Arduino 裸机编程经验，建议在写 ArchitectureSeed 之前阅读 [附录：裸机编程参考](../appendices/stm32-bare-metal-lab.md)。该附录以 STM32F103 为例，对比展示了同一任务在裸机和 OS 环境下的完整代码差异，帮助你明确"我的 OS 至少要抽象掉哪些裸机细节"。
 
@@ -136,23 +203,33 @@ design_notes:
 完成 seed、composition 和 KB 导入后，运行：
 
 ```sh
-vos doctor
 vos spec lint
-vos spec check-consistency
 vos arch lint
-vos kb list
 vos stage save --intent "complete architecture seed"
 ```
 
-`architecture-seed` 阶段还不要求 `.vos/toolchain.json`。从 boot 阶段开始，`vos doctor` 会继续检查工具链 manifest 和其中声明的构建、运行、验证工具。
+## 7. 导入知识库
 
-## 7. 质量门禁
+先把项目 spec 加入本地 KB：
+
+```sh
+vos kb add spec --source-kind project --recursive
+```
+
+再按你的设计目标导入至少一份参考资料。资料可以来自课程发放的本地文件，也可以是你自己选择的公开参考资料。
+
+```sh
+vos kb add docs/reference/xv6-book.pdf --source-kind course --title "xv6 book"
+vos kb list
+```
+
+如果你选择微内核、capability、Linux ELF 兼容或硬件移植，参考资料也应对应这些目标。不要只导入和自己路线无关的材料。
+
+## 8. 质量门禁
 
 自动检查：
 
-- [ ] `vos doctor` 通过，或只留下与后续 boot 工具链相关的可解释提示。
 - [ ] `vos spec lint` 通过。
-- [ ] `vos spec check-consistency` 通过。
 - [ ] `vos arch lint` 通过。
 - [ ] `vos kb list` 能看到项目 spec 和至少一份与你目标相关的参考资料。
 - [ ] `vos stage save --intent "complete architecture seed"` 已完成阶段保存。
@@ -166,7 +243,7 @@ vos stage save --intent "complete architecture seed"
 - [ ] CompositionSpec 至少包含一条和目标相关的跨组件规则。
 - [ ] （可选）完成裸机对比实验，ArchitectureSeed 中记录了至少一条"本 OS 需要抽象掉的裸机细节"。
 
-## 8. AI 使用边界
+## 9. AI 使用边界
 
 允许：
 
@@ -180,10 +257,9 @@ vos stage save --intent "complete architecture seed"
 - 直接跳过 ArchitectureSeed 进入 boot 代码。
 - 把没有理解的参考系统机制写进 borrowed_concepts。
 
-## 9. 提交物
+## 10. 提交物
 
-- `spec/architecture/seed.yaml`
-- `spec/architecture/composition.yaml`
+- 代码仓库地址
 - `vos kb list` 输出摘要
-- `vos doctor`、`vos spec lint`、`vos spec check-consistency`、`vos arch lint` 输出摘要
+- `vos spec lint`、`vos spec check-consistency`、`vos arch lint` 输出摘要
 - `vos stage save --intent "complete architecture seed"` 的完成摘要
