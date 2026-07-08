@@ -27,6 +27,10 @@ Use TypeScript ESM with explicit `.ts` imports and `import type` for type-only i
 
 Tests use Bun’s built-in test runner. Name tests `*.test.ts` and place them under the owning module’s `tests/` tree, for example `vos/packages/vos-core/tests/xv6-offline-flow.test.ts` or `vos/packages/vos-server/tests/http.test.ts`. Add focused unit tests for parsers, schemas, and policy gates; add integration-style tests for build/run/verify or agent flows. Before handing off code, run `bun run typecheck` and `bun run test` from `vos/`.
 
+## Dirty Worktree & Reproducibility Gates
+
+Dirty worktree restrictions apply only to commands that generate code, apply patches, run build/test/verify evidence, package submissions, or mutate persistent project state. Read-only checks and Q&A commands such as `stage show`, `spec lint --no-agent`, `toolchain lint`, `agent context`, `agent plan`, `agent ask`, `debug explain-log`, and `kb search` may run with local draft files present. Keep clean tree and current `HEAD` ledger gates for `build generate`, non-dry-run `build`/`run qemu`/`test`/`verify`/`trace syscall`, `agent generate`, `agent apply-patch`, `agent validate-generated`, `spec patch apply`, `toolchain init`, `report generate`, mutating KB commands, and `submit pack`.
+
 ## Commit & Pull Request Guidelines
 
 Recent commits use bracketed scopes such as `[vos][cli] Fix xv6 offline runtime` and `[docs][agent] Document headless profile API`. Use the same pattern: `[area][component] Imperative summary`. Pull requests should describe the behavioral change, list tests run, note affected docs/specs, and call out any generated `.vos/` artifacts or local-only files.

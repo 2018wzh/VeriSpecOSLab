@@ -14,8 +14,26 @@ afterEach(() => {
 });
 
 describe("reproducibility gate and agent-assisted toolchain generation", () => {
-  test("blocks controlled build when current HEAD has no ledger entry", async () => {
+  test("blocks evidence-producing build when current HEAD has no ledger entry", async () => {
     const projectRoot = makeGitProject({ manifest: true });
+
+    const result = await executeCliInvocation([
+      "bun",
+      "vos",
+      "--project-root",
+      projectRoot,
+      "--json",
+      "build",
+    ], { print: false });
+
+    expect(result.status).toBe("policy_blocked");
+    expect(result.message).toContain("ledger_missing");
+    expect(result.details?.suggested_next_commands).toContain('vos stage save --intent "record current stage state"');
+  });
+
+  test("allows dry-run build when current HEAD has no ledger entry and draft files exist", async () => {
+    const projectRoot = makeGitProject({ manifest: true });
+    writeFileSync(join(projectRoot, "draft-notes.md"), "human draft\n");
 
     const result = await executeCliInvocation([
       "bun",
@@ -27,15 +45,19 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
       "--dry-run",
     ], { print: false });
 
-    expect(result.status).toBe("policy_blocked");
-    expect(result.message).toContain("ledger_missing");
-    expect(result.details?.suggested_next_commands).toContain('vos stage save --intent "record current stage state"');
+    expect(result.status).toBe("ok");
+    const manifest = JSON.parse(readFileSync(join(projectRoot, ".vos", "runs", result.run_id, "manifest.json"), "utf8"));
+    expect(manifest.git_rev).toBeTruthy();
+    expect(manifest.ledger_ref).toBeUndefined();
   });
 
-  test("blocks non-build controlled project commands when current HEAD has no ledger entry", async () => {
-    const projectRoot = makeGitProject({ manifest: true });
+  test("allows read-only project commands when current HEAD has no ledger entry", async () => {
+    const projectRoot = makeGitProject({
+      manifest: true,
+      allowedCommands: ["spec lint", "stage show"],
+    });
 
-    const result = await executeCliInvocation([
+    const lint = await executeCliInvocation([
       "bun",
       "vos",
       "--project-root",
@@ -43,10 +65,102 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
       "--json",
       "spec",
       "lint",
+      "--no-agent",
+    ], { print: false });
+
+    expect(lint.status).not.toBe("policy_blocked");
+    const lintManifest = JSON.parse(readFileSync(join(projectRoot, ".vos", "runs", lint.run_id, "manifest.json"), "utf8"));
+    expect(lintManifest.git_rev).toBeTruthy();
+    expect(lintManifest.ledger_ref).toBeUndefined();
+
+    const stage = await executeCliInvocation([
+      "bun",
+      "vos",
+      "--project-root",
+      projectRoot,
+      "--json",
+      "stage",
+      "show",
+    ], { print: false });
+
+    expect(stage.status).toBe("passed");
+    expect(stage.details?.current_stage).toBe("boot");
+  });
+
+  test("allows agent ask from a dirty worktree", async () => {
+    const projectRoot = makeGitProject({
+      manifest: true,
+      allowedCommands: ["agent ask"],
+    });
+    writeFileSync(join(projectRoot, ".vos", "config.toml"), [
+      "[kb.embedding]",
+      "provider = \"openai-compatible\"",
+      "model = \"fake\"",
+      "base_url = \"http://127.0.0.1:1\"",
+      "",
+      "[kb.embedding.auth]",
+      "env = \"EMBEDDING_API_KEY\"",
+      "",
+    ].join("\n"));
+    writeFileSync(join(projectRoot, ".env"), "EMBEDDING_API_KEY=test-key\n");
+    writeFileSync(join(projectRoot, "draft-notes.md"), "human draft\n");
+    let captured: AgentTaskRequest | undefined;
+    const agentRunner = async (options: AgentTaskRequest) => {
+      captured = options;
+      return {
+        content: "ignored",
+        events: acceptedSubmitEvents("knowledgebase_answer.v1", {
+          answer: "Review the current stage specs before editing.",
+          stage_key: "boot",
+          design_goal_alignment: ["keep draft work visible"],
+          citations: [],
+          suggested_next_steps: ["run vos spec lint --no-agent"],
+          allowed_snippets: [],
+        }),
+      };
+    };
+
+    const result = await executeCliInvocation([
+      "bun",
+      "vos",
+      "--project-root",
+      projectRoot,
+      "--json",
+      "agent",
+      "ask",
+      "--stage",
+      "boot",
+      "What should I check before editing?",
+    ], { print: false, agentRunner });
+
+    expect(result.status).toBe("passed");
+    expect(captured?.taskKind).toBe("knowledgebase_qa");
+    expect(result.details?.answer).toMatchObject({ answer: "Review the current stage specs before editing." });
+    const manifest = JSON.parse(readFileSync(join(projectRoot, ".vos", "runs", result.run_id, "manifest.json"), "utf8"));
+    expect(manifest.git_rev).toBeTruthy();
+    expect(manifest.ledger_ref).toBeUndefined();
+  });
+
+  test("blocks verification from a dirty worktree", async () => {
+    const projectRoot = makeGitProject({
+      manifest: true,
+      allowedCommands: ["verify public"],
+    });
+    await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
+    writeFileSync(join(projectRoot, "dirty.c"), "int dirty;\n");
+
+    const result = await executeCliInvocation([
+      "bun",
+      "vos",
+      "--project-root",
+      projectRoot,
+      "--json",
+      "verify",
+      "public",
     ], { print: false });
 
     expect(result.status).toBe("policy_blocked");
-    expect(result.message).toContain("ledger_missing");
+    expect(result.message).toContain("dirty_worktree");
   });
 
   test("init records current HEAD and allows build with generated manifest", async () => {
@@ -503,10 +617,11 @@ function acceptedSubmitEvents(schemaId: string, result: unknown): Array<Record<s
   ];
 }
 
-function makeGitProject(options: { manifest: boolean; policy?: boolean }): string {
+function makeGitProject(options: { manifest: boolean; policy?: boolean; allowedCommands?: string[] }): string {
   const root = join("/tmp", `vos-repro-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   tmpRoots.push(root);
   mkdirSync(join(root, ".vos"), { recursive: true });
+  mkdirSync(join(root, "spec", "architecture"), { recursive: true });
   mkdirSync(join(root, "spec", "toolchain"), { recursive: true });
   writeFileSync(join(root, ".vos", "project.yaml"), [
     "project_id: local-project",
@@ -515,12 +630,15 @@ function makeGitProject(options: { manifest: boolean; policy?: boolean }): strin
     "",
   ].join("\n"));
   if (options.policy !== false) {
+    const allowedCommands = options.allowedCommands ?? [
+      "build",
+      "build generate",
+      "agent plan",
+      "ledger record",
+    ];
     writeFileSync(join(root, ".vos", "policy.yaml"), [
       "allowed_commands:",
-      "  - build",
-      "  - build generate",
-      "  - agent plan",
-      "  - ledger record",
+      ...allowedCommands.map((command) => `  - ${command}`),
       "allowed_paths:",
       "  - .vos",
       "  - spec",
@@ -529,6 +647,12 @@ function makeGitProject(options: { manifest: boolean; policy?: boolean }): strin
       "",
     ].join("\n"));
   }
+  writeFileSync(join(root, "spec", "architecture", "timeline.yaml"), [
+    "timeline:",
+    "  - stage: boot",
+    "    title: Boot",
+    "",
+  ].join("\n"));
   writeFileSync(join(root, "spec", "toolchain", "toolchain.yaml"), "includes:\n  - build.yaml\n  - run.yaml\n");
   writeFileSync(join(root, "spec", "toolchain", "profile.yaml"), [
     "environment:",

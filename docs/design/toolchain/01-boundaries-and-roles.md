@@ -120,7 +120,8 @@ accept/reject 裁决。没有可用 Agent/provider 时，`vos build generate`
 
 未绑定 Portal project 的普通本地 repo 可以保留 local-only 使用模式，但其输出
 不得伪装成 Portal 审计过的 run。local-only 只表示不需要 Portal token；
-受控项目命令仍必须满足 git repo、clean tree 和当前 `HEAD` ledger gate。
+会修改项目状态或产生构建/验证/提交证据的命令仍必须满足 git repo、clean tree
+和当前 `HEAD` ledger gate；只读检查和问答命令可在 dirty worktree 中运行。
 
 ## 4. Agent 辅助开发 vs 自动代写 OS
 

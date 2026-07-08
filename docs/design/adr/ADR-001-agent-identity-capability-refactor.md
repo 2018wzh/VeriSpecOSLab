@@ -55,8 +55,9 @@ Each `AgentIdentity` chooses exactly one role prompt and exactly one capability
 pack. User persona, project policy, and stage gate can only narrow that pack.
 They cannot add tools, paths, hidden context, or validation authority.
 
-All write-generating Agent work is commit-bound. A generate, build, or submit
-operation must begin from a clean Git tree, defined as no output from:
+All write-generating Agent work is commit-bound. Mutating and evidence-producing
+operations such as generate, non-dry-run build, verify, and submit must begin
+from a clean Git tree, defined as no output from:
 
 ```text
 git status --porcelain --untracked-files=all
@@ -66,7 +67,9 @@ Ignored build, cache, run, and QEMU artifacts do not count as dirty. After a
 successful write-generating generate operation, VOS creates a commit and records
 the reproducibility metadata in tracked history. Server-side evaluation accepts
 a `commit_sha` as the reproducibility anchor and must not depend on uncommitted
-local files, untracked files, or local `.vos/runs/` artifacts.
+local files, untracked files, or local `.vos/runs/` artifacts. Current local
+inspection, planning, Q&A, and diagnostic explanation commands are intentionally
+outside this clean-tree gate.
 
 The required target identities are:
 
@@ -125,8 +128,9 @@ ToolchainSpec -> vos build generate -> build system + .vos/toolchain.json
    supported target mechanism.
 6. Replace Agent-generated build files with `ToolchainSpec` plus
    `vos build generate`.
-7. Implement clean-tree gates before `vos build generate`, `vos build`, and
-   `vos submit pack`.
+7. Implement clean-tree gates before `vos build generate`, non-dry-run
+   `vos build` / `vos run qemu` / `vos test` / `vos verify`, mutating Agent
+   or KB commands, report generation, and `vos submit pack`.
 8. Make successful write-generating generate runs create VOS-managed commits.
    No-op generate runs create no commit, but still record the no-op run.
 9. Add tracked commit metadata through `.vos/commit-ledger.jsonl` or an

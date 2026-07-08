@@ -79,12 +79,14 @@ git status --porcelain --untracked-files=all
 
 命令边界：
 
-- 除 `login` / `logout` / `whoami` / `help` / `init` /
-  `ledger record` 等入口外，所有受控项目命令执行前必须通过 clean tree
-  gate 和当前 `HEAD` ledger gate。
-- `vos build generate`、`vos build`、`vos verify`、`vos submit pack` 是
-  最重要的受控入口；其他 spec/arch/run/test/report/agent 命令也不得绕过
-  复现边界。
+- clean tree gate 和当前 `HEAD` ledger gate 只约束会生成代码、应用补丁、
+  执行非 dry-run 构建/运行/测试/验证、生成报告、修改持久 KB 状态或打包提交的入口。
+- `vos build generate`、非 dry-run `vos build` / `vos run qemu` /
+  `vos test` / `vos verify`、`vos submit pack` 是最重要的受控入口。
+- `stage show`、`spec lint --no-agent`、`toolchain lint`、`agent context`、
+  `agent plan`、`agent ask`、`debug explain-log`、`kb list/search` 等只读检查
+  和问答命令可在 dirty worktree 中运行；run manifest 仍记录当前 `HEAD`
+  metadata，但不要求 `ledger_ref`。
 - `vos submit pack` 只打包当前 `HEAD` commit。
 - 写入型 generate 成功后由 VOS 自动创建 commit，并写入
   `.vos/commit-ledger.jsonl`。
@@ -117,8 +119,8 @@ based_on_agent_output:
 VOS 自动 commit 后必须为新 `HEAD` 写入 ledger 记录。ledger 不要求被它记录的
 同一个 commit 自包含，因为这会形成 Git hash 自引用；gate 读取当前工作树中的
 ledger，并忽略 ledger 文件自身造成的 dirty 状态。
-human commit 允许存在，但在下一次受控 VOS 项目命令前必须补齐 ledger 记录，
-否则 gate 拒绝。
+human commit 允许存在，但在下一次 mutating 或 evidence-producing VOS 项目命令前必须补齐 ledger 记录，
+否则 gate 拒绝。只读检查和问答命令不因缺少 ledger 被拒绝。
 `vos init` 可为当前 HEAD 初始化 ledger；`vos ledger record --actor human
 --intent <text>` 可为人工提交补齐记录。
 

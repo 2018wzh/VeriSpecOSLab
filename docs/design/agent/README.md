@@ -142,8 +142,9 @@ Rules:
 
 1. `implementer.v2` and `toolchain-author.v2` must pass the clean tree gate
    before any write-generating `generate` operation.
-2. `vos build generate` and `vos build` must start from a clean tree. Build
-   evidence is therefore attributable to the current `HEAD`.
+2. `vos build generate`, non-dry-run `vos build`, `vos verify`, `vos test`,
+   `vos run qemu`, and `vos submit pack` must start from a clean tree. Evidence
+   is therefore attributable to the current `HEAD`.
 3. A successful write-generating `generate` operation must create a VOS-managed
    commit. The commit includes generated tracked changes and the matching
    `.vos/commit-ledger.jsonl` entry.
@@ -152,8 +153,12 @@ Rules:
 5. `vos submit pack` and server submissions require a clean tree and submit
    only the current `HEAD` commit.
 6. Human commits are allowed between VOS operations, but each human commit must
-   have a ledger record before the next generate, build, or submit gate passes.
-7. Agent sessions may only begin write work from a clean `HEAD`, so human draft
+   have a ledger record before the next mutating or evidence-producing gate
+   passes.
+7. Read-only inspection, planning, knowledge Q&A, and diagnostic explanation
+   commands may run from a dirty worktree; they record current `HEAD` metadata
+   when available but do not require a ledger ref.
+8. Agent sessions may only begin write work from a clean `HEAD`, so human draft
    files cannot be silently mixed into Agent evidence.
 
 The tracked commit ledger is `.vos/commit-ledger.jsonl`. Each line records:

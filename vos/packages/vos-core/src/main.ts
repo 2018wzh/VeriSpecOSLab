@@ -125,6 +125,7 @@ import type { RunEvent } from "./evidence/events.ts";
 import {
   appendLedgerEntry,
   assertReproducible,
+  checkReproducibility,
   currentHead,
   ensureHeadLedgerEntry,
   git,
@@ -687,13 +688,30 @@ async function resolveReproducibilityContext(
     };
   }
   if (!isReproControlledCommand(command)) {
-    return {};
+    return await resolveOptionalReproducibilityContext(projectRoot);
   }
   const verdict = await assertReproducible(projectRoot);
   return {
     commitSha: verdict.commitSha,
     parentSha: verdict.parentSha,
     ledgerRef: verdict.ledgerRef,
+  };
+}
+
+async function resolveOptionalReproducibilityContext(
+  projectRoot: string,
+): Promise<{ commitSha?: string; parentSha?: string; ledgerRef?: string }> {
+  const verdict = await checkReproducibility(projectRoot);
+  if (verdict.ok) {
+    return {
+      commitSha: verdict.commitSha,
+      parentSha: verdict.parentSha,
+      ledgerRef: verdict.ledgerRef,
+    };
+  }
+  return {
+    commitSha: currentHead(projectRoot),
+    parentSha: parentSha(projectRoot),
   };
 }
 
@@ -801,7 +819,33 @@ function isReproBypassCommand(command: CliCommand): boolean {
 }
 
 function isReproControlledCommand(command: CliCommand): boolean {
-  return command.kind !== "doctor";
+  switch (command.kind) {
+    case "build":
+      return !command.dryRun;
+    case "run_qemu":
+      return !command.dryRun && !command.listProfiles && !command.listCases;
+    case "test":
+      return !command.dryRun;
+    case "verify":
+      return !command.dryRun;
+    case "trace_syscall":
+      return !command.dryRun;
+    case "build_generate":
+    case "spec_patch_apply":
+    case "toolchain_init":
+    case "agent_generate":
+    case "agent_apply_patch":
+    case "agent_validate_generated":
+    case "submit_pack":
+    case "report_generate":
+    case "kb_add":
+    case "kb_remove":
+    case "kb_clear":
+    case "kb_import_manifest":
+      return true;
+    default:
+      return false;
+  }
 }
 
 export async function executeInit(
