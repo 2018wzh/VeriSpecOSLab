@@ -210,7 +210,7 @@ const LAB_BUNDLES: Array<{
 
 const SHARED_BUNDLES: Array<Omit<ManualBundle, "sources"> & { section: string }> = [
   { id: "shared-specs", title: "Specs 规格手册", outputFileName: "shared/shared-specs.pdf", section: "specs" },
-  { id: "shared-appendices", title: "Appendices 附录", outputFileName: "shared/shared-appendices.pdf", section: "appendices" },
+  { id: "appendices", title: "Appendices 附录", outputFileName: "appendices/appendices.pdf", section: "appendices" },
   { id: "shared-vos", title: "VOS 用户手册", outputFileName: "shared/shared-vos.pdf", section: "vos" },
   { id: "teacher", title: "Teacher 教师手册", outputFileName: "teacher/teacher.pdf", section: "teacher" },
 ];

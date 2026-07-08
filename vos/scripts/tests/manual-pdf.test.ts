@@ -73,7 +73,7 @@ describe("manual PDF export support", () => {
       ["final-lab-book", "final-lab/final-lab-book.pdf"],
       ["final-lab-lab", "final-lab/final-lab-lab.pdf"],
       ["shared-specs", "shared/shared-specs.pdf"],
-      ["shared-appendices", "shared/shared-appendices.pdf"],
+      ["appendices", "appendices/appendices.pdf"],
       ["shared-vos", "shared/shared-vos.pdf"],
       ["teacher", "teacher/teacher.pdf"],
     ]);
