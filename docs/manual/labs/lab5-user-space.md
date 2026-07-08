@@ -151,6 +151,46 @@ vos run qemu --case user-hello
 
 ## 8. 提交物
 
+见各子阶段门禁中的具体产物。
+
+## 9. 常见错误与排查
+
+### 子阶段 5a (Trap) 高发错误
+
+**错误 1：`sret` 后 CPU 在 U-mode 执行的第一条指令就 page fault**
+
+最常见的原因：`sepc` 指向了一个未在用户页表中映射的地址。检查：
+- `ecall` 后 `sepc += 4` 了吗？如果没递增，`sret` 会再次执行 `ecall`——无限循环
+- 用户页表包含 trampoline 映射吗？在调用 `sret` 之前，确认 `satp` 指向用户页表
+
+**错误 2：Trap handler 中调用 `printf`（或你自己的 `uart_puts`）导致嵌套 trap**
+
+如果在 S-mode 的 trap handler 中触发了另一个异常（如页错误），`stvec` 被再次调用——如果 handler 没准备好处理"来自 S-mode 的 trap"，会导致无限递归或内核 panic。解决方案：在 handler 中尽早检查 `sstatus.SPP`——如果是 S-mode 触发的 trap，直接 panic。
+
+### 子阶段 5b (进程) 高发错误
+
+**错误 3：上下文切换后第一个进程在跑，第二个从未被调度**
+
+检查三件事：
+1. 时钟中断是否正常触发？（看阶段 4 的 tick 计数器）
+2. `yield()` 是否在 tick handler 中被调用？
+3. 调度器的 `schedule()` 函数是否真的遍历了所有 runnable 进程？
+
+**错误 4：`swtch` 返回后内核栈内容不对**
+
+`swtch` 保存和恢复的是 callee-saved 寄存器（`s0-s11`, `sp`, `ra`）。如果 `swtch` 之后 `sp` 是错的，检查 `swtch` 的汇编实现中 `sp` 的 load/store 顺序。
+
+### 子阶段 5c (Syscall) 高发错误
+
+**错误 5：`exec` 后程序不运行——GDB 显示 PC 在未映射的地址**
+
+常见原因：
+- ELF Program Headers 的 `p_vaddr` 和你分配的虚拟地址不匹配
+- 忘记在进入用户态前设置 `a0`（argc）和 `sp`（用户栈）
+- `exec` 替换了页表但忘了刷新 TLB
+
+## 8. 提交物
+
 - ArchitectureSlice(user-space)
 - ModuleSpec × 3-4 + 关键操作 OperationContract
 - ConcurrencySpec × 2

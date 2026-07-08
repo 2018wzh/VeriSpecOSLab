@@ -15,6 +15,85 @@
 | 中断/进程上下文 | 哪些数据被中断上下文访问？锁策略是什么？ |
 | 多核中断 | 每个 HART 的 trap 入口如何设置？IPI（CPU 间中断）如何实现？哪些中断路由到哪个 HART？ |
 
+## 2a. 设计决策引导
+
+### 决策 1：时钟 Tick 粒度
+
+| Tick 间隔 | 上下文切换开销 | 交互响应性 | 适合 |
+|:--------:|:----------:|:--------:|------|
+| 1 ms (1000 Hz) | 高（1% CPU 被调度器吃掉） | 极好 | 桌面/实时系统 |
+| 10 ms (100 Hz) | 低（0.1%） | 良好 | 教学 OS 首选 |
+| 100 ms (10 Hz) | 极低 | 差（按键延迟可感知） | 批处理/不推荐 |
+
+**零基础建议**：选 10 ms。它是 Linux 2.4 时代的默认值（HZ=100），足够简单，响应性在教学场景中完全够用。
+
+### 决策 2：设备发现方式
+
+两种方案的关键差异不在于"谁更正确"——而在于"你的内核启动时怎么知道 UART 和定时器在哪里"。
+
+| 方案 | 启动依赖 | 可移植性 | 调试难度 |
+|------|:------:|:------:|:------:|
+| 硬编码 MMIO 地址 | 无 | 差 | 低——地址写死在代码里 |
+| DTB 解析 | 需要 DTB 地址（OpenSBI 通过 `a1` 传递） | 好 | 中——DTB 解析器本身可能引入 bug |
+
+**零基础建议**：硬编码。RISC-V `virt` 机器的 UART0 在 `0x10000000`，PLIC 在 `0x0C000000`，CLINT 在 `0x02000000`。把这三地址写在 `platform.h` 里集中管理。阶段 9 要做硬件移植时再统一替换为 DTB 解析。
+
+## 2b. 逐步操作指引
+
+### 步骤 1：使能和配置 PLIC + 时钟中断（预计 45 分钟）
+
+```c
+// PLIC 初始化（RISC-V virt）
+#define PLIC_BASE      0x0C000000L
+#define PLIC_PRIORITY  0x0000    // 中断优先级寄存器偏移
+#define PLIC_ENABLE    0x2000    // 中断使能（per-context）
+#define PLIC_THRESHOLD 0x200000  // 优先级阈值（per-context）
+#define PLIC_CLAIM     0x200004  // Claim/Complete（per-context）
+
+#define UART0_IRQ      10
+
+static void plic_init(void) {
+    // 1. 设置 UART0 中断优先级（非零即可使能）
+    uint32_t *prio = (uint32_t *)(PLIC_BASE + PLIC_PRIORITY + UART0_IRQ * 4);
+    *prio = 1;
+    
+    // 2. 为 HART 0 的 S-mode context 使能 UART0 中断
+    uint32_t *en = (uint32_t *)(PLIC_BASE + PLIC_ENABLE);
+    *en = (1 << UART0_IRQ);
+    
+    // 3. 设置 HART 0 S-mode 的优先级阈值为 0（接受所有优先级的中断）
+    uint32_t *thr = (uint32_t *)(PLIC_BASE + PLIC_THRESHOLD);
+    *thr = 0;
+}
+
+// 时钟中断初始化
+static void timer_init(void) {
+    // 设置第一个定时器中断在 10ms 后
+    uint64_t next = r_mtime() + (10000000UL);  // 10ms at 1GHz clock
+    w_mtimecmp(next);  // SBI call: sbi_set_timer(next)
+    
+    // 使能 S-mode 时钟中断
+    w_sie(r_sie() | SIE_STIE);
+}
+```
+
+**自检点**：10 秒内 tick 计数应为 1000（如果 tick=10ms）。
+
+## 3. 常见错误与排查
+
+### 错误 1：时钟中断不触发
+- 检查 `sie.STIE` = 1, `sstatus.SIE` = 1
+- 检查 `mtimecmp` 的值 > `mtime`（如果 mtimecmp < mtime，中断永远不触发）
+
+### 错误 2：PLIC claim 返回 0
+这不是错误——说明当前没有待处理的中断。在多核环境下尤其常见（另一个 HART 已经 claim 了）。
+
+### 错误 3：UART 接收中断触发但读不到数据
+先读 `UART_LSR` 检查 DR (Data Ready) 位。如果 DR=0，可能是 UART 的 FIFO 被误配置或其他 bug 导致虚假中断。
+
+### 错误 4：中断返回后内核栈被破坏
+中断 handler 中使用了过大的局部变量（如大数组），导致栈溢出。中断上下文的内核栈和进程上下文共享同一个栈——栈溢出会破坏进程上下文的数据。
+
 ## 3. 背景阅读
 
 - [附录：RISC-V 参考](../appendices/riscv-reference.md)（中断与 CSR 部分）

@@ -6,15 +6,91 @@ z
 
 计算机上电后，硬件执行一系列自举过程，最终将控制权交给你的内核。你的任务是理解并控制这条路径：从固件到内核第一条指令，从裸机到 C 语言运行环境。
 
+### 2.1.1 前置概念：上电后到底发生了什么（白话版）
+
+如果你是零基础自学者，可能对"计算机上电后怎么就开始跑我的代码了"只有模糊的概念。在深入技术细节之前，先用一张全景图建立直觉。
+
+按下电源按钮后发生的事情，和一个乐团演出前的准备有几分神似：
+
+```mermaid
+flowchart TD
+    subgraph "第零幕：硬件自检与固件"
+        A["按下电源键\n(或 QEMU 启动)"] --> B["电源稳定 → 复位信号释放"]
+        B --> C["CPU 从硬编码的复位向量\n读取第一条指令地址"]
+        C --> D["固件 (BIOS/UEFI/OpenSBI)\n开始执行"]
+        D --> E["硬件自检 (POST)\n初始化关键外设\n(内存控制器、基本 IO)"]
+    end
+
+    subgraph "第一幕：固件找到你的内核"
+        E --> F["固件扫描启动设备\n(磁盘/Flash/网络)"]
+        F --> G["找到并加载 Bootloader\n(或直接加载内核)"]
+        G --> H["Bootloader 解析内核镜像\n(ELF header → 知道各段放哪)"]
+    end
+
+    subgraph "第二幕：移交控制权"
+        H --> I["Bootloader 把内核各段\n拷贝到内存正确位置"]
+        I --> J["设置 CPU 到目标特权级\n(如 RISC-V S-mode)"]
+        J --> K["跳转到内核入口点\n(如 _start 符号)"]
+    end
+
+    subgraph "第三幕：你的代码接管一切"
+        K --> L["_start(汇编):\n设置栈指针"]
+        L --> M["清零 BSS 段\n(C 语言全局变量的初值)"]
+        M --> N["跳转到 kernel_main(C)\n你的 OS 正式启动"]
+    end
+```
+
+这张图里有两个关键信息，值得停下来想清楚：
+
+**第一，在 `kernel_main` 执行之前，已经有大量代码在运行了。** 固件（几百 KB 到几 MB）和 bootloader（几十 KB）在你完全不知情的情况下做了硬件初始化、设备扫描、镜像加载、模式切换。理解它们做了什么、把什么状态留给了你——这是启动阶段最重要的认知任务。不知道固件给了你什么，你就不知道自己需要做什么。
+
+**第二，"设置栈指针"这一步虽然只有一条指令，但它决定了你的内核能不能用 C 语言。** C 语言的函数调用、局部变量、参数传递——全部依赖栈。在栈指针被正确设置之前，你不能调用任何 C 函数。这就是为什么内核的入口必须是一小段汇编——汇编不需要栈，可以直接操作寄存器。汇编设置好栈，C 接管；没有栈，C 寸步难行。
+
+> **零基础检查点**：在继续往下读之前，确认你能用自己的话回答这三个问题：
+> 1. CPU 上电后执行的第一条指令在哪？（提示：不是你的 `_start`）
+> 2. Bootloader 到底为你的内核做了什么？（至少说出 3 件事）
+> 3. 为什么 `kernel_main` 不能是内核的真正入口点？
+
+### 2.1.2 本章的核心任务清单
+
+读完本章、做完 Lab 2 后，你应该能独立完成以下全部任务：
+
+- [ ] 写出一个能通过 QEMU 启动的内核（即使它只会打印一行字然后停在那里）
+- [ ] 画出你的内核从 `_start` 到 `kernel_main` 的每一步在做什么
+- [ ] 解释链接脚本中每个段的含义（`.text` / `.data` / `.bss` / `.rodata`）
+- [ ] 独立排查"内核不输出任何东西"的问题（这是 OS 开发最高频的 bug 类型）
+- [ ] 说出固件直启、Multiboot2 启动、UEFI 直启三种路径的关键差异
+
 ## 2.2 固件与 Bootloader 简史——为什么启动链长这样
 
-最初的计算机没有"启动"的概念。程序员通过前面板开关手动输入引导代码——一字节一字节地拨入内存，然后按下"运行"按钮。
+最初的计算机没有"启动"的概念。程序员通过前面板开关手动输入引导代码——一字节一字节地拨入内存，然后按下"运行"按钮。1975 年发布的 Altair 8800（被公认为第一台个人电脑）的前面板上有一排 LED 和一排拨动开关——程序员需要拨动 16 个开关（代表一个 16 位地址），再拨动 8 个开关（代表数据），按下"DEPOSIT"按钮，然后继续拨动下一个地址。一个最小引导程序（从纸带读入器加载操作系统）大约需要 20-30 个字节——这意味着程序员要拨动几百次开关。错了任何一位？从头再来。
 
-**ROM 和 BIOS 的出现。** 1970 年代，IBM PC 引入了 BIOS——一块 ROM 芯片，存储了最基本的硬件初始化和启动代码。上电后 CPU 从固定的地址（0xFFFF0）开始执行——这个地址映射到 ROM。BIOS 做硬件自检（POST）、初始化基本设备、然后从磁盘的第一个扇区（MBR）加载 bootloader。这套流程统治了 PC 世界三十年。
+这就是"固件"诞生的背景——不是为了让启动更方便，而是为了把程序员从拨开关的体力劳动中解放出来。
 
-**BIOS 的局限催生了 UEFI。** BIOS 运行在 16 位实模式下（这是 1978 年 8086 的遗产），只能寻址 1 MB。到了 2000 年代，UEFI 取而代之——运行在 32 或 64 位模式下，支持 GPT 分区表，能直接从磁盘加载 OS 引导文件。
+**ROM 和 BIOS 的出现。** 1981 年，IBM PC 5150 引入了一套后来统治了整个 PC 世界三十年的方案——BIOS（Basic Input/Output System）。IBM 把一个 8 KB 的 ROM 芯片焊在主板上，映射到物理地址 `0xFE000`~`0xFFFFF`（这就是今天 CPU 从 `0xFFFF0` 开始执行的由来——复位向量落在 ROM 的末尾，只有 16 字节的空间放一条 `JMP` 指令跳到真正的 BIOS 代码）。BIOS 的职责是清晰的：上电自检（POST——检查内存、键盘、显示器是否存在）→ 初始化基本 I/O 设备 → 扫描启动设备（软盘→硬盘）→ 读取第一个扇区（MBR，Master Boot Record）到内存 `0x7C00` → 跳转过去。
 
-**RISC-V 世界的固件。** RISC-V 没有 BIOS 或 UEFI 的历史包袱——它直接采用了 OpenSBI。OpenSBI 运行在 M-mode，负责最底层的硬件初始化，然后切换到 S-mode 并把控制权交给你的内核。你的内核通过 SBI 调用（`ecall` from S-mode）请求固件服务：串口输出、关机、设置定时器等。
+> **原始文献：** IBM, *IBM Personal Computer Technical Reference*, 1981. 这本手册完整定义了 BIOS 的中断向量表（`int 0x10` = 视频服务、`int 0x13` = 磁盘服务、`int 0x16` = 键盘服务）——这些中断号直到今天仍在 UEFI 模拟模式和虚拟化中被使用。
+
+但 BIOS 有一个问题——它不是 IBM 发明的。或者说，BIOS 的"软件/硬件抽象层"这个想法，来自 Gary Kildall 在 1974 年创造的 CP/M 操作系统。
+
+**CP/M 的 BIOS：在 IBM PC 之前就存在的思想。** 1974 年，Gary Kildall 在为 Intel 8008/8080 微处理器编写 PL/M 编译器时，发现了一个问题：每次他把软件移植到新的软盘驱动器或终端上，都要重写所有 I/O 代码。他的解决方案是 CP/M（Control Program for Microcomputers），把操作系统分成两层：
+
+1. **BDOS（Basic Disk Operating System）**——CP/M 的核心，管理文件系统（`open`、`read`、`write`），与硬件无关
+2. **BIOS（Basic I/O System）**——位于 BDOS 之下，包含与特定硬件相关的驱动代码（读一个扇区、写一个字符到控制台）
+
+这意味着"把 CP/M 移植到新机器"只需要重写 BIOS 层——BDOS 层完全不变。这是操作系统历史上第一个明确的硬件抽象层设计。
+
+> **原始文献：** Gary A. Kildall, "CP/M: A Family of 8-and 16-Bit Operating Systems," *BYTE Magazine*, vol. 6, no. 6, pp. 216-246, June 1981. Kildall 在这篇文章中详细解释了 CP/M 的分层设计哲学。这篇文章是在 IBM 选择了微软的 MS-DOS 而非 CP/M 之后发表的——一个改变了计算机行业格局的商业决策（BIOS 的名字留了下来，但 CP/M 的创始人被排除在了 PC 革命之外）。
+
+IBM 的工程师直接采用了 CP/M 的"BDOS + BIOS"架构思路——MS-DOS（微软为 IBM PC 编写的操作系统）的 `IO.SYS` 就是 BIOS 层，`MSDOS.SYS` 就是 BDOS 层。而固化在 ROM 中的"系统 BIOS"是 IBM 的创新——把硬件初始化的最底层代码烧死在芯片上，让操作系统不必关心主板特定细节。
+
+**BIOS 的局限催生了 UEFI。** BIOS 运行在 16 位实模式下（这是 1978 年 8086 的遗产），只能寻址 1 MB。到了 1990 年代末，BIOS 的三大约束已经不可忍受：16 位实模式启动慢、MBR 分区表最大只支持 2 TB 磁盘、BIOS 的中断服务（`int 0x13`）每次只能读一个扇区——这限制了启动速度。
+
+但 UEFI 诞生的真正推动力不是 PC，而是 Intel 的 Itanium 处理器（1999）。Itanium 完全不支持 x86 的 16 位实模式——Intel 需要一个新的固件标准来取代 BIOS。这个标准最初叫 EFI（Extensible Firmware Interface），由一个包括 Intel、Microsoft、HP 等行业联盟推动。后来 EFI 改名 UEFI，并在 2005 年苹果从 PowerPC 迁移到 Intel 时成为第一个大规模商业采用者——每一台 Intel Mac 都是用 UEFI 启动的。PC 世界则在 2011 年（Windows 8 时代）才强制要求 UEFI。
+
+> **原始文献：** Intel, "Extensible Firmware Interface Specification," Version 1.02, December 2000. 第 1 章解释了 EFI 的设计目标：替代 16 位 BIOS 和 MBR，支持 64 位启动、GPT 分区表、从大容量存储直接加载 OS。
+
+**RISC-V 世界的固件。** RISC-V 没有 BIOS 或 UEFI 的历史包袱——它直接采用了 OpenSBI。OpenSBI 运行在 M-mode，负责最底层的硬件初始化，然后切换到 S-mode 并把控制权交给你的内核。你的内核通过 SBI 调用请求固件服务：串口输出、关机、设置定时器等。
 
 ### 不同 ISA 的启动链对比
 
@@ -26,7 +102,58 @@ z
 
 理解你继承了什么、你需要自己建立什么，这是启动阶段最重要的洞察。
 
-### 为什么需要 Bootloader——x86 的血泪教训
+### 从裸机看启动：STM32 启动 vs OS 启动链
+
+如果你有 STM32 裸机编程经验，你可能习惯了这样的启动流程：编写 `main()` → 编译器自动链接启动文件 → 烧录到 Flash → 上电即运行。整个过程中，你几乎不需要关心"谁把 CPU 设置到当前模式的"——因为根本就没有模式切换这一说。
+
+但 OS 的启动流程比这复杂得多。理解差异的最好方式，是把两种启动流程放在一起看。
+
+**STM32F103 的启动流程（裸机）：**
+
+```mermaid
+flowchart LR
+    subgraph "STM32 裸机启动"
+        PWR["上电"] --> VTOR["硬件从 0x08000000\n读栈顶地址 → MSP"]
+        VTOR --> PC["从 0x08000004\n读取复位向量 → PC"]
+        PC --> RH["Reset_Handler:\n• 拷贝 .data 段到 SRAM\n• 清零 .bss 段\n• 调用 SystemInit()\n  (配置时钟树)"]
+        RH --> MAIN["调用 main()"]
+        MAIN --> LOOP["while(1) { ... }"]
+    end
+```
+
+整个过程在一个特权级（Privileged / Thread mode with privileged access）内完成。没有固件和内核的边界——如果非要说的话，启动文件（`startup_stm32f103xx.s`）和 HAL 库就是你全部的"固件"。
+
+**RISC-V OS 的启动流程（OpenSBI + 内核直启）：**
+
+```mermaid
+flowchart LR
+    subgraph "RISC-V OS 启动"
+        PWR2["上电"] --> ZSBL["ZSBL (ROM)\n跳转到 FSBL"]
+        ZSBL --> FSBL["FSBL (OpenSBI)\n• M-mode 硬件初始化\n• 设置定时器/串口\n• 切换到 S-mode"]
+        FSBL --> START["跳转到 _start(S-mode)\n• a0 = hartid\n• a1 = DTB 地址"]
+        START --> BSS["设置栈指针\n清零 BSS"]
+        BSS --> KMAIN["kernel_main()"]
+        KMAIN --> INIT["初始化内核子系统\n..."]
+    end
+```
+
+**关键差异：**
+
+| 维度 | STM32 裸机 | RISC-V OS |
+|------|-----------|-----------|
+| **特权级变化** | 始终在 Privileged 级别，无模式切换 | M-mode(固件) → S-mode(内核) → 将来 U-mode(用户) |
+| **谁初始化硬件** | 你的启动文件 + `SystemInit()` 手动配时钟树 | OpenSBI 已完成时钟、定时器、串口初始化 |
+| **启动地址** | 硬编码：`0x08000000` (Flash 首地址) | 固件决定：由 OpenSBI 加载到 RAM 某处 |
+| **入口状态** | SP 从向量表自动加载；PC 从复位向量加载 | `a0` = hartid, `a1` = DTB 地址（由 OpenSBI 传递） |
+| **BSS 清零** | 启动文件里做（`startup_*.s` 中的 `Reset_Handler`） | 必须在内核 `_start` 中手动做 |
+| **有没有"回去"的路** | 没有——裸机程序从不"返回" | 有——S-mode 可以通过 `ecall` 回 M-mode 请求 SBI 服务 |
+| **启动失败的表现** | LED 不闪、程序不动、看门狗复位 | QEMU 无输出、panic、三重故障（x86） |
+
+**为什么 OS 的启动比裸机复杂这么多？根本原因只有一条：**
+
+裸机程序是整块硅片上的唯一居民——它不需要和任何人共享硬件，不需要考虑"我该不该碰这个寄存器"，因为所有寄存器都归它。而 OS 内核只是硬件上的第一层租客——它下面有固件（已经初始化了一些硬件、设置了一些寄存器），它上面将来还会有用户程序（不能随便访问硬件）。OS 内核的启动流程必须妥善处理这份"和上下邻居的交接"——从固件手里接过干净的状态，为用户程序准备好隔离的执行环境。
+
+**对零基础自学者的启示：** 如果你觉得 OS 启动流程"步骤太多记不住"，不要硬记。回到上面那张差异表——每一步都是为了解决"裸机程序不需要面对、但 OS 必须面对"的问题。BSS 清零？因为裸机上你的数据段可能不需要初始化（你知道它从 Flash 来），但 OS 内核需要在 RAM 中运行，RAM 上电后的内容是随机的。设置栈？裸机也设——但启动文件替你做了，而 OS 得自己来，因为固件不知道你的内核打算把栈放在哪。
 
 如果你只在 RISC-V 上写 OS，你可能会问："固件已经把内核加载好了，为什么还需要 bootloader？"
 
@@ -290,6 +417,102 @@ HART 1 (等待核):
 6. **Multiboot2 header 未对齐**：Multiboot2 header 必须在 ELF 文件的前 32768 字节内、8 字节对齐。GRUB 找不到这个 header 就静默跳过你的内核。验证方法：用 `grub-file --is-x86-multiboot2 kernel.elf` 检查。
 7. **UEFI 下调用 ExitBootServices() 之后还用 UEFI 函数**：这是最常见的 UEFI 启动 bug。`ExitBootServices()` 之后，内存映射归你的内核管，UEFI 的 `AllocatePool`/`CopyMem`/`OutputString` 全部不可用。在调用 `ExitBootServices()` 之前，确保你已经不再需要任何 Boot Service。典型遗漏：串口输出——在 UEFI 阶段用 `ConOut->OutputString()` 打印，ExitBootServices 之后还想用它输出 banner——崩溃。
 8. **Bootloader 给你的内存映射和你的内核链接地址冲突**：GRUB/Limine 提供的内存映射标记了哪些区域是可用的、哪些是保留的。如果内核的链接地址（如 `0x100000`）恰好落在 bootloader 自身使用的内存区域内，启动随机崩溃。确保链接地址在可用内存范围内。
+9. **链接脚本中遗漏了 `.rodata` 段**：只放了 `.text`、`.data`、`.bss`，忘了放只读数据段。字符串常量（如你的 kernel banner `"Hello, OS!"`）默认放在 `.rodata`。如果没有在链接脚本中声明这个段，链接器可能把它塞到奇怪的地方——或者更糟，你的字符串根本不在内核镜像里，运行时输出随机内存内容。**症状：kernel banner 输出乱码或空字符串。**
+10. **编译器优化导致"死代码消除"**：你写了一个 `printf("Hello\n")`，但编译器发现这个函数的返回值没有被使用，把它优化掉了。在裸机/内核环境中，串口输出的"副作用"编译器不知道。**解决方案：确保 UART 写入函数使用 `volatile` 指针，或者在关键位置加编译器屏障 `asm volatile("" ::: "memory")`。**
+11. **RISC-V 的 `mret` vs `sret` 用混**：OpenSBI 通过 `mret` 从 M-mode 跳转到 S-mode 进入你的内核。如果你在 S-mode 中错误地使用了 `mret`（这是非法的），CPU 会产生非法指令异常。内核中从 trap 返回应该始终使用 `sret`。
+12. **设备树（DTB）地址被栈覆盖**：OpenSBI 把 DTB 地址放在 `a1` 寄存器中传递给你的内核。如果你在设置栈之前就使用了 `a1` 的值，没问题。但如果你先设置了栈、栈向低地址增长、而 DTB 恰好在栈区域的上方——你的栈可能会覆盖 DTB 数据。**最佳实践：在 `_start` 中第一时间保存 `a0` 和 `a1` 到安全位置（如暂存到其他寄存器或预留的全局变量），然后再设置栈。**
+
+## 2.6a 自学调试指南：内核不输出任何东西怎么办
+
+这是你在 OS 开发中会遇到的最常见、最令人沮丧的场景：QEMU 启动了，但串口一片空白。你不知道内核是否被执行了、在哪一步崩溃了、还是根本没被加载。
+
+按以下顺序排查——从最可能的原因开始，每一步都有具体的验证方法。
+
+### 第一阶段：确认工具链本身是好的（5 分钟）
+
+在你怀疑内核代码之前，先确认 QEMU 和交叉编译器能正常工作。
+
+```sh
+# 验证 1：QEMU 本身能启动
+qemu-system-riscv64 -machine virt -bios default -nographic
+# 期望：看到 OpenSBI 的 banner 输出，然后因为没找到内核而退出或报错
+# 如果连 OpenSBI banner 都没有 → QEMU 安装有问题
+
+# 验证 2：交叉编译器能编译一个最简单的 freestanding 程序
+echo 'void _start() { while(1); }' > test.c
+riscv64-unknown-elf-gcc -nostdlib -o test.elf test.c
+# 期望：无错误输出，生成 test.elf
+# 如果报 "riscv64-unknown-elf-gcc: command not found" → 交叉编译器路径没配好
+```
+
+### 第二阶段：确认内核被加载了（10 分钟）
+
+```sh
+# 验证 3：检查 ELF 的入口点
+riscv64-unknown-elf-readelf -h build/kernel.elf | grep "Entry point"
+# 期望：入口地址与你链接脚本中声明的起始地址一致（如 0x80000000）
+
+# 验证 4：用 GDB 确认 CPU 是否到达了 _start
+qemu-system-riscv64 -machine virt -kernel build/kernel.elf -nographic -S -s &
+riscv64-unknown-elf-gdb build/kernel.elf \
+    -ex "target remote :1234" \
+    -ex "b _start" \
+    -ex "c"
+# 如果 GDB 在 _start 断点停下 → 内核被正确加载并执行了
+# 如果 GDB 永远不停 → 内核没有被加载到正确的地址
+```
+
+### 第三阶段：如果内核被执行了但没有输出（15 分钟）
+
+这意味着问题在 `_start` 到第一次 UART 写入之间。逐条排查：
+
+```
+排查清单（按执行顺序）：
+
+□ 栈指针设置是否正确？
+  → 在 GDB 中执行到 _start 第一条指令后，输入 info registers sp
+  → SP 应该指向一个合理的地址（不能是 0，不能是代码段地址）
+  → 如果 SP = 0x00000000：你没有在跳转 C 代码前设置 sp
+
+□ BSS 清零操作是否在 UART 初始化之前完成？
+  → BSS 清零本身不会阻止输出，但如果你先初始化 UART、后清零 BSS，
+    而 UART 状态变量恰好在 BSS 段——你的 UART 配置会被清零覆盖
+  → 确保顺序：BSS 清零 → UART 初始化 → 输出 banner
+
+□ UART MMIO 基地址是否正确？
+  → RISC-V virt 机器：UART0 在 0x10000000
+  → 在 GDB 中：x/4bx 0x10000000 查看 UART 寄存器状态
+  → 如果读回来全是 0 或全是 0xFF → 地址很可能不对
+
+□ UART 是否已由固件初始化？
+  → OpenSBI 默认初始化了 UART0（115200 8N1），你可以直接写数据寄存器
+  → 但如果你在写之前"重新初始化"了 UART 且写错了配置寄存器，
+    可能反而破坏了已有的正确配置
+  → 最简单做法：先不要自己初始化 UART，直接向 0x10000000 写一个字节试试
+
+□ 你的 UART 写入函数用了 volatile 吗？
+  → 如果写的是 *(uint8_t*)0x10000000 = 'H' 而没有 volatile，
+    编译器可能优化掉这个"无用的"写入
+  → 正确写法：*(volatile uint8_t*)0x10000000 = 'H';
+
+□ 确认 UART 发送缓冲区是空的再写
+  → UART 状态寄存器（LSR, 偏移 +0x14 for 16550 兼容）
+  → Bit 5 (THRE: Transmitter Holding Register Empty) 必须为 1 才能写
+  → 如果忽略这个检查，在 UART 还没准备好时写入，数据会丢失
+```
+
+### 第四阶段：如果以上都检查了还是不行
+
+启动阶段最难的 bug 往往不是代码逻辑错误，而是**假设错误**——你以为某个寄存器在某个地址、你以为 QEMU 的某种行为和真实硬件一致、你以为链接脚本的某个符号代表了你以为的含义。
+
+最有效的排查方法：**从后往前验证每一条假设。**
+
+1. **QEMU 真的加载了你的内核吗？** 在 GDB 中打断点在 `0x80000000`（RISC-V virt RAM 首地址），看是否到达。
+2. **链接脚本的 `ENTRY` 符号真的是 `_start` 吗？** `riscv64-unknown-elf-readelf -h` 检查。
+3. **`_start` 真的在 `.text` 段的最开头吗？** `riscv64-unknown-elf-objdump -d kernel.elf | head -20` 检查反汇编。
+4. **你的第一条指令真的是设置栈指针吗？** 如果第一条指令是 `call`（函数调用），而栈还没设好——那就不用往下查了。
+
+**终极技巧：二分法定位崩溃点。** 在 `_start` 和 `kernel_main` 之间插入一个极简单的标记——比如向某个固定内存地址写一个递增值（`0xDEAD0001`, `0xDEAD0002`, ...）。崩溃后用 GDB 检查这个地址的值——它告诉你最后执行成功的步骤是哪一个。比任何 print 调试都快，因为此时你连串口都还没输出。
 
 ## 2.7 与前后阶段的接口
 

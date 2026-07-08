@@ -19,6 +19,22 @@
 
 理解本章设计的入口，是理解 Unix 的进程模型从何而来。
 
+但在这之前，先让我们澄清一个问题：**"进程"这个概念是从哪来的？** Unix 把进程做得极其优雅，但进程本身不是 Unix 发明的。
+
+### "进程"概念的发明：从 THE 到 RC 4000
+
+**Dijkstra 的 THE 操作系统（1968）——第一次把"进程"变成精确的概念。** Edsger Dijkstra 在 1965-1968 年间领导开发的 THE（Technische Hogeschool Eindhoven）操作系统，虽然只是一个大学项目，但它的影响远超其规模。Dijkstra 在这篇后来获得图灵奖的论文中，第一次把"顺序进程"（sequential process）定义为一个精确的计算模型——一个进程是一个顺序执行的指令流，多个进程在逻辑上同时推进，进程之间通过显式的同步机制（信号量——也是 Dijkstra 在这个项目中发明的）协调。
+
+THE 的另一个关键贡献是**分层设计**——把操作系统分成功能上独立的几层（第 0 层：CPU 调度；第 1 层：内存管理；第 2 层：控制台 I/O；第 3 层：文件系统；第 4 层：用户程序）。每一层只能调用下层提供的服务，不能跨层调用。这种结构化的设计方法在今天看起来理所当然——但 1968 年之前，没有操作系统是按照"分层的、可证明正确的"的原则设计的。
+
+> **原始文献：** E. W. Dijkstra, "The Structure of the 'THE'-Multiprogramming System," *Communications of the ACM*, vol. 11, no. 5, pp. 341-346, May 1968. 这篇论文只有 6 页——但其中包含了顺序进程、信号量同步、分层设计、不变量验证四个改变了操作系统设计方法论的概念。Dijkstra 就是在这篇论文中写出了那句著名的话："测试可以证明 bug 的存在，但不能证明 bug 的不存在。"
+
+**RC 4000 多道程序系统（1969）——进程通信的第一次系统化尝试。** 丹麦计算机科学家 Per Brinch Hansen 在为 RC 4000 计算机设计操作系统时，面临一个此前没人系统解决过的问题：**如果多个进程是独立的、隔离的实体，它们怎么互相通信？** 他的答案——也是操作系统历史上第一次——是把"消息传递"（message passing）作为进程间通信的唯一原语。每个进程有一个消息队列，进程通过 `send` 和 `receive` 操作交换数据。内核只提供发送和接收的机制，不参与消息的内容解释。
+
+Brinch Hansen 的 RC 4000 核（nucleus）是现代微内核 IPC 的直系祖先。seL4 的 Endpoint、QNX 的消息传递、甚至 Unix 的 pipe——所有这些 IPC 机制的根，都可以追溯到 RC 4000 的 "send/receive" 模型。
+
+> **原始文献：** P. Brinch Hansen, "The Nucleus of a Multiprogramming System," *Communications of the ACM*, vol. 13, no. 4, pp. 238-241, April 1970. Brinch Hansen 后来在 1973 年出版了 *Operating System Principles*——第一本系统阐述进程同步、IPC 和调度算法设计原则的教科书。
+
 ### fork 的起源：一个"本该是临时的"方案
 
 1971 年，Unix 的进程创建方式不是 fork。它使用 `fork` 的一个前身——创建一个子进程，并指定子进程要运行的程序。但 PDP-7 的硬件限制迫使 Ken Thompson 和 Dennis Ritchie 做了一个简化："复制当前进程，然后让子进程自己去替换程序。"他们本以为这是一个临时方案，但后来发现这个两步模型（fork + exec）有出乎意料的好处。
@@ -371,6 +387,43 @@ Round-Robin 实现简单但无法区分 I/O 密集型和 CPU 密集型进程。M
 4. **exec 后未刷新 TLB**：旧的页表映射残留在 TLB 中，新进程可能访问到旧进程的内存。
 5. **调度器死锁**：调度器在持有调度锁的情况下调用 `swtch`，导致其他 CPU 无法获取调度锁。
 6. **忘记处理孤儿进程**：父进程退出后子进程成为孤儿。如果无人回收，它们会永远占用进程表条目。
+7. **`sret` 后 CPU 卡在 U-mode 无法再进入 S-mode**：如果 `sstatus.SPP` 被错误设为 S-mode（而非 U-mode），`sret` 后 CPU 仍在 S-mode——但 `stvec` 的 trap 处理代码是为"从 U-mode 进入"设计的。**验证：在 `sret` 前检查 `sstatus.SPP` 的值为 0（U-mode）。**
+8. **用户栈没有正确映射**：你为进程分配了栈空间、在页表中建立了映射——但忘了把栈的初始 SP 写进 trapframe。用户程序第一条 `call` 指令就炸——因为 SP 指向了未映射的地址或者随机值。
+9. **Syscall 返回值没有写回 trapframe**：处理完 syscall 后，返回值放在了 C 函数的 `return` 语句里——但 trap 返回时是从 trapframe 中恢复的 `a0`，不是从 C 函数的返回值。**正确做法：`tf->a0 = syscall_result;`。**
+10. **`sepc` 未在 `ecall` 处理后递增**：`ecall` 指令执行后，`sepc` 指向 `ecall` 指令本身。`sret` 后会再次执行同一条 `ecall`——无限循环。**解决：在 syscall handler 返回前 `tf->sepc += 4`（RISC-V 指令长度 4 字节）。**
+
+## 5.10 自学导航：本阶段怎么安排时间
+
+阶段 5 是课程中最长、最复杂的阶段。以下是一个推荐的推进顺序——不要把本章从头读到尾然后试图一次性实现所有东西。分三段推进，每段独立验证。
+
+### 第一段：Trap 机制（预计 2-3 天）
+
+**只做这些：** Trap 入口/返回（汇编 trampoline）、trap 分发（C dispatcher）、最小 syscall（只实现 `write` 和 `exit`）。
+
+**验证目标：** 一个用户程序通过 `ecall` 调用 `write` syscall 在串口打印 "hello from user mode"，然后调用 `exit` 正常退出。
+
+**跳过：** 先不做 fork/exec、调度器、进程管理器。让你的"进程"暂时只有一个——手工创建它的页表和 trapframe，手工加载它的代码到内存。
+
+### 第二段：进程抽象（预计 2-3 天）
+
+**在第一段基础上加入：** 进程数据结构、进程表、上下文切换（`swtch`）、调度器（最简单的 round-robin）。
+
+**验证目标：** 两个进程被调度器交替运行——每个进程打印自己的标识字符，你看到串口输出交替的 "A" 和 "B"。
+
+**跳过：** 先不做 fork 复制、exec 加载器。手工创建两个进程——不同的页表、不同的代码。
+
+### 第三段：完整生命周期（预计 2-3 天）
+
+**在前两段基础上加入：** fork（含 CoW，如果选择了）、exec（ELF loader）、wait/exit 进程回收、孤儿/僵尸进程处理。
+
+**验证目标：** 一个 Shell 程序能通过 fork+exec 启动子进程、等待子进程结束、回收资源。
+
+### 如果卡住了
+
+- **Trap 入口崩溃（`sret` 后 CPU 不回到 U-mode）**：用 GDB 单步跟踪 trampoline 的每一条指令。最常见错误：`sepc` 写错了、`sstatus` 的 SPP 位设错了、trapframe 中的寄存器没正确保存。
+- **Syscall 返回后用户程序行为异常**：检查 trapframe 中 `a0`（返回值）和 `sepc`（返回地址）是否正确。忘了递增 `sepc` 是最常见的原因。
+- **调度器切换后第一个进程永远在跑、第二个进程从未被调度**：检查时钟中断是否正确触发、`yield()` 是否在 tick handler 中被调用。
+- **fork 后子进程第一次 trap 就崩溃**：检查子进程的 trapframe 是否完整复制、子进程的页表是否包含 trampoline 映射。
 
 ## 5.10 与前后阶段的接口
 

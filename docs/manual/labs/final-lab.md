@@ -21,3 +21,30 @@ bun run vos -- verify public
 bun run vos -- verify full
 bun run vos -- report generate --final
 ```
+
+## 自学者最终自检清单
+
+如果你没有教师验收，以下是替代教师检查的自我评估清单。每一项都要诚实回答：
+
+### 设计完整性
+- [ ] ArchitectureSeed 中的每个 goal 都能在后续阶段找到对应的设计决策
+- [ ] 每个 non-goal 在 9 个阶段中确实没有被意外实现
+- [ ] 至少 3 个 ADR 记录了关键设计决策及其理由
+- [ ] 至少 1 个 SpecPatch 诚实记录了设计变更
+
+### 实现正确性
+- [ ] 至少 5 个不变量检查器可运行且通过
+- [ ] 至少 1 个跨组件不变量已在 CompositionSpec 中定义且可验证
+- [ ] 系统运行 10 分钟不崩溃、不内存泄漏
+
+### 文档自洽性
+- [ ] seed.yaml → ArchitectureSlice → ModuleSpec → 实现代码 → 不变量检查器，五层之间没有矛盾
+- [ ] 能用一张图画出你的 OS 的完整架构（模块 + 数据流 + 不变量）
+
+### 失败记录
+- [ ] 记录了至少 2 个"曾经失败、后来修复"的案例（现象 → 定位 → 根因 → 修复 → 验证）
+
+### 如果还有时间
+- [ ] 提供一个可启动的磁盘镜像（`qemu-system-riscv64 -drive file=myos.img`）
+- [ ] 写一篇 500 字的 Reflection：如果重做，ArchitectureSeed 会有什么不同？
+- [ ] 录制一个 3 分钟的演示视频
