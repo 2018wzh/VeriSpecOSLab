@@ -127,8 +127,8 @@ vos --help
 在学生项目根目录运行：
 
 ```sh
-vos --project-root . init
-vos --project-root . doctor
+vos init
+vos doctor
 ```
 
 再确认基础工具：

@@ -257,7 +257,7 @@ vos trace
 vos debug
 vos login --portal-url <url>
 vos whoami
-vos serve --project-root . --portal-url <url> --project-id <id>
+vos serve --portal-url <url> --project-id <id>
 vos agent serve
 vos submit pack
 ```

@@ -16,9 +16,9 @@ vos --help
 学生不需要 clone VeriSpecOSLab 仓库；拿到课程项目后，在项目目录运行：
 
 ```bash
-vos --project-root . doctor
-vos --project-root . spec check-consistency
-vos --project-root . build --dry-run
+vos doctor
+vos spec check-consistency
+vos build --dry-run
 ```
 
 如果你已经有本仓库 checkout，也可以用内置 xv6 示例跑一遍基础检查：

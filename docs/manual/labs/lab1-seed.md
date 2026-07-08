@@ -16,8 +16,8 @@ bun install -g github:2018wzh/VeriSpecOSLab
 mkdir my-os
 cd my-os
 
-vos --project-root . init
-vos --project-root . doctor
+vos init
+vos doctor
 ```
 
 `vos init` 会创建 VOS 本地配置、默认策略、`.gitignore` 和 `AGENTS.md`。如果当前目录还不是 Git 仓库，它会先执行 `git init`。如果仓库还没有初始提交，它只会暂存并提交自己创建或维护的初始化入口文件，不会把你的草稿、下载资料或本地实验文件一起提交。
@@ -27,7 +27,7 @@ vos --project-root . doctor
 ```sh
 git config user.name "Your Name"
 git config user.email "you@example.com"
-vos --project-root . init
+vos init
 ```
 
 ## 3. 目标先行
@@ -106,14 +106,14 @@ cross_component_rules:
 先把项目 spec 加入本地 KB：
 
 ```sh
-vos --project-root . kb add spec --source-kind project --recursive
+vos kb add spec --source-kind project --recursive
 ```
 
 再按你的设计目标导入至少一份参考资料。资料可以来自课程发放的本地文件，也可以是你自己选择的公开参考资料。
 
 ```sh
-vos --project-root . kb add docs/reference/xv6-book.pdf --source-kind course --title "xv6 book"
-vos --project-root . kb list
+vos kb add docs/reference/xv6-book.pdf --source-kind course --title "xv6 book"
+vos kb list
 ```
 
 如果你选择微内核、capability、Linux ELF 兼容或硬件移植，参考资料也应对应这些目标。不要只导入和自己路线无关的材料。
@@ -136,12 +136,12 @@ design_notes:
 完成 seed、composition 和 KB 导入后，运行：
 
 ```sh
-vos --project-root . doctor
-vos --project-root . spec lint
-vos --project-root . spec check-consistency
-vos --project-root . arch lint
-vos --project-root . kb list
-vos --project-root . stage save --intent "complete architecture seed"
+vos doctor
+vos spec lint
+vos spec check-consistency
+vos arch lint
+vos kb list
+vos stage save --intent "complete architecture seed"
 ```
 
 `architecture-seed` 阶段还不要求 `.vos/toolchain.json`。从 boot 阶段开始，`vos doctor` 会继续检查工具链 manifest 和其中声明的构建、运行、验证工具。

@@ -93,7 +93,7 @@ Portal-bound run 的 manifest 还必须记录：
 启动示例：
 
 ```bash
-vos serve --project-root . --portal-url https://portal.example --project-id <project-id> --host 127.0.0.1 --port 8788
+vos serve --portal-url https://portal.example --project-id <project-id> --host 127.0.0.1 --port 8788
 ```
 
 `vos-server` 暴露 typed HTTP API，而不是 shell command RPC。短操作同步返回 JSON，长操作创建 run 并通过 SSE 暴露进度。
