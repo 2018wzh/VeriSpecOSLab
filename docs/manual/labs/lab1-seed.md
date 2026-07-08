@@ -118,6 +118,19 @@ vos --project-root . kb list
 
 如果你选择微内核、capability、Linux ELF 兼容或硬件移植，参考资料也应对应这些目标。不要只导入和自己路线无关的材料。
 
+## 5a. 可选：裸机编程参考阅读
+
+> 如果你有 STM32 或 Arduino 裸机编程经验，建议在写 ArchitectureSeed 之前阅读 [附录：裸机编程参考](../appendices/stm32-bare-metal-lab.md)。该附录以 STM32F103 为例，对比展示了同一任务在裸机和 OS 环境下的完整代码差异，帮助你明确"我的 OS 至少要抽象掉哪些裸机细节"。
+
+读完后，在 ArchitectureSeed 的 `design_notes` 中记录你的发现：
+
+```yaml
+design_notes:
+  - "基于裸机对比参考，本 OS 至少需要抽象：(1) 硬件无关的输出接口，(2) 非忙等的延时机制，(3) 多任务间的内存隔离"
+```
+
+---
+
 ## 6. 检查与保存
 
 完成 seed、composition 和 KB 导入后，运行：
@@ -151,6 +164,7 @@ vos --project-root . stage save --intent "complete architecture seed"
 - [ ] 至少一项拒绝理由说清了代价或边界。
 - [ ] `initial_validation_binding` 都能落到可观测检查，不写“系统稳定”“体验良好”这类空泛目标。
 - [ ] CompositionSpec 至少包含一条和目标相关的跨组件规则。
+- [ ] （可选）完成裸机对比实验，ArchitectureSeed 中记录了至少一条"本 OS 需要抽象掉的裸机细节"。
 
 ## 8. AI 使用边界
 
