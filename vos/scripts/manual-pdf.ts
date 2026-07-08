@@ -90,18 +90,21 @@ const EXPLICIT_FILE_ORDER: Record<string, string[]> = {
     "final-lab.md",
   ],
   appendices: [
-    "tools-overview.md",
-    "dev-environment.md",
-    "vos-commands.md",
-    "qemu-guide.md",
-    "gdb-guide.md",
-    "linker-script.md",
-    "riscv-reference.md",
-    "invariant-checker.md",
-    "common-bugs.md",
-    "grading.md",
     "ai-policy.md",
+    "common-bugs.md",
+    "debugging-methodology.md",
+    "dev-environment.md",
+    "dev-environment-setup.md",
     "final-report-template.md",
+    "gdb-guide.md",
+    "grading.md",
+    "invariant-checker.md",
+    "linker-script.md",
+    "qemu-guide.md",
+    "riscv-reference.md",
+    "stm32-bare-metal-lab.md",
+    "tools-overview.md",
+    "vos-commands.md",
   ],
   specs: [
     "overview.md",
@@ -146,74 +149,93 @@ const LAB_BUNDLES: Array<{
   bookSources: string[];
   labSources: string[];
 }> = [
-  {
-    id: "lab1",
-    label: "Lab 1",
-    bookSources: ["book/ch00-overview.md", "book/ch01-design-space.md"],
-    labSources: ["labs/lab1-seed.md"],
-  },
-  {
-    id: "lab2",
-    label: "Lab 2",
-    bookSources: ["book/ch02-boot.md"],
-    labSources: ["labs/lab2-boot.md"],
-  },
-  {
-    id: "lab3",
-    label: "Lab 3",
-    bookSources: ["book/ch03-memory.md"],
-    labSources: ["labs/lab3-memory.md"],
-  },
-  {
-    id: "lab4",
-    label: "Lab 4",
-    bookSources: ["book/ch04-interrupts.md"],
-    labSources: ["labs/lab4-interrupts.md"],
-  },
-  {
-    id: "lab5",
-    label: "Lab 5",
-    bookSources: ["book/ch05-user-space.md"],
-    labSources: ["labs/lab5-user-space.md"],
-  },
-  {
-    id: "lab6",
-    label: "Lab 6",
-    bookSources: ["book/ch06-filesystem.md"],
-    labSources: ["labs/lab6-filesystem.md"],
-  },
-  {
-    id: "lab7",
-    label: "Lab 7",
-    bookSources: ["book/ch07-resource-abi.md"],
-    labSources: ["labs/lab7-resource-abi.md"],
-  },
-  {
-    id: "lab8",
-    label: "Lab 8",
-    bookSources: ["book/ch08-personal-goal.md"],
-    labSources: ["labs/lab8-personal-goal.md"],
-  },
-  {
-    id: "lab9",
-    label: "Lab 9",
-    bookSources: ["book/ch09-hardware-port.md"],
-    labSources: ["labs/lab9-hardware-port.md"],
-  },
-  {
-    id: "final-lab",
-    label: "Final Lab",
-    bookSources: ["book/ch10-verification.md"],
-    labSources: ["labs/final-lab.md"],
-  },
-];
+    {
+      id: "lab1",
+      label: "Lab 1",
+      bookSources: ["book/ch00-overview.md", "book/ch01-design-space.md"],
+      labSources: ["labs/lab1-seed.md"],
+    },
+    {
+      id: "lab2",
+      label: "Lab 2",
+      bookSources: ["book/ch02-boot.md"],
+      labSources: ["labs/lab2-boot.md"],
+    },
+    {
+      id: "lab3",
+      label: "Lab 3",
+      bookSources: ["book/ch03-memory.md"],
+      labSources: ["labs/lab3-memory.md"],
+    },
+    {
+      id: "lab4",
+      label: "Lab 4",
+      bookSources: ["book/ch04-interrupts.md"],
+      labSources: ["labs/lab4-interrupts.md"],
+    },
+    {
+      id: "lab5",
+      label: "Lab 5",
+      bookSources: ["book/ch05-user-space.md"],
+      labSources: ["labs/lab5-user-space.md"],
+    },
+    {
+      id: "lab6",
+      label: "Lab 6",
+      bookSources: ["book/ch06-filesystem.md"],
+      labSources: ["labs/lab6-filesystem.md"],
+    },
+    {
+      id: "lab7",
+      label: "Lab 7",
+      bookSources: ["book/ch07-resource-abi.md"],
+      labSources: ["labs/lab7-resource-abi.md"],
+    },
+    {
+      id: "lab8",
+      label: "Lab 8",
+      bookSources: ["book/ch08-personal-goal.md"],
+      labSources: ["labs/lab8-personal-goal.md"],
+    },
+    {
+      id: "lab9",
+      label: "Lab 9",
+      bookSources: ["book/ch09-hardware-port.md"],
+      labSources: ["labs/lab9-hardware-port.md"],
+    },
+    {
+      id: "final-lab",
+      label: "Final Lab",
+      bookSources: ["book/ch10-verification.md"],
+      labSources: ["labs/final-lab.md"],
+    },
+  ];
 
 const SHARED_BUNDLES: Array<Omit<ManualBundle, "sources"> & { section: string }> = [
   { id: "shared-specs", title: "Specs 规格手册", outputFileName: "shared/shared-specs.pdf", section: "specs" },
-  { id: "appendices", title: "Appendices 附录", outputFileName: "appendices/appendices.pdf", section: "appendices" },
   { id: "shared-vos", title: "VOS 用户手册", outputFileName: "shared/shared-vos.pdf", section: "vos" },
   { id: "teacher", title: "Teacher 教师手册", outputFileName: "teacher/teacher.pdf", section: "teacher" },
 ];
+
+const APPENDIX_BUNDLES: Array<{
+  id: string;
+  title: string;
+  outputFileName: string;
+  sourcePath: string;
+}> = EXPLICIT_FILE_ORDER.appendices.map((filename) => {
+  const id = filename.replace(/\.md$/, "");
+  const title = filename
+    .replace(/\.md$/, "")
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+  return {
+    id: `appendix-${id}`,
+    title: `Appendix: ${title}`,
+    outputFileName: `appendices/${id}.pdf`,
+    sourcePath: `appendices/${filename}`,
+  };
+});
 
 export function resolveDefaultPaths(repoRoot = process.cwd()): DefaultManualPdfPaths {
   const root = normalize(repoRoot);
@@ -278,6 +300,19 @@ export function buildManualBundles(manualRoot: string): ManualBundle[] {
         title: `${lab.label} Lab`,
         outputFileName: `${lab.id}/${lab.id}-lab.pdf`,
         sources: labSources,
+      });
+    }
+  }
+
+  for (const appendix of APPENDIX_BUNDLES) {
+    const source = sourceByPath.get(appendix.sourcePath);
+    if (source) {
+      markAssignedSources([source], assignedSources, appendix.id);
+      bundles.push({
+        id: appendix.id,
+        title: appendix.title,
+        outputFileName: appendix.outputFileName,
+        sources: [source],
       });
     }
   }
