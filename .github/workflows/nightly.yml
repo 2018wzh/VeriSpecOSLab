@@ -1,0 +1,73 @@
+name: nightly
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: vos-windows-x64.exe
+          - os: ubuntu-latest
+            asset: vos-linux-x64
+          - os: macos-latest
+            asset: vos-macos-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.0
+
+      - name: Install workspace dependencies
+        working-directory: vos
+        run: bun install
+
+      - name: Build standalone binary
+        run: bun run build
+
+      - name: Rename release asset
+        shell: bash
+        run: |
+          mkdir -p release
+          cp dist/vos.exe "release/${{ matrix.asset }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: release/${{ matrix.asset }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+
+      - name: Publish nightly release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.sha }}
+          name: ${{ github.ref_type == 'tag' && format('stable {0}', github.sha) || format('nightly {0}', github.sha) }}
+          prerelease: ${{ github.ref_type != 'tag' }}
+          files: release/**
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

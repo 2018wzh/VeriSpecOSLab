@@ -55,14 +55,14 @@ export interface RunEvent {
   run_id: RunId;
   ts: string;
   type:
-    | "run_started"
-    | "node_started"
-    | "stdout_line"
-    | "stderr_line"
-    | "progress"
-    | "node_finished"
-    | "run_finished"
-    | "run_cancelled";
+  | "run_started"
+  | "node_started"
+  | "stdout_line"
+  | "stderr_line"
+  | "progress"
+  | "node_finished"
+  | "run_finished"
+  | "run_cancelled";
   node_id?: string;
   visibility?: "public" | "agent-only" | "staff-only";
   payload?: Record<string, unknown>;
@@ -118,6 +118,14 @@ export class CoreError extends Error {
   }
 }
 
+export {
+  COMMAND_VERSION,
+} from "./version.ts";
+export {
+  detectUpdateTarget,
+  performSelfUpdate,
+  maybeCheckForUpdate,
+} from "./update.ts";
 export {
   commandToArray,
   executeCliInvocation,

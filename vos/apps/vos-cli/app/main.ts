@@ -2,8 +2,11 @@
 
 import path from "node:path";
 import {
+  COMMAND_VERSION,
   executeCliInvocation,
   parseArgs,
+  performSelfUpdate,
+  maybeCheckForUpdate,
   printCliError,
   printHelp,
   runProgressMcpServer,
@@ -13,6 +16,20 @@ import { startVosHttpServer } from "vos-server";
 
 async function main(): Promise<void> {
   try {
+    if (process.argv[2] === "self-update" || process.argv[2] === "update") {
+      const result = await performSelfUpdate(COMMAND_VERSION);
+      if (result.available && result.latestVersion) {
+        console.log(`vos: updated to ${result.latestVersion}`);
+      } else {
+        console.log(`vos: already up to date (${COMMAND_VERSION})`);
+      }
+      return;
+    }
+    if (process.argv.slice(2).includes("--version")) {
+      console.log(COMMAND_VERSION);
+      return;
+    }
+    void maybeCheckForUpdate(COMMAND_VERSION);
     if (process.argv[2] === "internal" && process.argv[3] === "progress-mcp") {
       await runProgressMcpServer();
       return;

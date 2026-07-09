@@ -1,0 +1,1 @@
+export { COMMAND_VERSION } from "./version.generated.ts";

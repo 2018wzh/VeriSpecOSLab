@@ -11,6 +11,8 @@ VeriSpecOSLab 是一个面向操作系统课程与实验的 spec-first 工作区
 ```bash
 bun install -g github:2018wzh/VeriSpecOSLab
 vos --help
+vos --version
+vos update
 ```
 
 学生不需要 clone VeriSpecOSLab 仓库；拿到课程项目后，在项目目录运行：
@@ -96,6 +98,12 @@ vos --project-root <project-root> submit pack
 完整说明见 [用户手册](docs/manual/README.md)。
 
 ## 开发命令
+
+根目录可直接生成发布二进制；workspace 命令仍从 `vos/` 目录运行：
+
+```bash
+bun run build
+```
 
 所有 workspace 命令从 `vos/` 目录运行：
 

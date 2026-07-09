@@ -155,8 +155,7 @@ import {
   removeKbSource,
   searchKb,
 } from "vos-kb";
-
-const COMMAND_VERSION = "0.1.0";
+import { COMMAND_VERSION } from "./version.ts";
 const DEBUG_TRACE_AGENT_ATTEMPTS = 3;
 
 async function main(): Promise<void> {

@@ -4,4 +4,5 @@
 .idea
 .vscode
 .reasonix
-dist/manual/
+dist
+vos/packages/vos-core/src/version.generated.ts
