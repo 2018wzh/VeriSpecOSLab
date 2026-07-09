@@ -61,12 +61,30 @@ jobs:
         with:
           path: release
 
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          short_sha="${GITHUB_SHA:0:12}"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag_name="stable-${short_sha}"
+            release_name="stable ${short_sha}"
+            prerelease="false"
+          else
+            tag_name="nightly-${short_sha}"
+            release_name="nightly ${short_sha}"
+            prerelease="true"
+          fi
+          echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
+          echo "release_name=$release_name" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+
       - name: Publish nightly release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.sha }}
-          name: ${{ github.ref_type == 'tag' && format('stable {0}', github.sha) || format('nightly {0}', github.sha) }}
-          prerelease: ${{ github.ref_type != 'tag' }}
+          tag_name: ${{ steps.meta.outputs.tag_name }}
+          name: ${{ steps.meta.outputs.release_name }}
+          prerelease: ${{ steps.meta.outputs.prerelease }}
           files: release/**
           generate_release_notes: true
         env:

@@ -1,9 +1,11 @@
+/// <reference path="./globals.d.ts" />
+
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const rootDir = path.resolve(fileURLToPath(import.meta.url), "..", "..");
 const workspaceDir = path.join(rootDir, "vos");
 const versionFile = path.join(workspaceDir, "packages", "vos-core", "src", "version.generated.ts");
 const entryPoint = path.join("apps", "vos-cli", "app", "main.ts");
@@ -55,7 +57,7 @@ async function ensureWorkspaceDependencies(): Promise<void> {
 }
 
 async function resolveGitHash(): Promise<string> {
-    const result = Bun.spawnSync(["git", "rev-parse", "HEAD"], {
+    const result = Bun.spawnSync(["git", "rev-parse", "--short=12", "HEAD"], {
         cwd: rootDir,
         stdin: "ignore",
         stdout: "pipe",

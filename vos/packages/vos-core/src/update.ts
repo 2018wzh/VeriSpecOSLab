@@ -40,8 +40,8 @@ export async function maybeCheckForUpdate(currentVersion = COMMAND_VERSION): Pro
         return null;
     }
 
-    target.latestVersion = latest.tag_name;
-    target.available = latest.tag_name !== currentVersion;
+    target.latestVersion = normalizePublishedVersion(latest.tag_name);
+    target.available = target.latestVersion !== currentVersion;
     target.downloadUrl = latest.assets.find((asset) => asset.name === target.assetName)?.browser_download_url;
 
     if (target.available && target.downloadUrl) {
@@ -59,8 +59,8 @@ export async function performSelfUpdate(currentVersion = COMMAND_VERSION): Promi
         throw new Error(`unable to resolve the latest ${channel} release from GitHub`);
     }
 
-    target.latestVersion = latest.tag_name;
-    target.available = latest.tag_name !== currentVersion;
+    target.latestVersion = normalizePublishedVersion(latest.tag_name);
+    target.available = target.latestVersion !== currentVersion;
     if (!target.available) {
         return target;
     }
@@ -223,4 +223,8 @@ async function scheduleWindowsReplacement(currentBinary: string, downloadedPath:
     if (result.exitCode !== 0) {
         throw new Error("Windows self-update handoff failed; please replace the binary manually with the downloaded asset");
     }
+}
+
+function normalizePublishedVersion(tagName: string): string {
+    return tagName.replace(/^(stable-|nightly-|vos-)/, "");
 }
