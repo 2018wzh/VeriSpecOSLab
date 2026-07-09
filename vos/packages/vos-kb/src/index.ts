@@ -8,6 +8,7 @@ import mime from "mime";
 import officeparser from "officeparser";
 import simpleGit, { type SimpleGit } from "simple-git";
 import * as sqliteVec from "sqlite-vec";
+import { extractText as extractPdfText } from "unpdf";
 import { relativePosixPath } from "vos-platform";
 import { z } from "zod";
 
@@ -503,11 +504,8 @@ async function writeKbIndex(projectRoot: string, index: KbIndex): Promise<void> 
 
 async function readSource(projectRoot: string, source: string): Promise<{ content: string; contentType: string }> {
   if (/^https?:\/\//.test(source)) {
-    const response = await fetch(source);
-    if (!response.ok) throw new Error(`failed to fetch ${source}: ${response.status}`);
-    const contentType = response.headers.get("content-type")?.split(";")[0] ?? "text/plain";
-    const text = await response.text();
-    return { content: contentType.includes("html") ? htmlToText(text) : text, contentType };
+    const { body, contentType } = await downloadWithProgress(source);
+    return await decodeDownloadedContent(source, body, contentType);
   }
   const resolved = path.resolve(projectRoot, source);
   const type = mime.getType(resolved) ?? "text/plain";
@@ -521,6 +519,124 @@ async function readSource(projectRoot: string, source: string): Promise<{ conten
     content: await readFile(resolved, "utf8"),
     contentType: type,
   };
+}
+
+/**
+ * Download a URL with progress bar, returning the raw body and content type.
+ */
+async function downloadWithProgress(url: string): Promise<{ body: Uint8Array; contentType: string }> {
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(120_000),
+    headers: { "User-Agent": "vos-kb/1.0" },
+  });
+  if (!response.ok) throw new Error(`failed to download ${url}: HTTP ${response.status} ${response.statusText}`);
+  if (!response.body) throw new Error(`no response body for ${url}`);
+
+  const contentType = response.headers.get("content-type")?.split(";")[0]?.trim() ?? guessContentTypeFromUrl(url);
+  const contentLength = parseInt(response.headers.get("content-length") ?? "0", 10);
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let downloaded = 0;
+  const startedAt = Date.now();
+
+  const shortUrl = url.length > 60 ? url.slice(0, 57) + "..." : url;
+  process.stderr.write(`  ↓ ${shortUrl}\n`);
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    downloaded += value.length;
+    renderProgress(downloaded, contentLength, startedAt);
+  }
+  process.stderr.write("\n");
+
+  const total = chunks.reduce((s, c) => s + c.length, 0);
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.length; }
+  return { body, contentType };
+}
+
+function renderProgress(downloaded: number, total: number, startedAt: number): void {
+  const elapsed = (Date.now() - startedAt) / 1000;
+  const speed = elapsed > 0 ? (downloaded / 1024 / elapsed).toFixed(0) : "0";
+  if (total > 0) {
+    const pct = Math.min(downloaded / total, 1);
+    const w = 30;
+    const filled = Math.round(pct * w);
+    const bar = "█".repeat(filled) + "░".repeat(w - filled);
+    const dl = (downloaded / 1024 / 1024).toFixed(1);
+    const tl = (total / 1024 / 1024).toFixed(1);
+    process.stderr.write(`\r  [${bar}] ${(pct * 100).toFixed(0)}%  ${dl}/${tl} MB  ${speed} KB/s`);
+  } else {
+    const dl = (downloaded / 1024).toFixed(0);
+    process.stderr.write(`\r  ${dl} KB  ${speed} KB/s`);
+  }
+}
+
+/**
+ * Decode a downloaded byte buffer based on content type.
+ * Handles HTML (strip tags), PDF (extract text via unpdf), and text formats.
+ */
+async function decodeDownloadedContent(
+  source: string, body: Uint8Array, contentType: string,
+): Promise<{ content: string; contentType: string }> {
+  // HTML — strip tags
+  if (contentType.includes("html")) {
+    const text = new TextDecoder().decode(body);
+    return { content: htmlToText(text), contentType };
+  }
+
+  // PDF — extract text with unpdf
+  if (contentType.includes("pdf")) {
+    try {
+      const result = await extractPdfText(body);
+      const text = (result as { text?: string[] }).text?.join("\n") ?? "";
+      if (!text.trim()) throw new Error("no extractable text");
+      return { content: text, contentType };
+    } catch (err) {
+      throw new Error(
+        `failed to extract text from PDF at ${source}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
+  // Markdown, plain text, JSON, XML, CSV, source code — decode as UTF-8
+  if (
+    contentType.startsWith("text/") ||
+    contentType.includes("json") ||
+    contentType.includes("xml") ||
+    contentType.includes("javascript") ||
+    contentType.includes("markdown") ||
+    contentType === "application/octet-stream"
+  ) {
+    const text = new TextDecoder().decode(body);
+    return { content: text, contentType };
+  }
+
+  // Unknown binary — reject with helpful message
+  throw new Error(
+    `unsupported content type "${contentType}" for ${source}. ` +
+    `Supported URL types: HTML, PDF, Markdown, plain text, JSON, XML. ` +
+    `For other file types, download the file first and use \`vos kb add <local-path>\`.`,
+  );
+}
+
+/** Guess MIME type from URL extension (fallback when no Content-Type header). */
+function guessContentTypeFromUrl(url: string): string {
+  const ext = path.extname(new URL(url).pathname).toLowerCase();
+  const map: Record<string, string> = {
+    ".html": "text/html", ".htm": "text/html",
+    ".md": "text/markdown", ".markdown": "text/markdown",
+    ".pdf": "application/pdf",
+    ".json": "application/json",
+    ".xml": "text/xml",
+    ".csv": "text/csv",
+    ".txt": "text/plain",
+  };
+  return map[ext] ?? "application/octet-stream";
 }
 
 async function writeCachedObject(projectRoot: string, source: KbSource, content: string): Promise<void> {

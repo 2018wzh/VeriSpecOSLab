@@ -14,8 +14,9 @@
     "mime": "^4.1.0",
     "officeparser": "^7.2.1",
     "simple-git": "^3.28.0",
-    "vos-platform": "workspace:*",
     "sqlite-vec": "^0.1.9",
+    "unpdf": "^1.6.2",
+    "vos-platform": "workspace:*",
     "zod": "^4.4.3"
   },
   "scripts": {

@@ -190,9 +190,20 @@ export async function ensureDefaultProjectConfig(projectRoot: string): Promise<v
 function ensureVosGitignore(projectRoot: string): void {
   const gitignorePath = path.join(projectRoot, ".gitignore");
   const existing = existsSync(gitignorePath) ? readFileSync(gitignorePath, "utf8") : "";
-  if (existing.split(/\r?\n/).map((line) => line.trim()).some((line) => line === ".vos/" || line === ".vos/*")) return;
-  const prefix = existing && !existing.endsWith("\n") ? `${existing}\n` : existing;
-  writeFileSync(gitignorePath, `${prefix}.vos/\n`);
+  const lines = existing.split(/\r?\n/).map((line) => line.trim());
+
+  const hasVos = lines.some((line) => line === ".vos/" || line === ".vos/*");
+  const hasDotEnv = lines.some((line) => line === ".env");
+
+  if (hasVos && hasDotEnv) return;
+
+  let content = existing;
+  if (content && !content.endsWith("\n")) content += "\n";
+
+  if (!hasVos) content += ".vos/\n";
+  if (!hasDotEnv) content += ".env\n";
+
+  writeFileSync(gitignorePath, content);
 }
 
 const DEFAULT_AGENTS_TEMPLATE = `# AGENTS.md
