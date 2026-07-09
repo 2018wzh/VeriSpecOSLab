@@ -8,6 +8,8 @@
 
 ## 2. 设计空间
 
+> **🔑 内核架构决策节点**：Lab 5 是你正式决定内核架构的时刻。Lab 2-4 默认沿宏内核路径，此时你可以：保持宏内核（无需额外记录），或切换到微内核/混合内核（需写 ADR 记录切换理由）。详见 [Book 第 1 章](../book/ch01-overview-design.md) §1.11.2 问题二（五种内核架构对比）和 §1.10.2（微内核论战）。
+
 | 子阶段 | 关键决策 |
 |--------|---------|
 | 5a: Trap | trap vector 组织方式？Trampoline 页的位置和权限？用户 trap 和内核 trap 的分发策略？ |
@@ -18,6 +20,7 @@
 
 - [附录：RISC-V 参考](../appendices/riscv-reference.md)（Trap、CSR、Sv39 全部）
 - [附录：链接脚本指南](../appendices/linker-script.md)（用户程序链接）
+- [Book 第 1 章](../book/ch01-overview-design.md) §1.11.2 问题二（内核架构对比）、§1.10.2（微内核论战）、§1.11.3 问题三（OS 存在目的）
 - [Spec: OperationContract 编写指南](../specs/operation-contract.md)
 - [Spec: ConcurrencySpec 编写指南](../specs/concurrency-spec.md)
 - ELF 格式规范（至少了解 ELF header 和 Program Header）
@@ -129,7 +132,47 @@ vos run qemu --case user-hello
 - [ ] 非法 syscall 编号被正确处理
 - [ ] 同一进程不在两个 CPU 上同时运行（多核调度正确性）
 
-## 6. 设计理据要求
+## 6. Seed 更新（🔑 核心决策节点）
+
+Lab 5 是 Seed 填充的分水岭。前面四个 Lab 你都在搭基础设施，Lab 5 才第一次面对"我的 OS 到底长什么样"这个全局问题。此时你要填写 goals、non_goals 和 reference_systems，并正式决定内核架构。
+
+1. **写 goals**：在理解了 trap、进程、syscall 之后，你能写出绑着实际经验的目标了：
+   ```yaml
+   goals:
+     - "教学清晰性优先：所有内核数据结构可遍历、所有关键路径可追踪"
+     - "支持至少 3 个并发用户进程"
+     - "进程间通过 MMU 严格隔离"
+   ```
+
+2. **写 non_goals**：实现过之后你知道哪些东西不值得做了：
+   ```yaml
+   non_goals:
+     - "不支持多核并发调度（仅单 HART）"
+     - "不追求 syscall 性能优化"
+     - "不支持动态链接"
+   ```
+
+3. **写 reference_systems**：现在你有资格做有意义的 borrow/modify/reject 分析了：
+   ```yaml
+   reference_systems:
+     - system: "xv6-riscv"
+       borrowed_concepts:
+         - "进程模型：fork/exec/wait 生命周期"
+         - "trap 路径：trampoline 页 + uservec/usertrap"
+       modified_concepts:
+         - "调度器：从 round-robin 改为 MLFQ（理由见 ADR-00X）"
+       rejected_concepts:
+         - "sleeplock：改用 mutex + condition variable（理由见 ADR-00Y）"
+       reason: "xv6 的简洁性适合教学，但 sleeplock 语义过于隐式"
+   ```
+
+4. **决定内核架构**：保持默认宏内核路径，无需额外操作。要切到微内核或混合内核，写 ADR 说清楚三件事：为什么 Lab 5 才切换（而不是更早或更晚），Lab 2-4 的哪些代码需要重构，隔离收益和 IPC 开销你怎么取舍。
+
+5. 更新 `architecture_summary`：经过五个 Lab，你对你的 OS 有了完整的理解，把摘要重写成一句准确的话。
+6. 运行 `vos seed status` 确认 Lab 5 字段已填充。
+7. 运行 `vos stage save --intent "architecture decisions finalized"`。
+
+## 7. 设计理据要求
 
 完成本 Lab 后，你必须能回答：
 
@@ -138,7 +181,7 @@ vos run qemu --case user-hello
 3. 你的调度策略公平性的定义是什么？如何验证？
 4. 你的 ELF 加载器拒绝了哪些类型的 ELF 文件？如果加载了一个恶意构造的 ELF，你的加载器会怎样？
 
-## 7. AI 使用边界
+## 8. AI 使用边界
 
 **允许**：
 - 让 AI 审查 trap 路径的寄存器保存/恢复是否完整
@@ -149,11 +192,11 @@ vos run qemu --case user-hello
 - 在没有 ModuleSpec 的情况下让 AI 生成进程管理或 syscall 分发的核心代码
 - 让 AI 生成未经验证的用户指针复制代码
 
-## 8. 提交物
+## 9. 提交物
 
 见各子阶段门禁中的具体产物。
 
-## 9. 常见错误与排查
+## 10. 常见错误与排查
 
 ### 子阶段 5a (Trap) 高发错误
 
@@ -189,7 +232,7 @@ vos run qemu --case user-hello
 - 忘记在进入用户态前设置 `a0`（argc）和 `sp`（用户栈）
 - `exec` 替换了页表但忘了刷新 TLB
 
-## 8. 提交物
+## 最终提交物汇总
 
 - ArchitectureSlice(user-space)
 - ModuleSpec × 3-4 + 关键操作 OperationContract

@@ -1,10 +1,12 @@
-# Lab 1: 项目初始化与操作系统初步
+# Lab 1: 准备——理解操作系统与选择技术路线
 
 ## 1. 本 Lab 要解决什么
 
-本 Lab 的重点不是马上写代码，而是把项目从空目录推进到一个可检查、可追踪的 VOS 项目，并写出第一版 ArchitectureSeed。
+本 Lab 不写代码。你要做三件事：
 
-你要先回答一个问题：这个 OS 为什么存在？目标确定后，再选择内核架构、目标平台、ABI、参考系统和验证判据。后续阶段遇到取舍时，都要回到这份 seed 看你的目标和 non-goals。
+1. **理解操作系统是什么、它解决什么问题。** 如果你只有裸机编程经验，这一节帮你建立 OS 视角。
+2. **选择编程语言和目标 ISA。** 这是贯穿后续所有 Lab 的基础决策。课程提供对比指南，但选择是你自己的。
+3. **初始化 VOS 项目环境，创建 Seed 骨架。** Seed 是你 OS 设计文档的起点。Lab 1 只填写身份信息（项目名、平台、语言等），架构决策会在后续每个 Lab 中逐步填入——你遇到具体设计问题时才做选择，每次选择后更新 Seed。
 
 ## 2. 从 0 起步
 
@@ -35,15 +37,15 @@ vos init
 
 ## 2a. 配置 Agent
 
-`vos init` 已经在项目根目录创建了 `AGENTS.md`。这份文件定义了 AI Agent 在本项目中的行为边界——它能读什么、改什么、用什么工具。在你开始写 ArchitectureSeed 之前，花五分钟把 Agent 配置好，后续九个阶段你会反复用到它。
+`vos init` 已经在项目根目录创建了 `AGENTS.md`。这份文件定义了 AI Agent 在本项目中的行为边界——它能读什么、改什么、用什么工具。花五分钟把 Agent 配置好，后续九个阶段你会反复用到它。
 
 ### 2a.1 Agent 是什么
 
 VeriSpecOSLab 内置了一个项目级 AI Agent（基于 `vos-agent`），它不是你平常用的通用聊天 AI。Agent 受三层约束：
 
-1. **身份（Identity）** — 决定 Agent 扮演什么角色。Lab 1 阶段主要用到 `knowledgebase.v1`（设计问答）和 `spec-author.v2`（规格审查）。
+1. **身份（Identity）** — 决定 Agent 扮演什么角色。Lab 1 阶段主要用到 `knowledgebase.v1`（设计问答）。
 2. **能力包（Capability Pack）** — 限制 Agent 能调用哪些工具、能读写哪些路径。
-3. **阶段门禁（Stage Gate）** — 根据你当前所处的实验阶段，动态开放或关闭 Agent 的能力。阶段 1 只开放知识库查询和规格审查，不允许生成代码。
+3. **阶段门禁（Stage Gate）** — 根据你当前所处的实验阶段，动态开放或关闭 Agent 的能力。阶段 1 只开放知识库查询，不允许生成代码或规格。
 
 这三层约束的核心目的：**让 AI 帮你思考，但不替你思考。**
 
@@ -70,7 +72,7 @@ export OPENAI_API_KEY="sk-..."
 验证配置是否生效：
 
 ```sh
-vos agent ask "解释 xv6 的 Sv39 分页设计中，为什么选择三级页表而不是二级或四级？"
+vos agent ask "RISC-V 的 S-mode 和 M-mode 有什么区别？为什么内核通常运行在 S-mode？"
 ```
 
 如果 Agent 返回了有引用的回答，配置成功。如果报 `provider not configured`，检查环境变量是否正确 export，以及 key 是否有效。
@@ -95,54 +97,175 @@ This is a VeriSpecOSLab teaching OS project. ...
 
 Lab 1 阶段你不需要修改这份文件。但理解它的作用很重要：**Agent 每次被调用时，会先读这份文件来理解你的项目约定和边界。** 后续阶段如果你引入了新的设计规则（比如"所有 syscall 编号必须从 100 开始"），你应该更新 `AGENTS.md` 让 Agent 知道。
 
-### 2a.4 Agent 在设计阶段的使用方式
+### 2a.4 Agent 在 Lab 1 的使用方式
 
-阶段 1 的核心产出是 ArchitectureSeed——一份设计文档。Agent 在这个阶段的正确用法是**设计对话**，不是**代写答案**。
+Lab 1 的核心任务是理解 OS 背景和选择技术路线。Agent 在这个阶段的正确用法是**问答和解释**。
 
 **推荐的 Agent 使用模式：**
 
 ```sh
-# 进入交互式设计问答模式（knowledgebase.v1 身份）
+# 进入交互式问答模式
 vos agent ask -i
 
 # 然后尝试这些对话：
-> xv6 的进程模型和 Linux 的进程模型在设计哲学上有什么不同？我的 OS 目标是教学清晰性优先，应该更接近哪个？
-> 我选了宏内核架构。宏内核的哪些设计选择会和"安全隔离"这个 goal 冲突？
-> 看我的 seed.yaml 草稿：我的 goals 和 non_goals 之间有矛盾吗？
+> RISC-V 和 x86-64 在教学场景下各有什么优劣？
+> 用 Rust 写内核，no_std 环境下哪些标准库功能不可用？
+> OS 的"职责边界"具体指什么？能举例说明吗？
 ```
 
-**阶段 1 中 Agent 不能做的事：**
+**Lab 1 中 Agent 不能做的事：**
 
-- 替你写 seed.yaml（`spec-author.v2` 可以审查你写的草稿，但不能替你起草）
-- 替你决定内核架构（可以列出选项和后果，但不能说"你应该选 X"）
+- 替你决定语言和 ISA（可以列出选项和后果，但不能说"你应该选 X"）
 - 生成任何 `.c`/`.rs`/`.zig` 实现代码（阶段 1 未开放代码生成能力）
+- 替你写 seed.yaml（你需要自己理解每个字段的含义）
 
-**阶段 1 中 Agent 擅长的事：**
+**Lab 1 中 Agent 擅长的事：**
 
-- 解释参考系统（xv6、Linux、seL4）的具体机制
-- 审查你的 ArchitectureSeed 草稿——目标是否过大、non-goals 是否太少、验证判据是否可测
-- 提醒你某个设计选择会影响哪些后续阶段
-- 根据你的目标从 KB 中检索相关的设计案例和参考资料
+- 解释不同 ISA 的启动流程差异
+- 对比编程语言在 OS 开发中的生态和工具链
+- 回答关于 OS 基本概念的问题
 
 ### 2a.5 知识库（KB）准备
 
-Agent 的设计问答依赖知识库。知识库的具体导入步骤见下方 [§7 导入知识库](#7-导入知识库)——
+Agent 的设计问答依赖知识库。Lab 1 你需要导入语言和 ISA 相关的参考资料。具体步骤见下方 [§7 导入知识库](#7-导入知识库)。
 
-这里先记住一点：**知识库是你的 Agent 的"记忆"。只有你导入的资料，Agent 才能在设计问答中引用。** 后续每个阶段开始前，导入该阶段需要的参考资料——不要一次性导入所有资料，避免 Agent 的检索质量下降。
+这里先记住一点：**知识库是你的 Agent 的"记忆"。只有你导入的资料，Agent 才能在设计问答中引用。** 每个阶段开始前，导入该阶段需要的参考资料——不要一次性导入所有资料，避免 Agent 的检索质量下降。
 
 ---
 
-## 3. 目标先行
+## 3. 操作系统是什么
 
-在写 `seed.yaml` 之前，先写下三类内容：
+在选语言和 ISA 之前，先回答一个更基本的问题：操作系统到底是什么？
 
-- 你最想训练或证明的能力，例如教学清晰性、Linux 静态 ELF 兼容、capability 隔离、启动速度或可验证性。
-- 你明确不做的事情，例如网络、多用户、动态链接、完整 POSIX、真实硬件移植。
-- 你的约束，例如一学期时间、单人项目、RISC-V 64 + QEMU `virt`、C/Rust/Zig 中的一种语言。
+### 3.1 一个简短的历史视角
 
-目标要能影响设计。比如“教学清晰性优先”会推向更少的抽象层和更简单的 syscall 集；“安全隔离优先”可能推向 capability 或微内核；“兼容 Linux 静态 ELF”会让 ABI、ELF loader 和 syscall 编号更早变成硬约束。
+理解操作系统最好的方式不是背定义，是看它怎么一步一步变成今天这样的。
 
-## 4. 规格文件
+**1940s-1950s：没有操作系统的时代。** 程序员直接操作硬件——插拔电缆、设置开关。一台计算机一次只跑一个程序。程序崩溃？整台机器停摆。
+
+**1950s：批处理的诞生。** 把多个程序攒成一批，一个接一个地跑。这叫"批处理监控程序"——操作系统的雏形。但它解决的是效率问题，不是易用性问题。
+
+**1960s：多道程序与分时系统。** IBM OS/360 让多个程序"同时"驻留内存——一个程序等 I/O 时 CPU 跑另一个。MIT CTSS 让多个用户通过终端"同时"使用一台计算机。**分时系统的出现，让"隔离"和"保护"成为操作系统的核心命题。**
+
+**1970s：Unix 的时代。** Ken Thompson 和 Dennis Ritchie 在贝尔实验室写了 Unix。Unix 带来了几个影响深远的决定：一切皆文件、层级文件系统、Shell 作为普通用户程序、管道（`|`）作为 IPC 原语。Unix 哲学：**"Do one thing and do it well."**
+
+**1980s-1990s：微内核之争。** Tanenbaum vs Torvalds。宏内核（Linux）赢了市场，微内核（seL4）赢了安全性。这场论战的核心启示：**没有"最好"的内核架构，只有最适合你目标的架构。** 你将在 Lab 5 中正式决定你的内核架构。
+
+**2000s-至今：虚拟化、容器、Unikernel。** 操作系统设计的边界在持续扩展。
+
+**这段历史对你的意义**：你在后续 Lab 中要做的每个设计决策——内存模型、进程抽象、文件系统——是上述历史的直接延续。你知道历史，你的选择就是有理由的设计判断。
+
+### 3.2 裸机 vs OS：同一件事的两种做法
+
+如果你只有单片机裸机编程经验（STM32、Arduino），你可能会问：我的程序直接操作硬件跑得很好，为什么需要操作系统？
+
+考虑一个简单的任务：让 LED 每秒闪烁一次，同时在串口输出 `"Hello"`。
+
+**在裸机上**，你需要大约 50 行代码，其中 40 行是硬件初始化——查数据手册找寄存器地址、配置时钟树、设置 GPIO 模式、计算波特率。代码绑定特定芯片型号，换一块开发板就要重写 80%。
+
+**在 OS 上**，不到 20 行代码。没有寄存器地址。没有时钟树配置。同一份代码可以在 x86 PC、ARM 树莓派、RISC-V 开发板上编译运行。
+
+```c
+// 裸机：直接操作寄存器
+volatile uint32_t *GPIOC_ODR = (volatile uint32_t *)0x4001100C;
+*GPIOC_ODR ^= (1 << 13);  // 翻转 LED
+for (volatile int i = 0; i < 500000; i++);  // 忙等延时
+
+// OS：通过抽象接口
+FILE *led = fopen("/sys/class/leds/user-led/brightness", "w");
+fputc('1', led);  // 亮
+sleep(1);
+```
+
+核心差异：
+
+| 维度 | 裸机 | OS 环境 |
+|------|------|---------|
+| 硬件访问 | 直接读/写物理寄存器地址 | 通过驱动 + syscall |
+| 可移植性 | 绑定特定芯片 | 同一源码跨硬件运行 |
+| 多任务 | 不存在，while(1) 独占 CPU | 调度器自动分配时间片 |
+| 内存安全 | 全靠程序员不越界 | MMU 隔离——程序崩溃不影响内核 |
+| 开发效率 | 40 行硬件初始化 / 10 行业务逻辑 | 10 行完成全部任务 |
+
+> **延伸阅读**：如果你有裸机编程经验，建议阅读 [附录：裸机编程参考](../appendices/stm32-bare-metal-lab.md)。该附录以 STM32F103 为例，展示了同一任务在裸机和 OS 环境下的完整代码差异——包括多任务上下文切换的汇编实现。
+
+### 3.3 OS 的职责边界
+
+每个操作系统在三个维度上做文章。理解这三个维度有助于你在后续 Lab 中判断"这件事应该是内核做还是用户态做"。
+
+**资源抽象与复用。** CPU 只有一个（或几个），跑的程序有几十个。你怎么让每个程序都觉得"自己独占 CPU"？基本思路是快速切换——一个程序跑几毫秒，切换到下一个。内存也是——物理 RAM 是一块连续的，但每个程序看到的是私有的"虚拟地址空间"。
+
+**隔离与保护。** 资源复用产生了新问题：程序 A 怎么保证程序 B 不会偷看它的内存？答案是 MMU——把每个程序的虚拟地址翻译成物理地址的过程中检查权限。程序 A 的地址 X → 物理地址 Y，程序 B 的地址 X → 物理地址 Z——各自以为在同一个地址，实际上被硬件强制分离。
+
+**服务与接口。** 用户程序怎么请求内核做事？通过 syscall——用户程序通过一条特殊指令（RISC-V 的 `ecall`）"叫"内核，内核在更高特权级执行请求，返回结果。这个接口的设计决定了你的 OS 的"性格"——它暴露了什么抽象？隐藏了什么细节？
+
+这三个维度贯穿全部后续 Lab：Lab 3（内存管理）主要是"隔离与保护"，Lab 5（用户空间）主要是"服务与接口"，Lab 6（文件系统）和 Lab 7（资源模型）主要是"资源抽象与复用"。
+
+---
+
+## 4. 选择你的技术路线
+
+在创建 Seed 骨架之前，你需要做出两个基础决策：目标 ISA 和编程语言。这些决策会在后续 Lab 的设计中反复影响你的选择。
+
+### 4.1 选择 ISA
+
+本课程支持所有主流 ISA。各 ISA 的关键差异在后续 Lab 中会以对比形式标注。这里给出快速概览：
+
+| 维度 | RISC-V 64 | AArch64 (ARMv8) | x86-64 |
+|------|-----------|-----------------|--------|
+| 特权级 | M/S/U 三级，清晰分层 | EL3/EL2/EL1/EL0 四级 | Ring 0/1/2/3，历史包袱重 |
+| 页表 | Sv39 (3级)，规范约100页 | VMSAv8-64 (4级)，规范复杂 | 4-level PML4，历史兼容多 |
+| 中断控制器 | PLIC（平台级），简单清晰 | GICv3/v4，功能丰富但复杂 | APIC/x2APIC，最复杂 |
+| syscall | `ecall` 指令，统一入口 | `svc` 指令，统一入口 | `syscall`/`sysenter`，历史遗留多 |
+| 教学友好度 | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
+
+**默认推荐：RISC-V 64 + QEMU `virt`。**
+
+理由：
+- RISC-V 的规范简洁——特权级规范约 100 页，x86 的相应文档超过 2000 页
+- QEMU `virt` 机器是课程工具链的一等公民——所有示例、测试和验证脚本基于此配置
+- 参考资料最丰富——xv6-riscv 是课程的主要参考系统
+
+> 选择 x86-64 或 ARM 不会受到惩罚。你需要付出额外的自行调研工作，并理解课程工具链对你的 ISA 的支持程度。
+
+### 4.2 选择编程语言
+
+内核可以用多种系统编程语言编写。没有一种在所有维度上最优——你的选择取决于你最看重什么。
+
+| 维度 | C | Rust (no_std) | Zig |
+|------|---|---------------|-----|
+| 内存安全 | 完全依赖程序员纪律 | 编译期所有权+借用检查杜绝 use-after-free 等 bug 类别 | 编译期无所有权检查；提供 `defer`、错误联合类型等防御工具 |
+| 代表项目 | Linux、xv6、FreeBSD、seL4 | Redox（微内核）、Tock（嵌入式RTOS）、rCore、Theseus | Bun（JS运行时）、TigerBeetle（金融DB） |
+| 构建系统 | Make/CMake/Meson | Cargo + `rustup target add` | `build.zig` 可编程构建；`zig cc` 可作为 C 编译器 |
+| 交叉编译 | 需手动安装目标工具链 | `rustup target add` | `zig build -Dtarget=riscv64-freestanding` |
+| 学习曲线 | 语法简单（~32关键字），UB 陷阱隐蔽且多 | 所有权+借用+生命周期需数周适应 | 语法中等，`comptime` 是独特优势 |
+| 内核开发资料 | 最丰富（xv6、Linux、seL4 等） | 快速增长（rCore 教程、Rust OSDev） | 较少但增长中 |
+| 适合你的场景 | 想把精力全花在 OS 设计上 | 想用编译器消灭内存 bug | 想要一流交叉编译体验 |
+
+**默认推荐：C。** 理由：
+- 参考资料最丰富——xv6、xv6-riscv book、OSDev wiki 中的大多数示例使用 C
+- 语法简单——你不会花数周学习语言特性，而是直接进入 OS 设计
+- "内存不安全"在教学场景中反而是优势——你会亲身经历 buffer overflow 如何摧毁内核，从而深刻理解 MMU 和隔离的价值
+
+> 选择 Rust 或 Zig 不会受到惩罚。你需要额外投入时间学习语言特性，但在后续 Lab 中你可能获得更少的调试时间（Rust 编译期检查）或更好的构建体验（Zig 交叉编译）。
+
+### 4.3 默认推荐路径
+
+如果你不确定怎么选，以下是最低风险的组合：
+
+```
+ISA:   RISC-V 64 + QEMU virt
+语言:   C
+构建:   Make + RISC-V GNU 工具链
+```
+
+这不是"正确答案"——不存在唯一正确答案。这是一条**参考资料最丰富、踩坑最少**的路径。你当然可以偏离它——只要你在后续的 ADR 中说清楚理由。
+
+---
+
+## 5. 创建 Seed 骨架
+
+Seed（`spec/architecture/seed.yaml`）是你 OS 设计文档的核心。**在 Lab 1，你只填写身份信息**。其他字段——goals、non_goals、reference_systems、validation_binding——在后续 Lab 中逐步填充。
 
 创建目录：
 
@@ -150,63 +273,113 @@ Agent 的设计问答依赖知识库。知识库的具体导入步骤见下方 [
 mkdir -p spec/architecture
 ```
 
-### 4.1 ArchitectureSeed
+### 5.1 最小 Seed 骨架
 
-创建 `spec/architecture/seed.yaml`。至少包含这些字段：
+创建 `spec/architecture/seed.yaml`，填入以下字段。标记 `(TODO)` 的字段在后续 Lab 中补充：
 
 ```yaml
+# ============================================================
+# Lab 1 填写：身份信息
+# ============================================================
 id: my-os-seed
 project: my-os
 domain: teaching-operating-system
-target_platform: riscv64-qemu-virt
+target_platform: riscv64-qemu-virt    # 或 x86-64/arm64，见 §4.1
+language: c                            # 或 rust/zig，见 §4.2
 architecture_name: my-os
 architecture_summary: >
   用一句话说明你的 OS 目标和主要取舍。
+  （此时可以模糊——后续 Lab 中你会逐步细化这句话。）
 
-reference_systems:
-  - system: xv6-riscv
-    borrowed_concepts:
-      - "例如：Sv39 分页和简单进程模型"
-    modified_concepts:
-      - "例如：缩小 syscall 集合"
-    rejected_concepts:
-      - "例如：暂不做多核"
-    reason: "说明为什么借鉴、修改或拒绝这些机制。"
-
-goals:
-  - "至少 3 条，必须具体。"
-non_goals:
-  - "至少 3 条，说明本项目不优化或不实现什么。"
+# ============================================================
+# Lab 2 填写：启动策略
+# ============================================================
 constraints:
-  - "写清 ISA、目标平台、语言、工具链和时间约束。"
+  - "TODO: Lab 2 填入启动方式、bootloader 选择、内存布局约束"
+
+# ============================================================
+# Lab 3 填写：内存模型
+# ============================================================
+# constraints 追加：分页模型、物理内存范围
+# TODO: Lab 3
+
+# ============================================================
+# Lab 4 填写：设备与中断模型
+# ============================================================
+# TODO: Lab 4
+
+# ============================================================
+# Lab 5 填写：内核架构 + 进程模型 + syscall 策略
+#   这是种子最重要的更新节点。
+#   goals, non_goals, reference_systems 在此阶段首次填写。
+# ============================================================
+goals:
+  - "TODO: Lab 5 填入至少 3 条具体目标"
+non_goals:
+  - "TODO: Lab 5 填入至少 3 条明确排除的内容"
+reference_systems:
+  # TODO: Lab 5 填入参考系统及 borrow/modify/reject 分析
+
+# ============================================================
+# Lab 6 填写：文件系统策略
+# ============================================================
+# TODO: Lab 6
+
+# ============================================================
+# Lab 7 填写：资源模型
+# ============================================================
+# TODO: Lab 7
+
+# ============================================================
+# Lab 8 填写：个性化目标
+# ============================================================
+# TODO: Lab 8
+
+# ============================================================
+# Lab 9 填写：硬件移植约束
+# ============================================================
+# TODO: Lab 9
+
+# ============================================================
+# Final Lab 汇总：validation_binding 汇总
+# ============================================================
 initial_validation_binding:
-  - "至少 3 条可检查判据，例如 qemu_boot_smoke。"
+  - "TODO: 各 Lab 的验证判据在对应阶段收集，Final Lab 汇总"
 ```
 
-详细字段见 [ArchitectureDesignSpec 编写指南](../specs/architecture-design-spec.md)。
+### 5.2 为什么 Seed 是逐步填充的
 
-## 5. 可选：裸机编程参考阅读
+在 Lab 1 就要求你决定内核架构、参考系统和设计目标，有三个问题：
 
-> 如果你有 STM32 或 Arduino 裸机编程经验，建议在写 ArchitectureSeed 之前阅读 [附录：裸机编程参考](../appendices/stm32-bare-metal-lab.md)。该附录以 STM32F103 为例，对比展示了同一任务在裸机和 OS 环境下的完整代码差异，帮助你明确"我的 OS 至少要抽象掉哪些裸机细节"。
+- **没有上下文的选择只能是猜。** 你连分页机制都没见过，就要判断"参考 xv6 的 Sv39 还是 Linux 的 5-level paging"。
+- **早期决策推翻时没有记录机制。** 后面 Lab 发现之前选错了，改了代码，但 seed 没人更新，设计意图和实现逐渐脱节。逐步填充要求每次变更都走 ADR，seed 跟着改，演化路径可追溯。
+- **一次性填满像填表。** 所有字段一次填完，学生倾向于把 seed 当成作业模板而不是设计工具。在你真正面对一个设计问题时再写对应的 seed 字段，你写下的每个决策都绑着一个你亲手撞过的墙。
 
-读完后，在 ArchitectureSeed 的 `design_notes` 中记录你的发现：
+### 5.3 如何更新 Seed（后续 Lab 中使用）
 
-```yaml
-design_notes:
-  - "基于裸机对比参考，本 OS 至少需要抽象：(1) 硬件无关的输出接口，(2) 非忙等的延时机制，(3) 多任务间的内存隔离"
-```
+在每个后续 Lab 结束时，你会：
+
+1. 根据该 Lab 的设计问题，填写 seed.yaml 中对应的 `TODO` 字段
+2. 如果有与已有决策冲突的新选择，写 ADR 记录"为什么改变主意"
+3. 运行 `vos seed status` 检查填充进度
+4. 运行 `vos stage save` 保存本阶段状态
+
+> 详细指引见每个 Lab 的"Seed 更新"小节，以及 [ArchitectureDesignSpec 编写指南](../specs/architecture-design-spec.md) 中的"Seed 演化"章节。
 
 ---
 
 ## 6. 检查与保存
 
-完成 seed、composition 和 KB 导入后，运行：
+完成 seed 骨架和 KB 导入后，运行：
 
 ```sh
-vos spec lint
-vos arch lint
-vos stage save --intent "complete architecture seed"
+vos spec lint          # 对空白字段不报错，只检查已填字段格式
+vos stage save --intent "initialize project and create seed skeleton"
 ```
+
+> **注意**：`vos arch lint` 在 Lab 1 不强制——seed 中还没有足够的内容供架构检查。该命令从 Lab 2 开始启用。
+
+---
 
 ## 7. 导入知识库
 
@@ -216,50 +389,80 @@ vos stage save --intent "complete architecture seed"
 vos kb add spec --source-kind project --recursive
 ```
 
-再按你的设计目标导入至少一份参考资料。资料可以来自课程发放的本地文件，也可以是你自己选择的公开参考资料。
+再按你的技术路线导入对应参考资料。
+
+**如果你选择了默认推荐路径（C + RISC-V）：**
 
 ```sh
+# RISC-V 基础
+vos kb add docs/reference/riscv-privileged-manual.pdf --source-kind course --title "RISC-V Privileged Spec"
+
+# C 语言 OS 开发
 vos kb add docs/reference/xv6-book.pdf --source-kind course --title "xv6 book"
+```
+
+**如果你选择了 Rust：**
+
+```sh
+vos kb add docs/reference/rust-embedded-book.pdf --source-kind course --title "Rust Embedded Book"
+vos kb add docs/reference/rcore-tutorial.pdf --source-kind course --title "rCore Tutorial"
+```
+
+**如果你选择了 Zig：**
+
+```sh
+vos kb add docs/reference/zig-bare-metal.pdf --source-kind course --title "Zig Bare Metal Guide"
+```
+
+验证导入：
+
+```sh
 vos kb list
 ```
 
-如果你选择微内核、capability、Linux ELF 兼容或硬件移植，参考资料也应对应这些目标。不要只导入和自己路线无关的材料。
+---
 
 ## 8. 质量门禁
 
 自动检查：
 
-- [ ] `vos spec lint` 通过。
-- [ ] `vos arch lint` 通过。
-- [ ] `vos kb list` 能看到项目 spec 和至少一份与你目标相关的参考资料。
-- [ ] `vos stage save --intent "complete architecture seed"` 已完成阶段保存。
+- [ ] `vos doctor` 通过。
+- [ ] `seed.yaml` 存在，`id`/`project`/`domain`/`target_platform`/`language`/`architecture_name`/`architecture_summary` 均已填写。
+- [ ] `vos spec lint` 通过（对空白字段不报错）。
+- [ ] `vos kb list` 能看到项目 spec 和至少一份与你技术路线相关的参考资料。
+- [ ] `vos stage save --intent "initialize project and create seed skeleton"` 已完成阶段保存。
 
 手动检查：
 
-- [ ] `goals` 和 `non_goals` 都具体，能影响后续设计选择。
-- [ ] 参考系统不是标签式引用，写清借鉴、修改和拒绝的具体机制。
-- [ ] 至少一项拒绝理由说清了代价或边界。
-- [ ] `initial_validation_binding` 都能落到可观测检查，不写“系统稳定”“体验良好”这类空泛目标。
-- [ ] CompositionSpec 至少包含一条和目标相关的跨组件规则。
-- [ ] （可选）完成裸机对比实验，ArchitectureSeed 中记录了至少一条"本 OS 需要抽象掉的裸机细节"。
+- [ ] 理解 OS 的三个职责维度（资源抽象、隔离保护、服务接口），能用自己的话解释。
+- [ ] 语言和 ISA 的选择有理由（不是随机选的）。如果是默认推荐路径，至少要理解"为什么推荐这个组合"。
+- [ ] seed.yaml 的 `architecture_summary` 不是空话——虽然此时不需要精确，但要反映出你大致的意图方向。
+
+---
 
 ## 9. AI 使用边界
 
 允许：
 
-- 让 AI 解释参考系统的机制。
-- 让 AI 审查 seed 草稿是否目标过大、non-goals 太少、验证判据不可测。
-- 让 AI 提醒你某个目标会影响哪些后续阶段。
+- 让 AI 解释不同 ISA 的差异（如"RISC-V PLIC 和 ARM GIC 的中断模型有什么不同？"）。
+- 让 AI 对比语言在 OS 开发中的优劣。
+- 让 AI 解释 OS 的基本概念（如"什么是 MMU？""什么是特权级？"）。
+- 让 AI 审查 seed 骨架格式是否正确。
 
 不允许：
 
-- 让 AI 替你决定目标和设计哲学。
-- 直接跳过 ArchitectureSeed 进入 boot 代码。
-- 把没有理解的参考系统机制写进 borrowed_concepts。
+- 让 AI 替你决定语言和 ISA。
+- 让 AI 替你写 `architecture_summary`。
+- 让 AI 生成实现代码（阶段 1 未开放代码生成能力）。
+- 跳过 Lab 1 直接进入 Lab 2（seed 骨架是后续所有 Lab 的前提）。
+
+---
 
 ## 10. 提交物
 
 - 代码仓库地址
+- `vos doctor` 输出摘要
+- `seed.yaml` 文件（Lab 1 身份字段已填写）
 - `vos kb list` 输出摘要
-- `vos spec lint`、`vos spec check-consistency`、`vos arch lint` 输出摘要
-- `vos stage save --intent "complete architecture seed"` 的完成摘要
+- `vos spec lint` 输出摘要
+- `vos stage save --intent "initialize project and create seed skeleton"` 的完成摘要

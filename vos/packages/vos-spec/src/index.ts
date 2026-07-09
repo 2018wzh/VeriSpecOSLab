@@ -14,6 +14,7 @@ import {
   moduleSchema,
   operationSchema,
   publicMatrixSchema,
+  seedSchema,
   specPatchSchema,
   timelineSchema,
 } from "./schemas.ts";
@@ -95,6 +96,7 @@ export async function buildNormalizedSpecBundle(params: {
   const toolchainProfiles: NormalizedSpecBundle["toolchain_profiles"] = [];
   const publicRequirements: NormalizedSpecBundle["verification"]["public_requirements"] = [];
   const patchRecords: SpecPatchRecord[] = [];
+  let seedDoc: Record<string, unknown> | null = null;
 
   for (const file of files) {
     const rel = normalizePath(path.relative(projectRoot, file));
@@ -197,6 +199,11 @@ export async function buildNormalizedSpecBundle(params: {
           required_tests: req.required_tests,
           required_artifacts: req.required_artifacts,
         })));
+      } else if (kind === "architecture_seed") {
+        // v2: seed.yaml uses lenient schema — blank/TODO fields are allowed.
+        // Only report diagnostics for malformed values (wrong types), not missing fields.
+        const doc = seedSchema.parse(parsed);
+        seedDoc = doc as Record<string, unknown>;
       } else if (kind === "spec_patch") {
         const doc = specPatchSchema.parse(parsed);
         patchRecords.push({
@@ -244,6 +251,7 @@ export async function buildNormalizedSpecBundle(params: {
     modules: modules.sort(byId),
     operations: operations.sort(byId),
     architecture: {
+      seed: seedDoc,
       stages: stages.sort((a, b) => a.stage.localeCompare(b.stage)),
       slices: slices.sort(byId),
       decisions: decisions.sort(byId),

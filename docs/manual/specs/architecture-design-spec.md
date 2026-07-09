@@ -2,6 +2,27 @@
 
 ArchitectureDesignSpec 是架构层的规格集合，由 ArchitectureSeed、ArchitectureSlice、ADR 和 CompositionSpec 组成。
 
+## Seed 演化
+
+ArchitectureSeed 随 Lab 推进逐步长出来：
+
+| Lab | 填充内容 |
+|-----|---------|
+| Lab 1 | 身份字段：id, project, domain, target_platform, language, architecture_name, architecture_summary |
+| Lab 2 | 启动策略：启动方式、bootloader 选择、内存布局约束（写入 constraints） |
+| Lab 3 | 内存模型：分页模型、物理内存范围（追加到 constraints） |
+| Lab 4 | 设备与中断模型 |
+| **Lab 5** | **种子最重要的更新节点。** 首次填写 goals、non_goals、reference_systems（含 borrow/modify/reject 分析），正式决定内核架构 |
+| Lab 6–9 | 依次填入文件系统策略、资源模型、个性化目标、硬件移植约束 |
+| Final Lab | 汇总 initial_validation_binding |
+
+### 演化规则
+
+1. **每个 Lab 结束时更新 seed。** 从该 Lab 的 Slice 和 ADR 中提取关键决策，填入 seed 对应字段。
+2. **允许回滚。** Lab N 发现 Lab M（M < N）的决策需要改变，写 ADR 记录原因，改 seed 对应字段。旧 ADR 的 `status` 设为 `superseded`，指向新 ADR。
+3. **Seed 是汇总，不是替代。** ArchitectureSlice 和 ADR 保留了每次设计的完整上下文。Seed 把它们提炼成一张可快速查阅的地图。
+4. **`vos seed status`** 展示当前填充进度，按 Lab 列出哪些字段已填、哪些还是 TODO。
+
 ## ArchitectureSeed：你的 OS 的出生证
 
 ArchitectureSeed 回答一个根本问题：**我要构建一个什么样的 OS？**
@@ -110,6 +131,7 @@ tradeoffs:
   - "Sv39 的 512 GB 虚拟地址空间对教学场景足够"
   - "3 级页表遍历比 Sv48 的 4 级更快，但支持的内存更少"
 affected_specs: ["spec/modules/kernel/memory/module.yaml"]
+seed_impact: "更新 seed.yaml constraints 中的分页模型字段"
 verification_impact: "需要验证 3 级页表遍历正确性"
 ```
 

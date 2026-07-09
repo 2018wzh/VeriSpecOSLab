@@ -91,6 +91,9 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
     case "kb_add":
       return handlers.executeKbAdd(command, projectRoot, evidence);
 
+    case "seed_status":
+      return handlers.executeSeedStatus(projectRoot);
+
     case "kb_list":
       return handlers.executeKbList(projectRoot);
 

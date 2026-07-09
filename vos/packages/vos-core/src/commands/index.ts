@@ -5,4 +5,5 @@ export * from "./build-runtime.ts";
 export * from "./report.ts";
 export * from "./ledger.ts";
 export * from "./kb.ts";
+export * from "./seed.ts";
 export * from "./agent.ts";

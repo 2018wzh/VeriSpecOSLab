@@ -20,6 +20,7 @@
 ## 3. 背景阅读
 
 - 至少两种不同范式的参考系统文档（如 xv6 和 seL4）
+- [Book 第 1 章](../book/ch01-overview-design.md) §1.10.1（Unix 哲学：一切皆文件、管道、文本流）和 §1.11.5 问题五（用户程序与内核交互）
 - [Spec: GoalValidationContract 编写指南](../specs/goal-validation-contract.md)
 - [Spec: CompositionSpec 编写指南](../specs/architecture-composition-spec.md)
 - [附录：不变量检查器编写指南](../appendices/invariant-checker.md)
@@ -88,19 +89,35 @@ vos verify full --target goal    # 验证你的 GoalValidationContract
 - [ ] benchmark 达标
 - [ ] negative_tradeoff_checks 未触发
 
-## 6. 设计理据要求
+## 6. Seed 更新
+
+本 Lab 结束时，更新 `spec/architecture/seed.yaml`：
+
+1. 在 `constraints` 中追加资源模型相关约束：
+   ```yaml
+   constraints:
+     # ... 保留之前 Lab 的约束
+     - "资源模型：fd-based，一切皆文件"
+     - "syscall ABI：类 POSIX 子集，含 read/write/open/close/exit"
+     - "IPC：pipe，基于内核缓冲区"
+   ```
+2. 反思并可能调整 `goals` 和 `non_goals`。Lab 7 的资源模型选择反映了你的 OS 的"性格"，检查与 Lab 5 设定的目标是否一致。
+3. 运行 `vos seed status` 确认 Lab 7 字段已填充。
+4. 运行 `vos stage save --intent "resource model decided"`。
+
+## 7. 设计理据要求
 
 1. 你选择的资源范式的核心设计理念是什么？为什么它适合你的 OS？
 2. 如果你选择了 fd-based，你的实现与 Unix 有什么不同？如果你选择了其他范式，你借鉴了哪个系统的设计？
 3. 你的 syscall ABI 中，哪个 syscall 的设计最让你纠结？为什么？
 4. 你的 Shell 是一个真正的用户程序（需要 fork+exec 来运行外部命令）吗？如果不是，缺少了什么机制？
 
-## 7. AI 使用边界
+## 8. AI 使用边界
 
 - 允许让 AI 审查你的 Shell 命令解析器的正确性
 - 禁止在不写 GoalValidationContract 的情况下直接进入实现
 
-## 8. 提交物
+## 9. 提交物
 
 - ArchitectureSlice(resource)
 - ADR（资源范式选择）

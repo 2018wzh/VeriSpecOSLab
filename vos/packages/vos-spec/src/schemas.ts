@@ -77,6 +77,30 @@ export const architectureSliceSchema = z.object({
   validation_gate: optionalStringArray,
 }).passthrough();
 
+// ArchitectureSeed schema — v2: all fields optional to support incremental filling.
+// Lab 1 fills identity fields only; Labs 2-9 fill the rest progressively.
+export const seedSchema = z.object({
+  id: z.string().optional(),
+  project: z.string().optional(),
+  domain: z.string().optional(),
+  target_platform: z.string().optional(),
+  language: z.string().optional(),
+  architecture_name: z.string().optional(),
+  architecture_summary: z.string().optional(),
+  reference_systems: z.array(z.object({
+    system: z.string().optional(),
+    borrowed_concepts: optionalStringArray,
+    modified_concepts: optionalStringArray,
+    rejected_concepts: optionalStringArray,
+    reason: z.string().optional(),
+  }).passthrough()).optional(),
+  goals: optionalStringArray,
+  non_goals: optionalStringArray,
+  constraints: optionalStringArray,
+  initial_validation_binding: optionalStringArray,
+  design_notes: optionalStringArray,
+}).passthrough();
+
 export const compositionSchema = z.object({
   id: z.string().min(1),
   title: z.string().optional(),

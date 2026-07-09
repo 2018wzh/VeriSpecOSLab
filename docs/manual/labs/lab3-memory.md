@@ -304,13 +304,30 @@ vos verify public       # 基础验证
 
 - [ ] 如果已建立用户页表概念，确认用户页表中不存在指向内核物理内存的 U=1 映射
 
-## 6. 设计理据要求
+## 6. Seed 更新
+
+本 Lab 结束时，更新 `spec/architecture/seed.yaml`：
+
+1. 在 `constraints` 中追加内存相关约束：
+   ```yaml
+   constraints:
+     - "TODO: Lab 2..."  # 保留 Lab 2 的内容
+     - "分页模型：Sv39，3 级页表，4 KiB 页"
+     - "物理内存范围：0x80000000 - 0x88000000（128 MiB）"
+     - "内核地址空间：identity mapping，用户/内核共享低地址"
+     - "物理分配器：freelist（或 buddy/bitmap，填你实际选择的）"
+   ```
+2. 如果分页模型或地址空间布局选择了非默认方案（如 HHDM 而非 identity mapping），写 ADR 记录理由。
+3. 运行 `vos seed status` 确认 Lab 3 字段已填充。
+4. 运行 `vos stage save --intent "memory model decided"`。
+
+## 7. 设计理据要求
 
 1. 你选择的分配器算法的最坏情况行为是什么？这影响你在后续阶段的什么设计？
 2. 你的地址空间布局为什么是这个结构？有什么设计约束促成了这个选择？
 3. 你的不变量检查器覆盖了你分配器的所有关键不变量吗？有没有不变量无法在运行时检查？
 
-## 7. AI 使用边界
+## 8. AI 使用边界
 
 **允许**：
 - 让 AI 审查你的 ModuleSpec，指出缺失的不变量
@@ -321,7 +338,7 @@ vos verify public       # 基础验证
 - 在没有 ModuleSpec 的情况下让 AI 生成分配器或页表代码
 - 让 AI 移除或弱化不变量检查器
 
-## 8. 提交物
+## 9. 提交物
 
 - ArchitectureSlice(memory)
 - 两个 ModuleSpec（memory + vm）及关键操作的 OperationContract
@@ -332,7 +349,7 @@ vos verify public       # 基础验证
 
 （进阶方向：对比多种分配器策略如 freelist vs buddy 的性能；调研 KASLR 在教学 OS 中的可行性；利用 Sv39 的 2 MiB/1 GiB 大页减少 TLB 压力；实现惰性分配——页在首次 page fault 时才分配物理页。）
 
-## 9. 常见错误与排查
+## 10. 常见错误与排查
 
 ### 错误 1：启用 MMU 后内核立刻崩溃，没有任何输出
 

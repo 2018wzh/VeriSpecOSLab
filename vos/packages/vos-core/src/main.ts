@@ -1837,6 +1837,100 @@ export async function executeKbList(projectRoot: string): Promise<CommandOutcome
   };
 }
 
+// ── seed status ────────────────────────────────────────────
+
+interface SeedStatusFields {
+  filled: boolean;
+  lab: string;
+}
+
+const SEED_LAB_FIELDS: Record<string, string[]> = {
+  "Lab 1 (identity)": ["id", "project", "domain", "target_platform", "language", "architecture_name", "architecture_summary"],
+  "Lab 2 (boot)": ["constraints"],
+  "Lab 3 (memory)": ["constraints"],
+  "Lab 4 (interrupts)": [],
+  "Lab 5 (user-space)": ["goals", "non_goals", "reference_systems"],
+  "Lab 6 (filesystem)": [],
+  "Lab 7 (resource-abi)": [],
+  "Lab 8 (personal-goal)": [],
+  "Lab 9 (hardware-port)": [],
+  "Final Lab": ["initial_validation_binding"],
+};
+
+function isBlankValue(v: unknown): boolean {
+  if (v === undefined || v === null) return true;
+  if (typeof v === "string" && (v.trim() === "" || v.startsWith("TODO"))) return true;
+  if (Array.isArray(v)) {
+    if (v.length === 0) return true;
+    return v.every((item) => typeof item === "string" && (item.trim() === "" || item.startsWith("TODO")));
+  }
+  return false;
+}
+
+export async function executeSeedStatus(projectRoot: string): Promise<CommandOutcome> {
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const yaml = await import("yaml");
+
+  const seedPath = path.join(projectRoot, "spec", "architecture", "seed.yaml");
+  let seedYaml: Record<string, unknown> | null = null;
+
+  try {
+    const raw = await fs.readFile(seedPath, "utf-8");
+    const parsed = yaml.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      seedYaml = parsed as Record<string, unknown>;
+    }
+  } catch {
+    // seed.yaml not found or unparseable
+  }
+
+  if (!seedYaml) {
+    return {
+      status: "validation_failed",
+      details: {
+        message: "seed.yaml not found at spec/architecture/seed.yaml",
+        hint: "Run Lab 1 to create your seed skeleton.",
+      },
+    };
+  }
+
+  const fieldStatus: Record<string, SeedStatusFields> = {};
+  for (const [lab, fields] of Object.entries(SEED_LAB_FIELDS)) {
+    for (const field of fields) {
+      const value = seedYaml[field];
+      if (!fieldStatus[field]) {
+        fieldStatus[field] = { filled: !isBlankValue(value), lab };
+      } else if (!fieldStatus[field].filled && !isBlankValue(value)) {
+        fieldStatus[field] = { filled: true, lab };
+      }
+    }
+  }
+
+  const filledFields = Object.entries(fieldStatus).filter(([, s]) => s.filled);
+  const totalTracked = Object.keys(fieldStatus).length;
+  const filledCount = filledFields.length;
+
+  const completedLabs: string[] = [];
+  if (fieldStatus["architecture_summary"]?.filled) completedLabs.push("Lab 1");
+  if (fieldStatus["goals"]?.filled && fieldStatus["non_goals"]?.filled) completedLabs.push("Lab 5 (goals/non-goals)");
+  if (fieldStatus["reference_systems"]?.filled) completedLabs.push("Lab 5 (reference systems)");
+
+  return {
+    status: "passed",
+    details: {
+      seedPath,
+      filledCount,
+      totalTracked,
+      fields: Object.fromEntries(
+        Object.entries(fieldStatus).map(([k, v]) => [k, v.filled ? "filled" : "blank"])
+      ),
+      completedLabs,
+      summary: `${filledCount}/${totalTracked} fields filled — ${completedLabs.length > 0 ? completedLabs.join(", ") : "no labs completed yet"}`,
+    },
+  };
+}
+
 export async function executeKbSearch(command: KbSearchCommand, projectRoot: string): Promise<CommandOutcome> {
   const hits = await searchKb(projectRoot, command.query, { embedder: createKbEmbedder(projectRoot) });
   return {

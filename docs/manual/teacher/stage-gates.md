@@ -24,12 +24,16 @@
 stage: architecture-seed
 prerequisites: []
 required_artifacts:
-  - spec/architecture/seed.yaml
-  - spec/architecture/composition.yaml（骨架）
+  - spec/architecture/seed.yaml（骨架，仅需身份字段）
 automatic_checks:
-  - vos arch lint
-manual_review_policy: required  # 必须人工审核
-unlock_condition: all_checks_passed AND manual_review_approved
+  - vos doctor
+  - vos spec lint（对空白字段不报错）
+manual_review_policy: optional  # 不再强制人工审核
+unlock_condition: all_automatic_checks_passed
+note: >
+  Lab 1 仅填写 seed 骨架（id/project/domain/target_platform/language/
+  architecture_name/architecture_summary）。完整 ArchitectureSeed 在
+  后续 Lab（2-9）中逐步填充，Lab 5 是种子填充的分水岭。
 ```
 
 ### boot-minimum → memory-management

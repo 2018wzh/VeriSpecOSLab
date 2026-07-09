@@ -306,6 +306,10 @@ export interface KbListCommand extends BaseCommand {
   kind: "kb_list";
 }
 
+export interface SeedStatusCommand extends BaseCommand {
+  kind: "seed_status";
+}
+
 export interface KbSearchCommand extends BaseCommand {
   kind: "kb_search";
   query: string;
@@ -371,6 +375,7 @@ export type CliCommand =
   | AgentAskCommand
   | KbAddCommand
   | KbListCommand
+  | SeedStatusCommand
   | KbSearchCommand
   | KbRemoveCommand
   | KbClearCommand

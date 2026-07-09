@@ -6,6 +6,8 @@
 
 ## 2. 设计空间
 
+> **关于内核架构**：此时你还不必决定宏内核还是微内核，这个选择推迟到 Lab 5。Lab 2-4 默认沿宏内核路径（所有内核模块在同一地址空间），这是最简单、参考资料最丰富的路线。如果你已有明确计划走微内核，先按宏内核走完 Lab 2-4，到 Lab 5 再通过 ADR 切换。
+
 | 决策 | 你需要回答的问题 |
 |------|----------------|
 | 启动序列 | 固件给你的内核了什么状态？从 `_start` 到 `kernel_main` 之间需要哪些步骤？ |
@@ -14,6 +16,8 @@
 | 内存布局 | 栈放哪里？代码和数据段的加载地址？BSS 在哪里？ |
 | 构建链路 | 用什么编译器？什么链接脚本？产生什么格式的镜像？ |
 | 验证手段 | 如何确认内核成功启动了？banner 输出、超时检测还是其他？ |
+
+> **背景阅读**：[Book 第 1 章](../book/ch01-overview-design.md) §1.11.4 问题四（ISA 差异）和 §1.9（为什么先设计再写代码）。 |
 
 ## 2a. 设计决策引导
 
@@ -239,7 +243,7 @@ void kernel_main(int hartid, void *dtb_addr) {
 **自检点**：
 - `qemu-system-riscv64 -machine virt -kernel build/kernel.elf -nographic` 能看到你的 banner
 
-**如果卡住（没有输出）**：回到 [Book 2.6a 自学调试指南](../book/ch02-boot.md) 按四阶段流程排查。
+**如果卡住（没有输出）**：回到 [Book 2.8a 自学调试指南](../book/ch02-boot.md) 按四阶段流程排查。
 
 ### 步骤 4：验证 BSS 清零和多核行为（预计 20 分钟）
 
@@ -331,13 +335,30 @@ vos run qemu       # 启动 QEMU
 
 确认只有 HART 0 执行初始化代码。其他 HART 在确定的位置等待。
 
-## 6. 设计理据要求
+## 6. Seed 更新
+
+本 Lab 结束时，更新 `spec/architecture/seed.yaml`：
+
+1. 将 `constraints` 中的 `TODO` 替换为你的实际启动策略：
+   ```yaml
+   constraints:
+     - "启动方式：OpenSBI 直启，CPU 处于 S-mode"
+     - "内存布局：内核加载至 0x80000000，栈顶 0x80010000，栈大小 8 KiB"
+     - "构建：RISC-V GNU 工具链 + 自定义链接脚本 kernel.ld"
+   ```
+2. 在 `architecture_summary` 中追加启动策略简述（如"通过 OpenSBI 直启，单 HART 初始化"）。
+3. 运行 `vos seed status` 确认 Lab 2 字段已填充。
+4. 运行 `vos stage save --intent "boot strategy decided"`。
+
+> 如果本 Lab 中有多个可选方案（如启动方式），你做出了选择，不需要写 ADR——启动方式选择是 Lab 2 的自然产出。只有当你的选择**与主流推荐显著偏离**时（如选了 UEFI 直启而非固件直启），才需要 ADR。
+
+## 7. 设计理据要求
 
 1. 你的启动序列为什么是这个顺序？有没有步骤可以调换或省略？
 2. 你的链接脚本中内核加载地址的由来是什么？
 3. 你如何处理非启动 HART？如果非启动 HART 意外进入了初始化代码，会发生什么？
 
-## 7. AI 使用边界
+## 8. AI 使用边界
 
 **允许**：
 - 让 AI 审查你的链接脚本
@@ -347,7 +368,7 @@ vos run qemu       # 启动 QEMU
 **禁止**：
 - 让 AI 一次性生成完整的启动代码而不写对应的 ModuleSpec
 
-## 8. 提交物
+## 9. 提交物
 
 - `spec/architecture/slices/01-boot.yaml`
 - `spec/modules/boot/module.yaml` 及相关 OperationContract
@@ -357,7 +378,7 @@ vos run qemu       # 启动 QEMU
 
 （进阶方向：从固件或设备树获取物理内存布局为阶段 3 做准备；测量从 `_start` 到 `kernel_main` 的时钟周期数以建立启动性能基线。）
 
-## 9. 常见错误与排查
+## 10. 常见错误与排查
 
 ### 错误 1：`make` 报 "riscv64-unknown-elf-gcc: command not found"
 
@@ -406,7 +427,7 @@ qemu-system-riscv64 -machine virt -kernel build/kernel.elf -nographic
 
 ### 错误 4：QEMU 启动了但没有输出，也没有任何错误信息
 
-这是最高频的 bug。按 [Book 2.6a](../book/ch02-boot.md) 的四阶段排查流程逐条检查。最常见的具体原因（按概率排序）：
+这是最高频的 bug。按 [Book 2.8a](../book/ch02-boot.md) 的四阶段排查流程逐条检查。最常见的具体原因（按概率排序）：
 1. 链接脚本中入口地址与 QEMU 加载地址不一致（概率最高）
 2. `_start` 不是 ELF 的入口符号（`readelf -h` 检查）
 3. UART 基地址写错了（RISC-V virt 是 `0x10000000`）

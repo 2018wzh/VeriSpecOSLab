@@ -76,6 +76,7 @@ export interface NormalizedSpecBundle {
   modules: NormalizedModule[];
   operations: NormalizedOperation[];
   architecture: {
+    seed: Record<string, unknown> | null;
     stages: ArchitectureStage[];
     slices: Array<{ id: string; stage?: string; path: string; enabled_modules: string[]; validation_gate: string[] }>;
     decisions: Array<{ id: string; path: string }>;

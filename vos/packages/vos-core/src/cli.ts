@@ -35,6 +35,7 @@ import type {
   ServeCommand,
   StageShowCommand,
   StageSaveCommand,
+  SeedStatusCommand,
   SpecCheckConsistencyCommand,
   SpecLintCommand,
   SpecNormalizeCommand,
@@ -794,6 +795,14 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       throw new Error("only `submit pack` is supported");
     }
     return { kind: "submit_pack" } satisfies SubmitPackCommand;
+  }
+
+  if (command === "seed") {
+    const second = rest[0];
+    if (second === "status") {
+      return { kind: "seed_status" } satisfies SeedStatusCommand;
+    }
+    throw new Error("unknown seed subcommand; available: seed status");
   }
 
   if (command === "kb") {

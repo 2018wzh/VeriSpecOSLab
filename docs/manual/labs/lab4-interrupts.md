@@ -79,7 +79,7 @@ static void timer_init(void) {
 
 **自检点**：10 秒内 tick 计数应为 1000（如果 tick=10ms）。
 
-## 3. 常见错误与排查
+## 常见错误与排查（开发中参考）
 
 ### 错误 1：时钟中断不触发
 - 检查 `sie.STIE` = 1, `sstatus.SIE` = 1

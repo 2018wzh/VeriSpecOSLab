@@ -87,6 +87,7 @@ const EXPLICIT_FILE_ORDER: Record<string, string[]> = {
     "lab7-resource-abi.md",
     "lab8-personal-goal.md",
     "lab9-hardware-port.md",
+    "lab10-verification.md",
     "final-lab.md",
   ],
   appendices: [
@@ -152,7 +153,7 @@ const LAB_BUNDLES: Array<{
     {
       id: "lab1",
       label: "Lab 1",
-      bookSources: ["book/ch00-overview.md", "book/ch01-design-space.md"],
+      bookSources: ["book/ch01-overview-design.md"],
       labSources: ["labs/lab1-seed.md"],
     },
     {
@@ -204,9 +205,15 @@ const LAB_BUNDLES: Array<{
       labSources: ["labs/lab9-hardware-port.md"],
     },
     {
+      id: "lab10",
+      label: "Lab 10",
+      bookSources: ["book/ch10-verification.md"],
+      labSources: ["labs/lab10-verification.md"],
+    },
+    {
       id: "final-lab",
       label: "Final Lab",
-      bookSources: ["book/ch10-verification.md"],
+      bookSources: ["book/ch11-comprehensive-assessment.md"],
       labSources: ["labs/final-lab.md"],
     },
   ];

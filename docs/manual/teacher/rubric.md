@@ -23,13 +23,15 @@
 | 隐藏测试通过率 | 10 | 按通过比例线性计算 |
 | 生成测试通过率 | 5 | 按通过比例线性计算 |
 
-### 3. 架构设计质量（15%）
+### 3. 架构设计质量（15%）— 逐 Lab 累计制
+
+> 架构设计质量不再由 Lab 1 一锤定音。每个 Lab 的 Seed 更新单独评估，最后累加。
 
 | 评分项 | 满分 | 评分标准 |
 |--------|:---:|---------|
-| ADR 质量 | 5 | 至少 2 个 ADR，包含 context/alternatives/tradeoffs |
-| 设计理据 | 5 | ArchitectureSlice 中的机制选择有清晰的理由 |
-| 借鉴/修改/拒绝 | 5 | ArchitectureSeed 中的 reference_systems 描述具体而非敷衍 |
+| Seed 演化质量（逐 Lab） | 8 | 每个 Lab 的 Seed 更新及时、字段正确、与已有决策不冲突。遗漏一个 Lab 扣 1-2 分。 |
+| ADR 质量 | 4 | 至少 2 个 ADR，包含 context/alternatives/tradeoffs。推翻早期决策的 ADR 需引用被推翻的旧决策。 |
+| 借鉴/修改/拒绝 | 3 | Seed 中 reference_systems 的 borrow/modify/reject 描述具体、有理由。 |
 
 ### 4. 验证覆盖度（15%）
 
