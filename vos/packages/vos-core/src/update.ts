@@ -28,12 +28,14 @@ export function detectUpdateTarget(channel: UpdateChannel = resolveUpdateChannel
     };
 }
 
-export async function maybeCheckForUpdate(currentVersion = COMMAND_VERSION): Promise<UpdateTarget | null> {
+export async function maybeCheckForUpdate(
+    currentVersion = COMMAND_VERSION,
+    channel: UpdateChannel = resolveUpdateChannel(),
+): Promise<UpdateTarget | null> {
     if (process.env.VOS_NO_AUTO_UPDATE === "1") {
         return null;
     }
 
-    const channel = resolveUpdateChannel();
     const target = detectUpdateTarget(channel, currentVersion);
     const latest = await fetchLatestRelease(channel).catch(() => null);
     if (!latest) {
@@ -51,12 +53,14 @@ export async function maybeCheckForUpdate(currentVersion = COMMAND_VERSION): Pro
     return target;
 }
 
-export async function performSelfUpdate(currentVersion = COMMAND_VERSION): Promise<UpdateTarget> {
-    const channel = resolveUpdateChannel();
+export async function performSelfUpdate(
+    currentVersion = COMMAND_VERSION,
+    channel: UpdateChannel = resolveUpdateChannel(),
+): Promise<UpdateTarget> {
     const target = detectUpdateTarget(channel, currentVersion);
     const latest = await fetchLatestRelease(channel);
     if (!latest) {
-        throw new Error(`unable to resolve the latest ${channel} release from GitHub`);
+        throw new Error(`unable to resolve any release from GitHub for the ${channel} channel`);
     }
 
     target.latestVersion = normalizePublishedVersion(latest.tag_name);
@@ -75,7 +79,7 @@ export async function performSelfUpdate(currentVersion = COMMAND_VERSION): Promi
 }
 
 async function fetchLatestRelease(channel: UpdateChannel): Promise<ReleaseRecord | null> {
-    const response = await fetch(releaseEndpoint(channel), {
+    const response = await fetch(releaseEndpoint(), {
         headers: { Accept: "application/vnd.github+json" },
         signal: AbortSignal.timeout(1500),
     });
@@ -84,21 +88,19 @@ async function fetchLatestRelease(channel: UpdateChannel): Promise<ReleaseRecord
     }
 
     const payload = (await response.json()) as unknown;
-    if (channel === "stable") {
+    if (!Array.isArray(payload)) {
         return isReleaseRecord(payload) ? payload : null;
     }
 
-    if (!Array.isArray(payload)) {
-        return null;
+    const releases = payload.filter(isReleaseRecord);
+    if (channel === "stable") {
+        return releases.find((release) => release.prerelease === false) ?? releases.find((release) => release.prerelease === true) ?? null;
     }
 
-    return payload.find((release): release is ReleaseRecord => isReleaseRecord(release) && release.prerelease === true) ?? null;
+    return releases.find((release) => release.prerelease === true) ?? releases.find((release) => release.prerelease === false) ?? null;
 }
 
-function releaseEndpoint(channel: UpdateChannel): string {
-    if (channel === "stable") {
-        return `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`;
-    }
+function releaseEndpoint(): string {
     return `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases?per_page=10`;
 }
 
@@ -146,15 +148,80 @@ async function downloadAsset(downloadUrl: string, assetName: string): Promise<st
 
     const tempDir = mkdtempSync(path.join(tmpdir(), "vos-update-"));
     const targetPath = path.join(tempDir, assetName);
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.length === 0) {
-        throw new Error(`downloaded update asset from ${downloadUrl} was empty`);
+    const totalBytes = Number(response.headers.get("content-length") ?? "0");
+    const writer = Bun.file(targetPath).writer();
+    const reader = response.body.getReader();
+    let downloadedBytes = 0;
+    const startedAt = Date.now();
+
+    try {
+        for (; ;) {
+            const chunk = await reader.read();
+            if (chunk.done) {
+                break;
+            }
+            const bytes = chunk.value;
+            downloadedBytes += bytes.length;
+            writer.write(bytes);
+            renderDownloadProgress(assetName, downloadedBytes, totalBytes, startedAt);
+        }
+        if (downloadedBytes === 0) {
+            throw new Error(`downloaded update asset from ${downloadUrl} was empty`);
+        }
+    } finally {
+        await writer.end();
+        process.stderr.write("\n");
     }
-    writeFileSync(targetPath, bytes);
+
+    if (totalBytes > 0 && downloadedBytes < totalBytes) {
+        throw new Error(`downloaded update asset from ${downloadUrl} was truncated`);
+    }
     if (process.platform !== "win32") {
         chmodSync(targetPath, 0o755);
     }
     return targetPath;
+}
+
+function renderDownloadProgress(assetName: string, downloadedBytes: number, totalBytes: number, startedAt: number): void {
+    const elapsedSeconds = Math.max((Date.now() - startedAt) / 1000, 0.001);
+    const speed = downloadedBytes / elapsedSeconds;
+    const progressRatio = totalBytes > 0 ? downloadedBytes / totalBytes : 0;
+    const progressLabel = totalBytes > 0 ? `${Math.min(100, Math.round(progressRatio * 100))}%` : "--%";
+    const totalLabel = totalBytes > 0 ? `/${formatBytes(totalBytes)}` : "";
+    const bar = totalBytes > 0 ? progressBar(progressRatio) : "[??????????]";
+    const speedLabel = `${formatBytes(Math.round(speed))}/s`;
+    const etaLabel = totalBytes > 0 && speed > 0 ? `eta ${formatDuration((totalBytes - downloadedBytes) / speed)}` : "eta --:--";
+    process.stderr.write(`\rvos: downloading ${assetName} ${bar} ${formatBytes(downloadedBytes)}${totalLabel} • ${progressLabel} • ${speedLabel} • ${etaLabel}`);
+}
+
+function progressBar(ratio: number): string {
+    const width = 10;
+    const filled = Math.max(0, Math.min(width, Math.round(ratio * width)));
+    return `[${"#".repeat(filled)}${"-".repeat(width - filled)}]`;
+}
+
+function formatBytes(bytes: number): string {
+    if (bytes < 1024) {
+        return `${bytes} B`;
+    }
+    const units = ["KiB", "MiB", "GiB"];
+    let value = bytes / 1024;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex++;
+    }
+    return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unitIndex]}`;
+}
+
+function formatDuration(seconds: number): string {
+    const totalSeconds = Math.max(0, Math.round(seconds));
+    const minutes = Math.floor(totalSeconds / 60);
+    const remainingSeconds = totalSeconds % 60;
+    if (minutes === 0) {
+        return `${remainingSeconds}s`;
+    }
+    return `${minutes}m ${remainingSeconds}s`;
 }
 
 async function installDownloadedBinary(downloadedPath: string): Promise<void> {
@@ -192,8 +259,8 @@ async function scheduleWindowsReplacement(currentBinary: string, downloadedPath:
     const script = [
         "$target = $args[0]",
         "$source = $args[1]",
-        `$pid = ${process.pid}`,
-        "while (Get-Process -Id $pid -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 250 }",
+        `$procId = ${process.pid}`,
+        "while (Get-Process -Id $procId -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 250 }",
         "$retry = 0",
         "while ($retry -lt 20) {",
         "  try {",

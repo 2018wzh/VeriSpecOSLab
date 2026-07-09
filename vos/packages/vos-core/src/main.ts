@@ -4488,6 +4488,8 @@ const HELP_TOPICS: Record<string, string[]> = {
     "  debug explain-log [log-path]",
     "  report generate [--stage <stage>|--final]",
     "  submit pack",
+    "  update [--channel stable|nightly]",
+    "  self-update [--channel stable|nightly]",
     "  ledger record --actor human|agent --intent <text> [--spec-ref <ref>]... [--changed-target <path>]...",
     "  kb add <path-or-url> [--source-kind course|project|external] [--stage <stage>] [--title <title>] [--recursive] [--manifest <path>]",
     "  kb list",
@@ -4600,6 +4602,16 @@ const HELP_TOPICS: Record<string, string[]> = {
   "report generate": helpBlock("report generate [--stage <stage>|--final]", ["--stage <stage>", "--final"], ["vos report generate --stage boot"]),
   "submit": helpBlock("submit pack", ["pack"], ["vos submit pack"]),
   "submit pack": helpBlock("submit pack", ["No command-specific options."], ["vos submit pack"]),
+  "update": helpBlock(
+    "update [--channel stable|nightly]",
+    ["--channel stable|nightly"],
+    ["vos update", "vos update --channel nightly"],
+  ),
+  "self-update": helpBlock(
+    "self-update [--channel stable|nightly]",
+    ["--channel stable|nightly"],
+    ["vos self-update", "vos self-update --channel stable"],
+  ),
   "ledger": helpBlock("ledger record ...", ["record --actor human|agent --intent <text>"], ["vos ledger record --actor human --intent \"manual fix\""]),
   "ledger record": helpBlock(
     "ledger record --actor human|agent --intent <text> [--spec-ref <ref>]... [--changed-target <path>]...",

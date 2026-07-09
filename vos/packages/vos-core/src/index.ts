@@ -126,6 +126,7 @@ export {
   performSelfUpdate,
   maybeCheckForUpdate,
 } from "./update.ts";
+export type { UpdateChannel } from "./update.ts";
 export {
   commandToArray,
   executeCliInvocation,

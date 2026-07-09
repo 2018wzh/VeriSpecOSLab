@@ -10,16 +10,22 @@ import {
   printCliError,
   printHelp,
   runProgressMcpServer,
+  type UpdateChannel,
 } from "vos-core";
 import { runDemoCli } from "vos-demo";
 import { startVosHttpServer } from "vos-server";
 
 async function main(): Promise<void> {
   try {
-    if (process.argv[2] === "self-update" || process.argv[2] === "update") {
-      const result = await performSelfUpdate(COMMAND_VERSION);
+    const updateInvocation = parseUpdateInvocation(process.argv.slice(2));
+    if (updateInvocation.kind === "help") {
+      process.exitCode = printHelp("update") ? 0 : 1;
+      return;
+    }
+    if (updateInvocation.kind === "update") {
+      const result = await performSelfUpdate(COMMAND_VERSION, updateInvocation.channel);
       if (result.available && result.latestVersion) {
-        console.log(`vos: updated to ${result.latestVersion}`);
+        console.log(`vos: updated to ${result.latestVersion} (${updateInvocation.channel})`);
       } else {
         console.log(`vos: already up to date (${COMMAND_VERSION})`);
       }
@@ -70,6 +76,39 @@ async function main(): Promise<void> {
     printCliError(error, process.argv);
     process.exitCode = 1;
   }
+}
+
+function parseUpdateInvocation(args: string[]): { kind: "help" } | { kind: "update"; channel: UpdateChannel } | { kind: "none" } {
+  if (args[0] !== "update" && args[0] !== "self-update") {
+    return { kind: "none" };
+  }
+
+  let channel: UpdateChannel = "stable";
+  for (let i = 1; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "-h" || arg === "--help") {
+      return { kind: "help" };
+    }
+    if (arg === "--channel") {
+      const value = args[++i];
+      if (value === "nightly" || value === "stable") {
+        channel = value;
+        continue;
+      }
+      throw new Error("--channel must be stable or nightly");
+    }
+    if (arg.startsWith("--channel=")) {
+      const value = arg.slice("--channel=".length);
+      if (value === "nightly" || value === "stable") {
+        channel = value;
+        continue;
+      }
+      throw new Error("--channel must be stable or nightly");
+    }
+    throw new Error(`unknown option for ${args[0]}: ${arg}`);
+  }
+
+  return { kind: "update", channel };
 }
 
 function waitForStop(server: Bun.Server<undefined>): Promise<void> {
