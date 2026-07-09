@@ -12,17 +12,58 @@ permissions:
   contents: write
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.0
+
+      - name: Install workspace dependencies
+        working-directory: vos
+        run: bun install --frozen-lockfile
+
+      - name: Test installer scripts
+        run: |
+          bun test scripts/tests/build.test.ts
+          node --test scripts/tests/install-prebuilt.test.mjs
+
+      - name: Typecheck workspace
+        run: bun run typecheck
+
+      - name: Test workspace
+        run: bun run test
+
   build:
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            asset: vos-windows-x64.exe
           - os: ubuntu-latest
             asset: vos-linux-x64
-          - os: macos-latest
+            bun_target: bun-linux-x64
+            smoke: true
+          - os: ubuntu-24.04-arm
+            asset: vos-linux-arm64
+            bun_target: bun-linux-arm64
+            smoke: true
+          - os: windows-latest
+            asset: vos-windows-x64.exe
+            bun_target: bun-windows-x64
+            smoke: true
+          - os: macos-15-intel
+            asset: vos-macos-x64
+            bun_target: bun-darwin-x64
+            smoke: true
+          - os: macos-15
             asset: vos-macos-arm64
+            bun_target: bun-darwin-arm64
+            smoke: true
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -35,16 +76,33 @@ jobs:
 
       - name: Install workspace dependencies
         working-directory: vos
-        run: bun install
+        run: bun install --frozen-lockfile
 
-      - name: Build standalone binary
-        run: bun run build
-
-      - name: Rename release asset
+      - name: Resolve build version
+        id: version
         shell: bash
         run: |
-          mkdir -p release
-          cp dist/vos.exe "release/${{ matrix.asset }}"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="${GITHUB_SHA:0:12}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build standalone binary
+        env:
+          VOS_BUILD_OUTFILE: release/${{ matrix.asset }}
+          VOS_BUILD_TARGET: ${{ matrix.bun_target }}
+          VOS_COMMAND_VERSION: ${{ steps.version.outputs.version }}
+        run: bun run build
+
+      - name: Smoke test release asset
+        if: matrix.smoke
+        shell: bash
+        run: |
+          chmod +x "release/${{ matrix.asset }}" || true
+          "./release/${{ matrix.asset }}" --version
+          "./release/${{ matrix.asset }}" --help >/dev/null
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -59,7 +117,15 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          path: release
+          path: release-download
+
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          mkdir -p release
+          find release-download -type f -name 'vos-*' -exec cp '{}' release/ \;
+          cd release
+          sha256sum vos-* > SHA256SUMS
 
       - name: Resolve release metadata
         id: meta
@@ -67,8 +133,8 @@ jobs:
         run: |
           short_sha="${GITHUB_SHA:0:12}"
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            tag_name="stable-${short_sha}"
-            release_name="stable ${short_sha}"
+            tag_name="${GITHUB_REF_NAME}"
+            release_name="vos ${GITHUB_REF_NAME}"
             prerelease="false"
           else
             tag_name="nightly-${short_sha}"
@@ -85,7 +151,7 @@ jobs:
           tag_name: ${{ steps.meta.outputs.tag_name }}
           name: ${{ steps.meta.outputs.release_name }}
           prerelease: ${{ steps.meta.outputs.prerelease }}
-          files: release/**
+          files: release/*
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

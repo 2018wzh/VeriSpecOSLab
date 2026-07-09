@@ -75,12 +75,12 @@
 - **Bun** ≥ 1.3：VOS CLI 的运行环境
 - 使用 GitHub 仓库安装 VOS CLI：
 
-```bash
-bun install -g github:2018wzh/VeriSpecOSLab
+```sh
+npm install -g github:2018wzh/VeriSpecOSLab#v1.0.0
 vos --help
 ```
 
-这一步只安装 CLI，不要求 clone VeriSpecOSLab 工具仓库。
+把 `v1.0.0` 替换为课程指定的 release tag。这一步只安装对应平台的预构建 CLI，不要求 clone VeriSpecOSLab 工具仓库。
 
 ### 1.3.2 项目工具链
 

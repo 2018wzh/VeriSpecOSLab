@@ -19,6 +19,8 @@ bun run dev:agent    # start vos-agent HTTP server on 127.0.0.1:8787
 
 For focused work, run `bun test` or `bun run typecheck` inside `vos/packages/<pkg>` or `vos/apps/<app>`.
 
+The root package is an npm GitHub installer for prebuilt release binaries. Do not point the root `bin` at `vos/apps/vos-cli/app/main.ts` or any other workspace source file. The supported student install path is `npm install -g github:2018wzh/VeriSpecOSLab#<release-tag>`, where the postinstall script downloads and verifies the matching GitHub Release asset.
+
 ## Coding Style & Naming Conventions
 
 Use TypeScript ESM with explicit `.ts` imports and `import type` for type-only imports. Follow the existing style: two-space indentation, double quotes, and trailing commas. Keep modules narrowly scoped: `vos-cli` is a thin entrypoint, shared typed command execution lives in `vos-core`, execution primitives live in `vos-runtime`, and the typed Portal sandbox HTTP API lives in `vos-server`. Prefer deterministic runtime checks over prompt-only enforcement.

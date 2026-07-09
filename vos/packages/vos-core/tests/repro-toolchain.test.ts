@@ -177,7 +177,7 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
     ], { print: false });
     expect(init.status).toBe("passed");
     expect(readFileSync(join(projectRoot, ".vos", "commit-ledger.jsonl"), "utf8")).toContain("\"actor\":\"human\"");
-    expect(readFileSync(join(projectRoot, ".gitignore"), "utf8")).toBe("build/\n.vos/\n");
+    expect(readFileSync(join(projectRoot, ".gitignore"), "utf8")).toBe("build/\n.vos/\n.env\n");
     expect(readFileSync(join(projectRoot, "AGENTS.md"), "utf8")).toContain("Update this file when new public project conventions");
 
     await executeCliInvocation([
@@ -188,7 +188,7 @@ describe("reproducibility gate and agent-assisted toolchain generation", () => {
       "--json",
       "init",
     ], { print: false });
-    expect(readFileSync(join(projectRoot, ".gitignore"), "utf8")).toBe("build/\n.vos/\n");
+    expect(readFileSync(join(projectRoot, ".gitignore"), "utf8")).toBe("build/\n.vos/\n.env\n");
     expect(readFileSync(join(projectRoot, "AGENTS.md"), "utf8")).toContain("Update this file when new public project conventions");
 
     const build = await executeCliInvocation([

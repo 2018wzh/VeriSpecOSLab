@@ -22,12 +22,13 @@ function createManualFixture(): string {
   mkdirSync(join(manualRoot, "vos"), { recursive: true });
 
   writeFileSync(join(manualRoot, "README.md"), "# Manual\n\nRead [Lab 1](labs/lab1-seed.md).\n");
-  writeFileSync(join(manualRoot, "book", "ch00-overview.md"), "# Chapter 0\n");
-  writeFileSync(join(manualRoot, "book", "ch01-design-space.md"), "# Chapter 1\n");
+  writeFileSync(join(manualRoot, "book", "ch01-overview-design.md"), "# Chapter 1\n");
   writeFileSync(join(manualRoot, "book", "ch02-boot.md"), "# Chapter 2\n");
   writeFileSync(join(manualRoot, "book", "ch10-verification.md"), "# Chapter 10\n");
-  writeFileSync(join(manualRoot, "labs", "lab1-seed.md"), "# Lab 1\n\nSee [Chapter 0](../book/ch00-overview.md).\n");
+  writeFileSync(join(manualRoot, "book", "ch11-comprehensive-assessment.md"), "# Chapter 11\n");
+  writeFileSync(join(manualRoot, "labs", "lab1-seed.md"), "# Lab 1\n\nSee [Chapter 1](../book/ch01-overview-design.md).\n");
   writeFileSync(join(manualRoot, "labs", "lab2-boot.md"), "# Lab 2\n");
+  writeFileSync(join(manualRoot, "labs", "lab10-verification.md"), "# Lab 10\n");
   writeFileSync(join(manualRoot, "labs", "final-lab.md"), "# Final Lab\n");
   writeFileSync(join(manualRoot, "specs", "overview.md"), "# Specs Overview\n");
   writeFileSync(join(manualRoot, "appendices", "dev-environment.md"), "# Dev Environment\n");
@@ -45,12 +46,13 @@ describe("manual PDF export support", () => {
 
     expect(sources.map((source) => source.relativePath)).toEqual([
       "README.md",
-      "book/ch00-overview.md",
-      "book/ch01-design-space.md",
+      "book/ch01-overview-design.md",
       "book/ch02-boot.md",
       "book/ch10-verification.md",
+      "book/ch11-comprehensive-assessment.md",
       "labs/lab1-seed.md",
       "labs/lab2-boot.md",
+      "labs/lab10-verification.md",
       "labs/final-lab.md",
       "specs/overview.md",
       "appendices/dev-environment.md",
@@ -70,17 +72,18 @@ describe("manual PDF export support", () => {
       ["lab1-lab", "lab1/lab1-lab.pdf"],
       ["lab2-book", "lab2/lab2-book.pdf"],
       ["lab2-lab", "lab2/lab2-lab.pdf"],
+      ["lab10-book", "lab10/lab10-book.pdf"],
+      ["lab10-lab", "lab10/lab10-lab.pdf"],
       ["final-lab-book", "final-lab/final-lab-book.pdf"],
       ["final-lab-lab", "final-lab/final-lab-lab.pdf"],
+      ["appendix-dev-environment", "appendices/dev-environment.pdf"],
       ["shared-specs", "shared/shared-specs.pdf"],
-      ["appendices", "appendices/appendices.pdf"],
       ["shared-vos", "shared/shared-vos.pdf"],
       ["teacher", "teacher/teacher.pdf"],
     ]);
     expect(bundles.flatMap((bundle) => bundle.sources.map((source) => source.relativePath))).not.toContain("README.md");
     expect(bundles.find((bundle) => bundle.id === "lab1-book")?.sources.map((source) => source.relativePath)).toEqual([
-      "book/ch00-overview.md",
-      "book/ch01-design-space.md",
+      "book/ch01-overview-design.md",
     ]);
     expect(bundles.find((bundle) => bundle.id === "lab1-lab")?.sources.map((source) => source.relativePath)).toEqual([
       "labs/lab1-seed.md",
@@ -105,7 +108,7 @@ describe("manual PDF export support", () => {
     const html = buildManualHtml({ manualRoot, title: "Manual Export" });
 
     expect(html).toContain("href=\"#manual-labs-lab1-seed-md-h1\"");
-    expect(html).toContain("href=\"#manual-book-ch00-overview-md-h1\"");
+    expect(html).toContain("href=\"#manual-book-ch01-overview-design-md-h1\"");
     expect(html).not.toContain(normalize(repoRoot));
   });
 
@@ -128,7 +131,7 @@ describe("manual PDF export support", () => {
       ))),
     });
 
-    expect(html).toContain("href=\"lab1-book.pdf#manual-book-ch00-overview-md-h1\"");
+    expect(html).toContain("href=\"lab1-book.pdf#manual-book-ch01-overview-design-md-h1\"");
     expect(html).not.toContain(normalize(repoRoot));
   });
 

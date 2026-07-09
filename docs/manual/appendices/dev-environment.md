@@ -30,7 +30,7 @@ git --version
 如果课程模板没有预装 `vos`，在环境内安装：
 
 ```sh
-bun install -g github:2018wzh/VeriSpecOSLab
+npm install -g github:2018wzh/VeriSpecOSLab#v1.0.0
 vos --help
 ```
 
@@ -111,10 +111,10 @@ gdb-multiarch --version
 从 GitHub 安装 `vos`：
 
 ```sh
-bun install -g github:2018wzh/VeriSpecOSLab
+npm install -g github:2018wzh/VeriSpecOSLab#v1.0.0
 ```
 
-这只安装 CLI，不要求 clone VeriSpecOSLab 工具仓库。之后可以在学生项目中用 `--project-root` 指向项目根目录。
+把 `v1.0.0` 替换为课程指定的 release tag。这只安装对应平台的预构建 CLI，不要求 clone VeriSpecOSLab 工具仓库。之后可以在学生项目中用 `--project-root` 指向项目根目录。
 
 验证：
 

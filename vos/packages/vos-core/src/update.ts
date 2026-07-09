@@ -292,6 +292,6 @@ async function scheduleWindowsReplacement(currentBinary: string, downloadedPath:
     }
 }
 
-function normalizePublishedVersion(tagName: string): string {
-    return tagName.replace(/^(stable-|nightly-|vos-)/, "");
+export function normalizePublishedVersion(tagName: string): string {
+    return tagName.replace(/^(stable-|nightly-|vos-|v)/, "");
 }

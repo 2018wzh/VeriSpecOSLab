@@ -1,7 +1,7 @@
 /// <reference path="./globals.d.ts" />
 
 import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,7 +9,30 @@ const rootDir = path.resolve(fileURLToPath(import.meta.url), "..", "..");
 const workspaceDir = path.join(rootDir, "vos");
 const versionFile = path.join(workspaceDir, "packages", "vos-core", "src", "version.generated.ts");
 const entryPoint = path.join("apps", "vos-cli", "app", "main.ts");
-const outputFile = path.join("..", "dist", "vos.exe");
+
+export interface BuildSettings {
+    outputFile: string;
+    buildArgs: string[];
+}
+
+export function resolveBuildSettings(
+    env: Record<string, string | undefined> = process.env,
+    platform: NodeJS.Platform = process.platform,
+): BuildSettings {
+    const defaultOutput = path.join("..", "dist", platform === "win32" ? "vos.exe" : "vos");
+    const outputFile = env.VOS_BUILD_OUTFILE
+        ? path.relative(workspaceDir, path.resolve(rootDir, env.VOS_BUILD_OUTFILE))
+        : defaultOutput;
+    const buildArgs = ["build", entryPoint, "--compile", "--outfile", outputFile];
+    if (env.VOS_BUILD_TARGET) {
+        buildArgs.push(`--target=${env.VOS_BUILD_TARGET}`);
+    }
+    return { outputFile, buildArgs };
+}
+
+export function resolveCommandVersion(gitHash: string, env: Record<string, string | undefined> = process.env): string {
+    return env.VOS_COMMAND_VERSION?.trim() || gitHash;
+}
 
 async function main(): Promise<void> {
     if (!existsSync(path.join(workspaceDir, "package.json"))) {
@@ -20,10 +43,12 @@ async function main(): Promise<void> {
 
     const previousVersion = await readFile(versionFile, "utf8").catch(() => undefined);
     const gitHash = await resolveGitHash();
-    await writeFile(versionFile, `export const COMMAND_VERSION = ${JSON.stringify(gitHash)};\n`, "utf8");
+    await writeFile(versionFile, `export const COMMAND_VERSION = ${JSON.stringify(resolveCommandVersion(gitHash))};\n`, "utf8");
 
     try {
-        const result = Bun.spawnSync([process.execPath, "build", entryPoint, "--compile", "--outfile", outputFile], {
+        const settings = resolveBuildSettings();
+        await mkdir(path.dirname(path.resolve(workspaceDir, settings.outputFile)), { recursive: true });
+        const result = Bun.spawnSync([process.execPath, ...settings.buildArgs], {
             cwd: workspaceDir,
             stdin: "inherit",
             stdout: "inherit",

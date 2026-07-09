@@ -57,7 +57,11 @@
 
 Agent 的定位和约束在 [Book §1.7](../book/ch01-overview-design.md#ai-agent-的角色) 中有详细说明。核心原则：**让 AI 帮你思考，但不替你思考。**
 
-Lab 1 阶段至少配置一个 LLM provider。推荐 Anthropic（日常问答）+ OpenAI 兼容（深度推理）双 provider 配置。如果你使用第三方 API 代理（Azure、DeepSeek、Ollama），注意配置 `OPENAI_BASE_URL`。
+vos-agent 支持五种 LLM provider：**Anthropic**（Claude）、**OpenAI**（GPT/o 系列）、**OpenAI-compatible**（兼容网关，如 Azure/DeepSeek API/自建代理）、**DeepSeek**（原生 DeepSeek API）、**Ollama**（本地模型）。Lab 1 阶段至少配置一个。
+
+**API key 不要放在 shell 配置文件里。** 推荐使用项目根目录的 `.env` 文件，配合 `.vos/config.toml` 声明使用哪个 key。这套机制是 vos-agent 的原生设计——不需要手动 `export` 环境变量，也避免了 key 通过 shell history 或 `env` 命令泄露。
+
+推荐双 provider 配置：Anthropic（日常问答，Claude 在代码解释上表现稳定）+ OpenAI-compatible（深度推理，可接入 DeepSeek/ECNU 等有免费额度的网关）。
 
 ---
 
@@ -74,10 +78,10 @@ curl -fsSL https://bun.sh/install | bash
 # Windows: 通过 WSL2 或 https://bun.sh/
 
 # 2. 安装 vos 工具链
-bun install -g -f github:2018wzh/VeriSpecOSLab
+npm install -g github:2018wzh/VeriSpecOSLab#v1.0.0
 ```
 
-> 每次开始新的 Lab 前运行一次上述命令，确保使用最新版本的 `vos`。
+> 将 `v1.0.0` 替换为课程指定的最新 release tag。每次开始新的 Lab 前按课程公告更新 tag 后重新安装。
 
 **自检点**：运行 `vos --help` 能看到命令列表。如果提示 `command not found`，检查 Bun 的全局 bin 目录是否在 PATH 中。
 
@@ -91,48 +95,80 @@ git config user.name "Your Name"
 git config user.email "you@example.com"
 
 vos init
-vos doctor
 ```
 
-`vos init` 会创建 VOS 本地配置、默认策略、`.gitignore` 和 `AGENTS.md`。如果当前目录还不是 Git 仓库，它会先执行 `git init`。如果仓库还没有初始提交，它只会暂存并提交自己创建或维护的初始化入口文件，不会把你的草稿一起提交。
+`vos init` 会创建 VOS 本地配置、默认策略、`.gitignore` 和 `AGENTS.md`。`.gitignore` 中已包含 `.vos/` 和 `.env` 两条规则——你的 API key 文件和 VOS 运行时目录都不会被 Git 追踪。如果当前目录还不是 Git 仓库，`vos init` 会先执行 `git init`。如果仓库还没有初始提交，它只会暂存并提交自己创建或维护的初始化入口文件，不会把你的草稿一起提交。
 
-如果 `vos init` 提示缺少 Git 用户名或邮箱，先按上面的命令配置本仓库的 Git identity。
+如果 `vos init` 提示缺少 Git 用户名或邮箱，先按上面的命令配置本仓库的 Git identity.
 
-**自检点**：`vos doctor` 全部通过。如果提示工具链缺失，按输出提示安装缺失的组件。
 
 ### 步骤 3：配置 Agent（预计 15 分钟）
 
 Agent 受三层约束（详见 [Book §1.7](../book/ch01-overview-design.md#ai-agent-的角色)）。Lab 1 阶段只开放知识库查询，不允许代码生成。
 
-**3a. 配置 Provider**
+**3a. 创建 `.env` 文件**
 
-至少配置一个 LLM provider 的 API key：
-
-```sh
-# 方案 A：只用 Anthropic（够用）
-export ANTHROPIC_API_KEY="sk-ant-..."
-
-# 方案 B：Anthropic + OpenAI（推荐）
-export ANTHROPIC_API_KEY="sk-ant-..."
-export OPENAI_API_KEY="sk-..."
-export OPENAI_BASE_URL="https://your-provider.com/v1"  # 如使用第三方代理
-```
-
-建议把环境变量写入 `~/.bashrc`（Linux）或 `~/.zshrc`（macOS），避免每次打开终端都要重新 export。
-
-**3b. 验证 Agent**
+在项目根目录创建 `.env`，写入 API key。`vos init` 已自动将 `.env` 加入 `.gitignore`，不会被 Git 追踪。
 
 ```sh
-vos agent ask "RISC-V 的 S-mode 和 M-mode 有什么区别？为什么内核通常运行在 S-mode？"
+# .env — 放在项目根目录，不要提交到 Git
+# vos-agent 自动读取此文件中的变量
+
+# === Anthropic（Claude 系列）===
+ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
+
+# === OpenAI 兼容网关（最灵活）===
+# 适用于 DeepSeek API、Azure OpenAI、ECNU 网关、自建代理等
+OPENAI_COMPATIBLE_API_KEY=your-key-here
+
+# === DeepSeek 原生 API ===
+# DEEPSEEK_API_KEY=sk-your-deepseek-key
 ```
 
-Agent 返回有引用的回答 = 配置成功。报 `provider not configured` = 检查环境变量是否正确 export。
+> **安全提醒**：`.env` 文件包含明文 API key。`vos init` 已自动将 `.env` 加入 `.gitignore`。永远不要通过聊天工具、截图、或粘贴到共享文档的方式泄露其中的内容。
 
-**3c. 理解 AGENTS.md**
+**3b. 创建 `.vos/config.toml`**
+
+`.env` 存 key，`.vos/config.toml` 声明用哪个 provider、哪个 key。创建 `.vos/config.toml`：
+
+**示例 A：OpenAI-compatible 网关**
+
+参照 `examples/xv6-spec/.vos/config.toml` 的实际配置：
+
+```toml
+[agent]
+provider = "openai-compatible"
+model = "compat:your-model-name"
+base_url = "https://your-gateway.example.com/v1"
+timeout_secs = 600
+
+[agent.auth]
+env = "OPENAI_COMPATIBLE_API_KEY"   # 指向 .env 中的变量名
+```
+
+**示例 B：Ollama 本地模型（离线可用）**
+
+```toml
+[agent]
+provider = "ollama"
+model = "ollama:qwen3:14b"
+```
+
+Ollama 模式不需要 API key——`ollama serve` 默认监听 `localhost:11434`。
+
+**3c. 验证 Agent**
+
+```sh
+vos agent ask -i
+```
+
+Agent 进入交互模式，且询问问题有回答 = 配置成功。报 `provider not configured` = 检查 `.vos/config.toml` 中 `provider` 字段是否正确、`.env` 中的 key 变量名是否与 `auth.env` 一致。
+
+**3d. 理解 AGENTS.md**
 
 `vos init` 已在项目根目录创建了 `AGENTS.md`。打开看一眼——Agent 每次被调用时，会先读这份文件理解你的项目约定和边界。Lab 1 阶段你不需要修改它。后续阶段如果你引入新的设计规则（如"所有 syscall 编号从 100 开始"），更新 `AGENTS.md` 让 Agent 知道。
 
-**3d. Agent 在 Lab 1 的正确用法**
+**3e. Agent 在 Lab 1 的正确用法**
 
 Lab 1 的 Agent 用于**问答和解释**——不是替你决策：
 
@@ -245,39 +281,81 @@ initial_validation_binding:
 
 Agent 的问答依赖知识库——只有你导入的资料，Agent 才能在设计问答中引用。每个阶段开始前导入该阶段需要的资料，不要一次性导入所有。
 
+`vos kb add` 支持三种来源，全部接受 URL 或本地路径：
+
+| 来源类型 | 示例 | 下载进度条 | 说明 |
+|----------|------|:------:|------|
+| **HTML 网页** | `https://wiki.osdev.org/...` | ✅ | 自动去除标签，保留纯文本 |
+| **PDF 文件** | `https://example.com/spec.pdf` | ✅ | 自动提取文本（基于 unpdf） |
+| **Markdown / 纯文本** | `https://example.com/readme.md` | ✅ | 直接索引原文 |
+| **Git 仓库** | `https://github.com/...git` | ✅ (clone 进度) | 按分支克隆后索引文本文件 |
+| **本地文件/目录** | `./riscv-privileged.pdf` | — | 支持 PDF、Markdown、Office 文档等 |
+
 ```sh
 # 1. 导入项目 spec（所有路线通用）
 vos kb add spec --source-kind project --recursive
-
-# 2. 按你的技术路线导入参考资料
 ```
 
 **如果你选择了默认推荐路径（C + RISC-V）：**
 
 ```sh
-vos kb add docs/reference/riscv-privileged-manual.pdf --source-kind course --title "RISC-V Privileged Spec"
-vos kb add docs/reference/xv6-book.pdf --source-kind course --title "xv6 book"
+# RISC-V 特权级规范（官方 GitHub Release，PDF，自动下载并提取文本）
+vos kb add https://github.com/riscv/riscv-isa-manual/releases/download/riscv-isa-release-8c2e6a6-2025-05-22/riscv-privileged.pdf \
+    --source-kind course --title "RISC-V Privileged Specification"
+
+# xv6 教材（MIT 6.828 官方 PDF）
+vos kb add https://pdos.csail.mit.edu/6.828/2024/xv6/book-riscv-rev4.pdf \
+    --source-kind course --title "xv6: A Simple, Unix-like Teaching Operating System"
+
+# OSDev Wiki 入门指南（HTML）
+vos kb add https://wiki.osdev.org/Getting_Started --source-kind external --title "OSDev Getting Started"
+vos kb add https://wiki.osdev.org/RISC-V_Bare_Bones --source-kind external --title "OSDev RISC-V Bare Bones"
 ```
 
 **如果你选择了 Rust：**
 
 ```sh
-vos kb add docs/reference/rust-embedded-book.pdf --source-kind course --title "Rust Embedded Book"
-vos kb add docs/reference/rcore-tutorial.pdf --source-kind course --title "rCore Tutorial"
+# Rust Embedded Book（官方在线书籍，HTML）
+vos kb add https://docs.rust-embedded.org/book/intro/index.html --source-kind external --title "The Embedded Rust Book"
+
+# rCore-Tutorial-Book v3（清华大学 rCore 官方教程，中文，HTML）
+vos kb add https://rcore-os.cn/rCore-Tutorial-Book-v3/ --source-kind external --title "rCore-Tutorial-Book v3"
+
+# Rust 裸机编程参考
+vos kb add https://docs.rust-embedded.org/embedonomicon/preface.html --source-kind external --title "The Embedonomicon"
 ```
 
 **如果你选择了 C++：**
 
 ```sh
-vos kb add docs/reference/cpp-freestanding-guide.pdf --source-kind course --title "C++ Freestanding Guide"
-vos kb add docs/reference/serenityos-docs.pdf --source-kind course --title "SerenityOS Documentation"
+# OSDev Wiki C++ 专题（HTML）
+vos kb add https://wiki.osdev.org/C%2B%2B --source-kind external --title "OSDev: C++ in OS Development"
+vos kb add https://wiki.osdev.org/C%2B%2B_Bare_Bones --source-kind external --title "OSDev: C++ Bare Bones"
+
+# SerenityOS（Git 仓库）
+vos kb add https://github.com/SerenityOS/serenity --source-kind external --branch master --title "SerenityOS"
 ```
 
 **如果你选择了 Zig：**
 
 ```sh
-vos kb add docs/reference/zig-bare-metal.pdf --source-kind course --title "Zig Bare Metal Guide"
+# OSDev Wiki Zig 专题（HTML）
+vos kb add https://wiki.osdev.org/Zig --source-kind external --title "OSDev: Zig in OS Development"
+
+# Zig 语言参考（官方，HTML）
+vos kb add https://ziglang.org/documentation/master/ --source-kind external --title "Zig Language Reference"
 ```
+
+所有路线通用（建议全部导入）：
+
+```sh
+# OSDev Wiki 核心页面
+vos kb add https://wiki.osdev.org/Memory_management --source-kind external --title "OSDev: Memory Management"
+vos kb add https://wiki.osdev.org/Interrupts --source-kind external --title "OSDev: Interrupts"
+vos kb add https://wiki.osdev.org/Filesystems --source-kind external --title "OSDev: Filesystems"
+```
+
+> **提示**：`vos kb add` 对 HTML 页面会自动去除标签保留纯文本，对 PDF 文件会自动提取文本（基于 `unpdf`），对 Git 仓库会按分支克隆后索引文本文件。下载过程中会显示进度条——如果卡住，检查网络连接和 URL 是否可访问。
 
 **自检点**：`vos kb list` 能看到项目 spec 和至少一份与你技术路线相关的参考资料。
 
@@ -308,6 +386,7 @@ vos stage save --intent "initialize project and create seed skeleton"
 **自动检查**：
 
 - [ ] `vos doctor` 通过。
+- [ ] `.env` 已添加到 `.gitignore`（`git status` 看不到 `.env` 文件）。
 - [ ] `seed.yaml` 存在，`id`/`project`/`domain`/`target_platform`/`language`/`architecture_name`/`architecture_summary` 均已填写（非 TODO）。
 - [ ] `vos spec lint` 通过。
 - [ ] `vos kb list` 能看到项目 spec 和至少一份与技术路线相关的参考资料。
@@ -319,6 +398,7 @@ vos stage save --intent "initialize project and create seed skeleton"
 - [ ] 语言和 ISA 的选择有理由（不是随机选的）。如果是默认推荐路径，至少理解"为什么推荐 RISC-V + C"。
 - [ ] `seed.yaml` 的 `architecture_summary` 不是空话——虽不精确，但要反映出大致的意图方向。
 - [ ] 理解 Agent 的三层约束（Identity / Capability Pack / Stage Gate），知道 Lab 1 阶段 Agent 能做什么/不能做什么。
+- [ ] API key 存放在 `.env` 文件中，不在 shell 配置文件或共享文档中。
 
 ---
 
@@ -330,6 +410,7 @@ vos stage save --intent "initialize project and create seed skeleton"
 - 让 AI 对比语言在 OS 开发中的优劣。
 - 让 AI 解释 OS 的基本概念（如"什么是 MMU？""什么是特权级？"）。
 - 让 AI 审查 seed 骨架格式是否正确。
+- 让 AI 帮助诊断 Agent 配置问题（如"为什么 vos agent ask 报 provider not configured？"）。
 
 **不允许**：
 
@@ -337,6 +418,7 @@ vos stage save --intent "initialize project and create seed skeleton"
 - 让 AI 替你写 `architecture_summary`。
 - 让 AI 生成实现代码（阶段 1 未开放代码生成能力）。
 - 跳过 Lab 1 直接进入 Lab 2（seed 骨架是后续所有 Lab 的前提）。
+- 将 `.env` 文件内容粘贴给 AI（API key 是敏感信息）。
 
 ---
 
