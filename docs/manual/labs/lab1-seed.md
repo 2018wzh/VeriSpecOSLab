@@ -61,21 +61,27 @@ vos-agent 支持五种 LLM provider：**Anthropic**（Claude）、**OpenAI**（G
 
 **API key 不要放在 shell 配置文件里。** 推荐使用项目根目录的 `.env` 文件，配合 `.vos/config.toml` 声明使用哪个 key。这套机制是 vos-agent 的原生设计——不需要手动 `export` 环境变量，也避免了 key 通过 shell history 或 `env` 命令泄露。
 
-推荐双 provider 配置：Anthropic（日常问答，Claude 在代码解释上表现稳定）+ OpenAI-compatible（深度推理，可接入 DeepSeek/ECNU 等有免费额度的网关）。
-
 ---
 
 ## 2b. 逐步操作指引
 
 以下是阶段 1 的推荐执行步骤。每一步后面标注了"自检点"——如果卡住了，说明哪个前置步骤可能没做对。
 
-### 步骤 1：安装 Bun 与 vos 工具链（预计 10 分钟）
+### 步骤 1：安装 vos 工具链（预计 10 分钟）
 
 ```sh
-# 1. 安装 Bun（如已安装可跳过）
-# macOS / Linux:
-curl -fsSL https://bun.sh/install | bash
-# Windows: 通过 WSL2 或 https://bun.sh/
+# 1. 安装 nodejs 和 npm
+
+
+# Windows（推荐）
+# winget 安装（建议在命令提示符或 PowerShell 中执行）
+winget install OpenJS.NodeJS.LTS
+
+# macOS
+brew install node
+
+# Linux（Debian/Ubuntu 为例）
+sudo apt install nodejs npm
 
 # 2. 安装 vos 工具链
 npm install -g github:2018wzh/VeriSpecOSLab#v1.0.0
@@ -133,7 +139,6 @@ OPENAI_COMPATIBLE_API_KEY=your-key-here
 
 **示例 A：OpenAI-compatible 网关**
 
-参照 `examples/xv6-spec/.vos/config.toml` 的实际配置：
 
 ```toml
 [agent]
@@ -155,6 +160,23 @@ model = "ollama:qwen3:14b"
 ```
 
 Ollama 模式不需要 API key——`ollama serve` 默认监听 `localhost:11434`。
+
+**3b. 配置 `kb.embedding`**
+
+`agent ask` 与 `kb` 命令会分别复用：
+
+- `[agent]`：模型推理与对话
+- `[kb.embedding]`：知识库向量检索
+
+```toml
+[kb.embedding]
+provider = "openai-compatible"
+model = "text-embedding-3-small"
+base_url = "https://api.openai.com/v1"
+
+[kb.embedding.auth]
+env = "OPENAI_API_KEY"
+```
 
 **3c. 验证 Agent**
 
@@ -362,13 +384,11 @@ vos kb add https://wiki.osdev.org/Filesystems --source-kind external --title "OS
 ### 步骤 6：检查与保存（预计 5 分钟）
 
 ```sh
-vos spec lint          # 对空白字段不报错，只检查已填字段格式
 vos stage save --intent "initialize project and create seed skeleton"
 ```
 
-> `vos arch lint` 在 Lab 1 不强制——seed 中还没有足够的内容供架构检查。该命令从 Lab 2 开始启用。
 
-**自检点**：`vos spec lint` 通过；`vos stage save` 成功（无报错）。
+**自检点**：`vos stage save` 成功（无报错）。
 
 ---
 
@@ -388,7 +408,6 @@ vos stage save --intent "initialize project and create seed skeleton"
 - [ ] `vos doctor` 通过。
 - [ ] `.env` 已添加到 `.gitignore`（`git status` 看不到 `.env` 文件）。
 - [ ] `seed.yaml` 存在，`id`/`project`/`domain`/`target_platform`/`language`/`architecture_name`/`architecture_summary` 均已填写（非 TODO）。
-- [ ] `vos spec lint` 通过。
 - [ ] `vos kb list` 能看到项目 spec 和至少一份与技术路线相关的参考资料。
 - [ ] `vos stage save --intent "initialize project and create seed skeleton"` 已完成。
 
@@ -425,8 +444,3 @@ vos stage save --intent "initialize project and create seed skeleton"
 ## 6. 提交物
 
 - 代码仓库地址
-- `vos doctor` 输出摘要
-- `seed.yaml` 文件（Lab 1 身份字段已填写）
-- `vos kb list` 输出摘要
-- `vos spec lint` 输出摘要
-- `vos stage save --intent "initialize project and create seed skeleton"` 的完成摘要

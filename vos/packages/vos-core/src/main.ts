@@ -837,10 +837,6 @@ function isReproControlledCommand(command: CliCommand): boolean {
     case "agent_validate_generated":
     case "submit_pack":
     case "report_generate":
-    case "kb_add":
-    case "kb_remove":
-    case "kb_clear":
-    case "kb_import_manifest":
       return true;
     default:
       return false;

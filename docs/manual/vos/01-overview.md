@@ -73,6 +73,27 @@
 ### 1.3.1 运行时
 
 - **Bun** ≥ 1.3：VOS CLI 的运行环境
+
+Node.js 与 npm 安装建议（平台差异）：
+
+```sh
+# Windows（推荐）
+winget install OpenJS.NodeJS.LTS
+
+# macOS
+brew install node@20
+
+# Linux（Debian/Ubuntu）
+curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \\. "$NVM_DIR/nvm.sh"
+nvm install --lts
+nvm use --lts
+
+node -v
+npm -v
+```
+
 - 使用 GitHub 仓库安装 VOS CLI：
 
 ```sh
@@ -103,6 +124,40 @@ timeout_secs = 600
 
 [agent.auth]
 env = "YOUR_API_KEY_ENV_VAR"
+```
+
+### 1.3.4 KB Embedding Provider
+
+`kb search`、`kb add`、`agent ask` 都会将 KB 检索向量化参数从 `.vos/config.toml` 读取 `[kb.embedding]`，与 `[agent]` 解耦：
+
+```toml
+[kb.embedding]
+provider = "openai-compatible"
+model = "text-embedding-3-small"
+base_url = "https://api.openai.com/v1"
+
+[kb.embedding.auth]
+env = "OPENAI_API_KEY"
+```
+
+DeepSeek 作为 `agent` provider 时也可共用独立 embedding（推荐）：
+
+```toml
+[agent]
+provider = "deepseek"
+model = "deepseek-v4-pro"
+base_url = "https://api.deepseek.com/v1"
+
+[agent.auth]
+env = "DEEPSEEK_API_KEY"
+
+[kb.embedding]
+provider = "openai-compatible"
+model = "text-embedding-3-small"
+base_url = "https://api.deepseek.com/v1/embeddings"
+
+[kb.embedding.auth]
+env = "DEEPSEEK_API_KEY"
 ```
 
 ## 1.4 命令运行方式

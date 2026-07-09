@@ -221,6 +221,8 @@ vos agent ask --stage <stage> "<question>"
 | `--stage <stage>` | 当前阶段 |
 | `question` | 问题文本 |
 
+`agent ask` 的知识库检索依赖 `.vos/config.toml` 中的 `[kb.embedding]`。`[agent]` 控制对话模型，`[kb.embedding]` 只控制 KB 的 embedding 后端，允许与 `agent` 的 provider 不同。
+
 **示例**：
 
 ```bash

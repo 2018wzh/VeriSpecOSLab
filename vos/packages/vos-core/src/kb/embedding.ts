@@ -15,7 +15,8 @@ export function buildKbEmbeddingConfig(projectRoot: string, env: NodeJS.ProcessE
   const merged: Record<string, string | undefined> = { ...readProjectEnv(projectRoot), ...env };
   const config = raw?.kbEmbedding ?? openAICompatible(raw?.agent) ?? null;
   if (!config) throw new Error("KB embedding provider is not configured");
-  const authEnv = config.authEnv ?? "OPENAI_API_KEY";
+  const authEnvCandidates = resolveEmbeddingAuthEnvCandidates(config, raw?.agent);
+  const authEnv = findExistingAuthEnv(authEnvCandidates, merged);
   const apiKey = merged[authEnv];
   if (!apiKey) throw new Error(`KB embedding provider missing credential env ${authEnv}`);
   return {
@@ -63,6 +64,35 @@ function providerConfig(value: unknown): ProviderConfig | undefined {
     authEnv: stringValue(auth.env),
   };
   return config.provider || config.model || config.baseUrl || config.authEnv ? config : undefined;
+}
+
+function resolveEmbeddingAuthEnvCandidates(config: ProviderConfig, agent?: ProviderConfig): string[] {
+  if (config.authEnv) return [config.authEnv];
+  const provider = config.provider?.toLowerCase() ?? "openai-compatible";
+  const agentProvider = agent?.provider?.toLowerCase();
+
+  if (provider === "openai") return uniqueStrings(["OPENAI_API_KEY", "OPENAI_COMPATIBLE_API_KEY", agent?.authEnv]);
+
+  const fallback = ["OPENAI_COMPATIBLE_API_KEY", agent?.authEnv];
+  return uniqueStrings(fallback);
+}
+
+function findExistingAuthEnv(candidates: string[], merged: Record<string, string | undefined>): string {
+  for (const candidate of candidates) {
+    if (candidate && merged[candidate]) return candidate;
+  }
+  return candidates[0] ?? "OPENAI_API_KEY";
+}
+
+function uniqueStrings(values: Array<string | undefined>): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
 }
 
 function openAICompatible(config: ProviderConfig | undefined): ProviderConfig | undefined {

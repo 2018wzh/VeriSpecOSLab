@@ -141,6 +141,33 @@ describe(".env loading", () => {
     });
   });
 
+  test("uses deepseek auth key as fallback when kb.embedding omits auth.env", () => {
+    const projectRoot = makeProject();
+    mkdirSync(join(projectRoot, ".vos"), { recursive: true });
+    writeFileSync(join(projectRoot, ".vos", "config.toml"), [
+      "[agent]",
+      "provider = \"deepseek\"",
+      "model = \"deepseek-chat\"",
+      "base_url = \"https://api.deepseek.com/v1\"",
+      "",
+      "[agent.auth]",
+      "env = \"DEEPSEEK_API_KEY\"",
+      "",
+      "[kb.embedding]",
+      "provider = \"openai-compatible\"",
+      "model = \"text-embedding-3-small\"",
+      "base_url = \"https://embed.example/v1\"",
+      "",
+    ].join("\n"));
+    writeFileSync(join(projectRoot, ".env"), "DEEPSEEK_API_KEY=embed-key\n");
+
+    expect(buildKbEmbeddingConfig(projectRoot, {} as NodeJS.ProcessEnv)).toEqual({
+      baseUrl: "https://embed.example/v1",
+      model: "text-embedding-3-small",
+      apiKey: "embed-key",
+    });
+  });
+
   test("rejects DeepSeek agent config fallback for KB embeddings", () => {
     const projectRoot = makeProject();
     mkdirSync(join(projectRoot, ".vos"), { recursive: true });
