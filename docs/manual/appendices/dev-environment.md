@@ -30,7 +30,7 @@ git --version
 如果课程模板没有预装 `vos`，在环境内安装：
 
 ```sh
-npm install -g vos@latest
+bun add --global vos@latest
 vos --help
 ```
 
@@ -108,13 +108,13 @@ gdb-multiarch --version
 
 ### vos
 
-从 GitHub 安装 `vos`：
+安装 `vos`：
 
 ```sh
-npm install -g vos@latest
+bun add --global vos@latest
 ```
 
-需要固定版本时使用 `npm install -g vos@X.Y.Z`。安装过程获取并校验对应平台的预构建 CLI；升级通过 npm 完成，不要求 clone VeriSpecOSLab 工具仓库。之后可以在学生项目中用 `--project-root` 指向项目根目录。
+需要固定版本时使用 `bun add --global vos@X.Y.Z`。安装过程获取并校验对应平台的预构建 CLI；升级通过 Bun 完成，不要求 clone VeriSpecOSLab 工具仓库。之后可以在学生项目中用 `--project-root` 指向项目根目录。
 
 验证：
 

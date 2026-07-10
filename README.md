@@ -9,12 +9,12 @@ VeriSpecOSLab 是一个面向操作系统课程与实验的 spec-first 工作区
 ## 快速开始
 
 ```sh
-npm install -g vos@latest
+bun add --global vos@latest
 vos --help
 vos --version
 ```
 
-需要固定版本时使用 `npm install -g vos@X.Y.Z`。安装过程会获取并校验对应版本的平台二进制；升级通过 npm 完成，`vos` 运行时不会自动更新或联网检查。
+需要固定版本时使用 `bun add --global vos@X.Y.Z`。安装过程会获取并校验对应版本的平台二进制；升级通过 Bun 完成，`vos` 运行时不会自动更新或联网检查。
 
 学生不需要 clone VeriSpecOSLab 仓库；拿到课程项目后，在项目目录运行：
 

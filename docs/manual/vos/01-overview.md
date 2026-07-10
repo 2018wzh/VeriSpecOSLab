@@ -74,34 +74,28 @@
 
 - **Bun** ≥ 1.3：VOS CLI 的运行环境
 
-Node.js 与 npm 安装建议（平台差异）：
+Bun 安装建议（平台差异）：
 
 ```sh
-# Windows（推荐）
-winget install OpenJS.NodeJS.LTS
+# Windows：安装 Bun，并重新打开终端
 
 # macOS
-brew install node@20
+# brew install oven-sh/bun/bun
 
 # Linux（Debian/Ubuntu）
-curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \\. "$NVM_DIR/nvm.sh"
-nvm install --lts
-nvm use --lts
+# curl -fsSL https://bun.sh/install | bash
 
-node -v
-npm -v
+bun --version
 ```
 
-- 使用 npm 安装 VOS CLI：
+- 使用 Bun 安装 VOS CLI：
 
 ```sh
-npm install -g vos@latest
+bun add --global vos@latest
 vos --help
 ```
 
-需要固定版本时使用 `npm install -g vos@X.Y.Z`。安装过程会获取并校验对应版本的平台二进制；升级通过 npm 完成，`vos` 运行时不会自动更新或联网检查。
+需要固定版本时使用 `bun add --global vos@X.Y.Z`。安装过程会获取并校验对应版本的平台二进制；升级通过 Bun 完成，`vos` 运行时不会自动更新或联网检查。
 
 ### 1.3.2 项目工具链
 
