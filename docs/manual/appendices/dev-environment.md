@@ -27,10 +27,13 @@ bun --version
 git --version
 ```
 
-如果课程模板没有预装 `vos`，在环境内安装：
+如果课程模板没有预装 `vos`，在仓库内链接当前 CLI：
 
 ```sh
-bun add --global vos@latest
+cd vos
+bun install --ignore-scripts
+cd apps/vos-cli
+bun link
 vos --help
 ```
 
@@ -108,13 +111,15 @@ gdb-multiarch --version
 
 ### vos
 
-安装 `vos`：
+链接当前 checkout 的 `vos` CLI：
 
 ```sh
-bun add --global vos@latest
+bun install --ignore-scripts
+cd apps/vos-cli
+bun link
 ```
 
-需要固定版本时使用 `bun add --global vos@X.Y.Z`。安装过程获取并校验对应平台的预构建 CLI；升级通过 Bun 完成，不要求 clone VeriSpecOSLab 工具仓库。之后可以在学生项目中用 `--project-root` 指向项目根目录。
+链接后，`vos` 命令直接使用仓库当前源码；修改 CLI 后重新运行即可。仓库不提供预构建 CLI 或更新通道。之后可以在学生项目中用 `--project-root` 指向项目根目录。
 
 验证：
 

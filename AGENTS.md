@@ -9,17 +9,17 @@ This repository is a spec-first OS lab platform. `docs/design/` contains the des
 Run workspace commands from `vos/`:
 
 ```sh
-bun install --ignore-scripts # install workspace dependencies without attempting release-asset installation
+bun install --ignore-scripts # install workspace dependencies
 bun run typecheck    # typecheck all workspace packages and apps
 bun run test         # run all workspace tests
-bun run build        # compile release binaries
+bun run build        # build workspace applications locally
 bun run vos -- --help # run the CLI entrypoint
 bun run dev:agent    # start vos-agent HTTP server on 127.0.0.1:8787
 ```
 
 For focused work, run `bun test` or `bun run typecheck` inside `vos/packages/<pkg>` or `vos/apps/<app>`.
 
-The root package is the public `vos` npm entrypoint for prebuilt release binaries. Do not point the root `bin` at `vos/apps/vos-cli/app/main.ts` or any other workspace source file. The supported student install paths are `bun add --global vos@latest` and `bun add --global vos@<version>`. The `vos-bin` dependency downloads and verifies the matching GitHub Release asset during installation; runtime self-update and update checks are not supported.
+The supported CLI installation path is `bun link` from `vos/apps/vos-cli`. The linked `vos` command always targets this checkout. Do not add a second root package, release downloader, prebuilt binary path, or runtime update mechanism.
 
 ## Coding Style & Naming Conventions
 

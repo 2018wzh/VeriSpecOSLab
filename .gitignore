@@ -6,6 +6,4 @@
 .vscode
 .reasonix
 dist
-release
 vendor
-vos/packages/vos-core/src/version.generated.ts

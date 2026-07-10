@@ -9,12 +9,14 @@ VeriSpecOSLab 是一个面向操作系统课程与实验的 spec-first 工作区
 ## 快速开始
 
 ```sh
-bun add --global vos@latest
+cd vos
+bun install --ignore-scripts
+cd apps/vos-cli
+bun link
 vos --help
-vos --version
 ```
 
-需要固定版本时使用 `bun add --global vos@X.Y.Z`。安装过程会获取并校验对应版本的平台二进制；升级通过 Bun 完成，`vos` 运行时不会自动更新或联网检查。
+`vos` 通过 Bun 链接到当前 checkout 的 `vos/apps/vos-cli`。修改 CLI 后重新运行命令即可使用当前源码；仓库不提供预构建二进制、npm 发布包或运行时更新机制。
 
 学生不需要 clone VeriSpecOSLab 仓库；拿到课程项目后，在项目目录运行：
 
@@ -99,12 +101,6 @@ vos --project-root <project-root> submit pack
 完整说明见 [用户手册](docs/manual/README.md)。
 
 ## 开发命令
-
-根目录可直接生成发布二进制；workspace 命令仍从 `vos/` 目录运行：
-
-```bash
-bun run build
-```
 
 所有 workspace 命令从 `vos/` 目录运行：
 

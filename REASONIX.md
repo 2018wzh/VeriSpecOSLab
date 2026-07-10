@@ -37,7 +37,8 @@ All run from `vos/`:
 bun install                      # install workspace deps
 bun run typecheck                # typecheck all packages & apps
 bun run test                     # run all workspace tests
-bun run build                    # compile release binaries
+bun run build                    # build workspace applications locally
+bun link                         # run from apps/vos-cli to link the local CLI
 bun run vos -- --help            # CLI entrypoint
 bun run dev:agent                # vos-agent HTTP server on 127.0.0.1:8787
 bun run dev:web                  # vos-web dev server

@@ -10,7 +10,6 @@
     "packages/vos-core",
     "packages/vos-server",
     "packages/vos-runtime",
-    "packages/vos-bin",
     "apps/vos-agent",
     "apps/vos-cli",
     "apps/vos-demo",

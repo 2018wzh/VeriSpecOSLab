@@ -69,7 +69,7 @@ vos-agent 支持五种 LLM provider：**Anthropic**（Claude）、**OpenAI**（G
 
 ### 步骤 1：安装 vos 工具链（预计 10 分钟）
 
-`vos` 通过 npm 发布，`vos-bin` 会在安装阶段获取并校验当前版本对应的平台二进制。Lab 1 只使用稳定版，不需要 clone VeriSpecOSLab 仓库，也不需要安装任何内部 workspace 包。
+Lab 1 使用仓库内的 `vos/apps/vos-cli`。先安装 workspace 依赖，再通过 `bun link` 将当前 checkout 的 CLI 暴露为 `vos` 命令。
 
 ```sh
 # 1. 准备 Bun 1.3 或更新版本
@@ -84,30 +84,20 @@ vos-agent 支持五种 LLM provider：**Anthropic**（Claude）、**OpenAI**（G
 
 bun --version
 
-# 2. 安装最新稳定版 vos
-bun add --global vos@latest
+# 2. 安装 workspace 依赖并链接当前 vos CLI
+cd vos
+bun install --ignore-scripts
+cd apps/vos-cli
+bun link
 
 # 3. 验证安装
 vos --version
 vos --help
 ```
 
-需要复现实验或课程要求指定版本时，使用精确版本号：
+仓库不提供预构建二进制、npm 发布包或升级通道；CLI 始终来自当前 checkout。
 
-```sh
-bun add --global vos@X.Y.Z
-vos --version
-```
-
-后续升级也通过 npm 完成：
-
-```sh
-bun add --global vos@latest
-```
-
-`vos` 运行时不会自动更新或后台检查更新。若安装失败，保留 npm 的完整错误输出；下载失败、平台不支持或校验失败都必须先解决，不能跳过安装校验。
-
-**自检点**：`bun --version` 至少为 1.3，`vos --version` 输出稳定版本号，`vos --help` 能看到命令列表。如果提示 `command not found`，检查 Bun 的全局 bin 目录是否在 PATH 中，然后重新打开终端。
+**自检点**：`bun --version` 至少为 1.3，`vos --help` 能看到命令列表。如果提示 `command not found`，确认已在 `vos/apps/vos-cli` 执行 `bun link`，并检查 Bun 的全局 bin 目录是否在 PATH 中。
 
 ### 步骤 2：初始化项目（预计 10 分钟）
 

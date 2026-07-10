@@ -1,1 +1,1 @@
-export { COMMAND_VERSION } from "./version.generated.ts";
+export const COMMAND_VERSION = "dev";

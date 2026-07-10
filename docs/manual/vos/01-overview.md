@@ -88,14 +88,17 @@ Bun 安装建议（平台差异）：
 bun --version
 ```
 
-- 使用 Bun 安装 VOS CLI：
+- 使用 Bun 链接当前 checkout 的 VOS CLI：
 
 ```sh
-bun add --global vos@latest
+cd vos
+bun install --ignore-scripts
+cd apps/vos-cli
+bun link
 vos --help
 ```
 
-需要固定版本时使用 `bun add --global vos@X.Y.Z`。安装过程会获取并校验对应版本的平台二进制；升级通过 Bun 完成，`vos` 运行时不会自动更新或联网检查。
+`bun link` 会将当前 `vos/apps/vos-cli` 的 `vos` 命令链接到本机。命令始终使用当前 checkout 的源码；仓库不提供预构建 CLI、npm 发布包或运行时更新机制。
 
 ### 1.3.2 项目工具链
 
