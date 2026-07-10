@@ -1,4 +1,5 @@
 .tmp*
+.worktrees/
 .deepseek
 .claude
 .idea
