@@ -70,24 +70,12 @@ vos-agent 支持五种 LLM provider：**Anthropic**（Claude）、**OpenAI**（G
 ### 步骤 1：安装 vos 工具链（预计 10 分钟）
 
 ```sh
-# 1. 安装 nodejs 和 npm
-
-
-# Windows（推荐）
-# winget 安装（建议在命令提示符或 PowerShell 中执行）
-winget install OpenJS.NodeJS.LTS
-
-# macOS
-brew install node
-
-# Linux（Debian/Ubuntu 为例）
-sudo apt install nodejs npm
+# 1. 安装 bun
+# 详见 https://bun.com/docs/installation
 
 # 2. 安装 vos 工具链
-npm install -g github:2018wzh/VeriSpecOSLab#v1.0.0
+bun install -g vos@latest
 ```
-
-> 将 `v1.0.0` 替换为课程指定的最新 release tag。每次开始新的 Lab 前按课程公告更新 tag 后重新安装。
 
 **自检点**：运行 `vos --help` 能看到命令列表。如果提示 `command not found`，检查 Bun 的全局 bin 目录是否在 PATH 中。
 

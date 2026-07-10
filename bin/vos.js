@@ -1,31 +1,29 @@
 #!/usr/bin/env node
 
-import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const binaryName = process.platform === "win32" ? "vos.exe" : "vos";
-const binaryPath = path.join(packageRoot, "vendor", binaryName);
+const runtimeModuleUrl = new URL("../vos/packages/vos-bin/index.mjs", import.meta.url);
+let runVosBinary;
 
-if (!existsSync(binaryPath)) {
-  console.error("vos: prebuilt binary is missing; reinstall with `npm install -g github:2018wzh/VeriSpecOSLab#v1.0.0`.");
+try {
+  ({ runVosBinary } = await import(runtimeModuleUrl.href));
+} catch (error) {
+  const code = error instanceof Error ? error.code : undefined;
+  if (code === "ERR_MODULE_NOT_FOUND" || code === "ERR_PACKAGE_PATH_NOT_EXPORTED") {
+    console.error("vos: bundled runtime package is missing; reinstall the package.");
+    process.exit(1);
+  }
+  throw error;
+}
+
+try {
+  runVosBinary(process.argv.slice(2));
+} catch (error) {
+  console.error(`vos: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 }
 
-const child = spawnSync(binaryPath, process.argv.slice(2), {
-  stdio: "inherit",
-  windowsHide: true,
-});
-
-if (child.error) {
-  console.error(`vos: failed to start bundled binary (${child.error.code ?? "spawn failed"})`);
-  process.exit(1);
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  process.exit(0);
 }
-
-if (child.signal) {
-  process.kill(process.pid, child.signal);
-}
-
-process.exit(child.status ?? 1);
