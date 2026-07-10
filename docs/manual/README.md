@@ -95,7 +95,7 @@ Final Lab：综合集成、失败分析、最终报告
 
 ```sh
 cd vos
-bun install
+bun install --ignore-scripts
 bun run manual:pdf:install
 ```
 

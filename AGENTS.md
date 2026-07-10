@@ -9,7 +9,7 @@ This repository is a spec-first OS lab platform. `docs/design/` contains the des
 Run workspace commands from `vos/`:
 
 ```sh
-bun install          # install workspace dependencies
+bun install --ignore-scripts # install workspace dependencies without attempting release-asset installation
 bun run typecheck    # typecheck all workspace packages and apps
 bun run test         # run all workspace tests
 bun run build        # compile release binaries
@@ -19,7 +19,7 @@ bun run dev:agent    # start vos-agent HTTP server on 127.0.0.1:8787
 
 For focused work, run `bun test` or `bun run typecheck` inside `vos/packages/<pkg>` or `vos/apps/<app>`.
 
-The root package is an npm GitHub installer for prebuilt release binaries. Do not point the root `bin` at `vos/apps/vos-cli/app/main.ts` or any other workspace source file. The supported student install path is `npm install -g github:2018wzh/VeriSpecOSLab#<release-tag>`, where the postinstall script downloads and verifies the matching GitHub Release asset.
+The root package is the public `vos` npm entrypoint for prebuilt release binaries. Do not point the root `bin` at `vos/apps/vos-cli/app/main.ts` or any other workspace source file. The supported student install paths are `npm install -g vos@latest` and `npm install -g vos@<version>`. The `vos-bin` dependency downloads and verifies the matching GitHub Release asset during installation; runtime self-update and update checks are not supported.
 
 ## Coding Style & Naming Conventions
 

@@ -69,15 +69,45 @@ vos-agent 支持五种 LLM provider：**Anthropic**（Claude）、**OpenAI**（G
 
 ### 步骤 1：安装 vos 工具链（预计 10 分钟）
 
-```sh
-# 1. 安装 bun
-# 详见 https://bun.com/docs/installation
+`vos` 通过 npm 发布，`vos-bin` 会在安装阶段获取并校验当前版本对应的平台二进制。Lab 1 只使用稳定版，不需要 clone VeriSpecOSLab 仓库，也不需要安装任何内部 workspace 包。
 
-# 2. 安装 vos 工具链
-bun install -g vos@latest
+```sh
+# 1. 准备 Node.js 18 或更新版本
+# macOS
+# brew install node
+
+# Windows：安装 Node.js LTS，并重新打开终端
+
+# Linux（Debian/Ubuntu）
+# sudo apt install nodejs npm
+
+node --version
+npm --version
+
+# 2. 安装最新稳定版 vos
+npm install -g vos@latest
+
+# 3. 验证安装
+vos --version
+vos --help
 ```
 
-**自检点**：运行 `vos --help` 能看到命令列表。如果提示 `command not found`，检查 Bun 的全局 bin 目录是否在 PATH 中。
+需要复现实验或课程要求指定版本时，使用精确版本号：
+
+```sh
+npm install -g vos@X.Y.Z
+vos --version
+```
+
+后续升级也通过 npm 完成：
+
+```sh
+npm install -g vos@latest
+```
+
+`vos` 运行时不会自动更新或后台检查更新。若安装失败，保留 npm 的完整错误输出；下载失败、平台不支持或校验失败都必须先解决，不能跳过安装校验。
+
+**自检点**：`node --version` 至少为 18，`vos --version` 输出稳定版本号，`vos --help` 能看到命令列表。如果提示 `command not found`，检查 npm 的全局 bin 目录是否在 PATH 中，然后重新打开终端。
 
 ### 步骤 2：初始化项目（预计 10 分钟）
 

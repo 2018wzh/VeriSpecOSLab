@@ -9,13 +9,12 @@ VeriSpecOSLab 是一个面向操作系统课程与实验的 spec-first 工作区
 ## 快速开始
 
 ```sh
-npm install -g github:2018wzh/VeriSpecOSLab#v1.0.0
+npm install -g vos@latest
 vos --help
 vos --version
-vos update
 ```
 
-把 `v1.0.0` 替换为课程指定的 release tag。这个安装入口下载对应平台的预构建 `vos` 二进制，不要求 clone VeriSpecOSLab 工具仓库。
+需要固定版本时使用 `npm install -g vos@X.Y.Z`。安装过程会获取并校验对应版本的平台二进制；升级通过 npm 完成，`vos` 运行时不会自动更新或联网检查。
 
 学生不需要 clone VeriSpecOSLab 仓库；拿到课程项目后，在项目目录运行：
 
@@ -110,7 +109,7 @@ bun run build
 所有 workspace 命令从 `vos/` 目录运行：
 
 ```bash
-bun install
+bun install --ignore-scripts
 bun run typecheck
 bun run test
 bun run build

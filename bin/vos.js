@@ -1,29 +1,28 @@
 #!/usr/bin/env node
 
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolveBinaryPath } from "vos-bin";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 
-const runtimeModuleUrl = new URL("../vos/packages/vos-bin/index.mjs", import.meta.url);
-let runVosBinary;
+const binaryPath = resolveBinaryPath();
 
-try {
-  ({ runVosBinary } = await import(runtimeModuleUrl.href));
-} catch (error) {
-  const code = error instanceof Error ? error.code : undefined;
-  if (code === "ERR_MODULE_NOT_FOUND" || code === "ERR_PACKAGE_PATH_NOT_EXPORTED") {
-    console.error("vos: bundled runtime package is missing; reinstall the package.");
-    process.exit(1);
-  }
-  throw error;
-}
-
-try {
-  runVosBinary(process.argv.slice(2));
-} catch (error) {
-  console.error(`vos: ${error instanceof Error ? error.message : String(error)}`);
+if (!existsSync(binaryPath)) {
+  console.error(`vos: bundled binary is missing; reinstall vos@${process.env.npm_package_version ?? "the requested version"}.`);
   process.exit(1);
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  process.exit(0);
+const child = spawnSync(binaryPath, process.argv.slice(2), {
+  stdio: "inherit",
+  windowsHide: true,
+});
+
+if (child.error) {
+  console.error(`vos: failed to start bundled binary (${child.error.code ?? "spawn failed"})`);
+  process.exit(1);
 }
+
+if (child.signal) {
+  process.kill(process.pid, child.signal);
+}
+
+process.exit(child.status ?? 1);

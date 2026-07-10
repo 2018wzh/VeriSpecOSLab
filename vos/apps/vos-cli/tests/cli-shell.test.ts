@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { executeCliInvocation, isDemoInvocation, parseArgs } from "../app/main.ts";
+import { executeCliInvocation, isDemoInvocation, parseArgs, printHelp } from "../app/main.ts";
 
 describe("vos-cli shell", () => {
   test("re-exports core parser and executor for the bin wrapper", () => {
@@ -14,5 +14,10 @@ describe("vos-cli shell", () => {
       .toBe(true);
     expect(isDemoInvocation(["bun", "vos", "agent", "ask", "demo"]))
       .toBe(false);
+  });
+
+  test("does not expose runtime self-update commands", () => {
+    expect(printHelp("update")).toBe(false);
+    expect(printHelp("self-update")).toBe(false);
   });
 });

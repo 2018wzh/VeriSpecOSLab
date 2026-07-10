@@ -122,12 +122,6 @@ export {
   COMMAND_VERSION,
 } from "./version.ts";
 export {
-  detectUpdateTarget,
-  performSelfUpdate,
-  maybeCheckForUpdate,
-} from "./update.ts";
-export type { UpdateChannel } from "./update.ts";
-export {
   commandToArray,
   executeCliInvocation,
   executeCommand,

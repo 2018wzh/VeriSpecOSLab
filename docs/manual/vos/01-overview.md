@@ -94,14 +94,14 @@ node -v
 npm -v
 ```
 
-- 使用 GitHub 仓库安装 VOS CLI：
+- 使用 npm 安装 VOS CLI：
 
 ```sh
-npm install -g github:2018wzh/VeriSpecOSLab#v1.0.0
+npm install -g vos@latest
 vos --help
 ```
 
-把 `v1.0.0` 替换为课程指定的 release tag。这一步只安装对应平台的预构建 CLI，不要求 clone VeriSpecOSLab 工具仓库。
+需要固定版本时使用 `npm install -g vos@X.Y.Z`。安装过程会获取并校验对应版本的平台二进制；升级通过 npm 完成，`vos` 运行时不会自动更新或联网检查。
 
 ### 1.3.2 项目工具链
 
