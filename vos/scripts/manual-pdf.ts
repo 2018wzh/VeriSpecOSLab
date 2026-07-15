@@ -103,6 +103,8 @@ const EXPLICIT_FILE_ORDER: Record<string, string[]> = {
     "linker-script.md",
     "qemu-guide.md",
     "riscv-reference.md",
+    "x86-boot-reference.md",
+    "arm-boot-reference.md",
     "stm32-bare-metal-lab.md",
     "tools-overview.md",
     "vos-commands.md",

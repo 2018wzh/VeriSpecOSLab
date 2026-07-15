@@ -145,3 +145,114 @@ pa = walk(va)  # 3 级页表遍历
 RISC-V 将每个硬件线程称为 HART（Hardware Thread）。`mhartid` CSR 包含当前 HART 的 ID。
 
 典型启动流程中，HART 0 执行初始化，其他 HART 自旋等待，直到被唤醒。
+
+## 启动约定（Lab 2 参考卡）
+
+本节汇总了填写 Lab 2 Spec 时需要的 RISC-V 平台特定值。每个条目对应 Lab 2 模板中 `◉` 占位符的答案。
+
+### 入口状态（`entry` OperationContract `rely.state_assumptions`）
+
+| 项目 | 值 |
+|------|-----|
+| 启动方式 | 固件直启（OpenSBI → S-mode kernel） |
+| 入口特权级 | S-mode (Supervisor mode) |
+| 入口寄存器 | `a0` = HART ID, `a1` = DTB 物理地址 |
+| 固件信息类型 | 设备树 Blob (DTB) |
+| RAM 基地址 | `0x80000000` (QEMU `virt`) |
+| 内存可访问性 | 从 `0x80000000` 开始连续可用 |
+| MMU 状态 | 未启用 (`satp` MODE=BARE) |
+| 中断状态 | 禁用 (由 OpenSBI 在跳到 S-mode 前禁用) |
+
+### 栈设置（`entry` OperationContract `guarantee.side_effects`）
+
+| 项目 | 值 |
+|------|-----|
+| 栈指针设置 | `la sp, _stack_top` |
+| 栈大小 | 4–16 KiB（建议 8 KiB） |
+| 栈增长方向 | 向下（高地址→低地址） |
+| 栈位置 | 通常在 BSS 区域的高端，链接脚本中定义 `_stack_top` 符号 |
+
+### BSS 清零（`bss_zero` OperationContract `preconditions`）
+
+| 项目 | 值 |
+|------|-----|
+| 平台字长 | 8 字节 (64-bit) |
+| 边界符号 | `_bss_start`, `_bss_end`（链接脚本定义） |
+| 对齐要求 | 8 字节对齐（推荐），逐字节清零（最安全） |
+
+### 非启动核心处理（`entry` OperationContract `concurrency.wait_wakeup_rules`）
+
+| 项目 | 值 |
+|------|-----|
+| 核心 ID 获取 | 读 `a0` 寄存器（入口时由 OpenSBI 传入）或 `tp` 寄存器 |
+| 启动核心 | HART 0 (`hartid == 0`) |
+| 自旋指令 | `wfi` (Wait For Interrupt) |
+
+### 输出通道（`console_output` OperationContract `rely.state_assumptions`）
+
+| 项目 | 值 |
+|------|-----|
+| 输出机制 | SBI `console_putchar` (EID #1) 通过 `ecall` |
+| 固件初始化 | OpenSBI 在进入 S-mode 前已初始化 UART |
+| 不可失败假设 | SBI 规范约定 `putchar` 为 best-effort，可能静默丢弃 |
+
+备选方案：直接写 UART MMIO（`0x10000000`，16550 兼容 UART）。
+
+### 关机（`shutdown` OperationContract `rely.callable_interfaces`）
+
+| 项目 | 值 |
+|------|-----|
+| 关机机制 | SBI SRST (System Reset) extension，EID #0x53525354 |
+| QEMU 退出 | `sbi_shutdown()` 触发 `srst` ecall |
+| 兜底 | `while(1) { asm volatile("wfi"); }` |
+
+### ToolchainSpec 对应值
+
+```yaml
+# link.yaml
+link:
+  entry_symbol: "_start"
+  section_rules:
+    - "text 段位于 0x80000000"
+  relocation_model: static
+  abi_constraints:
+    - "riscv64 lp64d"      ## 64-bit, double-precision float ABI
+
+# run.yaml
+run:
+  emulator: "qemu-system-riscv64"
+  machine: "virt"
+  cpu: "rv64"
+  memory: "128M"
+  bios: "default"           ## OpenSBI (QEMU 内置)
+  kernel_arg: "-kernel"
+  extra_args:
+    - "-nographic"
+    - "-no-reboot"
+    - "-serial"
+    - "mon:stdio"
+  success_signal: "your boot banner string"
+  timeout_secs: 30
+```
+
+### 多核/并发 Spec（`concurrency` 字段）
+
+| 字段 | 值 |
+|------|-----|
+| `concurrency.atomicity` | "多核心并发进入；BSS 清零由核心 0 独占" |
+| `concurrency.lock_order` | `["console_lock"]`（仅此一把锁，启动阶段无嵌套） |
+| `concurrency.interrupt_state` | "所有中断禁用" |
+| `concurrency.wait_wakeup_rules` | "spinlock_acquire：自旋等待；非启动 HART：打印 banner 后 `wfi` 自旋" |
+
+### 多核并发原语（`spinlock` OperationContract 参考）
+
+| 项目 | 值 |
+|------|-----|
+| 原子测试并设置 | `amoswap.w.aq`（原子交换，带获取语义）或 `lr.w` / `sc.w` 对 |
+| 原子写（释放） | `amoswap.w.rl`（带释放语义）或 `fence rw,w` + `sw` |
+| 获取屏障 | `fence r,r` 或 `amoswap.w.aq` 内置获取语义 |
+| 释放屏障 | `fence w,w` 或 `amoswap.w.rl` 内置释放语义 |
+| 自旋等待指令 | `wfi`（Wait For Interrupt）——省电，但需中断唤醒 |
+| 锁变量类型 | `int`（32-bit），初始值 0（由 BSS 清零保证） |
+
+> **注意**：`.aq`（acquire）和 `.rl`（release）后缀是 RISC-V 原子指令的扩展。如果使用 `lr.w`/`sc.w`（Load-Reserved / Store-Conditional），需要额外 `fence` 指令来保证内存序。
