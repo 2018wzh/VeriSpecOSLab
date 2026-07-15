@@ -3254,7 +3254,16 @@ async function writeCurrentNormalizedBundleAndHash(
   const project = await loadProjectConfig(projectRoot);
   const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
   const bundlePath = await writeNormalizedBundle(projectRoot, bundle, evidence);
-  return createHash("sha256").update(await readFile(bundlePath)).digest("hex");
+  return normalizedBundleContentHash(await readFile(bundlePath, "utf8"));
+}
+
+function normalizedBundleContentHash(serializedBundle: string): string {
+  const bundle = JSON.parse(serializedBundle) as Record<string, unknown>;
+  // `generated_at` documents cache freshness but is not part of the spec
+  // content. Including it makes a checked-in toolchain manifest unusable
+  // after the next deterministic `spec lint` invocation.
+  delete bundle.generated_at;
+  return createHash("sha256").update(JSON.stringify(bundle)).digest("hex");
 }
 
 async function writePatchApplyCache(params: {

@@ -282,8 +282,16 @@ async function ensureCachedSpecHashMatches(projectRoot: string, expected: string
   if (!existsSync(normalizedBundlePath)) {
     throw new Error(`build requires normalized spec bundle for hash validation: ${normalizedBundlePath}`);
   }
-  const actual = await hashFile(normalizedBundlePath);
+  const actual = normalizedBundleContentHash(await readFile(normalizedBundlePath, "utf8"));
   if (actual !== expected) {
     throw new Error(`build spec hash mismatch: expected ${expected}, got ${actual}`);
   }
+}
+
+function normalizedBundleContentHash(serializedBundle: string): string {
+  const bundle = JSON.parse(serializedBundle) as Record<string, unknown>;
+  // Cache timestamps are observational metadata, not spec content. Exclude
+  // them so a manifest remains valid across repeated normalization runs.
+  delete bundle.generated_at;
+  return createHash("sha256").update(JSON.stringify(bundle)).digest("hex");
 }
