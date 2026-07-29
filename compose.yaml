@@ -5,89 +5,252 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: vos_portal
-      POSTGRES_USER: vos
-      POSTGRES_PASSWORD: vos
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: vos_portal
+      POSTGRES_PASSWORD: ${VOS_PORTAL_DB_PASSWORD:?set VOS_PORTAL_DB_PASSWORD}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vos -d vos_portal"]
+      test: ["CMD-SHELL", "pg_isready -U vos_portal -d vos_portal"]
       interval: 5s
       timeout: 5s
       retries: 20
-    volumes:
-      - vos_postgres_data:/var/lib/postgresql/data
+    volumes: ["vos_postgres_data:/var/lib/postgresql/data"]
+    networks: ["control"]
 
-  vos-portal:
-    image: rust:1-bookworm
-    working_dir: /workspace/vos
-    command: >
-      bash -lc "cargo run -p vos-portal --features postgres"
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address :9001
     environment:
-      DATABASE_URL: postgres://vos:vos@postgres:5432/vos_portal
-      VOS_PORTAL_HOST: 0.0.0.0
-      VOS_PORTAL_PORT: 8080
-      VOS_PORTAL_DEMO: "1"
-      VOS_PORTAL_INTERNAL_TOKEN: dev-internal-token
-      VOS_PORTAL_SPEC_ROOT: /workspace/examples/xv6-spec/spec
-      RUST_LOG: vos_portal=info,tower_http=info
-    ports:
-      - "8080:8080"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    volumes:
-      - .:/workspace
-      - vos_cargo_registry:/usr/local/cargo/registry
-      - vos_cargo_git:/usr/local/cargo/git
-      - vos_target:/workspace/vos/target
+      MINIO_ROOT_USER: ${VOS_MINIO_ROOT_USER:?set VOS_MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${VOS_MINIO_ROOT_PASSWORD:?set VOS_MINIO_ROOT_PASSWORD}
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes: ["vos_minio_data:/data"]
+    networks: ["control", "objects"]
 
-  vos-web:
-    image: node:20-bookworm-slim
-    working_dir: /workspace/vos/apps/vos-web
-    command: >
-      bash -lc "npm install && npm run dev -- --host 0.0.0.0"
+  minio-init:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        set -eu;
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}";
+        mc mb --ignore-existing local/vos-artifacts;
+        mc version enable local/vos-artifacts
     environment:
-      VOS_PORTAL_API_ORIGIN: http://vos-portal:8080
-    ports:
-      - "5173:5173"
+      MINIO_ROOT_USER: ${VOS_MINIO_ROOT_USER:?set VOS_MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${VOS_MINIO_ROOT_PASSWORD:?set VOS_MINIO_ROOT_PASSWORD}
     depends_on:
-      - vos-portal
-    volumes:
-      - .:/workspace
-      - vos_web_node_modules:/workspace/vos/apps/vos-web/node_modules
+      minio: { condition: service_healthy }
+    networks: ["control"]
+    restart: "no"
 
   gitea:
     image: gitea/gitea:1.22
-    profiles: ["integrations"]
     environment:
       USER_UID: 1000
       USER_GID: 1000
-      GITEA__server__ROOT_URL: http://localhost:3001/
+      GITEA__server__ROOT_URL: ${VOS_GITEA_PUBLIC_URL:-http://localhost:3001/}
+      GITEA__server__LOCAL_ROOT_URL: http://gitea:3000/
       GITEA__database__DB_TYPE: sqlite3
-    ports:
-      - "3001:3000"
-      - "2222:22"
-    volumes:
-      - vos_gitea_data:/data
-
-  gitea-runner:
-    image: gitea/act_runner:0.2.11
-    profiles: ["integrations"]
-    environment:
-      GITEA_INSTANCE_URL: http://gitea:3000
-      GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_REGISTRATION_TOKEN:-}
-      GITEA_RUNNER_NAME: vos-portal-runner
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__security__SECRET_KEY: ${VOS_GITEA_SECRET_KEY:?set VOS_GITEA_SECRET_KEY}
+      GITEA__security__INTERNAL_TOKEN: ${VOS_GITEA_INTERNAL_TOKEN:?set VOS_GITEA_INTERNAL_TOKEN}
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__webhook__ALLOWED_HOST_LIST: vos-portal
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/v1/version"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    ports: ["3001:3000", "2222:22"]
+    volumes: ["vos_gitea_data:/data"]
     depends_on:
-      - gitea
+      postgres: { condition: service_healthy }
+    networks: ["control", "checkout"]
+
+  vos-runner-image:
+    profiles: ["runner"]
+    image: vos-runner:local
+    build:
+      context: ./vos
+      dockerfile: apps/vos-portal/Runner.Dockerfile
+    command: ["/bin/true"]
+    network_mode: none
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    restart: "no"
+
+  docker-socket-proxy:
+    profiles: ["runner"]
+    image: ghcr.io/tecnativa/docker-socket-proxy:v0.4.2
+    environment:
+      CONTAINERS: 1
+      EXEC: 1
+      IMAGES: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      POST: 1
+      ALLOW_START: 1
+      ALLOW_STOP: 1
+      ALLOW_RESTARTS: 1
+      LOG_LEVEL: warning
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
+    read_only: true
+    tmpfs: ["/tmp:size=8m,nosuid,noexec", "/run:size=8m,nosuid,noexec", "/var/lib/haproxy:size=8m,nosuid,noexec"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    networks: ["runtime-control"]
+
+  vos-ops:
+    profiles: ["ops"]
+    image: vos-portal-ops:local
+    build:
+      context: ./vos
+      dockerfile: apps/vos-portal/Ops.Dockerfile
+    environment:
+      DATABASE_URL: postgres://vos_portal:${VOS_PORTAL_DB_PASSWORD}@postgres:5432/vos_portal
+      VOS_S3_ENDPOINT: http://minio:9000
+      VOS_S3_BUCKET: ${VOS_RESTORE_BUCKET:-vos-artifacts}
+      VOS_S3_ACCESS_KEY: ${VOS_MINIO_ROOT_USER:?set VOS_MINIO_ROOT_USER}
+      VOS_S3_SECRET_KEY: ${VOS_MINIO_ROOT_PASSWORD:?set VOS_MINIO_ROOT_PASSWORD}
+      BACKUP_ROOT: /backup
+      VOS_BACKUP_NAME: ${VOS_BACKUP_NAME:-}
+      VOS_RESTORE_CONFIRM: ${VOS_RESTORE_CONFIRM:-}
+    volumes: ["${VOS_BACKUP_DIR:-./.tmp/portal-backups}:/backup"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+    networks: ["control"]
+    restart: "no"
+
+  migrate:
+    image: vos-portal:local
+    build:
+      context: ./vos
+      dockerfile: apps/vos-portal/Dockerfile
+    command: ["migrate"]
+    environment:
+      DATABASE_URL: postgres://vos_portal:${VOS_PORTAL_DB_PASSWORD}@postgres:5432/vos_portal
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: ["control"]
+    restart: "no"
+
+  vos-portal:
+    image: vos-portal:local
+    build:
+      context: ./vos
+      dockerfile: apps/vos-portal/Dockerfile
+    command: ["serve"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://vos_portal:${VOS_PORTAL_DB_PASSWORD}@postgres:5432/vos_portal
+      VOS_PORTAL_HOST: 0.0.0.0
+      VOS_PORTAL_PORT: 8787
+      VOS_PORTAL_PUBLIC_ORIGIN: ${VOS_PORTAL_PUBLIC_ORIGIN:-https://localhost:8443}
+      VOS_PORTAL_DB_POOL_SIZE: 10
+      VOS_PORTAL_MASTER_KEY: ${VOS_PORTAL_MASTER_KEY:?set VOS_PORTAL_MASTER_KEY}
+      VOS_GITEA_URL: http://gitea:3000
+      VOS_GITEA_TOKEN: ${VOS_GITEA_TOKEN:?set VOS_GITEA_TOKEN}
+      VOS_GITEA_WEBHOOK_SECRET: ${VOS_GITEA_WEBHOOK_SECRET:?set VOS_GITEA_WEBHOOK_SECRET}
+      VOS_S3_ENDPOINT: http://minio:9000
+      VOS_S3_PUBLIC_ENDPOINT: ${VOS_S3_PUBLIC_ENDPOINT:-https://objects.localhost:8443}
+      VOS_S3_BUCKET: vos-artifacts
+      VOS_S3_REGION: us-east-1
+      VOS_S3_ACCESS_KEY: ${VOS_MINIO_ROOT_USER:?set VOS_MINIO_ROOT_USER}
+      VOS_S3_SECRET_KEY: ${VOS_MINIO_ROOT_PASSWORD:?set VOS_MINIO_ROOT_PASSWORD}
+    expose: ["8787"]
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const response=await fetch('http://127.0.0.1:8787/healthz');if(!response.ok)process.exit(1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      minio-init: { condition: service_completed_successfully }
+      gitea: { condition: service_healthy }
+    read_only: true
+    tmpfs: ["/tmp:size=64m,noexec,nosuid"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    networks: ["control", "ingress"]
+
+  caddy:
+    image: caddy:2.10-alpine
+    ports:
+      - "${VOS_PORTAL_HTTPS_PORT:-8443}:443"
+      - "${VOS_PORTAL_HTTP_PORT:-8080}:80"
     volumes:
-      - vos_gitea_runner_data:/data
-      - /var/run/docker.sock:/var/run/docker.sock
+      - ./vos/apps/vos-portal/Caddyfile:/etc/caddy/Caddyfile:ro
+      - vos_caddy_data:/data
+      - vos_caddy_config:/config
+    depends_on:
+      vos-portal: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+    read_only: true
+    tmpfs: ["/tmp:size=32m,noexec,nosuid"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    cap_add: ["NET_BIND_SERVICE"]
+    networks: ["control", "ingress"]
+
+  vos-worker:
+    profiles: ["runner"]
+    image: vos-portal:local
+    build:
+      context: ./vos
+      dockerfile: apps/vos-portal/Dockerfile
+    command: ["worker"]
+    environment:
+      DATABASE_URL: postgres://vos_portal:${VOS_PORTAL_DB_PASSWORD}@postgres:5432/vos_portal
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+      VOS_RUNNER_IMAGE: vos-runner:local
+      VOS_RUNNER_CHECKOUT_NETWORK: vos-portal-checkout
+      VOS_RUNNER_NETWORK: vos-portal-runner
+      VOS_RUNNER_PORTAL_URL: ${VOS_PORTAL_PUBLIC_ORIGIN:?set VOS_PORTAL_PUBLIC_ORIGIN}
+      VOS_RUNNER_CPUS: ${VOS_RUNNER_CPUS:-2}
+      VOS_RUNNER_MEMORY_BYTES: ${VOS_RUNNER_MEMORY_BYTES:-2147483648}
+      VOS_RUNNER_PIDS: ${VOS_RUNNER_PIDS:-256}
+      VOS_RUNNER_DISK_BYTES: ${VOS_RUNNER_DISK_BYTES:-4294967296}
+      VOS_PORTAL_WORKER_ID: compose-worker-1
+      VOS_WORKER_CONTROL_URL: http://vos-portal:8787/api/v1/internal/worker
+      VOS_GITEA_URL: http://gitea:3000
+      VOS_GITEA_TOKEN: ${VOS_GITEA_TOKEN:?set VOS_GITEA_TOKEN}
+      VOS_GITEA_WEBHOOK_URL: http://vos-portal:8787/api/v1/internal/gitea/webhook
+      VOS_GITEA_WEBHOOK_SECRET: ${VOS_GITEA_WEBHOOK_SECRET:?set VOS_GITEA_WEBHOOK_SECRET}
+      VOS_QA_AGENT_ENDPOINT: ${VOS_QA_AGENT_ENDPOINT:?set VOS_QA_AGENT_ENDPOINT}
+      VOS_QA_AGENT_TOKEN: ${VOS_QA_AGENT_TOKEN:?set VOS_QA_AGENT_TOKEN}
+      VOS_PORTAL_MASTER_KEY: ${VOS_PORTAL_MASTER_KEY:?set VOS_PORTAL_MASTER_KEY}
+      VOS_S3_ENDPOINT: http://minio:9000
+      VOS_S3_BUCKET: vos-artifacts
+      VOS_S3_REGION: us-east-1
+      VOS_S3_ACCESS_KEY: ${VOS_MINIO_ROOT_USER:?set VOS_MINIO_ROOT_USER}
+      VOS_S3_SECRET_KEY: ${VOS_MINIO_ROOT_PASSWORD:?set VOS_MINIO_ROOT_PASSWORD}
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      vos-runner-image: { condition: service_completed_successfully }
+      docker-socket-proxy: { condition: service_started }
+    read_only: true
+    tmpfs: ["/tmp:size=128m,noexec,nosuid"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    networks: ["control", "runner", "runtime-control"]
+
+networks:
+  control: { internal: true }
+  checkout: { internal: true, name: vos-portal-checkout }
+  ingress: {}
+  objects: {}
+  runner: { internal: true, name: vos-portal-runner }
+  runtime-control: { internal: true, name: vos-portal-runtime-control }
 
 volumes:
   vos_postgres_data:
-  vos_cargo_registry:
-  vos_cargo_git:
-  vos_target:
-  vos_web_node_modules:
+  vos_minio_data:
   vos_gitea_data:
-  vos_gitea_runner_data:
+  vos_caddy_data:
+  vos_caddy_config:

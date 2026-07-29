@@ -3,6 +3,15 @@ import { join } from "node:path";
 import { parseArgs } from "../src/cli.ts";
 
 describe("vos-cli agent command parsing", () => {
+  test("parses Portal pipeline lifecycle commands", () => {
+    expect(parseArgs(["bun","vos","pipeline","trigger","--scope","public","--model-credential","credential-1","--reason","submit current stage evidence"]).command).toEqual({kind:"portal_pipeline",action:"trigger",runId:undefined,reason:"submit current stage evidence",scope:"public",modelCredentialId:"credential-1"});
+    expect(parseArgs(["bun","vos","pipeline","status","run-1"]).command).toEqual({kind:"portal_pipeline",action:"status",runId:"run-1",reason:undefined,scope:"public"});
+    expect(parseArgs(["bun","vos","pipeline","download","run-1","--out","artifacts/run-1"]).command).toEqual({kind:"portal_pipeline",action:"download",runId:"run-1",reason:undefined,scope:"public",outDir:"artifacts/run-1"});
+    expect(parseArgs(["bun","vos","pipeline","reproduce","run-1"]).command).toEqual({kind:"portal_pipeline",action:"reproduce",runId:"run-1",reason:undefined,scope:"public"});
+    expect(parseArgs(["bun","vos","pipeline","cancel","run-1","--reason","cancel obsolete submission"]).command.action).toBe("cancel");
+    expect(()=>parseArgs(["bun","vos","pipeline","cancel","run-1"])).toThrow("requires --reason");
+  });
+  test("parses an authenticated Portal project binding",()=>{expect(parseArgs(["bun","vos","project","bind","--portal-url","https://portal.example","--project-id","project-1"]).command).toEqual({kind:"project_bind",portalUrl:"https://portal.example",projectId:"project-1"});});
   test("parses portal auth commands", () => {
     expect(parseArgs([
       "bun",

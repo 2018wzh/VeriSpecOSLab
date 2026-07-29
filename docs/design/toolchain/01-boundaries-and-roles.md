@@ -110,7 +110,8 @@ accept/reject 裁决。没有可用 Agent/provider 时，`vos build generate`
 - `vos login --portal-url` 从 Portal 获取 token；`vos logout` 清除本地 token；
   `vos whoami` 显示当前身份、project binding 和 policy 状态。
 - token 存入用户级 VOS auth store；项目 `.vos/` 只能保存非敏感 portal URL、
-  project id 和 stage binding。
+  project id 和 stage binding。auth store 密文的随机密钥必须由操作系统凭据管理器
+  保护；凭据管理器不可用时 fail-fast，不允许生产路径回退到同目录密钥文件。
 - 除 `login` / `logout` / `whoami` / `help` 等认证入口外，Portal-bound repo
   中的所有项目命令都必须在线校验 Portal token 和当前 policy snapshot。
 - 不支持离线缓存执行受控命令；网络不可用、token 无效或 policy snapshot

@@ -1,0 +1,5 @@
+.vos/*
+!.vos/project.yaml
+!.vos/policy.yaml
+!.vos/toolchain.json
+build/

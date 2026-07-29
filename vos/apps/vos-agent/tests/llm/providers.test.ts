@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { chatClientCapabilities } from "../../app/agent/loop.ts";
-import { createChatClientFromConfig } from "../../app/llm/providers.ts";
+import {
+  createChatClientFromConfig,
+  createChatClientFromRuntimeProvider,
+} from "../../app/llm/providers.ts";
 
 // Use an unreachable URL + maxRetries:0 so the underlying SDKs fail
 // fast at connect. We only care that the router resolved a backend.
@@ -41,7 +44,8 @@ function readBodyModel(body: unknown): unknown {
 describe("createChatClientFromConfig", () => {
   test("router throws a clear error when no provider serves the model", async () => {
     const chat = createChatClientFromConfig({
-      defaultMode: "smart", modes: { smart: { model: "x" }, deep: { model: "y" } },
+      defaultMode: "smart",
+      modes: { smart: { model: "x" }, deep: { model: "y" } },
       tools: { disabled: [] },
       anthropic: fakeProvider(),
       openai: fakeProvider(),
@@ -53,7 +57,8 @@ describe("createChatClientFromConfig", () => {
 
   test("with both providers, claude* dispatches without router error", async () => {
     const chat = createChatClientFromConfig({
-      defaultMode: "smart", modes: { smart: { model: "x" }, deep: { model: "y" } },
+      defaultMode: "smart",
+      modes: { smart: { model: "x" }, deep: { model: "y" } },
       tools: { disabled: [] },
       openai: fakeProvider(),
       anthropic: fakeProvider(),
@@ -65,7 +70,8 @@ describe("createChatClientFromConfig", () => {
 
   test("with both providers, gpt-* dispatches without router error", async () => {
     const chat = createChatClientFromConfig({
-      defaultMode: "smart", modes: { smart: { model: "x" }, deep: { model: "y" } },
+      defaultMode: "smart",
+      modes: { smart: { model: "x" }, deep: { model: "y" } },
       tools: { disabled: [] },
       openai: fakeProvider(),
       anthropic: fakeProvider(),
@@ -77,7 +83,8 @@ describe("createChatClientFromConfig", () => {
 
   test("advertises provider input capabilities through the routed client", () => {
     const chat = createChatClientFromConfig({
-      defaultMode: "smart", modes: { smart: { model: "x" }, deep: { model: "y" } },
+      defaultMode: "smart",
+      modes: { smart: { model: "x" }, deep: { model: "y" } },
       tools: { disabled: [] },
       openai: fakeProvider(),
       anthropic: fakeProvider(),
@@ -107,11 +114,13 @@ describe("createChatClientFromConfig", () => {
           object: "chat.completion",
           created: 0,
           model: "gpt5.5",
-          choices: [{
-            index: 0,
-            finish_reason: "stop",
-            message: { role: "assistant", content: "ok" },
-          }],
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              message: { role: "assistant", content: "ok" },
+            },
+          ],
         });
       },
     });
@@ -175,18 +184,23 @@ describe("createChatClientFromConfig", () => {
       async fetch(req) {
         openaiBodies.push(await req.json());
         if (openaiBodies.length === 1) {
-          return Response.json({ error: { message: "temporary" } }, { status: 500 });
+          return Response.json(
+            { error: { message: "temporary" } },
+            { status: 500 },
+          );
         }
         return Response.json({
           id: "chatcmpl-test",
           object: "chat.completion",
           created: 0,
           model: "gpt5.5",
-          choices: [{
-            index: 0,
-            finish_reason: "stop",
-            message: { role: "assistant", content: "ok" },
-          }],
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              message: { role: "assistant", content: "ok" },
+            },
+          ],
         });
       },
     });
@@ -224,11 +238,13 @@ describe("createChatClientFromConfig", () => {
           object: "chat.completion",
           created: 0,
           model: "gpt5.5",
-          choices: [{
-            index: 0,
-            finish_reason: "stop",
-            message: { role: "assistant", content: "ok" },
-          }],
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              message: { role: "assistant", content: "ok" },
+            },
+          ],
         });
       },
     });
@@ -262,7 +278,9 @@ describe("createChatClientFromConfig", () => {
         },
       });
 
-      expect((bodies[0] as { response_format?: unknown }).response_format).toEqual({
+      expect(
+        (bodies[0] as { response_format?: unknown }).response_format,
+      ).toEqual({
         type: "json_schema",
         json_schema: {
           name: "report_narrative_v1",
@@ -291,11 +309,13 @@ describe("createChatClientFromConfig", () => {
           object: "chat.completion",
           created: 0,
           model: "llama",
-          choices: [{
-            index: 0,
-            finish_reason: "stop",
-            message: { role: "assistant", content: "{\"summary\":\"ok\"}" },
-          }],
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              message: { role: "assistant", content: '{"summary":"ok"}' },
+            },
+          ],
         });
       },
     });
@@ -321,15 +341,23 @@ describe("createChatClientFromConfig", () => {
         reasoningEffort: "high",
         responseFormat: {
           type: "json_schema",
-          json_schema: { name: "answer", strict: true, schema: { type: "object" } },
+          json_schema: {
+            name: "answer",
+            strict: true,
+            schema: { type: "object" },
+          },
         },
       });
 
       expect((bodies[0] as { model?: unknown }).model).toBe("llama");
-      expect((bodies[0] as { response_format?: unknown }).response_format).toEqual({
+      expect(
+        (bodies[0] as { response_format?: unknown }).response_format,
+      ).toEqual({
         type: "json_object",
       });
-      expect((bodies[0] as { reasoning_effort?: unknown }).reasoning_effort).toBeUndefined();
+      expect(
+        (bodies[0] as { reasoning_effort?: unknown }).reasoning_effort,
+      ).toBeUndefined();
     } finally {
       await server.stop(true);
     }
@@ -346,11 +374,13 @@ describe("createChatClientFromConfig", () => {
           object: "chat.completion",
           created: 0,
           model: "llama",
-          choices: [{
-            index: 0,
-            finish_reason: "stop",
-            message: { role: "assistant", content: "ok" },
-          }],
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              message: { role: "assistant", content: "ok" },
+            },
+          ],
         });
       },
     });
@@ -358,7 +388,11 @@ describe("createChatClientFromConfig", () => {
     try {
       const schemaFormat = {
         type: "json_schema",
-        json_schema: { name: "answer", strict: true, schema: { type: "object" } },
+        json_schema: {
+          name: "answer",
+          strict: true,
+          schema: { type: "object" },
+        },
       };
       for (const responseFormat of ["json_schema", "none"] as const) {
         const chat = createChatClientFromConfig({
@@ -381,8 +415,12 @@ describe("createChatClientFromConfig", () => {
         });
       }
 
-      expect((bodies[0] as { response_format?: unknown }).response_format).toEqual(schemaFormat);
-      expect((bodies[1] as { response_format?: unknown }).response_format).toBeUndefined();
+      expect(
+        (bodies[0] as { response_format?: unknown }).response_format,
+      ).toEqual(schemaFormat);
+      expect(
+        (bodies[1] as { response_format?: unknown }).response_format,
+      ).toBeUndefined();
     } finally {
       await server.stop(true);
     }
@@ -396,12 +434,15 @@ describe("createChatClientFromConfig", () => {
       async fetch(req) {
         bodies.push(await req.json());
         headerValues.push(req.headers.get("x-provider"));
-        return new Response([
-          "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"llama\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"}}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":2,\"total_tokens\":3}}\n\n",
-          "data: [DONE]\n\n",
-        ].join(""), {
-          headers: { "content-type": "text/event-stream" },
-        });
+        return new Response(
+          [
+            'data: {"id":"1","object":"chat.completion.chunk","created":0,"model":"llama","choices":[{"index":0,"delta":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}\n\n',
+            "data: [DONE]\n\n",
+          ].join(""),
+          {
+            headers: { "content-type": "text/event-stream" },
+          },
+        );
       },
     });
 
@@ -432,13 +473,19 @@ describe("createChatClientFromConfig", () => {
         },
       });
 
-      expect(chatClientCapabilities(chat, "openai-compatible:llama").input).toEqual({
+      expect(
+        chatClientCapabilities(chat, "openai-compatible:llama").input,
+      ).toEqual({
         text: true,
         image: true,
         pdf: false,
       });
-      expect((bodies[0] as { reasoning_effort?: unknown }).reasoning_effort).toBe("medium");
-      expect((bodies[0] as { stream_options?: unknown }).stream_options).toEqual({
+      expect(
+        (bodies[0] as { reasoning_effort?: unknown }).reasoning_effort,
+      ).toBe("medium");
+      expect(
+        (bodies[0] as { stream_options?: unknown }).stream_options,
+      ).toEqual({
         include_usage: true,
       });
       expect(headerValues).toEqual(["compat"]);
@@ -466,12 +513,14 @@ describe("createChatClientFromConfig", () => {
           message: {
             role: "assistant",
             content: "checking",
-            tool_calls: [{
-              function: {
-                name: "Read",
-                arguments: { path: "README.md" },
+            tool_calls: [
+              {
+                function: {
+                  name: "Read",
+                  arguments: { path: "README.md" },
+                },
               },
-            }],
+            ],
           },
           done: true,
           prompt_eval_count: 5,
@@ -501,21 +550,27 @@ describe("createChatClientFromConfig", () => {
           { role: "system", content: "Be terse." },
           { role: "user", content: "Read README" },
         ],
-        tools: [{
-          type: "function",
-          function: {
-            name: "Read",
-            description: "Read a file",
-            parameters: {
-              type: "object",
-              properties: { path: { type: "string" } },
-              required: ["path"],
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "Read",
+              description: "Read a file",
+              parameters: {
+                type: "object",
+                properties: { path: { type: "string" } },
+                required: ["path"],
+              },
             },
           },
-        }],
+        ],
         responseFormat: {
           type: "json_schema",
-          json_schema: { name: "answer", strict: true, schema: { type: "object" } },
+          json_schema: {
+            name: "answer",
+            strict: true,
+            schema: { type: "object" },
+          },
         },
         onUsage: (usage) => {
           usageEvents.push(usage);
@@ -530,30 +585,34 @@ describe("createChatClientFromConfig", () => {
           { role: "user", content: "Read README" },
         ],
         stream: false,
-        tools: [{
-          type: "function",
-          function: {
-            name: "Read",
-            description: "Read a file",
-            parameters: {
-              type: "object",
-              properties: { path: { type: "string" } },
-              required: ["path"],
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "Read",
+              description: "Read a file",
+              parameters: {
+                type: "object",
+                properties: { path: { type: "string" } },
+                required: ["path"],
+              },
             },
           },
-        }],
+        ],
         format: { type: "object" },
         think: true,
         keep_alive: "5m",
       });
-      expect(response.tool_calls).toEqual([{
-        id: "ollama_call_0",
-        type: "function",
-        function: {
-          name: "Read",
-          arguments: "{\"path\":\"README.md\"}",
+      expect(response.tool_calls).toEqual([
+        {
+          id: "ollama_call_0",
+          type: "function",
+          function: {
+            name: "Read",
+            arguments: '{"path":"README.md"}',
+          },
         },
-      }]);
+      ]);
       expect(usageEvents[0]).toEqual({
         inputTokens: 5,
         outputTokens: 7,
@@ -570,13 +629,16 @@ describe("createChatClientFromConfig", () => {
       port: 0,
       async fetch(req) {
         bodies.push(await req.json());
-        return new Response([
-          "{\"model\":\"llama3.2\",\"message\":{\"role\":\"assistant\",\"content\":\"he\"},\"done\":false}\n",
-          "{\"model\":\"llama3.2\",\"message\":{\"role\":\"assistant\",\"content\":\"llo\"},\"done\":false}\n",
-          "{\"model\":\"llama3.2\",\"done\":true,\"prompt_eval_count\":2,\"eval_count\":3}\n",
-        ].join(""), {
-          headers: { "content-type": "application/x-ndjson" },
-        });
+        return new Response(
+          [
+            '{"model":"llama3.2","message":{"role":"assistant","content":"he"},"done":false}\n',
+            '{"model":"llama3.2","message":{"role":"assistant","content":"llo"},"done":false}\n',
+            '{"model":"llama3.2","done":true,"prompt_eval_count":2,"eval_count":3}\n',
+          ].join(""),
+          {
+            headers: { "content-type": "application/x-ndjson" },
+          },
+        );
       },
     });
 
@@ -633,11 +695,13 @@ describe("createChatClientFromConfig", () => {
           object: "chat.completion",
           created: 0,
           model: "deepseek-chat",
-          choices: [{
-            index: 0,
-            finish_reason: "stop",
-            message: { role: "assistant", content: "{\"summary\":\"ok\"}" },
-          }],
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              message: { role: "assistant", content: '{"summary":"ok"}' },
+            },
+          ],
           usage: {
             prompt_tokens: 3,
             completion_tokens: 4,
@@ -679,8 +743,12 @@ describe("createChatClientFromConfig", () => {
       });
 
       expect((bodies[0] as { model?: unknown }).model).toBe("deepseek-chat");
-      expect((bodies[0] as { reasoning_effort?: unknown }).reasoning_effort).toBe("max");
-      expect((bodies[0] as { response_format?: unknown }).response_format).toEqual({
+      expect(
+        (bodies[0] as { reasoning_effort?: unknown }).reasoning_effort,
+      ).toBe("max");
+      expect(
+        (bodies[0] as { response_format?: unknown }).response_format,
+      ).toEqual({
         type: "json_object",
       });
       expect(usageEvents[0]).toEqual({
@@ -706,19 +774,26 @@ describe("createChatClientFromConfig", () => {
           object: "chat.completion",
           created: 0,
           model: "deepseek-chat",
-          choices: [{
-            index: 0,
-            finish_reason: "tool_calls",
-            message: {
-              role: "assistant",
-              content: null,
-              tool_calls: [{
-                id: "call_1",
-                type: "function",
-                function: { name: "Read", arguments: "{\"path\":\"README.md\"}" },
-              }],
+          choices: [
+            {
+              index: 0,
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: null,
+                tool_calls: [
+                  {
+                    id: "call_1",
+                    type: "function",
+                    function: {
+                      name: "Read",
+                      arguments: '{"path":"README.md"}',
+                    },
+                  },
+                ],
+              },
             },
-          }],
+          ],
         });
       },
     });
@@ -737,7 +812,27 @@ describe("createChatClientFromConfig", () => {
 
       const response = await chat.chat({
         ...emptyRequest("deepseek-chat"),
-        tools: [{
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "Read",
+              description: "Read a file",
+              parameters: {
+                type: "object",
+                properties: { path: { type: "string" } },
+                required: ["path"],
+              },
+            },
+          },
+        ],
+      });
+
+      expect(
+        (bodies[0] as { response_format?: unknown }).response_format,
+      ).toBeUndefined();
+      expect((bodies[0] as { tools?: unknown }).tools).toEqual([
+        {
           type: "function",
           function: {
             name: "Read",
@@ -748,25 +843,13 @@ describe("createChatClientFromConfig", () => {
               required: ["path"],
             },
           },
-        }],
-      });
-
-      expect((bodies[0] as { response_format?: unknown }).response_format).toBeUndefined();
-      expect((bodies[0] as { tools?: unknown }).tools).toEqual([{
-        type: "function",
-        function: {
-          name: "Read",
-          description: "Read a file",
-          parameters: {
-            type: "object",
-            properties: { path: { type: "string" } },
-            required: ["path"],
-          },
         },
-      }]);
+      ]);
       const toolCall = response.tool_calls?.[0];
       expect(toolCall?.type).toBe("function");
-      expect(toolCall?.type === "function" ? toolCall.function.name : undefined).toBe("Read");
+      expect(
+        toolCall?.type === "function" ? toolCall.function.name : undefined,
+      ).toBe("Read");
     } finally {
       await server.stop(true);
     }
@@ -776,14 +859,17 @@ describe("createChatClientFromConfig", () => {
     const server = Bun.serve({
       port: 0,
       fetch() {
-        return new Response([
-          "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"deepseek-chat\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"hidden\"}}]}\n\n",
-          "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"deepseek-chat\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"he\"}}]}\n\n",
-          "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"deepseek-chat\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"llo\"}}]}\n\n",
-          "data: [DONE]\n\n",
-        ].join(""), {
-          headers: { "content-type": "text/event-stream" },
-        });
+        return new Response(
+          [
+            'data: {"id":"1","object":"chat.completion.chunk","created":0,"model":"deepseek-chat","choices":[{"index":0,"delta":{"reasoning_content":"hidden"}}]}\n\n',
+            'data: {"id":"1","object":"chat.completion.chunk","created":0,"model":"deepseek-chat","choices":[{"index":0,"delta":{"content":"he"}}]}\n\n',
+            'data: {"id":"1","object":"chat.completion.chunk","created":0,"model":"deepseek-chat","choices":[{"index":0,"delta":{"content":"llo"}}]}\n\n',
+            "data: [DONE]\n\n",
+          ].join(""),
+          {
+            headers: { "content-type": "text/event-stream" },
+          },
+        );
       },
     });
 
@@ -816,7 +902,8 @@ describe("createChatClientFromConfig", () => {
 
   test("with only Anthropic configured, an unknown model falls back to it", async () => {
     const chat = createChatClientFromConfig({
-      defaultMode: "smart", modes: { smart: { model: "x" }, deep: { model: "y" } },
+      defaultMode: "smart",
+      modes: { smart: { model: "x" }, deep: { model: "y" } },
       tools: { disabled: [] },
       anthropic: fakeProvider(),
     });
@@ -828,7 +915,8 @@ describe("createChatClientFromConfig", () => {
 
   test("single-provider fallback does not send known Anthropic models to OpenAI", async () => {
     const chat = createChatClientFromConfig({
-      defaultMode: "smart", modes: { smart: { model: "x" }, deep: { model: "y" } },
+      defaultMode: "smart",
+      modes: { smart: { model: "x" }, deep: { model: "y" } },
       tools: { disabled: [] },
       openai: fakeProvider(),
     });
@@ -839,7 +927,8 @@ describe("createChatClientFromConfig", () => {
 
   test("single-provider fallback does not send known OpenAI models to Anthropic", async () => {
     const chat = createChatClientFromConfig({
-      defaultMode: "smart", modes: { smart: { model: "x" }, deep: { model: "y" } },
+      defaultMode: "smart",
+      modes: { smart: { model: "x" }, deep: { model: "y" } },
       tools: { disabled: [] },
       anthropic: fakeProvider(),
     });
@@ -850,7 +939,8 @@ describe("createChatClientFromConfig", () => {
 
   test("capability lookup for a known unconfigured provider throws clearly", () => {
     const chat = createChatClientFromConfig({
-      defaultMode: "smart", modes: { smart: { model: "x" }, deep: { model: "y" } },
+      defaultMode: "smart",
+      modes: { smart: { model: "x" }, deep: { model: "y" } },
       tools: { disabled: [] },
       openai: fakeProvider(),
     });
@@ -862,13 +952,14 @@ describe("createChatClientFromConfig", () => {
 
   test("colon provider routing prefixes are stripped before SDK calls", async () => {
     const chat = createChatClientFromConfig({
-      defaultMode: "smart", modes: { smart: { model: "x" }, deep: { model: "y" } },
+      defaultMode: "smart",
+      modes: { smart: { model: "x" }, deep: { model: "y" } },
       tools: { disabled: [] },
       openai: fakeProvider(),
     });
-    await expect(
-      chat.chat(emptyRequest("openai:gpt-4o-mini")),
-    ).rejects.toThrow(/OpenAI chat request failed for model "gpt-4o-mini"/);
+    await expect(chat.chat(emptyRequest("openai:gpt-4o-mini"))).rejects.toThrow(
+      /OpenAI chat request failed for model "gpt-4o-mini"/,
+    );
   });
 
   test("slash provider namespace prefixes are preserved before SDK calls", async () => {
@@ -883,11 +974,13 @@ describe("createChatClientFromConfig", () => {
           object: "chat.completion",
           created: 0,
           model: "openai/gpt-4o-mini",
-          choices: [{
-            index: 0,
-            finish_reason: "stop",
-            message: { role: "assistant", content: "ok" },
-          }],
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              message: { role: "assistant", content: "ok" },
+            },
+          ],
         });
       },
     });
@@ -948,8 +1041,29 @@ describe("createChatClientFromConfig", () => {
       tools: { disabled: [] },
       anthropic: fakeBearerProvider(),
     });
-    await expect(
-      chat.chat(emptyRequest("anthropic:gpt-5.5")),
-    ).rejects.toThrow(/Anthropic chat request failed for model "gpt-5.5"/);
+    await expect(chat.chat(emptyRequest("anthropic:gpt-5.5"))).rejects.toThrow(
+      /Anthropic chat request failed for model "gpt-5.5"/,
+    );
+  });
+
+  test("builds an ephemeral runtime Provider client without mutating process configuration", () => {
+    expect(() =>
+      createChatClientFromRuntimeProvider({
+        kind: "openai-compatible",
+        base_url: DEAD_URL,
+        max_output_tokens: 1024,
+      }),
+    ).toThrow("credential");
+    const chat = createChatClientFromRuntimeProvider({
+      kind: "openai-compatible",
+      base_url: DEAD_URL,
+      secret: "ephemeral-secret",
+      max_output_tokens: 1024,
+    });
+    expect(chatClientCapabilities(chat, "course-model").input).toEqual({
+      text: true,
+      image: false,
+      pdf: false,
+    });
   });
 });

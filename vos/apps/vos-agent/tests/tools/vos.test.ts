@@ -27,7 +27,7 @@ describe("Vos tool", () => {
     expect(tool.execute(JSON.stringify({ command: "agent dev" }))).toContain(
       "is not allowed",
     );
-    expect(tool.execute(JSON.stringify({ command: "web dev" }))).toContain(
+    expect(tool.execute(JSON.stringify({ command: "portal dev" }))).toContain(
       "is not allowed",
     );
   });

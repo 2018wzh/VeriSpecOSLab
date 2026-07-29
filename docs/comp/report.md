@@ -796,7 +796,7 @@ xv6-spec 是 VeriSpecOSLab 的参考项目——一个规格驱动的 RISC-V 教
 
 * VOS 工具链已实现大多数功能，支持本地全流程操作——从 spec lint 到 build 到 run qemu 到 verify public 到 agent generate。
 * xv6-spec 参考项目已完成九阶段全流程验证。
-* Portal 原型（vos-web）已搭建，演示了课程管理、阶段审核、评分和 Analytics 的完整流程，但目前仅限于前端，还未推进到真实实现
+* Portal 已以 `vos-portal` 重建，统一承载 Web、控制面、worker 和独立离线 Demo；连接式生产验收状态以 `docs/portal/todo.md` 为准
 * 参考书籍《VeriSpecOSLab 教学手册》已完成初稿，涵盖了课程设计理念、实验规格、Agent 使用指南和教师审查流程。
 
 #### 13.2.2 教学试点

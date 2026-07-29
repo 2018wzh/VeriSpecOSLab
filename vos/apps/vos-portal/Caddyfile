@@ -1,0 +1,21 @@
+{
+	admin off
+}
+
+https://localhost {
+	tls internal
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+	reverse_proxy vos-portal:8787
+}
+
+https://objects.localhost {
+	tls internal
+	reverse_proxy minio:9000
+}

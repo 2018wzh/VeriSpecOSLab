@@ -30,6 +30,8 @@ import type {
   KbRemoveCommand,
   KbSearchCommand,
   ParsedInvocation,
+  PortalPipelineCommand,
+  ProjectBindCommand,
   ReportGenerateCommand,
   RunQemuCommand,
   ServeCommand,
@@ -85,6 +87,7 @@ const VALUE_FLAGS = new Set([
   "--title",
   "--manifest",
   "--out",
+  "--model-credential",
 ]);
 
 export function parseArgs(argv: string[]): ParsedInvocation {
@@ -258,6 +261,24 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       throw new Error(`unknown flag for whoami: ${arg}`);
     }
     return { kind: "whoami", portalUrl } satisfies WhoamiCommand;
+  }
+
+  if(command==="pipeline"){
+    const action=rest[0];
+    if(action!=="trigger"&&action!=="status"&&action!=="watch"&&action!=="cancel"&&action!=="evidence"&&action!=="download"&&action!=="reproduce")throw new Error("pipeline requires trigger, status, watch, cancel, evidence, download, or reproduce");
+    let runId:string|undefined;let reason:string|undefined;let scope:"public"|"staff"|"final"="public";let modelCredentialId:string|undefined;let outDir:string|undefined;
+    for(let i=1;i<rest.length;i++){const arg=rest[i];if(!arg.startsWith("-")&&!runId&&action!=="trigger"){runId=arg;continue;}if(arg==="--reason"){reason=resolveRequiredValue(rest,i,arg);i++;continue;}if(arg.startsWith("--reason=")){reason=arg.slice(9);continue;}if(arg==="--scope"){const value=resolveRequiredValue(rest,i,arg);if(value!=="public"&&value!=="staff"&&value!=="final")throw new Error("--scope must be public, staff, or final");scope=value;i++;continue;}if(arg.startsWith("--scope=")){const value=arg.slice(8);if(value!=="public"&&value!=="staff"&&value!=="final")throw new Error("--scope must be public, staff, or final");scope=value;continue;}if(arg==="--model-credential"){modelCredentialId=resolveRequiredValue(rest,i,arg);i++;continue;}if(arg.startsWith("--model-credential=")){modelCredentialId=arg.slice("--model-credential=".length);continue;}if(arg==="--out"){outDir=resolveRequiredValue(rest,i,arg);i++;continue;}if(arg.startsWith("--out=")){outDir=arg.slice("--out=".length);continue;}throw new Error(`unknown flag for pipeline ${action}: ${arg}`);}
+    if(modelCredentialId&&action!=="trigger")throw new Error("--model-credential is only valid for pipeline trigger");
+    if(outDir&&action!=="download")throw new Error("--out is only valid for pipeline download");
+    if(action!=="trigger"&&!runId)throw new Error(`pipeline ${action} requires <run-id>`);
+    if((action==="trigger"||action==="cancel")&&(!reason||reason.trim().length<10))throw new Error(`pipeline ${action} requires --reason with at least 10 characters`);
+    return{kind:"portal_pipeline",action,runId,reason,scope,...(modelCredentialId?{modelCredentialId}:{}),...(outDir?{outDir}:{})} satisfies PortalPipelineCommand;
+  }
+
+  if(command==="project"&&rest[0]==="bind"){
+    let portalUrl:string|undefined;let projectId:string|undefined;
+    for(let i=1;i<rest.length;i++){const arg=rest[i];if(arg==="--portal-url"){portalUrl=resolveRequiredValue(rest,i,arg);i++;continue;}if(arg.startsWith("--portal-url=")){portalUrl=arg.slice(13);continue;}if(arg==="--project-id"){projectId=resolveRequiredValue(rest,i,arg);i++;continue;}if(arg.startsWith("--project-id=")){projectId=arg.slice(13);continue;}throw new Error(`unknown flag for project bind: ${arg}`);}
+    if(!portalUrl||!projectId)throw new Error("project bind requires --portal-url and --project-id");return{kind:"project_bind",portalUrl,projectId} satisfies ProjectBindCommand;
   }
 
   if (command === "serve") {

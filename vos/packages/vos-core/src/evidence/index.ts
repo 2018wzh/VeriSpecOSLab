@@ -9,6 +9,7 @@ import { writeEvidenceIndex } from "../repro/ledger.ts";
 import { relativeProjectPath } from "../utils/paths.ts";
 
 export interface EvidenceWriterOptions {
+  runId?: string;
   projectRoot: string;
   evidenceDir: string;
   command: string[];
@@ -57,7 +58,8 @@ export class EvidenceWriter {
     this.evidenceDir = path.resolve(this.projectRoot, options.evidenceDir);
     this.command = [...options.command];
     this.args = [...options.args];
-    this.runId = randomRunId();
+    this.runId = options.runId ?? randomRunId();
+    if(!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(this.runId))throw new Error("invalid evidence run ID");
     this.runDir = path.join(this.evidenceDir, "runs", this.runId);
     this.eventsPath = path.join(this.runDir, "events.jsonl");
     this.manifestPath = path.join(this.runDir, "manifest.json");
@@ -135,18 +137,14 @@ export class EvidenceWriter {
       path: relativeProjectPath(this.projectRoot, absolute),
       summary,
     };
-    this.artifacts.push(artifact);
+    if (!this.artifacts.some((existing) => existing.path === artifact.path)) {
+      this.artifacts.push(artifact);
+    }
     return absolute;
   }
 
   addArtifactFromPath(kind: string, absolutePath: string, summary?: string): string {
-    const artifact: RunArtifact = {
-      kind,
-      path: relativeProjectPath(this.projectRoot, absolutePath),
-      summary,
-    };
-    this.artifacts.push(artifact);
-    return absolutePath;
+    return this.addArtifact(kind, absolutePath, summary);
   }
 
   addEvidenceRef(id: string, kind: string, pathValue: string): void {

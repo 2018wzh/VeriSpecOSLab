@@ -1,6 +1,6 @@
 # Portal Implementation Blueprint: `vos-portal` Frontend Architecture
 
-本文件定义 `vos-portal` 前端（当前原型实现为 `apps/vos-web`）的 React 应用组件结构、状态管理策略与 UI 交互规范。
+本文件定义 `apps/vos-portal` 的 React 应用组件结构、状态管理策略与 UI 交互规范。此前的前端原型已退役，不得作为兼容入口重新引入。
 
 该文档用于指导视图代码生成与前端实现。
 

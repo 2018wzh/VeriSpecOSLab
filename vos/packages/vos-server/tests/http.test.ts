@@ -86,6 +86,25 @@ describe("vos-server typed HTTP API", () => {
     expect(spec.paths["/api/v1/commands/runs"]).toBeUndefined();
   });
 
+  test("protects every API route with a constant-time bearer token while leaving health public", async () => {
+    const handler = createVosHttpHandler({
+      projectRoot: process.cwd(),
+      portalUrl: "http://portal.test",
+      projectId: "project-1",
+      accessToken: "runner-access-token",
+      executeCommand: async (context) => result(context.runId, context.command),
+    });
+
+    expect((await handler(new Request("http://vos.test/health"))).status).toBe(200);
+    expect((await handler(new Request("http://vos.test/api/v1/openapi.json"))).status).toBe(401);
+    expect((await handler(new Request("http://vos.test/api/v1/openapi.json", {
+      headers: { authorization: "Bearer wrong-token" },
+    }))).status).toBe(401);
+    expect((await handler(new Request("http://vos.test/api/v1/openapi.json", {
+      headers: { authorization: "Bearer runner-access-token" },
+    }))).status).toBe(200);
+  });
+
   test("blocks artifact path traversal and serves run artifacts from .vos/runs", async () => {
     const projectRoot = await mkdtemp(path.join(tmpdir(), "vos-server-"));
     const runRoot = path.join(projectRoot, ".vos", "runs", "run-artifacts", "artifacts");

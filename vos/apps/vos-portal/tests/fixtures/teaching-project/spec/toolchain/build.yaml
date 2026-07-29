@@ -1,0 +1,3 @@
+build:
+  allowed_output_path:
+    - Makefile

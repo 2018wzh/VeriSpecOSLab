@@ -69,7 +69,9 @@ describe("vos-agent HTTP server", () => {
     expect(profile.agent_profile.mcpServers).toContain("evidence-store");
   });
 
-  test("serves VOS portal API routes used by vos-web", async () => {
+  test("protects agent task endpoints with a service token",async()=>{server=startServer(new ScriptedChatClient([]),"portal-worker-token");const denied=await fetch(`${baseUrl()}/api/v1/agent/profile`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({task_kind:"knowledgebase_qa"})});expect(denied.status).toBe(401);const allowed=await fetch(`${baseUrl()}/api/v1/agent/profile`,{method:"POST",headers:{"content-type":"application/json",authorization:"Bearer portal-worker-token"},body:JSON.stringify({task_kind:"knowledgebase_qa"})});expect(allowed.status).toBe(200);});
+
+  test("serves typed VOS API routes used by vos-portal", async () => {
     server = startServer(new ScriptedChatClient([]));
 
     const login = await fetchJson("/api/v1/auth/login", {
@@ -262,7 +264,15 @@ describe("vos-agent HTTP server", () => {
     expect(body.error.message).toContain("streaming chat completions");
   });
 
-  function startServer(chat: ScriptedChatClient): Bun.Server<undefined> {
+  test("rejects unauthenticated or tampered runtime provider envelopes", async () => {
+    server = startServer(new ScriptedChatClient([]),"service-secret-at-least-sixteen-chars");
+    const unauthorized=await fetch(`${baseUrl()}/api/v1/agent/tasks`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({task_kind:"knowledgebase_qa",task:"question",provider_envelope:{version:1,iv:"invalid",ciphertext:"invalid"}})});
+    expect(unauthorized.status).toBe(401);
+    const tampered=await fetch(`${baseUrl()}/api/v1/agent/tasks`,{method:"POST",headers:{"content-type":"application/json",authorization:"Bearer service-secret-at-least-sixteen-chars"},body:JSON.stringify({task_kind:"knowledgebase_qa",task:"question",provider_envelope:{version:1,iv:"AAAAAAAAAAAAAAAA",ciphertext:"AAAA"}})});
+    expect(tampered.status).toBe(500);const response=await tampered.json() as {error:{message:string}};expect(response.error.message).toBe("provider envelope authentication failed");expect(response.error.message).not.toContain("service-secret");
+  });
+
+  function startServer(chat: ScriptedChatClient,serviceToken?:string): Bun.Server<undefined> {
     return serveAgentHttp({
       chat,
       config,
@@ -273,6 +283,7 @@ describe("vos-agent HTTP server", () => {
       workspaceRoot: tmp,
       host: "127.0.0.1",
       port: 0,
+      serviceToken,
     });
   }
 

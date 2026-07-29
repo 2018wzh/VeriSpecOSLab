@@ -73,6 +73,17 @@ export interface WhoamiCommand extends BaseCommand {
   portalUrl?: string;
 }
 
+export interface PortalPipelineCommand extends BaseCommand {
+  kind: "portal_pipeline";
+  action: "trigger" | "status" | "watch" | "cancel" | "evidence" | "download" | "reproduce";
+  runId?: string;
+  reason?: string;
+  scope?: "public" | "staff" | "final";
+  modelCredentialId?: string;
+  outDir?: string;
+}
+export interface ProjectBindCommand extends BaseCommand {kind:"project_bind";portalUrl:string;projectId:string}
+
 export interface ServeCommand extends BaseCommand {
   kind: "serve";
   portalUrl: string;
@@ -338,6 +349,8 @@ export type CliCommand =
   | LoginCommand
   | LogoutCommand
   | WhoamiCommand
+  | PortalPipelineCommand
+  | ProjectBindCommand
   | ServeCommand
   | InitCommand
   | DoctorCommand
@@ -387,6 +400,8 @@ export type CliOnlyCommand =
   | LoginCommand
   | LogoutCommand
   | WhoamiCommand
+  | PortalPipelineCommand
+  | ProjectBindCommand
   | ServeCommand
   | AgentServeCommand
   | { kind: "help"; topic?: string };
@@ -413,6 +428,7 @@ export interface PolicySnapshot {
   allowedCommands: string[];
   allowedPaths: string[];
   visibilityScope: "public" | "agent-only" | "staff-only";
+  expiresAt?: string;
 }
 
 export interface EffectivePolicy {

@@ -10,6 +10,7 @@
 - [02 CLI 命令参考（上）：项目、Spec 与架构](./02-commands-spec-arch.md) — `doctor`、`stage show`、`spec lint`、`spec check-consistency`、`spec patch`、`arch lint`、`arch compose`、`arch derive-tests`
 - [03 CLI 命令参考（中）：构建、运行与测试](./03-commands-build-run-test.md) — `toolchain lint`、`build generate`、`build`、`run qemu`、`test`
 - [04 CLI 命令参考（下）：验证、Agent、报告与知识库](./04-commands-verify-agent-report.md) — `verify`、`agent`、`report generate`、`submit pack`、`kb`
+- [07 Portal 在线实验工作流](./07-portal-workflow.md) — device flow、项目绑定、pipeline 提交、SSE 跟踪、证据与撤销
 
 ### Spec Schema 参考
 

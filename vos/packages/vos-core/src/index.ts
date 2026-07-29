@@ -151,9 +151,12 @@ export { createKbEmbedder } from "./kb/embedding.ts";
 export type {
   BaseCommandResult,
   CliCommand,
+  CommitLedgerEntry,
   EffectivePolicy,
   GlobalOptions,
   ParsedInvocation,
+  PolicySnapshot,
+  PortalUserSummary,
   ProgressMode,
   RunAuthContext,
   VerifyScope,
@@ -172,3 +175,4 @@ export type {
 } from "./bootstrap.ts";
 export type { RunEvent as CoreRunEvent } from "./evidence/events.ts";
 export type { PortalClient } from "./auth/portal-client.ts";
+export { HttpPortalClient } from "./auth/portal-client.ts";

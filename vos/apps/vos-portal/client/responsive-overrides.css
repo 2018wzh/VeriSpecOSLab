@@ -1,0 +1,50 @@
+.selectors {
+  min-width: 0;
+}
+
+.demo-flag {
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .selectors {
+    flex: 1;
+  }
+
+  .selectors button:first-child {
+    min-width: 0;
+    max-width: 122px;
+    overflow: hidden;
+    padding-inline: 8px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .top-actions {
+    flex: none;
+    gap: 2px;
+  }
+
+  .top-actions select {
+    max-width: 70px;
+    padding-inline: 7px;
+  }
+
+  .demo-flag {
+    padding-inline: 5px;
+  }
+
+  .top-actions .icon-button {
+    padding-inline: 5px;
+  }
+
+  .sidebar nav,
+  .stage-track {
+    scrollbar-width: none;
+  }
+
+  .sidebar nav::-webkit-scrollbar,
+  .stage-track::-webkit-scrollbar {
+    display: none;
+  }
+}

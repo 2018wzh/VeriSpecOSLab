@@ -1,0 +1,33 @@
+{
+  "manifest_version": 2,
+  "files": ["Makefile"],
+  "environment": {
+    "required_tools": [
+      { "name": "bun", "command": "bun", "version_args": ["--version"], "version_constraint": ">=1", "kind": "runtime" }
+    ]
+  },
+  "build": {
+    "variants": [
+      {
+        "id": "baseline",
+        "commands": [
+          { "name": "build", "command": ["bun", "-e", "const{mkdirSync,writeFileSync}=await import('node:fs');mkdirSync('build',{recursive:true});writeFileSync('build/result.txt','TEACHING_E2E_OK\\n')"] }
+        ],
+        "artifacts": ["build/result.txt"]
+      }
+    ]
+  },
+  "run": {
+    "profiles": [
+      { "id": "default", "command": "bun", "args": ["-e", "console.log('TEACHING_E2E_OK')"], "artifacts": [], "timeout_ms": 1000 }
+    ],
+    "cases": [
+      { "id": "smoke", "profile": "default", "success_regex": "TEACHING_E2E_OK", "timeout_ms": 1000 }
+    ]
+  },
+  "test": {
+    "suites": [
+      { "name": "portal_smoke", "kind": "command", "command": ["bun", "-e", "console.log('portal teaching fixture passed')"], "related_specs": ["portal/teaching"] }
+    ]
+  }
+}

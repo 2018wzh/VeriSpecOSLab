@@ -11,10 +11,15 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
       return handlers.executeLogin(command, context);
 
     case "logout":
-      return handlers.executeLogout(command, projectRoot);
+      return handlers.executeLogout(command, projectRoot, context);
 
     case "whoami":
       return handlers.executeWhoami(command, projectRoot, context);
+
+    case "portal_pipeline":
+      return handlers.executePortalPipeline(command, context);
+    case "project_bind":
+      return handlers.executeProjectBind(command, context);
 
     case "init":
       return handlers.executeInit(command, context);

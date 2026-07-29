@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository is a spec-first OS lab platform. `docs/design/` contains the design source for specs, workflow, platform, toolchain, and agent boundaries. `examples/xv6-spec/` is the reference xv6-style lab project with `spec/`, kernel/user stubs, and `.vos/` runtime artifacts. `vos/` is the Bun workspace. Active apps are `vos/apps/vos-cli` for the command entrypoint, `vos/apps/vos-agent` for the headless/TUI/HTTP agent backend, and `vos/apps/vos-web` for the portal prototype. Shared packages are limited to `vos-core`, `vos-runtime`, `vos-kb`, `vos-spec`, and `vos-server`.
+This repository is a spec-first OS lab platform. `docs/design/` contains the design source for specs, workflow, platform, toolchain, and agent boundaries. `examples/xv6-spec/` is the reference xv6-style lab project with `spec/`, kernel/user stubs, and `.vos/` runtime artifacts. `vos/` is the Bun workspace. Active apps are `vos/apps/vos-cli` for the command entrypoint, `vos/apps/vos-agent` for the headless/TUI/HTTP agent backend, and `vos/apps/vos-portal` for the production Portal API, worker, Web UI, and isolated static Demo build. The retired Portal prototype must not be reintroduced. Shared packages are limited to `vos-core`, `vos-runtime`, `vos-kb`, `vos-spec`, and `vos-server`.
 
 ## Build, Test, and Development Commands
 

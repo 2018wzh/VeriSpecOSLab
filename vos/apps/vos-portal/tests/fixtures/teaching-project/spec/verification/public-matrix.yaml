@@ -1,0 +1,8 @@
+public_requirements:
+  - id: portal-teaching-smoke
+    related_specs:
+      - portal/teaching
+    required_tests:
+      - portal_smoke
+    required_artifacts:
+      - build/result.txt

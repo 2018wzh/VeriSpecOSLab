@@ -75,6 +75,11 @@
 | `vos report generate --stage <s>` | 生成阶段报告 |
 | `vos report generate --final` | 生成最终报告 |
 | `vos submit pack` | 打包提交 |
+| `vos login --portal-url <url>` | 使用设备授权登录 Portal |
+| `vos project bind --portal-url <url> --project-id <id>` | 绑定在线实验项目 |
+| `vos pipeline trigger --reason <text>` | 提交当前 HEAD 与阶段进行评测 |
+| `vos pipeline watch <run-id>` | 跟踪运行事件直到终态 |
+| `vos pipeline evidence <run-id>` | 查询当前角色可见的证据 |
 | `vos kb add <path> --source-kind project --recursive` | 添加知识库条目 |
 | `vos kb list` | 列出知识库内容 |
 | `vos kb search "<query>"` | 语义搜索知识库 |

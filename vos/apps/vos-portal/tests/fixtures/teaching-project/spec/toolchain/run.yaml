@@ -1,0 +1,6 @@
+run:
+  emulator: bun
+  machine: internal
+  kernel_arg: -e
+  success_signal: TEACHING_E2E_OK
+  timeout_secs: 1

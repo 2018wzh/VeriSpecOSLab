@@ -56,7 +56,7 @@ vos --project-root examples/xv6-spec verify public
     ├── apps/
     │   ├── vos-cli          # vos 命令入口
     │   ├── vos-agent        # Agent 后端和 OpenAI-compatible façade
-    │   └── vos-web          # Portal 原型前端
+    │   └── vos-portal       # Portal Web、控制面 API、worker 与静态 Demo
     └── packages/            # core、spec、policy、evidence、runtime、server 等共享包
 ```
 
@@ -112,11 +112,11 @@ bun run build
 bun run vos -- --help
 ```
 
-启动后端和 Portal 原型：
+启动 Portal 生产开发环境或完全离线的静态 Demo：
 
 ```bash
-bun run dev:agent
-bun run dev:web
+bun run dev:portal
+bun run dev:portal:demo
 ```
 
 ## 推荐阅读
@@ -131,4 +131,4 @@ bun run dev:web
 
 ## 当前状态
 
-当前实现以 Bun / TypeScript 为主。`vos/apps/vos-cli` 是 CLI 入口，`vos/apps/vos-agent` 提供 Agent 后端，`vos/apps/vos-web` 是 Portal 原型前端，`vos/packages/*` 承载逐步拆出的共享运行时能力。
+当前实现以 Bun / TypeScript 为主。`vos/apps/vos-cli` 是 CLI 入口，`vos/apps/vos-agent` 提供 Agent 后端，`vos/apps/vos-portal` 提供独立 Portal 控制面、Web、worker 与静态 Demo，`vos/packages/*` 承载共享运行时能力。

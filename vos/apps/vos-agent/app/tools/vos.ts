@@ -33,14 +33,14 @@ export function createVosTool(opts: VosToolOptions = {}): Tool {
       function: {
         name: "Vos",
         description:
-          "Run a bounded VOS TypeScript workspace command and return stdout+stderr. Use this for agent tests/typechecks/builds, web lint/build, and portal route inspection. Do not use it for interactive dev servers.",
+          "Run a bounded VOS TypeScript workspace command and return stdout+stderr. Use this for agent tests/typechecks/builds, portal lint/build, and portal route inspection. Do not use it for interactive dev servers.",
         parameters: {
           type: "object",
           properties: {
             command: {
               type: "string",
               description:
-                "The VOS command to run, e.g. `agent test`, `agent typecheck`, `web lint`, `web build`, or `portal routes`. Leading `vos` is optional.",
+                "The VOS command to run, e.g. `agent test`, `agent typecheck`, `portal lint`, `portal build`, or `portal routes`. Leading `vos` is optional.",
             },
           },
           required: ["command"],
@@ -134,10 +134,10 @@ function resolveWorkspaceCommand(
       };
     }
   }
-  if (area === "web") {
-    if (!action) return { ok: false, error: "Error validating Vos arguments: web command must include lint or build" };
+  if (area === "portal" && action !== "routes") {
+    if (!action) return { ok: false, error: "Error validating Vos arguments: portal command must include lint, build, or routes" };
     if (BLOCKED_COMMANDS.has(action)) {
-      return { ok: false, error: `Error running VOS command: interactive command \`web ${action}\` is not allowed` };
+      return { ok: false, error: `Error running VOS command: interactive command \`portal ${action}\` is not allowed` };
     }
     if (!vosWorkspace) {
       return { ok: false, error: `Error running VOS command: could not find VOS TypeScript workspace from ${rootDirHint(args)}` };
@@ -146,9 +146,9 @@ function resolveWorkspaceCommand(
       return {
         ok: true,
         kind: "spawn",
-        command: "npm",
-        args: ["run", action],
-        cwd: join(vosWorkspace, "apps", "vos-web"),
+        command: "bun",
+        args: ["run", action === "lint" ? "typecheck" : action],
+        cwd: join(vosWorkspace, "apps", "vos-portal"),
       };
     }
   }
@@ -323,7 +323,7 @@ function findVosWorkspace(rootDir: string): string | undefined {
 
 function isVosTypescriptWorkspace(dir: string): boolean {
   return existsSync(join(dir, "apps", "vos-agent", "package.json")) &&
-    existsSync(join(dir, "apps", "vos-web", "package.json"));
+    existsSync(join(dir, "apps", "vos-portal", "package.json"));
 }
 
 function helpText(): string {
@@ -332,8 +332,8 @@ function helpText(): string {
     "  agent test        Run vos-agent Bun tests",
     "  agent typecheck   Typecheck vos-agent",
     "  agent build       Build the vos-agent binary",
-    "  web lint          Typecheck vos-web",
-    "  web build         Build vos-web",
+    "  portal lint       Typecheck vos-portal",
+    "  portal build      Build vos-portal",
     "  portal routes     List TS portal/API routes served by vos-agent",
   ].join("\n");
 }

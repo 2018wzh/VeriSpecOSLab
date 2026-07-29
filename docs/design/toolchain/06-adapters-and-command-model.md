@@ -63,14 +63,15 @@ Portal-bound run 的 manifest 还必须记录：
 职责：
 
 - 从 Portal 获取用户 token
-- 将 token 写入用户级 VOS auth store
+- 将 token 写入用户级 VOS auth store；密文密钥由操作系统凭据管理器保护
 - 不把 token 写入项目 `.vos/` 或提交包
 
 ### `vos logout`
 
 职责：
 
-- 清除用户级 VOS auth store 中对应 Portal 的 token
+- 清除用户级 VOS auth store 中对应 Portal 的 token；最后一条 token 删除时同步删除
+  系统凭据管理器中的密钥
 - 可选通知 Portal revoke token
 
 ### `vos whoami`

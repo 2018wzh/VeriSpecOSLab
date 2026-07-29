@@ -25,6 +25,10 @@ import {
 } from "./portal.ts";
 import { outputSchemaForId } from "../agent/output-schemas.ts";
 import { createStructuredOutputTool } from "../tools/structured-output.ts";
+import {
+  createChatClientFromRuntimeProvider,
+  type RuntimeProviderConfig,
+} from "../llm/providers.ts";
 
 export interface AgentHttpServerOptions {
   chat: ChatClient;
@@ -33,6 +37,7 @@ export interface AgentHttpServerOptions {
   workspaceRoot: string;
   host: string;
   port: number;
+  serviceToken?: string;
   portalStore?: PortalStore;
 }
 
@@ -66,6 +71,7 @@ type AgentTaskHttpRequest = {
   disabled_tools?: string[];
   course_mode?: boolean;
   stream?: boolean;
+  provider_envelope?: { version?: unknown; iv?: unknown; ciphertext?: unknown };
 };
 
 type ChatMessage = {
@@ -73,7 +79,13 @@ type ChatMessage = {
   content: unknown;
 };
 
-export function serveAgentHttp(opts: AgentHttpServerOptions): Bun.Server<undefined> {
+export function serveAgentHttp(
+  opts: AgentHttpServerOptions,
+): Bun.Server<undefined> {
+  if (!isLoopback(opts.host) && !opts.serviceToken)
+    throw new Error(
+      "VOS_AGENT_SERVICE_TOKEN is required when vos-agent listens on a non-loopback address",
+    );
   const portalStore = opts.portalStore ?? createSeededPortalStore();
   const server = Bun.serve({
     hostname: opts.host,
@@ -82,12 +94,15 @@ export function serveAgentHttp(opts: AgentHttpServerOptions): Bun.Server<undefin
       try {
         return await handleRequest(request, { ...opts, portalStore });
       } catch (e) {
-        return jsonResponse({
-          error: {
-            message: e instanceof Error ? e.message : String(e),
-            type: "vos_agent_error",
+        return jsonResponse(
+          {
+            error: {
+              message: e instanceof Error ? e.message : String(e),
+              type: "vos_agent_error",
+            },
           },
-        }, 500);
+          500,
+        );
       }
     },
   });
@@ -99,12 +114,29 @@ async function handleRequest(
   opts: AgentHttpServerOptions & { portalStore: PortalStore },
 ): Promise<Response> {
   const url = new URL(request.url);
+  if (
+    url.pathname.startsWith("/api/v1/agent/") &&
+    opts.serviceToken &&
+    !validBearer(request, opts.serviceToken)
+  )
+    return jsonResponse(
+      {
+        error: {
+          message: "service authentication required",
+          type: "unauthorized",
+        },
+      },
+      401,
+    );
   if (request.method === "OPTIONS") {
     return corsResponse();
   }
   const agentResponse = await handleAgentApiRequest(request, opts);
   if (agentResponse) return agentResponse;
-  const portalResponse = await handlePortalApiRequest(request, opts.portalStore);
+  const portalResponse = await handlePortalApiRequest(
+    request,
+    opts.portalStore,
+  );
   if (portalResponse) return portalResponse;
   if (request.method === "GET" && url.pathname === "/health") {
     return jsonResponse({
@@ -117,10 +149,29 @@ async function handleRequest(
     return jsonResponse(modelsResponse(opts.config));
   }
   if (request.method === "POST" && url.pathname === "/v1/chat/completions") {
-    const body = await request.json() as ChatCompletionRequest;
+    const body = (await request.json()) as ChatCompletionRequest;
     return jsonResponse(await chatCompletion(body, opts));
   }
-  return jsonResponse({ error: { message: "not found", type: "not_found" } }, 404);
+  return jsonResponse(
+    { error: { message: "not found", type: "not_found" } },
+    404,
+  );
+}
+
+function isLoopback(host: string): boolean {
+  return host === "127.0.0.1" || host === "localhost" || host === "::1";
+}
+function validBearer(request: Request, expected: string): boolean {
+  const actual = request.headers
+    .get("authorization")
+    ?.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (!actual) return false;
+  const left = new Bun.CryptoHasher("sha256").update(actual).digest("hex");
+  const right = new Bun.CryptoHasher("sha256").update(expected).digest("hex");
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1)
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  return difference === 0;
 }
 
 async function handleAgentApiRequest(
@@ -130,14 +181,17 @@ async function handleAgentApiRequest(
   const url = new URL(request.url);
   const parts = url.pathname.split("/").filter(Boolean);
   if (request.method === "POST" && url.pathname === "/api/v1/agent/profile") {
-    const body = await request.json() as AgentTaskHttpRequest;
-    const profile = resolveAgentTaskProfile({
-      taskKind: body.task_kind,
-    }, body.agent_profile);
+    const body = (await request.json()) as AgentTaskHttpRequest;
+    const profile = resolveAgentTaskProfile(
+      {
+        taskKind: body.task_kind,
+      },
+      body.agent_profile,
+    );
     return jsonResponse({ agent_profile: publicAgentTaskProfile(profile) });
   }
   if (request.method === "POST" && url.pathname === "/api/v1/agent/tasks") {
-    const body = await request.json() as AgentTaskHttpRequest;
+    const body = (await request.json()) as AgentTaskHttpRequest;
     return jsonResponse(await runAgentHttpTask(body, opts));
   }
   if (
@@ -148,8 +202,10 @@ async function handleAgentApiRequest(
     parts[3] === "sessions" &&
     parts[5] === "turns"
   ) {
-    const body = await request.json() as AgentTaskHttpRequest;
-    return jsonResponse(await runAgentHttpTask({ ...body, thread_id: parts[4] }, opts));
+    const body = (await request.json()) as AgentTaskHttpRequest;
+    return jsonResponse(
+      await runAgentHttpTask({ ...body, thread_id: parts[4] }, opts),
+    );
   }
   if (
     request.method === "GET" &&
@@ -182,21 +238,26 @@ async function runAgentHttpTask(
   opts: AgentHttpServerOptions & { portalStore: PortalStore },
 ): Promise<Record<string, unknown>> {
   if (request.stream) {
-    throw new Error("streaming agent tasks are not implemented by vos-agent HTTP yet");
+    throw new Error(
+      "streaming agent tasks are not implemented by vos-agent HTTP yet",
+    );
   }
   const task = request.task ?? request.prompt;
   if (!task) {
     throw new Error("agent task request must include task or prompt");
   }
-  const profile = resolveAgentTaskProfile({
-    taskKind: request.task_kind,
-  }, request.agent_profile);
+  const profile = resolveAgentTaskProfile(
+    {
+      taskKind: request.task_kind,
+    },
+    request.agent_profile,
+  );
   const modelSettings = request.model
     ? { model: request.model, mode: request.mode }
     : resolveActiveModelSettings(opts.config, {
-      model: undefined,
-      mode: request.mode ?? profile.mode,
-    });
+        model: undefined,
+        mode: request.mode ?? profile.mode,
+      });
   const prompt = buildAgentTaskUserPrompt({
     profile,
     task,
@@ -210,11 +271,22 @@ async function runAgentHttpTask(
     policyFlags: asStringArray(request.policy_flags),
   });
   const events: SessionEvent[] = [];
+  const taskChat = request.provider_envelope
+    ? createChatClientFromRuntimeProvider(
+        await decryptProviderEnvelope(
+          request.provider_envelope,
+          opts.serviceToken,
+          providerEnvelopeContext(request),
+        ),
+      )
+    : opts.chat;
   const outputSchema = outputSchemaForId(profile.outputSchema);
-  const builtInSkills = resolveBuiltInSkills(profile.skills, { workspaceRoot: opts.workspaceRoot });
+  const builtInSkills = resolveBuiltInSkills(profile.skills, {
+    workspaceRoot: opts.workspaceRoot,
+  });
   let structuredOutput: unknown;
   const result = await runSessionTurn({
-    chat: opts.chat,
+    chat: taskChat,
     store: opts.store,
     workspaceRoot: opts.workspaceRoot,
     startDir: opts.workspaceRoot,
@@ -223,21 +295,32 @@ async function runAgentHttpTask(
     model: modelSettings.model,
     mode: modelSettings.mode,
     reasoningEffort: modelSettings.reasoningEffort,
-    disabledTools: mergeDisabledTools(opts.config.tools.disabled, request.disabled_tools),
+    disabledTools: mergeDisabledTools(
+      opts.config.tools.disabled,
+      request.disabled_tools,
+    ),
     permissionRules: opts.config.tools.permissions,
     maxIterations: request.max_iterations,
     courseMode: request.course_mode ?? true,
-    allowedVosCommands: resolveProfileVosCommands(profile, request.allowed_vos_commands),
+    allowedVosCommands: resolveProfileVosCommands(
+      profile,
+      request.allowed_vos_commands,
+    ),
     extraMcpServers: [
-      ...resolveBuiltInProfileMcpServers(profile.mcpServers, opts.workspaceRoot),
+      ...resolveBuiltInProfileMcpServers(
+        profile.mcpServers,
+        opts.workspaceRoot,
+      ),
       ...builtInSkills.mcpServers,
     ],
-    extraTools: [createStructuredOutputTool({
-      schema: outputSchema,
-      onStructuredOutput: (value) => {
-        structuredOutput = value;
-      },
-    })],
+    extraTools: [
+      createStructuredOutputTool({
+        schema: outputSchema,
+        onStructuredOutput: (value) => {
+          structuredOutput = value;
+        },
+      }),
+    ],
     toolPolicy: createProfileToolPolicy(profile),
     fixedSystemPrompt: buildAgentTaskSystemPrompt(profile),
     responseFormat: {
@@ -253,7 +336,9 @@ async function runAgentHttpTask(
     },
   });
   if (structuredOutput === undefined) {
-    throw new Error(`agent task ${profile.promptId} did not return accepted StructuredOutput for ${profile.outputSchema}`);
+    throw new Error(
+      `agent task ${profile.promptId} did not return accepted StructuredOutput for ${profile.outputSchema}`,
+    );
   }
   opts.portalStore.recordAgentAudit({
     projectId: request.project_id,
@@ -266,6 +351,17 @@ async function runAgentHttpTask(
     riskFlags: collectRiskFlags(structuredOutput),
   });
 
+  const usage = events.reduce(
+    (total, event) =>
+      event.type === "model.usage"
+        ? {
+            input_tokens: total.input_tokens + event.inputTokens,
+            output_tokens: total.output_tokens + event.outputTokens,
+            total_tokens: total.total_tokens + event.totalTokens,
+          }
+        : total,
+    { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+  );
   return {
     session_id: result.thread.id,
     thread_id: result.thread.id,
@@ -276,7 +372,76 @@ async function runAgentHttpTask(
     content: result.content ?? "",
     structured_output: structuredOutput,
     events,
+    usage,
   };
+}
+
+async function decryptProviderEnvelope(
+  envelope: NonNullable<AgentTaskHttpRequest["provider_envelope"]>,
+  serviceToken: string | undefined,
+  context: string,
+): Promise<RuntimeProviderConfig> {
+  if (!serviceToken)
+    throw new Error("provider envelope requires authenticated service mode");
+  if (
+    envelope.version !== 1 ||
+    typeof envelope.iv !== "string" ||
+    typeof envelope.ciphertext !== "string"
+  )
+    throw new Error("invalid provider envelope");
+  try {
+    const keyBytes = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(serviceToken),
+    );
+    const key = await crypto.subtle.importKey(
+      "raw",
+      keyBytes,
+      { name: "AES-GCM" },
+      false,
+      ["decrypt"],
+    );
+    const plaintext = await crypto.subtle.decrypt(
+      {
+        name: "AES-GCM",
+        iv: decodeBase64Url(envelope.iv),
+        additionalData: new TextEncoder().encode(context),
+      },
+      key,
+      decodeBase64Url(envelope.ciphertext),
+    );
+    const value = JSON.parse(
+      new TextDecoder().decode(plaintext),
+    ) as Partial<RuntimeProviderConfig>;
+    if (
+      ![
+        "openai",
+        "openai-compatible",
+        "anthropic",
+        "deepseek",
+        "ollama",
+      ].includes(value.kind ?? "") ||
+      typeof value.base_url !== "string" ||
+      !/^https?:\/\//.test(value.base_url) ||
+      typeof value.max_output_tokens !== "number"
+    )
+      throw new Error("invalid runtime provider");
+    return value as RuntimeProviderConfig;
+  } catch {
+    throw new Error("provider envelope authentication failed");
+  }
+}
+function providerEnvelopeContext(request: AgentTaskHttpRequest): string {
+  return `${request.project_id ?? ""}:${request.thread_id ?? ""}:${request.user_id ?? ""}:${request.model ?? ""}`;
+}
+function decodeBase64Url(value: string): ArrayBuffer {
+  const normalized = value
+    .replace(/-/g, "+")
+    .replace(/_/g, "/")
+    .padEnd(Math.ceil(value.length / 4) * 4, "=");
+  return Uint8Array.from(atob(normalized), (character) =>
+    character.charCodeAt(0),
+  ).buffer;
 }
 
 async function chatCompletion(
@@ -284,11 +449,15 @@ async function chatCompletion(
   opts: AgentHttpServerOptions,
 ): Promise<Record<string, unknown>> {
   if (request.stream) {
-    throw new Error("streaming chat completions are not implemented by vos-agent HTTP yet");
+    throw new Error(
+      "streaming chat completions are not implemented by vos-agent HTTP yet",
+    );
   }
   const prompt = lastUserPrompt(request.messages ?? []);
   if (!prompt) {
-    throw new Error("chat completion request must include at least one user message");
+    throw new Error(
+      "chat completion request must include at least one user message",
+    );
   }
 
   const modelSettings = resolveRequestedModel(opts.config, request.model);
@@ -319,14 +488,16 @@ async function chatCompletion(
     created: Math.floor(Date.now() / 1000),
     model: request.model ?? "vos-local-agent",
     thread_id: result.thread.id,
-    choices: [{
-      index: 0,
-      message: {
-        role: "assistant",
-        content: result.content ?? "",
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: "assistant",
+          content: result.content ?? "",
+        },
+        finish_reason: "stop",
       },
-      finish_reason: "stop",
-    }],
+    ],
   };
 }
 
@@ -407,7 +578,10 @@ function mergeDisabledTools(
 ): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const value of [...configDisabledTools, ...(requestDisabledTools ?? [])]) {
+  for (const value of [
+    ...configDisabledTools,
+    ...(requestDisabledTools ?? []),
+  ]) {
     const normalized = value.trim();
     if (!normalized || seen.has(normalized.toLowerCase())) continue;
     seen.add(normalized.toLowerCase());

@@ -714,7 +714,7 @@ Spec Layer (解析校验)
 | `vos-server` | HTTP REST API：OpenAPI 自动生成、Portal 集成 |
 | `vos-cli` | CLI 入口（编译为 `vos` 二进制文件） |
 | `vos-agent` | AI Agent 后端（TUI + 无头 + HTTP 服务器模式） |
-| `vos-web` | Portal 前端原型（React + Vite + Tailwind） |
+| `vos-portal` | Portal Web、控制面、worker 与离线 Demo（React + Vite） |
 | `vos-demo` | 演示 HTTP 服务 |
 
 ### 9.4 ToolchainSpec：工具无关的语义构建
@@ -860,7 +860,7 @@ User → Course → Experiment → ExperimentSpec → StageGate → StudentProje
 
 - vos 工具链已实现，支持本地全流程操作
 - xv6-spec 参考项目已完成全流程验证
-- Portal 原型 (vos-web) 已搭建
+- Portal 已以 `vos-portal` 生产控制面和独立离线 Demo 重建
 
 ### 13.3 未来方向
 

@@ -13,6 +13,57 @@ import {
 } from "./router.ts";
 import { withRetryingChatClient } from "./retry.ts";
 
+export interface RuntimeProviderConfig {
+  kind: "openai" | "openai-compatible" | "anthropic" | "deepseek" | "ollama";
+  base_url: string;
+  secret?: string;
+  max_output_tokens: number;
+}
+
+export function createChatClientFromRuntimeProvider(
+  config: RuntimeProviderConfig,
+): ChatClient {
+  if (config.kind !== "ollama" && !config.secret)
+    throw new Error("runtime model provider credential is required");
+  switch (config.kind) {
+    case "openai":
+      return createOpenAIChatClient({
+        apiKey: config.secret!,
+        baseURL: config.base_url,
+        maxRetries: 0,
+      });
+    case "openai-compatible":
+      return createOpenAICompatibleChatClient({
+        apiKey: config.secret!,
+        baseURL: config.base_url,
+        responseFormat: "json_schema",
+        reasoningEffort: "off",
+        streamUsage: "include_usage",
+        input: { text: true, image: false, pdf: false },
+        maxRetries: 0,
+      });
+    case "anthropic":
+      return createAnthropicChatClient({
+        apiKey: config.secret,
+        baseURL: config.base_url,
+        maxTokens: config.max_output_tokens,
+        maxRetries: 0,
+      });
+    case "deepseek":
+      return createDeepSeekChatClient({
+        apiKey: config.secret!,
+        baseURL: config.base_url,
+        maxRetries: 0,
+      });
+    case "ollama":
+      return createOllamaChatClient({
+        baseURL: config.base_url,
+        apiKey: config.secret,
+        think: "off",
+      });
+  }
+}
+
 const ANTHROPIC_PREFIXES = [
   "claude",
   "opus",
@@ -29,7 +80,14 @@ const OPENAI_COMPATIBLE_PREFIXES = [
   "compat/",
 ];
 const OPENAI_PREFIXES = ["gpt", "o1", "o3", "o4", "openai:", "openai/"];
-const OLLAMA_PREFIXES = ["ollama:", "ollama/", "llama", "qwen", "mistral", "gemma"];
+const OLLAMA_PREFIXES = [
+  "ollama:",
+  "ollama/",
+  "llama",
+  "qwen",
+  "mistral",
+  "gemma",
+];
 const STRIPPED_ANTHROPIC_PREFIXES = ["anthropic:"];
 const STRIPPED_DEEPSEEK_PREFIXES = ["deepseek:"];
 const STRIPPED_OPENAI_COMPATIBLE_PREFIXES = ["openai-compatible:", "compat:"];
@@ -99,7 +157,10 @@ export function createChatClientFromConfig(config: Config): ChatClient {
   } else {
     routes.push({
       match: matchesPrefix(...OPENAI_COMPATIBLE_PREFIXES),
-      client: missingProviderClient("OpenAI-compatible", "OPENAI_COMPATIBLE_API_KEY"),
+      client: missingProviderClient(
+        "OpenAI-compatible",
+        "OPENAI_COMPATIBLE_API_KEY",
+      ),
     });
   }
   if (config.openai) {

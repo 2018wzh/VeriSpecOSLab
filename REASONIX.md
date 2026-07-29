@@ -17,7 +17,7 @@ examples/xv6-spec/   Reference xv6-style OS lab (spec/, kernel/, user/)
 vos/
   apps/vos-cli/      CLI entrypoint (`vos` command)
   apps/vos-agent/    Agent backend (TUI + OpenAI-compatible HTTP server)
-  apps/vos-web/      Portal prototype
+  apps/vos-portal/   Portal Web, control plane, worker and offline Demo
   packages/vos-core/     Shared core (typed commands, build/run/verify)
   packages/vos-runtime/  Execution primitives
   packages/vos-server/   Sandbox HTTP API
@@ -41,7 +41,7 @@ bun run build                    # build workspace applications locally
 bun link                         # run from apps/vos-cli to link the local CLI
 bun run vos -- --help            # CLI entrypoint
 bun run dev:agent                # vos-agent HTTP server on 127.0.0.1:8787
-bun run dev:web                  # vos-web dev server
+bun run dev:portal               # Portal development server
 ```
 
 Per-package (inside `vos/packages/<pkg>` or `vos/apps/<app>`):

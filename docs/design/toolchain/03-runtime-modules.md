@@ -21,7 +21,7 @@ vos/
   apps/
     vos-cli/
     vos-agent/
-    vos-web/
+    vos-portal/
 ```
 
 `vos-core` policy、`vos-core` evidence、`vos-runtime` 和 `vos-core agent session` 不再作为独立 package 存在；仍有用的类型和实现分别并入 `vos-core` 或 `vos-runtime`。
@@ -92,9 +92,9 @@ HTTP 不接受 `command: string|string[]`。旧 `/api/v1/commands/runs` 和 `/ap
 
 本地 LLM runner、TUI、headless API、OpenAI-compatible façade、MCP client 和 tool profile。`vos-agent` 不依赖 `vos-core`；由 `vos-core` 在需要 agent task 时调用 `vos-agent/headless`。
 
-### `vos-web`
+### `vos-portal`
 
-Portal prototype 前端，只消费平台 API 与 VOS 结构化产物，不执行 workspace runtime。
+独立课程控制面、Web UI 与 worker。Portal 本身不执行 workspace runtime；worker 只通过隔离环境中的 authenticated `vos serve` 消费结构化 API 与 SSE。显式 Demo 构建使用同一 UI 和共享契约，但仅访问版本化 `localStorage` adapter。
 
 ## 4. 固定依赖方向
 

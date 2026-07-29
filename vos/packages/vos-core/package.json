@@ -3,9 +3,11 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./portal-contracts": "./src/portal/contracts.ts"
   },
   "dependencies": {
+    "@napi-rs/keyring": "1.3.0",
     "handlebars": "^4.7.9",
     "ora": "^9.4.0",
     "tar": "^7.5.16",
@@ -19,7 +21,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test"
+    "test": "bun test --timeout 30000"
   },
   "devDependencies": {
     "@types/bun": "latest",

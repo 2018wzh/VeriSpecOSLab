@@ -1,0 +1,14 @@
+.design-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(320px, .75fr); gap: 18px; }
+.design-history article { padding: 18px; border-top: 1px solid var(--line); }
+.design-history article > header { display: flex; justify-content: space-between; gap: 16px; }
+.design-history article > header div { display: flex; flex-direction: column; gap: 4px; }
+.design-history article small, .design-history article time { color: var(--muted); font-size: 11px; }
+.design-history article p, .design-history li, .design-history dd { font-size: 13px; line-height: 1.65; }
+.design-history article h3 { margin: 16px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.design-history article dl { display: grid; grid-template-columns: 120px 1fr; margin: 8px 0; }
+.design-history article blockquote { margin: 16px 0 0; padding: 12px 14px; border-left: 3px solid var(--blue); background: var(--soft); font-size: 13px; }
+.design-form { display: grid; gap: 13px; padding: 16px; }
+.design-form label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; }
+.design-form input, .design-form textarea { width: 100%; border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; font: inherit; font-weight: 400; }
+.design-form textarea { min-height: 84px; resize: vertical; }
+@media (max-width: 900px) { .design-layout { grid-template-columns: 1fr; } }

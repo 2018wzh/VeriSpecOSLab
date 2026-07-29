@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
-import { lstat, readFile, writeFile } from "node:fs/promises";
+import { copyFile, lstat, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { EvidenceWriter } from "../evidence/index.ts";
 import { runCommand } from "./executor.ts";
@@ -147,9 +147,29 @@ async function runBuildCommandUnlocked(params: {
   if (variant.artifacts) {
     for (const rel of variant.artifacts) {
       const p = path.resolve(params.projectRoot, rel);
+      const projectRelative = path.relative(params.projectRoot, p);
+      if (
+        projectRelative === "" ||
+        projectRelative === ".." ||
+        projectRelative.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(projectRelative)
+      ) {
+        throw new Error(`toolchain artifact is outside the project: ${rel}`);
+      }
       if (existsSync(p) && (await lstat(p)).isFile()) {
         const hash = await hashFile(p);
-        params.evidence.addArtifact("artifact", relativeProjectPath(params.projectRoot, p), `sha256:${hash}`);
+        const evidencePath = path.join(
+          params.evidence.artifacts_root,
+          "build-output",
+          projectRelative,
+        );
+        mkdirSync(path.dirname(evidencePath), { recursive: true });
+        await copyFile(p, evidencePath);
+        params.evidence.addArtifactFromPath(
+          "artifact",
+          evidencePath,
+          `sha256:${hash}`,
+        );
         artifacts.push(p);
       }
     }

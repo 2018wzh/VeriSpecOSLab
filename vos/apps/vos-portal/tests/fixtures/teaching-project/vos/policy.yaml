@@ -1,0 +1,10 @@
+allowed_paths:
+  - spec
+  - .vos
+  - build
+  - Makefile
+allowed_commands:
+  - build
+  - test
+  - verify public
+visibility_scope: public

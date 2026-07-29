@@ -1,64 +1,24 @@
-# VOS Portal Development Docs
+# VOS Portal
 
-`vos-portal` is the course platform surface for VeriSpecOSLab and the future
-SpecLab platform family. It connects course rules, staged projects, VOS evidence,
-scoring, and Agent audit into one workflow.
+`vos/apps/vos-portal` 是课程教学控制面，同时提供同源 Web、`/api/v1`、后台 worker 和独立静态 Demo。旧 Portal 前端已经退役，不存在生产兼容入口。
 
-The current implementation is a TypeScript skeleton rather than the final
-production platform:
+## 运行模式
 
-- `vos/apps/vos-agent`: Bun backend that serves the OpenAI-compatible Agent
-  Gateway and the Portal REST API with a demo in-memory store.
-- `vos/apps/vos-web` (current `vos-portal` prototype): React/Vite portal UI for
-  student and teacher workflows.
-- Target shared packages such as `vos-core`, `vos-core` evidence, `vos-core` policy, and
-  `vos-runtime` are described in `docs/design/toolchain/03-runtime-modules.md`
-  and should be introduced as the course runtime matures.
+- Production：PostgreSQL 是业务真相源，MinIO 保存带校验和的对象，Gitea 提供仓库与 webhook，worker 通过隔离环境中的 `vos serve` 调用 VOS。
+- Demo：`bun run dev:portal:demo` 或 `bun run --cwd apps/vos-portal build:demo`。它只使用版本化 `localStorage`，不调用 API、模型、Gitea 或 runner。
 
-Older blueprints are retained under `docs/vos/portal/spec/` and remain useful
-for detailed design notes. This directory is the implementation-facing entry.
-
-## Local Quick Start
-
-Backend / Agent Gateway:
-
-```powershell
+```sh
 cd vos
-bun run dev:agent
+bun install --ignore-scripts
+bun run dev:portal:demo
 ```
 
-vos-portal (prototype frontend via `vos-web`):
+Production 首次启动必须显式迁移和 seed；数据库或 runner 不可用时不会回退到 Demo。
 
-```powershell
-cd vos
-bun run dev:web
-```
+## 文档
 
-Demo credentials:
-
-- `student` / `student`
-- `teacher` / `teacher`
-- `ta` / `ta`
-
-The `vos-portal` frontend proxies `/api` and `/v1` to `http://127.0.0.1:8787`. If
-the backend is not running, the UI shows an error state. Runtime mock/fallback
-data is not
-used; demo data is inserted by the backend seed path.
-
-Docker/PostgreSQL:
-
-```powershell
-docker compose up postgres vos-agent vos-web  # prototype service name
-```
-
-The Compose path should use PostgreSQL adapters once the TypeScript storage
-layer is introduced. Until then, the demo in-memory store remains the local
-smoke-test path.
-
-## Documents
-
-- [Architecture](architecture.md)
-- [Data Model](data-model.md)
+- [架构](architecture.md)
 - [API](api.md)
-- [Development](development.md)
-- [TODO](todo.md)
+- [数据模型](data-model.md)
+- [开发与验证](development.md)
+- [交付状态](todo.md)

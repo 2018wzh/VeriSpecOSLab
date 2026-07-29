@@ -36,6 +36,8 @@ import type {
   ReportGenerateCommand,
   RunQemuCommand,
   ParsedInvocation,
+  PortalPipelineCommand,
+  ProjectBindCommand,
   RunAuthContext,
   ServeCommand,
   StageSaveCommand,
@@ -308,6 +310,7 @@ export async function executeCliInvocation(
 }
 
 export interface ExecuteVosCommandOptions {
+  runId?: string;
   projectRoot: string;
   json?: boolean;
   progress?: "auto" | "always" | "never";
@@ -383,6 +386,7 @@ export async function executeVosCommand(
       portalClient: options.portalClient ?? defaultPortalClient,
     });
     const evidence = await EvidenceWriter.create({
+      runId: options.runId,
       projectRoot,
       evidenceDir: options.evidenceDir ?? ".vos",
       command: commandArray,
@@ -629,6 +633,9 @@ async function resolveAuthContext(params: {
   try {
     const user = await params.portalClient.getMe(portalUrl, token);
     const policy = await params.portalClient.getProjectPolicy(portalUrl, projectId, token);
+    if (policy.expiresAt && Date.parse(policy.expiresAt) <= Date.now()) {
+      throw new CliError("policy_blocked: policy snapshot expired", "policy_blocked", { reason: "policy_expired" });
+    }
     if (!bearerToken) {
       await updateStoredUser(portalUrl, user);
     }
@@ -1643,11 +1650,17 @@ export async function executeAgentPlan(
 }
 
 export async function executeLogin(command: LoginCommand, context: ExecContext): Promise<CommandOutcome> {
-  const token = command.token
+  let token = command.token
     ?? (command.tokenStdin ? (await Bun.stdin.text()).trim() : undefined)
     ?? process.env.VOS_PORTAL_TOKEN;
   if (!token) {
-    throw new CliError("login requires --token, --token-stdin, or VOS_PORTAL_TOKEN", "failed");
+    const client=context.portalClient??defaultPortalClient;
+    if(!client.beginDeviceAuthorization||!client.pollDeviceAuthorization)throw new CliError("Portal does not support CLI device authorization","failed");
+    const authorization=await client.beginDeviceAuthorization(command.portalUrl,"vos-cli");
+    if(!context.global.json)console.error(`Open ${authorization.verification_uri} and enter code ${authorization.user_code}`);
+    const deadline=Date.now()+authorization.expires_in*1000;
+    while(Date.now()<deadline){await Bun.sleep(Math.max(2,authorization.interval)*1000);const result=await client.pollDeviceAuthorization(command.portalUrl,authorization.device_code);if(result.status==="approved"){token=result.access_token;break;}if(result.status==="access_denied")throw new CliError("device authorization denied","policy_blocked",{reason:"access_denied"});if(result.status==="expired_token")break;}
+    if(!token)throw new CliError("device authorization expired","policy_blocked",{reason:"expired_token"});
   }
   let user;
   try {
@@ -1673,7 +1686,7 @@ export async function executeLogin(command: LoginCommand, context: ExecContext):
   };
 }
 
-export async function executeLogout(command: LogoutCommand, projectRoot: string): Promise<CommandOutcome> {
+export async function executeLogout(command: LogoutCommand, projectRoot: string, context?:ExecContext): Promise<CommandOutcome> {
   const project = await loadProjectConfig(projectRoot).catch(() => undefined);
   const portalUrl = command.portalUrl ?? project?.portal_url;
   if (!portalUrl) {
@@ -1685,6 +1698,9 @@ export async function executeLogout(command: LogoutCommand, projectRoot: string)
       },
     };
   }
+  const stored=await getToken(portalUrl);
+  if(stored?.token&&context?.portalClient?.revokeToken)await context.portalClient.revokeToken(portalUrl,stored.token);
+  else if(stored?.token)await defaultPortalClient.revokeToken(portalUrl,stored.token);
   const removed = await removeToken(portalUrl);
   return {
     status: "passed",
@@ -1728,8 +1744,9 @@ export async function executeWhoami(command: WhoamiCommand, projectRoot: string,
     const user = await (context.portalClient ?? defaultPortalClient).getMe(portalUrl, stored.token);
     await updateStoredUser(portalUrl, user);
     let policySnapshotRef: string | undefined;
-    if (project?.project_id) {
-      const policy = await (context.portalClient ?? defaultPortalClient).getProjectPolicy(portalUrl, project.project_id, stored.token);
+    const boundProjectId=project?.project_id&&project.portal_url&&normalizePortalUrl(project.portal_url)===normalizePortalUrl(portalUrl)?project.project_id:undefined;
+    if (boundProjectId) {
+      const policy = await (context.portalClient ?? defaultPortalClient).getProjectPolicy(portalUrl, boundProjectId, stored.token);
       policySnapshotRef = policy.ref;
     }
     return {
@@ -1739,7 +1756,7 @@ export async function executeWhoami(command: WhoamiCommand, projectRoot: string,
         project_id: project?.project_id,
         authenticated: true,
         user,
-        policy_status: project?.project_id ? "online" : "no_project_binding",
+        policy_status: boundProjectId ? "online" : "no_project_binding",
         policy_snapshot_ref: policySnapshotRef,
         message: "online",
       },
@@ -1757,6 +1774,30 @@ export async function executeWhoami(command: WhoamiCommand, projectRoot: string,
     };
   }
 }
+
+export async function executePortalPipeline(command:PortalPipelineCommand,context:ExecContext):Promise<CommandOutcome>{
+  const project=await loadProjectConfig(context.projectRoot);if(!project.portal_url||!project.project_id)throw new CliError("pipeline commands require portal_url and project_id in .vos/project.yaml","policy_blocked",{reason:"portal_binding_missing"});
+  const stored=await getToken(project.portal_url);if(!stored?.token)throw new CliError("policy_blocked: not_logged_in","policy_blocked",{reason:"not_logged_in"});
+  const client=context.portalClient??defaultPortalClient;const requireMethod=<T>(method:T|undefined,name:string):T=>{if(!method)throw new CliError(`Portal client does not support ${name}`,"failed");return method;};
+  if(command.action==="trigger"){const reproducible=await assertReproducible(context.projectRoot);const stage=await currentStageForProject(context.projectRoot);const method=requireMethod(client.triggerPipeline?.bind(client),"pipeline trigger");const run=await method(project.portal_url,stored.token,{version:"pipeline-request.v1",project_id:project.project_id,commit_sha:reproducible.commitSha!,stage_key:stage,scope:command.scope??"public",model_credential_id:command.modelCredentialId,reason:command.reason!});assertBoundProject(run.project_id,project.project_id,"pipeline");return{status:"passed",details:{run}};}
+  const runId=command.runId!;
+  if(command.action==="status"){const method=requireMethod(client.getPipeline?.bind(client),"pipeline status");const run=await method(project.portal_url,stored.token,runId);assertBoundProject(run.project_id,project.project_id,"pipeline");return{status:"passed",details:{run}};}
+  if(command.action==="watch"){const method=requireMethod(client.watchPipeline?.bind(client),"pipeline watch");const events=await method(project.portal_url,stored.token,runId);const status=await requireMethod(client.getPipeline?.bind(client),"pipeline status")(project.portal_url,stored.token,runId);assertBoundProject(status.project_id,project.project_id,"pipeline");return{status:status.status==="passed"?"passed":status.status==="cancelled"?"cancelled":status.status==="timed_out"?"timed_out":"failed",details:{run:status,events}};}
+  if(command.action==="cancel"){const method=requireMethod(client.cancelPipeline?.bind(client),"pipeline cancel");const run=await method(project.portal_url,stored.token,runId,command.reason!);assertBoundProject(run.project_id,project.project_id,"pipeline");return{status:"cancelled",details:{run}};}
+  if(command.action==="reproduce"){const method=requireMethod(client.getReproduction?.bind(client),"pipeline reproduce");const reproduction=await method(project.portal_url,stored.token,runId);assertBoundProject(reproduction.project_id,project.project_id,"reproduction");return{status:"passed",details:{reproduction}};}
+  if(command.action==="download"){
+    const evidence=await requireMethod(client.getEvidence?.bind(client),"pipeline evidence")(project.portal_url,stored.token,runId);assertBoundProject(evidence.run.project_id,project.project_id,"evidence");
+    if(evidence.artifacts.length===0)throw new CliError("No visible artifacts are available for this run","failed",{run_id:runId});
+    const download=requireMethod(client.downloadArtifact?.bind(client),"pipeline download");const destination=path.resolve(context.projectRoot,command.outDir??path.join(".vos","downloads",runId));await mkdir(destination,{recursive:true});
+    const files:string[]=[];const used=new Set<string>();for(const artifact of evidence.artifacts){const stem=`${artifact.id}-${artifact.label}`.replace(/[^A-Za-z0-9._-]+/g,"-").replace(/^\.+/,"").slice(0,160)||artifact.id;let name=stem;let suffix=1;while(used.has(name)){name=`${stem}-${suffix++}`;}used.add(name);const target=path.join(destination,name);await download(project.portal_url,stored.token,artifact,target);files.push(path.relative(context.projectRoot,target));}
+    return{status:"passed",details:{run_id:runId,destination:path.relative(context.projectRoot,destination),files,verified:true}};
+  }
+  const method=requireMethod(client.getEvidence?.bind(client),"pipeline evidence");const evidence=await method(project.portal_url,stored.token,runId);assertBoundProject(evidence.run.project_id,project.project_id,"evidence");return{status:"passed",details:{evidence}};
+}
+
+function assertBoundProject(actual:string,expected:string,resource:string):void{if(actual!==expected)throw new CliError(`Portal returned ${resource} for a different project`,"policy_blocked",{reason:"project_mismatch",expected_project_id:expected,actual_project_id:actual});}
+
+export async function executeProjectBind(command:ProjectBindCommand,context:ExecContext):Promise<CommandOutcome>{const portalUrl=normalizePortalUrl(command.portalUrl);const stored=await getToken(portalUrl);if(!stored?.token)throw new CliError("project bind requires an authenticated Portal session","policy_blocked",{reason:"not_logged_in"});const client=context.portalClient??defaultPortalClient;if(!client.getProjectBinding)throw new CliError("Portal client does not support project binding","failed");const binding=await client.getProjectBinding(portalUrl,stored.token,command.projectId);if(binding.project_id!==command.projectId)throw new CliError("Portal returned a mismatched project binding","policy_blocked",{reason:"project_mismatch"});const projectPath=path.join(context.projectRoot,".vos","project.yaml");if(!existsSync(projectPath))throw new CliError("project configuration missing, run `vos init` first","validation_failed");let source=await readFile(projectPath,"utf8");const set=(key:string,value:string)=>{const line=`${key}: ${value}`;source=new RegExp(`^${key}:.*$`,"m").test(source)?source.replace(new RegExp(`^${key}:.*$`,"m"),line):`${source.trimEnd()}\n${line}\n`;};set("project_id",binding.project_id);set("portal_url",portalUrl);await writeFile(projectPath,source);return{status:"passed",details:{binding,project_file:path.relative(context.projectRoot,projectPath),message:"project binding updated; commit the binding before submitting"}};}
 
 export async function executeLedgerRecord(
   command: LedgerRecordCommand,
@@ -3599,6 +3640,10 @@ export function commandToArray(command: CliCommand): string[] {
       return ["logout", ...(command.portalUrl ? ["--portal-url", command.portalUrl] : [])];
     case "whoami":
       return ["whoami", ...(command.portalUrl ? ["--portal-url", command.portalUrl] : [])];
+    case "portal_pipeline":
+      return ["pipeline",command.action,...(command.runId?[command.runId]:[]),...(command.scope&&command.action==="trigger"?["--scope",command.scope]:[]),...(command.modelCredentialId&&command.action==="trigger"?["--model-credential",command.modelCredentialId]:[]),...(command.outDir&&command.action==="download"?["--out",command.outDir]:[]),...(command.reason?["--reason",command.reason]:[])];
+    case "project_bind":
+      return ["project","bind","--portal-url",command.portalUrl,"--project-id",command.projectId];
     case "serve":
       return [
         "serve",
@@ -3821,6 +3866,7 @@ export function commandToArray(command: CliCommand): string[] {
 }
 
 function commandExists(cmd: string): boolean {
+  if (path.isAbsolute(cmd)) return existsSync(cmd);
   const envPath = process.env.PATH?.split(path.delimiter) ?? [];
   const candidates = isWindows()
     ? [".exe", ".cmd", "", ".bat"].map((suffix) => cmd + suffix)
@@ -4562,9 +4608,14 @@ const HELP_TOPICS: Record<string, string[]> = {
     "  --evidence-dir <path>",
     "",
     "Commands:",
-    "  login --portal-url <url> [--token <token>|--token-stdin]",
+    "  login --portal-url <url> [--token <token>|--token-stdin]  # device flow when token is omitted",
     "  logout [--portal-url <url>]",
     "  whoami [--portal-url <url>]",
+    "  pipeline trigger --reason <text> [--scope public|staff|final] [--model-credential <id>]",
+    "  pipeline status|watch|evidence|reproduce <run-id>",
+    "  pipeline download <run-id> [--out <directory>]",
+    "  pipeline cancel <run-id> --reason <text>",
+    "  project bind --portal-url <url> --project-id <id>",
     "  serve --portal-url <url> --project-id <id> [--host <host>] [--port <port>]",
     "  init",
     "  doctor",
@@ -4610,11 +4661,13 @@ const HELP_TOPICS: Record<string, string[]> = {
   ],
   "login": helpBlock(
     "login --portal-url <url> [--token <token>|--token-stdin]",
-    ["--portal-url <url>", "--token <token>", "--token-stdin"],
-    ["vos login --portal-url https://portal.example --token-stdin"],
+    ["--portal-url <url>", "--token <token>", "--token-stdin", "Omit token flags to use CLI device authorization."],
+    ["vos login --portal-url https://portal.example", "vos login --portal-url https://portal.example --token-stdin"],
   ),
   "logout": helpBlock("logout [--portal-url <url>]", ["--portal-url <url>"], ["vos logout"]),
   "whoami": helpBlock("whoami [--portal-url <url>]", ["--portal-url <url>"], ["vos whoami"]),
+  "pipeline": helpBlock("pipeline trigger|status|watch|cancel|evidence|download|reproduce",["trigger --reason <text> [--scope public|staff|final] [--model-credential <id>]","status <run-id>","watch <run-id>","cancel <run-id> --reason <text>","evidence <run-id>","download <run-id> [--out <directory>]","reproduce <run-id>"],["vos pipeline trigger --reason \"submit memory stage\"","vos pipeline watch run-123","vos pipeline download run-123"]),
+  "project bind": helpBlock("project bind --portal-url <url> --project-id <id>",["--portal-url <url>","--project-id <id>"],["vos project bind --portal-url https://portal.example --project-id project-1"]),
   "serve": helpBlock(
     "serve --portal-url <url> --project-id <id> [--host <host>] [--port <port>]",
     ["--portal-url <url>", "--project-id <id>", "--host <host>", "--port <port>"],

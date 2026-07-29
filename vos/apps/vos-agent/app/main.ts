@@ -81,7 +81,7 @@ async function main(): Promise<void> {
   if (args.kind === "serve") {
     const host = args.host ?? process.env.VOS_AGENT_HOST ?? "127.0.0.1";
     const port = args.port ?? readPortEnv(process.env.VOS_AGENT_PORT) ?? 8787;
-    const server = serveAgentHttp({ chat, config, store, workspaceRoot, host, port });
+    const server = serveAgentHttp({ chat, config, store, workspaceRoot, host, port, serviceToken:process.env.VOS_AGENT_SERVICE_TOKEN });
     console.error(`vos-agent: listening on http://${server.hostname}:${server.port}`);
     return;
   }

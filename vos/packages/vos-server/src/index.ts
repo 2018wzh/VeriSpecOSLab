@@ -1,4 +1,5 @@
 import path from "node:path";
+import { timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { OpenAPIRegistry, OpenApiGeneratorV3 } from "@asteasolutions/zod-to-openapi";
@@ -10,6 +11,8 @@ import {
   type CommandStatus,
   type CoreRunEvent,
   type PortalClient,
+  type PortalUserSummary,
+  type PolicySnapshot,
   type VerifyScope,
   type VosCommand,
 } from "vos-core";
@@ -20,6 +23,11 @@ export interface VosHttpServerOptions {
   projectId: string;
   host?: string;
   port?: number;
+  accessToken?: string;
+  runnerIdentity?: {
+    user: PortalUserSummary;
+    policy: PolicySnapshot;
+  };
   portalClient?: PortalClient;
   executeCommand?: (params: VosCommandExecutionContext) => Promise<BaseCommandResult>;
 }
@@ -125,6 +133,9 @@ const routes: RouteDef[] = [
 
 export function startVosHttpServer(options: VosHttpServerOptions): VosHttpServerResult {
   const host = options.host ?? "127.0.0.1";
+  if (!isLoopbackHost(host) && !options.accessToken) {
+    throw new Error("vos serve requires an access token on non-loopback hosts");
+  }
   const server = Bun.serve({
     hostname: host,
     port: options.port ?? 8788,
@@ -143,12 +154,16 @@ export function createVosHttpHandler(options: VosHttpServerOptions): (req: Reque
   const projectRoot = path.resolve(options.projectRoot);
   const runs = new Map<string, RunRecord>();
   const openApi = createOpenApiDocument();
+  const portalClient = options.portalClient ?? (options.runnerIdentity ? runnerPortalClient(options.runnerIdentity, options.projectId) : undefined);
 
   return async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     try {
       if (req.method === "GET" && url.pathname === "/health") {
         return json({ ok: true, service: "vos-server" });
+      }
+      if (options.accessToken && !authorized(req, options.accessToken)) {
+        return json({ error: "unauthorized" }, 401);
       }
       if (req.method === "GET" && url.pathname === "/api/v1/openapi.json") {
         return json(openApi);
@@ -164,7 +179,7 @@ export function createVosHttpHandler(options: VosHttpServerOptions): (req: Reque
         const command = route.makeCommand(input.value, match);
         if (route.kind === "sync") {
           const result = await runCommand(command, {
-            runId: provisionalRunId(),
+            runId: stableRunId(),
             requestedBy: stringValue(input.value.requested_by) ?? "portal",
             reason: stringValue(input.value.reason),
             agentSessionId: stringValue(input.value.agent_session_id),
@@ -172,7 +187,7 @@ export function createVosHttpHandler(options: VosHttpServerOptions): (req: Reque
             projectRoot,
             portalUrl: options.portalUrl,
             projectId: options.projectId,
-            portalClient: options.portalClient,
+            portalClient,
             executeCommand: options.executeCommand,
           });
           return json(result, result.ok ? 200 : 400);
@@ -182,7 +197,7 @@ export function createVosHttpHandler(options: VosHttpServerOptions): (req: Reque
           projectRoot,
           portalUrl: options.portalUrl,
           projectId: options.projectId,
-          portalClient: options.portalClient,
+          portalClient,
           executeCommand: options.executeCommand,
         });
       }
@@ -191,6 +206,38 @@ export function createVosHttpHandler(options: VosHttpServerOptions): (req: Reque
       return json({ error: error instanceof Error ? error.message : "unknown error" }, 500);
     }
   };
+}
+
+function runnerPortalClient(
+  identity: NonNullable<VosHttpServerOptions["runnerIdentity"]>,
+  projectId: string,
+): PortalClient {
+  if (identity.policy.projectId !== projectId) {
+    throw new Error("runner policy project does not match vos serve binding");
+  }
+  return {
+    async getMe(): Promise<PortalUserSummary> {
+      return identity.user;
+    },
+    async getProjectPolicy(_portalUrl: string, requestedProjectId: string): Promise<PolicySnapshot> {
+      if (requestedProjectId !== projectId) throw new Error("runner policy project mismatch");
+      const expiresAt = Date.parse(identity.policy.expiresAt ?? "");
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error("runner policy snapshot expired");
+      return identity.policy;
+    },
+  };
+}
+
+function authorized(req: Request, expected: string): boolean {
+  const actual = bearerToken(req);
+  if (!actual) return false;
+  const actualBytes = Buffer.from(actual);
+  const expectedBytes = Buffer.from(expected);
+  return actualBytes.length === expectedBytes.length && timingSafeEqual(actualBytes, expectedBytes);
+}
+
+function isLoopbackHost(host: string): boolean {
+  return host === "127.0.0.1" || host === "::1" || host === "localhost";
 }
 
 interface RunRecord extends VosHttpRun {
@@ -213,7 +260,7 @@ async function createRun(
   },
 ): Promise<Response> {
   const controller = new AbortController();
-  const runId = provisionalRunId();
+  const runId = stableRunId();
   const run: RunRecord = {
     id: runId,
     status: "queued",
@@ -250,11 +297,7 @@ async function createRun(
             run.events.push(publicEvent);
             for (const subscriber of run.subscribers) subscriber(publicEvent);
           }
-          if (event.type === "run_started") {
-            params.runs.delete(run.id);
-            run.id = event.run_id;
-            params.runs.set(run.id, run);
-          }
+          if (event.type === "run_started" && event.run_id !== run.id) throw new Error("vos serve run ID changed after acceptance");
         },
       });
       run.result = result;
@@ -267,7 +310,6 @@ async function createRun(
     }
   })();
 
-  await waitForRunIdStabilized(run);
   return json({ run_id: run.id, status: run.status }, 202);
 }
 
@@ -278,6 +320,7 @@ async function runCommand(command: VosCommand, context: Omit<VosCommandExecution
     return await context.executeCommand({ ...context, command });
   }
   return await executeVosCommand(command, {
+    runId: context.runId,
     projectRoot: context.projectRoot,
     agentSession: context.agentSessionId,
     serveBinding: {
@@ -496,16 +539,8 @@ function json(value: unknown, status = 200): Response {
   return Response.json(value, { status });
 }
 
-async function waitForRunIdStabilized(run: RunRecord): Promise<void> {
-  for (let i = 0; i < 50; i++) {
-    if (run.events.some((event) => event.type === "run_started")) return;
-    if (run.result) return;
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-}
-
-function provisionalRunId(): string {
-  return `pending-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+function stableRunId(): string {
+  return `run-${crypto.randomUUID()}`;
 }
 
 function stringValue(value: unknown): string | undefined {

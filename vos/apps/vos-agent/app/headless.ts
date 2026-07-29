@@ -542,7 +542,7 @@ export function startAgentHttpServer(
   const store = createThreadStore({ workspaceRoot });
   const host = options.host ?? env.VOS_AGENT_HOST ?? "127.0.0.1";
   const port = options.port ?? readPortEnv(env.VOS_AGENT_PORT) ?? 8787;
-  const server = serveAgentHttp({ chat, config, store, workspaceRoot, host, port });
+  const server = serveAgentHttp({ chat, config, store, workspaceRoot, host, port, serviceToken:env.VOS_AGENT_SERVICE_TOKEN });
   const resolvedHost = server.hostname ?? host;
   const resolvedPort = server.port ?? port;
 
