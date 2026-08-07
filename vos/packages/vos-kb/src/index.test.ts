@@ -66,6 +66,42 @@ describe("vos-kb local registry", () => {
     expect(existsSync(path.join(root, ".vos", "kb", "vectors.sqlite"))).toBe(false);
   });
 
+  test("reports deterministic progress while recursively indexing sources", async () => {
+    const progress: Array<{
+      phase: string;
+      message: string;
+      percent: number;
+      current?: number;
+      total?: number;
+    }> = [];
+
+    await addKbSource(root, { source: ".", sourceKind: "course", recursive: true }, {
+      embedder: fakeEmbedder,
+      onProgress: (update) => {
+        progress.push(update);
+      },
+    });
+
+    expect(progress[0]).toMatchObject({ phase: "discovering", percent: 0 });
+    expect(progress).toContainEqual(expect.objectContaining({
+      phase: "discovering",
+      current: 0,
+      total: 2,
+    }));
+    expect(progress).toContainEqual(expect.objectContaining({
+      phase: "embedding",
+      current: 1,
+      total: 2,
+    }));
+    expect(progress).toContainEqual(expect.objectContaining({
+      phase: "indexed",
+      current: 2,
+      total: 2,
+      percent: 95,
+    }));
+    expect(progress.every((update, index) => index === 0 || update.percent >= progress[index - 1].percent)).toBe(true);
+  });
+
   test("exports and imports an object manifest with sha256 verification", async () => {
     await addKbSource(root, { source: "manual.md", sourceKind: "course", stage: "memory" }, { embedder: fakeEmbedder });
     const manifest = await exportKbManifest(root);
@@ -90,10 +126,17 @@ describe("vos-kb local registry", () => {
       }),
     });
     try {
-      const source = await addKbSource(root, { source: `http://127.0.0.1:${server.port}/pipe`, sourceKind: "external", title: "Pipe Reference" }, { embedder: fakeEmbedder });
+      const progress: string[] = [];
+      const source = await addKbSource(root, { source: `http://127.0.0.1:${server.port}/pipe`, sourceKind: "external", title: "Pipe Reference" }, {
+        embedder: fakeEmbedder,
+        onProgress: (update) => {
+          progress.push(update.phase);
+        },
+      });
       const cached = readFileSync(path.join(root, ".vos", "kb", "objects", `${source.id}.txt`), "utf8");
       expect(cached).toContain("pipe buffer invariant");
       expect(cached).not.toContain("<body>");
+      expect(progress).toContain("downloading");
     } finally {
       await server.stop(true);
     }

@@ -100,6 +100,18 @@ export interface KbEmbeddingOptions {
   embedder?: KbEmbedder;
 }
 
+export interface KbAddProgress {
+  phase: "discovering" | "reading" | "downloading" | "chunking" | "embedding" | "indexed";
+  message: string;
+  percent: number;
+  current?: number;
+  total?: number;
+}
+
+export interface KbAddOptions extends KbEmbeddingOptions {
+  onProgress?: (progress: KbAddProgress) => void | Promise<void>;
+}
+
 export interface OpenAICompatibleEmbeddingConfig {
   baseUrl: string;
   model: string;
@@ -158,22 +170,42 @@ export function createOpenAICompatibleEmbedder(config: OpenAICompatibleEmbedding
 export async function addKbSource(
   projectRoot: string,
   sourceOrInput: string | AddKbSourceInput,
-  legacySourceKindOrOptions?: KbSourceKind | KbEmbeddingOptions,
+  legacySourceKindOrOptions?: KbSourceKind | KbAddOptions,
 ): Promise<KbSource> {
-  const options = typeof legacySourceKindOrOptions === "object" ? legacySourceKindOrOptions : {};
+  const options: KbAddOptions = typeof legacySourceKindOrOptions === "object" ? legacySourceKindOrOptions : {};
   const input = typeof sourceOrInput === "string"
     ? { source: sourceOrInput, sourceKind: typeof legacySourceKindOrOptions === "string" ? legacySourceKindOrOptions : "project" }
     : sourceOrInput;
   if (input.branch && input.tag) throw new Error("cannot specify both branch and tag for KB git source");
   const embedder = requireEmbedder(options.embedder);
   const gitRef = input.branch || input.tag ? { branch: input.branch, tag: input.tag } : undefined;
+  await reportKbAddProgress(options, {
+    phase: "discovering",
+    message: "discovering sources",
+    percent: 0,
+  });
   const files = await expandSources(projectRoot, input.source, input.recursive ?? false, gitRef);
+  await reportKbAddProgress(options, {
+    phase: "discovering",
+    message: `discovered ${files.length} source${files.length === 1 ? "" : "s"}`,
+    percent: 5,
+    current: 0,
+    total: files.length,
+  });
   let first: KbSource | undefined;
-  for (const file of files) {
-    const item = await addOne(projectRoot, { ...input, source: file }, embedder);
+  for (let index = 0; index < files.length; index++) {
+    const file = files[index];
+    const item = await addOne(projectRoot, { ...input, source: file }, embedder, options, index, files.length);
     first ??= item;
   }
   if (!first) throw new Error(`no KB source matched ${input.source}`);
+  await reportKbAddProgress(options, {
+    phase: "indexed",
+    message: `indexed ${files.length} source${files.length === 1 ? "" : "s"}`,
+    percent: 95,
+    current: files.length,
+    total: files.length,
+  });
   return first;
 }
 
@@ -293,9 +325,33 @@ export async function importKbManifest(projectRoot: string, raw: unknown, option
   return manifest;
 }
 
-async function addOne(projectRoot: string, input: AddKbSourceInput, embedder: KbEmbedder): Promise<KbSource> {
+async function addOne(
+  projectRoot: string,
+  input: AddKbSourceInput,
+  embedder: KbEmbedder,
+  options: KbAddOptions,
+  fileIndex: number,
+  fileCount: number,
+): Promise<KbSource> {
+  const fileStart = 5 + (fileIndex / fileCount) * 90;
+  const fileSpan = 90 / fileCount;
+  const progress = async (phase: KbAddProgress["phase"], message: string, fraction: number) => {
+    await reportKbAddProgress(options, {
+      phase,
+      message,
+      percent: Math.round(fileStart + fileSpan * fraction),
+      current: fileIndex + 1,
+      total: fileCount,
+    });
+  };
+  await progress("reading", `reading ${input.source}`, 0);
   const index = await readKbIndex(projectRoot);
-  const loaded = await readSource(projectRoot, input.source);
+  const loaded = await readSource(projectRoot, input.source, async (downloaded, total) => {
+    const fraction = total > 0 ? Math.min(downloaded / total, 1) : 0;
+    const downloadedLabel = formatByteCount(downloaded);
+    const totalLabel = total > 0 ? `/${formatByteCount(total)}` : "";
+    await progress("downloading", `downloading ${input.source} (${downloadedLabel}${totalLabel})`, fraction * 0.2);
+  });
   const sha256 = hash(loaded.content);
   const id = `kb-${sha256.slice(0, 12)}`;
   const item: KbSource = {
@@ -308,13 +364,22 @@ async function addOne(projectRoot: string, input: AddKbSourceInput, embedder: Kb
     stage_scope: input.stage,
     added_at: new Date().toISOString(),
   };
+  await progress("chunking", `chunking ${input.source}`, 0.25);
   const chunks = chunkText(item, loaded.content);
   if (chunks.length === 0) throw new Error(`KB source has no extractable text: ${input.source}`);
   index.sources = [item, ...index.sources.filter((existing) => existing.id !== id)];
   index.chunks = [...chunks, ...(index.chunks ?? []).filter((chunk) => chunk.source_id !== id)];
   await writeKbIndex(projectRoot, index);
   await writeCachedObject(projectRoot, item, loaded.content);
+  await progress("embedding", `embedding ${chunks.length} chunk${chunks.length === 1 ? "" : "s"} from ${input.source}`, 0.4);
   await upsertVectors(projectRoot, chunks, embedder);
+  await reportKbAddProgress(options, {
+    phase: "indexed",
+    message: `indexed ${input.source}`,
+    percent: Math.round(fileStart + fileSpan),
+    current: fileIndex + 1,
+    total: fileCount,
+  });
   return item;
 }
 
@@ -502,9 +567,13 @@ async function writeKbIndex(projectRoot: string, index: KbIndex): Promise<void> 
   await writeFile(path.join(projectRoot, ".vos", "kb", "index.json"), `${JSON.stringify(index.chunks ?? [], null, 2)}\n`);
 }
 
-async function readSource(projectRoot: string, source: string): Promise<{ content: string; contentType: string }> {
+async function readSource(
+  projectRoot: string,
+  source: string,
+  onDownloadProgress?: (downloaded: number, total: number) => void | Promise<void>,
+): Promise<{ content: string; contentType: string }> {
   if (/^https?:\/\//.test(source)) {
-    const { body, contentType } = await downloadWithProgress(source);
+    const { body, contentType } = await downloadSource(source, onDownloadProgress);
     return await decodeDownloadedContent(source, body, contentType);
   }
   const resolved = path.resolve(projectRoot, source);
@@ -521,10 +590,10 @@ async function readSource(projectRoot: string, source: string): Promise<{ conten
   };
 }
 
-/**
- * Download a URL with progress bar, returning the raw body and content type.
- */
-async function downloadWithProgress(url: string): Promise<{ body: Uint8Array; contentType: string }> {
+async function downloadSource(
+  url: string,
+  onProgress?: (downloaded: number, total: number) => void | Promise<void>,
+): Promise<{ body: Uint8Array; contentType: string }> {
   const response = await fetch(url, {
     signal: AbortSignal.timeout(120_000),
     headers: { "User-Agent": "vos-kb/1.0" },
@@ -538,42 +607,20 @@ async function downloadWithProgress(url: string): Promise<{ body: Uint8Array; co
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let downloaded = 0;
-  const startedAt = Date.now();
-
-  const shortUrl = url.length > 60 ? url.slice(0, 57) + "..." : url;
-  process.stderr.write(`  ↓ ${shortUrl}\n`);
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     chunks.push(value);
     downloaded += value.length;
-    renderProgress(downloaded, contentLength, startedAt);
+    await onProgress?.(downloaded, contentLength);
   }
-  process.stderr.write("\n");
 
   const total = chunks.reduce((s, c) => s + c.length, 0);
   const body = new Uint8Array(total);
   let offset = 0;
   for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.length; }
   return { body, contentType };
-}
-
-function renderProgress(downloaded: number, total: number, startedAt: number): void {
-  const elapsed = (Date.now() - startedAt) / 1000;
-  const speed = elapsed > 0 ? (downloaded / 1024 / elapsed).toFixed(0) : "0";
-  if (total > 0) {
-    const pct = Math.min(downloaded / total, 1);
-    const w = 30;
-    const filled = Math.round(pct * w);
-    const bar = "█".repeat(filled) + "░".repeat(w - filled);
-    const dl = (downloaded / 1024 / 1024).toFixed(1);
-    const tl = (total / 1024 / 1024).toFixed(1);
-    process.stderr.write(`\r  [${bar}] ${(pct * 100).toFixed(0)}%  ${dl}/${tl} MB  ${speed} KB/s`);
-  } else {
-    const dl = (downloaded / 1024).toFixed(0);
-    process.stderr.write(`\r  ${dl} KB  ${speed} KB/s`);
-  }
 }
 
 /**
@@ -771,6 +818,16 @@ function gitListFiles(dir: string): string[] | undefined {
   }
   if (result.exitCode !== 0) return undefined;
   return new TextDecoder().decode(result.stdout).split(/\r?\n/).filter(Boolean);
+}
+
+async function reportKbAddProgress(options: KbAddOptions, progress: KbAddProgress): Promise<void> {
+  await options.onProgress?.(progress);
+}
+
+function formatByteCount(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 }
 
 function requireEmbedder(embedder: KbEmbedder | undefined): KbEmbedder {

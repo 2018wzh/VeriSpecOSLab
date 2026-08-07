@@ -1830,9 +1830,9 @@ export async function executeLedgerRecord(
 
 export async function executeKbAdd(
   command: KbAddCommand,
-  projectRoot: string,
-  evidence: EvidenceWriter,
+  context: ExecContext,
 ): Promise<CommandOutcome> {
+  const { projectRoot, evidence } = context;
   const source = await addKbSource(projectRoot, {
     source: command.source,
     sourceKind: command.sourceKind,
@@ -1841,12 +1841,27 @@ export async function executeKbAdd(
     recursive: command.recursive,
     branch: command.branch,
     tag: command.tag,
-  }, { embedder: createKbEmbedder(projectRoot) });
+  }, {
+    embedder: createKbEmbedder(projectRoot),
+    onProgress: (progress) => {
+      updateProgress(context, {
+        stage: "kb add",
+        phase: progress.phase,
+        current: progress.current,
+        total: progress.total,
+        percent: progress.percent,
+        status: "running",
+        message: progress.message,
+      });
+    },
+  });
+  updateProgress(context, { stage: "kb add", phase: "artifacts", percent: 96, status: "running", message: "writing add result" });
   const artifact = path.join(projectRoot, ".vos", "kb", "last-add.json");
   await mkdir(path.dirname(artifact), { recursive: true });
   await writeFile(artifact, `${JSON.stringify(source, null, 2)}\n`);
   evidence.addArtifact("kb", path.relative(projectRoot, artifact), "kb source added");
   if (command.manifestPath) {
+    updateProgress(context, { stage: "kb add", phase: "manifest", percent: 98, status: "running", message: "exporting manifest" });
     const manifest = await exportKbManifest(projectRoot);
     const manifestPath = path.resolve(projectRoot, command.manifestPath);
     await mkdir(path.dirname(manifestPath), { recursive: true });
