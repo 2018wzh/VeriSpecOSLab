@@ -88,42 +88,31 @@ function writeCwdCommand(): string[] {
 }
 
 describe("xv6-spec offline runtime flow", () => {
-  test("repository fixture tracks VOS agent and KB configuration", () => {
+  test("repository fixture tracks the student v2 specs and execution projection", () => {
     const repoRoot = join(import.meta.dir, "../../../..");
     const xv6Root = join(repoRoot, "examples", "xv6-spec");
-    const policy = readFileSync(join(xv6Root, ".vos", "policy.yaml"), "utf8");
-    const config = readFileSync(join(xv6Root, ".vos", "config.toml"), "utf8");
+    const manifest = readFileSync(join(xv6Root, "vos.yaml"), "utf8");
+    const design = readFileSync(join(xv6Root, "spec", "design.yaml"), "utf8");
     const gitignore = readFileSync(join(xv6Root, ".gitignore"), "utf8");
 
-    for (const command of [
-      "agent ask",
-      "agent debug",
-      "agent review-spec",
-      "agent validate-generated",
-      "kb add",
-      "kb search",
-      "kb export-manifest",
-      "kb import-manifest",
+    expect(manifest).toContain("version: vos.project.v1");
+    expect(manifest).toContain("knowledge:");
+    expect(design).toContain("system:");
+    expect(design).toContain("composition_invariants:");
+    for (const relativePath of [
+      "spec/modules/toolchain.yaml",
+      "spec/interfaces/kernel-console.yaml",
+      "spec/goals/xv6-core.yaml",
+      "spec/patches/patch-001-initial-spec.yaml",
     ]) {
-      expect(policy).toContain(`  - ${command}`);
+      expect(existsSync(join(xv6Root, relativePath))).toBe(true);
     }
-    for (const allowedPath of ["spec", "kernel", "user", "mkfs", "tests", ".vos", "Makefile", "AGENTS.md"]) {
-      expect(policy).toContain(`  - ${allowedPath}`);
+    for (const ignoredPath of [".vos/", ".env", "build/", "fs.img"]) {
+      expect(gitignore).toContain(ignoredPath);
     }
-
-    expect(config).toContain("provider = \"openai-compatible\"");
-    expect(config).toContain("model = \"compat:ecnu-max\"");
-    expect(config).toContain("model = \"ecnu-embedding-small\"");
-    expect(config).toContain("env = \"ECNU_API_KEY\"");
-
-    for (const trackedConfig of [
-      "!.vos/project.yaml",
-      "!.vos/policy.yaml",
-      "!.vos/config.toml",
-      "!.vos/toolchain.json",
-    ]) {
-      expect(gitignore).toContain(trackedConfig);
-    }
+    expect(gitignore).not.toContain("!.vos/");
+    expect(gitignore).not.toContain("policy.yaml");
+    expect(gitignore).not.toContain("config.toml");
   });
 
   test("supports dry-run build, run, and public verify without LLM/toolchain/QEMU", async () => {
