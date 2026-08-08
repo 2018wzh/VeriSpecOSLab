@@ -211,6 +211,47 @@ const schemas: Record<string, OutputSchemaDefinition> = {
       references: { type: "array", items: stringObject },
     }, ["summary", "references"]),
   },
+  "student_design_proposal.v1": {
+    id: "student_design_proposal.v1",
+    description: "Confirmed student DesignSpec proposal represented as owned file contents.",
+    schema: objectSchema({
+      files: {
+        type: "array",
+        items: objectSchema({
+          path: { type: "string" },
+          content: { type: "string" },
+        }, ["path", "content"]),
+      },
+      summary: { type: "string" },
+      rationale: stringArray,
+    }, ["files"]),
+  },
+  "student_module_spec_proposal.v1": {
+    id: "student_module_spec_proposal.v1",
+    description: "Confirmed student ModuleSpec proposal represented as owned file contents.",
+    schema: objectSchema({
+      files: {
+        type: "array",
+        items: objectSchema({
+          path: { type: "string" },
+          content: { type: "string" },
+        }, ["path", "content"]),
+      },
+      summary: { type: "string" },
+      rationale: stringArray,
+    }, ["files"]),
+  },
+  "student_implementation_result.v1": {
+    id: "student_implementation_result.v1",
+    description: "Student implementation validation result returned after worktree checks.",
+    schema: objectSchema({
+      status: { type: "string", enum: ["passed", "failed", "blocked", "partial"] },
+      changed_paths: stringArray,
+      validations: stringArray,
+      summary: { type: "string" },
+      diagnostics: stringArray,
+    }, ["status"]),
+  },
 };
 
 export function outputSchemaForId(id: string): OutputSchemaDefinition {

@@ -9,7 +9,7 @@ export const SUBMIT_RESULT_MCP_TOOL_NAME = "mcp__vos-progress__submit_result";
 
 export function createProgressMcpServerConfig(projectRoot: string): McpServerConfig {
   const mainPath = fileURLToPath(new URL("../main.ts", import.meta.url));
-  const executable = path.basename(process.execPath).toLowerCase();
+  const executable = path.basename(process.execPath).toLowerCase().replace(/\.exe$/, "");
   const bunLike = executable === "bun" || executable.startsWith("bun-");
   return {
     name: PROGRESS_MCP_SERVER_NAME,
@@ -20,6 +20,7 @@ export function createProgressMcpServerConfig(projectRoot: string): McpServerCon
 }
 
 export function appendAgentProgressInstructions(prompt: string, resultSchemaId?: string): string {
+  const resultContract = resultSchemaId ? resultSubmissionContract(resultSchemaId) : "";
   return [
     prompt,
     "",
@@ -30,6 +31,7 @@ export function appendAgentProgressInstructions(prompt: string, resultSchemaId?:
     resultSchemaId
       ? `- You MUST submit the final result by calling ${SUBMIT_RESULT_MCP_TOOL_NAME} with schema_id "${resultSchemaId}".`
       : "",
+    resultContract,
     resultSchemaId
       ? "- If submit_result returns an error, fix the same schema payload and call submit_result again."
       : "",
@@ -37,6 +39,16 @@ export function appendAgentProgressInstructions(prompt: string, resultSchemaId?:
       ? "- Final assistant text is ignored by vos-cli; only an accepted submit_result payload is read."
       : "- The progress report is auxiliary and must not replace the requested final JSON output.",
   ].join("\n");
+}
+
+function resultSubmissionContract(schemaId: string): string {
+  if (schemaId === "student_design_proposal.v1" || schemaId === "student_module_spec_proposal.v1") {
+    return `- The result object must contain files: [{path: "<allowed relative path>", content: "<complete file contents>"}]. Do not use a legacy kind field or submit a unified diff; submit the complete YAML file content.`;
+  }
+  if (schemaId === "student_implementation_result.v1") {
+    return "- The result object must contain status (passed, failed, blocked, or partial). Include changed_paths and validations when known; keep all paths relative to the worktree.";
+  }
+  return "";
 }
 
 export function parseProgressToolArguments(value: unknown): ProgressUpdate | undefined {

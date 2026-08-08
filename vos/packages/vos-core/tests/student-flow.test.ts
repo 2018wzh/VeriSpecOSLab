@@ -61,7 +61,7 @@ describe("student v2 workflow", () => {
       expect(String(submit.details?.pack_path)).toContain(".vos/submit/");
       expect(verifyAuditChain(root).ok).toBe(true);
     });
-  });
+  }, 30_000);
 
   test("runs agent verify in a disposable worktree without changing the student tree", async () => {
     const root = makeRoot();

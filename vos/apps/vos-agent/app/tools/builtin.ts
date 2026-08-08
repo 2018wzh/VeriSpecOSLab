@@ -4,6 +4,7 @@ import { createWriteTool } from "./write.ts";
 import { createEditTool } from "./edit.ts";
 import { createGlobTool } from "./glob.ts";
 import { createGrepTool } from "./grep.ts";
+import { createBashTool } from "./bash.ts";
 import { createVosTool } from "./vos.ts";
 import { createTodoReadTool, createTodoWriteTool, type TodoState } from "./todo.ts";
 import { createTaskTool, type TaskToolOptions } from "./task.ts";
@@ -54,6 +55,7 @@ export function createBuiltinToolRegistry(
     createReadTool({ rootDir }),
     createGlobTool({ rootDir }),
     createGrepTool({ rootDir }),
+    ...(opts.courseMode === false ? [createBashTool({ cwd: rootDir })] : []),
     createVosTool({
       rootDir,
       allowedCommands: opts.allowedVosCommands,

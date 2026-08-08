@@ -128,6 +128,22 @@ describe("createBuiltinToolRegistry", () => {
     expect(reg.schemas()).toHaveLength(6);
   });
 
+  test("enables host Bash only for an explicitly writable implementation registry", () => {
+    const implementation = createBuiltinToolRegistry({ courseMode: false });
+    expect(implementation.names().sort()).toEqual([
+      "Bash",
+      "Edit",
+      "Glob",
+      "Grep",
+      "Read",
+      "Vos",
+      "Write",
+    ]);
+
+    const course = createBuiltinToolRegistry({ courseMode: true });
+    expect(course.names()).not.toContain("Bash");
+  });
+
   test("includes Task only when subagent options are provided", () => {
     const reg = createBuiltinToolRegistry({
       task: {

@@ -1086,7 +1086,7 @@ async function ensureStudentProjectFiles(projectRoot: string): Promise<void> {
   const gitignore = path.join(projectRoot, ".gitignore");
   const existing = existsSync(gitignore) ? await readFile(gitignore, "utf8") : "";
   const lines = existing.split(/\r?\n/).filter(Boolean);
-  const additions = [".vos/", ".env"];
+  const additions = [".vos/", ".env", "build/", "fs.img"];
   const missing = additions.filter((entry) => !lines.includes(entry));
   if (missing.length > 0) await writeFile(gitignore, `${existing.replace(/\s*$/, "")}${existing.trim() ? "\n" : ""}${missing.join("\n")}\n`);
 }
@@ -1945,7 +1945,7 @@ export async function executeAgentDesign(
     evidence,
     requestedScope: "design",
     taskKind: "design",
-    taskPrompt: "Design the OS from the student's stated goals. Propose only spec/design.yaml, preserve the strict DesignSpec schema, and explain tradeoffs. Do not modify source code or any other file.",
+    taskPrompt: "Design the OS from the student's stated goals. Propose only spec/design.yaml, preserve the strict DesignSpec schema, and explain tradeoffs. Keep every required DesignSpec field present (system, machine, kernel, required_mechanisms, composition_invariants, and hardware_port). Do not modify source code or any other file.",
     contextValue: studentSpecContext(bundle),
     allowedPaths: ["spec/design.yaml"],
     resultSchema: "student_design_proposal.v1",
@@ -1972,13 +1972,13 @@ export async function executeAgentSpec(
   const projectRoot = context.projectRoot;
   const bundle = await buildNormalizedSpecBundle({ projectRoot });
   const module = bundle.normalized_modules.find((candidate) => candidate.module === command.module || candidate.id === command.module);
-  const modulePath = `spec/modules/${command.module.replace(/\\/g, "/")}.yaml`;
+  const modulePath = module?.path ?? `spec/modules/${command.module.replace(/\\/g, "/")}.yaml`;
   const proposal = await runStudentProposalAgent({
     context,
     evidence,
     requestedScope: `spec:${command.module}`,
     taskKind: "spec",
-    taskPrompt: `Write a strict L${module?.level ?? 1} ModuleSpec for ${command.module}. Keep all operations, properties, errors, and concurrency obligations in the same file. Propose only ${modulePath}; do not modify implementation files.`,
+    taskPrompt: `Write a strict L${module?.level ?? 1} ModuleSpec for ${command.module}. Preserve the existing module identity, interface entries, and owns paths, and keep every required field in the complete YAML file: id, module, numeric level, purpose, interface, properties, errors, and owns. The schema has no top-level operations key. Preserve simple interface names as strings; if an interface entry is an object, it must include name plus pre, post, errors, and properties arrays. Keep state, pre/post conditions, invariants, dependencies, and concurrency obligations in this same file when they are present. If purpose contains TODO or properties/errors are empty, replace those placeholders with at least one concrete, short property or error so the proposal is not unchanged. Change only fields needed for the requested spec and use short scalar values; do not add explanatory prose containing ':' to YAML values. Return syntactically valid YAML: quote scalar strings containing ':', '#', brackets, or other YAML punctuation. Propose only ${modulePath}; do not modify implementation files.`,
     contextValue: studentSpecContext(bundle, command.module),
     allowedPaths: [modulePath],
     resultSchema: "student_module_spec_proposal.v1",
@@ -2022,13 +2022,13 @@ export async function executeAgentImplement(
   try {
     const agentResult = await runAgentWithPrompt({
       projectRoot: worktree,
-      taskPrompt: `Implement ModuleSpec ${module.id}. Work only within these owned paths: ${ownedPaths.join(", ")}. Run the manifest build, public tests, and contract checks. Do not edit specs, .git, .vos/runs, or worktrees. Stop when evidence is complete or report the root cause.`,
+      taskPrompt: `Implement ModuleSpec ${module.id}. Work only within these owned paths: ${ownedPaths.join(", ")}. Replace any TODO or placeholder implementation with the behavior required by the ModuleSpec and manifest checks; do not finish with no source changes when an owned implementation is a placeholder. Run the manifest build, public tests, and contract checks. Do not edit specs, .git, .vos/runs, or worktrees. Stop when evidence is complete or report the root cause.`,
       taskKind: "implementation",
       requestedScope: `implement:${module.id}`,
       context: studentSpecContext(bundle, module.id),
       allowedPaths: ownedPaths,
       requiredValidations: ["build", "public tests", "contract checks"],
-      courseMode: true,
+      courseMode: false,
       resultSubmissionSchema: "student_implementation_result.v1",
       taskRunner: context.agentRunner,
       onEvent: createAgentProgressParams(context, "agent implement").onEvent,
@@ -2186,17 +2186,24 @@ async function runStudentProposalAgent(params: {
     });
     const resultValue = result.parsedResult ?? safeJsonTryParse(result.resultText) ?? result.resultText;
     const files = extractStudentProposalFiles(resultValue);
+    const declaredViolations: string[] = [];
     for (const file of files) {
       if (!isOwnedStudentPath(file.path, params.allowedPaths, true)) {
-        throw new CliError(`agent proposal escapes allowed paths: ${file.path}`, "policy_blocked", { reason: "owns_violation", path: file.path });
+        declaredViolations.push(file.path);
+        continue;
       }
       const target = path.join(worktree, file.path);
       await mkdir(path.dirname(target), { recursive: true });
       await writeFile(target, file.content);
     }
     const changed = await studentChangedPaths(worktree);
-    const violations = changed.filter((target) => !isOwnedStudentPath(target, params.allowedPaths, true));
-    if (violations.length > 0) throw new CliError("agent proposal changed paths outside its scope", "policy_blocked", { reason: "owns_violation", changed_targets: violations });
+    const violations = [...new Set([
+      ...declaredViolations,
+      ...changed.filter((target) => !isOwnedStudentPath(target, params.allowedPaths, true)),
+    ])];
+    const patch = await studentWorktreeDiff(worktree);
+    await writeStudentAgentArtifact(projectRoot, params.evidence, params.taskKind, { scope: params.requestedScope, patch, result: resultValue });
+    if (violations.length > 0) throw new CliError("agent proposal changed paths outside its scope", "policy_blocked", { reason: "owns_violation", changed_targets: violations, patch_available: Boolean(patch) });
     const proposedBundle = await buildNormalizedSpecBundle({ projectRoot: worktree });
     const targetDiagnostics = proposedBundle.diagnostics.filter((diagnostic) =>
       diagnostic.severity === "error" && diagnostic.path && params.allowedPaths.some((allowed) => {
@@ -2209,10 +2216,9 @@ async function runStudentProposalAgent(params: {
       throw new CliError(`${params.taskKind} proposal failed strict schema validation`, "validation_failed", {
         reason: "proposal_schema_invalid",
         diagnostics: targetDiagnostics,
+        patch_available: Boolean(patch),
       });
     }
-    const patch = await studentWorktreeDiff(worktree);
-    await writeStudentAgentArtifact(projectRoot, params.evidence, params.taskKind, { scope: params.requestedScope, patch, result: resultValue });
     return { patch, files: changed, result: resultValue, baseHead };
   } finally {
     await removeStudentWorktree(projectRoot, worktree);
@@ -2306,7 +2312,8 @@ function isOwnedStudentPath(target: string, ownedPaths: readonly string[], allow
 }
 
 function assertStudentModuleName(value: string): void {
-  if (!/^[A-Za-z0-9._-]+$/.test(value) || value === "." || value === "..") {
+  const normalized = value.replace(/\\/g, "/");
+  if (!/^[A-Za-z0-9._/-]+$/.test(normalized) || normalized === "." || normalized === ".." || normalized.startsWith("/") || normalized.endsWith("/") || normalized.split("/").some((segment) => !segment || segment === "." || segment === "..")) {
     throw new CliError(`invalid module name: ${value}`, "validation_failed", { reason: "module_path_invalid" });
   }
 }

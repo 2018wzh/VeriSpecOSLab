@@ -80,7 +80,9 @@ export async function runAgentWithPrompt(params: {
     task: appendAgentProgressInstructions(params.taskPrompt, params.resultSubmissionSchema),
     taskKind: params.taskKind,
     requestedScope: params.requestedScope,
-    agentProfile: params.agentProfile,
+    agentProfile: params.agentProfile ?? (params.resultSubmissionSchema
+      ? { outputSchema: params.resultSubmissionSchema }
+      : undefined),
     context: params.context,
     contextRefs: params.contextRefs,
     evidenceRefs: params.evidenceRefs,

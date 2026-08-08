@@ -88,6 +88,18 @@ Tests inject `ScriptedChatClient`/`CallbackChatClient` stubs and
 never touch the network. The OpenAI message shape is the canonical
 internal format; the Anthropic client translates at its boundary.
 
+## Student v2 task profiles
+
+The in-process student loop routes `design`, `spec`, and `implementation`
+to dedicated profiles. Design and spec return
+`student_design_proposal.v1` and `student_module_spec_proposal.v1` file
+proposals through the progress MCP tool. Implementation returns
+`student_implementation_result.v1` and may use Read/Write/Edit/Bash/Vos only
+inside the detached worktree and caller-provided `owns` paths. The worktree
+is a Git rollback boundary, not a process, network, credential, or host
+filesystem security sandbox; host commands inherit the current user and
+network permissions.
+
 Full architecture details: [docs/architecture.md](docs/architecture.md).
 
 ## Adding a tool

@@ -26,6 +26,9 @@ function tool(name: string): Tool {
 
 describe("agent task profiles", () => {
   const cliTaskKinds = [
+    "design",
+    "spec",
+    "implementation",
     "plan",
     "design_review",
     "spec_revision",
@@ -46,6 +49,9 @@ describe("agent task profiles", () => {
 
   test("routes every VOS CLI agent task kind to an explicit profile", () => {
     const expected: Record<string, string> = {
+      design: "student_design_proposal.v1",
+      spec: "student_module_spec_proposal.v1",
+      implementation: "student_implementation_result.v1",
       plan: "plan_draft.v1",
       design_review: "spec_review.v1",
       spec_revision: "spec_revision_draft.v1",
@@ -126,6 +132,19 @@ describe("agent task profiles", () => {
     expect(await allowed(validatePolicy, "mcp__project-context__spec_summary")).toBe(true);
     expect(await allowed(validatePolicy, "mcp__project-context__evidence_summary")).toBe(true);
     expect(await allowed(validatePolicy, "mcp__vos-progress__submit_result")).toBe(true);
+  });
+
+  test("student implementation profile can edit its disposable worktree and run validation", async () => {
+    const profile = resolveAgentTaskProfile({ taskKind: "implementation" });
+    const policy = createProfileToolPolicy(profile);
+
+    expect(profile.outputSchema).toBe("student_implementation_result.v1");
+    expect(await allowed(policy, "Read")).toBe(true);
+    expect(await allowed(policy, "Write")).toBe(true);
+    expect(await allowed(policy, "Edit")).toBe(true);
+    expect(await allowed(policy, "Bash")).toBe(true);
+    expect(await allowed(policy, "Vos", { command: "build" })).toBe(true);
+    expect(await allowed(policy, "Vos", { command: "run qemu" })).toBe(true);
   });
 
   test("only debug profile can use GDB MCP tools", async () => {

@@ -19,7 +19,8 @@ type ToolProfile =
   | "readonly-codegen"
   | "readonly-validation"
   | "readonly-debug"
-  | "readonly-reference";
+  | "readonly-reference"
+  | "student-implementation";
 
 type OutputSchemaId =
   | "gateway_decision.v1"
@@ -33,6 +34,9 @@ type OutputSchemaId =
   | "debug_trace_plan.v1"
   | "report_narrative.v1"
   | "reference_payload.v1"
+  | "student_design_proposal.v1"
+  | "student_module_spec_proposal.v1"
+  | "student_implementation_result.v1"
   | "knowledgebase_answer.v1";
 
 type VisibilityScope =
@@ -98,10 +102,40 @@ const DEFAULT_SYSTEM_PROMPT = [
   "The caller supplies the concrete task, context, evidence, allowed paths, and validation requirements in the user prompt.",
   "Keep role boundaries stable: do not reveal hidden tests, staff-only policy, or agent-only text verbatim to student-facing users.",
   "Read and follow applicable AGENTS.md; update it only when explicitly asked or when a durable public project convention changes.",
-  "Do not directly write files in course mode. Propose patches or structured recommendations through the declared output schema.",
+  "In course mode, proposal and review tasks must not directly write files; return patches or structured recommendations through the declared output schema. An explicitly labeled implementation task may write only the caller-provided allowed paths in its disposable worktree.",
 ].join("\n");
 
 const PROFILE_CONFIGS: AgentTaskProfileConfig[] = [
+  {
+    promptId: "student-design.v2",
+    mode: "smart",
+    taskKinds: ["design"],
+    toolProfile: "readonly-spec",
+    skills: ["os-spec-authoring"],
+    mcpServers: ["spec-index"],
+    outputSchema: "student_design_proposal.v1",
+    visibilityScope: "student-public",
+  },
+  {
+    promptId: "student-spec.v2",
+    mode: "smart",
+    taskKinds: ["spec"],
+    toolProfile: "readonly-spec",
+    skills: ["os-spec-authoring"],
+    mcpServers: ["spec-index"],
+    outputSchema: "student_module_spec_proposal.v1",
+    visibilityScope: "student-public",
+  },
+  {
+    promptId: "student-implementation.v2",
+    mode: "smart",
+    taskKinds: ["implementation"],
+    toolProfile: "student-implementation",
+    skills: ["operation-codegen", "verification-diagnosis"],
+    mcpServers: ["spec-index", "evidence-store"],
+    outputSchema: "student_implementation_result.v1",
+    visibilityScope: "student-public",
+  },
   {
     promptId: "gateway-agent.v1",
     mode: "smart",
@@ -219,6 +253,7 @@ const TOOL_PROFILE_TOOLS: Record<ToolProfile, readonly string[]> = {
   "readonly-spec": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
   "readonly-codegen": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
   "readonly-validation": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
+  "student-implementation": ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
   "readonly-debug": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS, "mcp__gdb__gdb_start", "mcp__gdb__gdb_load", "mcp__gdb__gdb_load_core", "mcp__gdb__gdb_command", "mcp__gdb__gdb_set_breakpoint", "mcp__gdb__gdb_continue", "mcp__gdb__gdb_step", "mcp__gdb__gdb_next", "mcp__gdb__gdb_finish", "mcp__gdb__gdb_print", "mcp__gdb__gdb_examine", "mcp__gdb__gdb_backtrace", "mcp__gdb__gdb_info_registers", "mcp__gdb__gdb_list_source", "mcp__gdb__gdb_list_sessions", "mcp__gdb__gdb_attach", "mcp__gdb__gdb_terminate", "mcp__qemu-monitor__qmp_query", "mcp__qemu-monitor__hmp_info", ...VISUALIZATION_TOOL_NAMES],
   "readonly-reference": ["Read", "Glob", "Grep", "TodoRead", "Task", "WebSearch", "WebFetch", ...PROJECT_CONTEXT_TOOLS, "mcp__vos-kb__kb_search", "mcp__vos-kb__kb_lookup", "mcp__vos-kb__kb_list_sources", ...VISUALIZATION_TOOL_NAMES],
 };
@@ -228,6 +263,7 @@ const TOOL_PROFILE_VOS_COMMANDS: Record<ToolProfile, readonly string[]> = {
   "readonly-spec": ["spec lint", "arch lint"],
   "readonly-codegen": ["spec lint", "arch lint", "build", "verify public"],
   "readonly-validation": ["spec lint", "arch lint", "build", "verify public", "run qemu"],
+  "student-implementation": ["spec lint", "arch lint", "build", "verify public", "run qemu"],
   "readonly-debug": ["build", "verify public", "run qemu"],
   "readonly-reference": [],
 };
