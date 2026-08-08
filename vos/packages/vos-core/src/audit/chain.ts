@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 export interface AuditChainRecord {
@@ -16,7 +15,10 @@ const AUDIT_RELATIVE_PATH = ".vos/audit/chain.jsonl";
 /** Append one immutable audit event. The file is intentionally gitignored. */
 export async function appendAuditEvent(projectRoot: string, event: unknown): Promise<AuditChainRecord> {
   const auditPath = path.join(projectRoot, AUDIT_RELATIVE_PATH);
-  await mkdir(path.dirname(auditPath), { recursive: true });
+  // Keep the append atomic from the caller's perspective. Progress events are
+  // deliberately fire-and-forget, so an async mkdir could leave a pending
+  // write behind a short-lived command/test workspace.
+  mkdirSync(path.dirname(auditPath), { recursive: true });
   const previous = lastAuditRecord(auditPath);
   const recordWithoutHash = {
     sequence: (previous?.sequence ?? 0) + 1,

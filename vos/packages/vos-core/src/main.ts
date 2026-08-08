@@ -107,7 +107,7 @@ import {
   type DebugTraceInput,
 } from "./runtime/debug-trace.ts";
 import { resolveToolchainManifestPath } from "./runtime/toolchain-manifest.ts";
-import { ManifestRunner, readStudentManifest } from "./runtime/student-runner.ts";
+import { HardwareRunner, HostRunner, ManifestRunner, QemuRunner, readStudentManifest } from "./runtime/student-runner.ts";
 import { syncStudentKbSources } from "./runtime/student-kb.ts";
 import { runCommand } from "./runtime/executor.ts";
 import { buildContextBundle, loadAgentAllowedPaths } from "./agent/context.ts";
@@ -214,8 +214,7 @@ export async function executeCliInvocation(
 
   const projectRoot = path.resolve(parsed.global.projectRoot);
   return await withProjectEnv(projectRoot, async () => {
-    assertStudentCommandSurface(projectRoot, parsed.command);
-    if (parsed.command.kind !== "init" && !existsSync(path.join(projectRoot, "vos.yaml"))) {
+    if (parsed.command.kind !== "init" && !existsSync(path.join(projectRoot, "vos.yaml")) && isLegacyProject(projectRoot)) {
       await ensureDefaultProjectConfig(projectRoot);
     }
     const progress = createCommandProgress({
@@ -249,6 +248,7 @@ export async function executeCliInvocation(
     progress.start(commandLabel(parsed.command), "starting");
 
     try {
+      assertStudentCommandSurface(projectRoot, parsed.command);
       if (auth.blocked) {
         throw new CliError(`policy_blocked: ${auth.auth.reason ?? "policy_blocked"}`, "policy_blocked", {
           reason: auth.auth.reason,
@@ -324,7 +324,7 @@ export async function executeCliInvocation(
 }
 
 function assertStudentCommandSurface(projectRoot: string, command: CliCommand): void {
-  if (!existsSync(path.join(projectRoot, "vos.yaml")) || isPortalBoundProject(projectRoot)) return;
+  if (isLegacyProject(projectRoot)) return;
   const removed = new Set<CliCommand["kind"]>([
     "stage_show", "stage_save", "toolchain_lint", "toolchain_init", "spec_lint", "spec_normalize",
     "spec_check_consistency", "spec_patch_lint", "spec_patch_apply", "arch_lint", "arch_compose",
@@ -333,10 +333,22 @@ function assertStudentCommandSurface(projectRoot: string, command: CliCommand): 
     "agent_log", "agent_review_spec", "agent_ask", "kb_add", "kb_list", "kb_search", "kb_remove",
     "kb_clear", "kb_export_manifest", "kb_import_manifest",
   ]);
+  const studentCommands = new Set<CliCommand["kind"]>([
+    "init", "doctor", "spec_check", "agent_design", "agent_spec", "agent_implement", "agent_debug",
+    "agent_verify", "agent_kb", "agent_review", "build", "run_qemu", "run_hardware", "verify",
+    "report_generate", "submit_pack",
+  ]);
+  const hasStudentManifest = existsSync(path.join(projectRoot, "vos.yaml"));
   if (removed.has(command.kind)) {
     throw new CliError(`command removed from the student v2 surface: ${commandToArray(command).join(" ")}; use the documented student workflow`, "validation_failed", {
       reason: "student_command_removed",
       suggested_next_commands: ["vos spec check", "vos agent design", "vos agent kb \"your question\""],
+    });
+  }
+  if (!hasStudentManifest && !isLegacyProject(projectRoot) && studentCommands.has(command.kind) && command.kind !== "init" && command.kind !== "doctor") {
+    throw new CliError("student project is not initialized; run `vos init` first", "validation_failed", {
+      reason: "student_manifest_missing",
+      suggested_next_commands: ["vos init", "vos doctor"],
     });
   }
   if (command.kind === "verify" && command.scope !== "public") {
@@ -350,6 +362,11 @@ function isPortalBoundProject(projectRoot: string): boolean {
   if (!existsSync(metadataPath)) return false;
   const metadata = readFileSync(metadataPath, "utf8");
   return /^portal_url\s*:\s*\S+/m.test(metadata) && /^project_id\s*:\s*\S+/m.test(metadata);
+}
+
+/** Explicit legacy metadata is retained only for frozen Portal/fixture paths. */
+function isLegacyProject(projectRoot: string): boolean {
+  return isPortalBoundProject(projectRoot) || existsSync(path.join(projectRoot, ".vos", "project.yaml"));
 }
 
 export interface ExecuteVosCommandOptions {
@@ -418,7 +435,7 @@ export async function executeVosCommand(
   const parsed = { global, command } satisfies ParsedInvocation;
 
   return await withProjectEnv(projectRoot, async () => {
-    if (!existsSync(path.join(projectRoot, "vos.yaml"))) await ensureDefaultProjectConfig(projectRoot);
+    if (!existsSync(path.join(projectRoot, "vos.yaml")) && isLegacyProject(projectRoot)) await ensureDefaultProjectConfig(projectRoot);
     const progress = createSilentProgress();
     const commandArray = commandToArray(command);
     const auth = await resolveAuthContext({
@@ -633,9 +650,9 @@ async function resolveAuthContext(params: {
     };
   }
 
-  const project: { portal_url?: string; project_id?: string } = existsSync(path.join(params.projectRoot, "vos.yaml")) && !isPortalBoundProject(params.projectRoot)
-    ? {}
-    : await loadProjectConfig(params.projectRoot);
+  const project: { portal_url?: string; project_id?: string } = isLegacyProject(params.projectRoot)
+    ? await loadProjectConfig(params.projectRoot)
+    : {};
   const portalUrl = params.serveBinding?.portalUrl ?? project.portal_url;
   const projectId = params.serveBinding?.projectId ?? project.project_id;
   if (!portalUrl) {
@@ -1158,6 +1175,9 @@ export async function executeDoctor(
   _command: DoctorCommand,
   projectRoot: string,
 ): Promise<CommandOutcome> {
+  if (!existsSync(path.join(projectRoot, "vos.yaml")) && !existsSync(path.join(projectRoot, "spec", "design.yaml")) && !isLegacyProject(projectRoot)) {
+    return executeUninitializedStudentDoctor(projectRoot);
+  }
   if (existsSync(path.join(projectRoot, "vos.yaml")) || existsSync(path.join(projectRoot, "spec", "design.yaml"))) {
     return executeStudentDoctor(projectRoot);
   }
@@ -1248,6 +1268,25 @@ export async function executeDoctor(
       warnings,
       suggested_next_commands: [...suggested],
       message: missing.length === 0 ? "environment ok" : "missing required tools/configuration",
+    },
+  };
+}
+
+function executeUninitializedStudentDoctor(projectRoot: string): CommandOutcome {
+  const checks = [
+    { name: "bun", category: "base", required: true, ok: commandExists("bun"), hint: "install Bun and rerun `vos doctor`" },
+    { name: "git", category: "base", required: true, ok: commandExists("git"), hint: "install Git and rerun `vos doctor`" },
+    { name: "vos.yaml", category: "project", required: true, ok: false, hint: "run `vos init`" },
+    { name: "spec/design.yaml", category: "project", required: true, ok: false, hint: "run `vos init`" },
+    { name: "spec/modules/toolchain.yaml", category: "project", required: true, ok: false, hint: "run `vos init`" },
+  ];
+  return {
+    status: "validation_failed",
+    details: {
+      checks,
+      missing: checks.filter((check) => check.required && !check.ok).map((check) => check.name),
+      suggested_next_commands: ["vos init"],
+      message: `student project is not initialized at ${studentRelativePath(projectRoot, projectRoot) || "."}; run \`vos init\``,
     },
   };
 }
@@ -2002,16 +2041,22 @@ export async function executeAgentImplement(
     } else if (!patch.trim()) {
       validation = { status: "no_changes", agent_result: agentResult.parsedResult };
     } else {
-      const runner = new ManifestRunner(worktree, context.signal);
-      const build = await runner.build("build");
-      const manifest = await readStudentManifest(worktree);
-      const checks = [] as unknown[];
-      if (build.status === "passed") {
-        for (const [id, target] of Object.entries(manifest.manifest.checks)) {
-          if (target.verifies.some((ref) => ref === module.id || ref === module.module)) checks.push(await runner.check(id));
+      const proposedBundle = await buildNormalizedSpecBundle({ projectRoot: worktree });
+      const specDiagnostics = proposedBundle.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+      if (specDiagnostics.length > 0) {
+        validation = { status: "validation_failed", spec_diagnostics: specDiagnostics, agent_result: agentResult.parsedResult };
+      } else {
+        const runner = new HostRunner(worktree, context.signal);
+        const build = await runner.build("build");
+        const manifest = await readStudentManifest(worktree);
+        const checks = [] as unknown[];
+        if (build.status === "passed") {
+          for (const [id, target] of Object.entries(manifest.manifest.checks)) {
+            if (target.verifies.some((ref) => ref === module.id || ref === module.module)) checks.push(await runner.check(id));
+          }
         }
+        validation = { status: build.status === "passed" && checks.length > 0 && (checks as Array<{ status?: string }>).every((check) => check.status === "passed") ? "passed" : "validation_failed", build, checks, evidence: await runner.collectEvidence(), agent_result: agentResult.parsedResult };
       }
-      validation = { status: build.status === "passed" && (checks as Array<{ status?: string }>).every((check) => check.status === "passed") ? "passed" : "validation_failed", build, checks, evidence: await runner.collectEvidence(), agent_result: agentResult.parsedResult };
     }
   } finally {
     await removeStudentWorktree(projectRoot, worktree);
@@ -2041,8 +2086,21 @@ export async function executeAgentVerify(
   context: ExecContext,
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
-  const result = await executeStudentVerify({ kind: "verify", scope: "public", dryRun: false }, context, evidence);
-  return { ...result, details: { ...(result.details ?? {}), role: "verify", model_used: false } };
+  const state = await studentGitStatus(context.projectRoot);
+  if (!state.clean) {
+    return { status: "policy_blocked", details: { role: "verify", model_used: false, reason: "dirty_worktree", changed_targets: state.changed } };
+  }
+  const worktree = await createStudentWorktree(context.projectRoot, `${evidence.run_id}-verify`);
+  try {
+    const result = await executeStudentVerify(
+      { kind: "verify", scope: "public", dryRun: false },
+      { ...context, projectRoot: worktree },
+      evidence,
+    );
+    return { ...result, details: { ...(result.details ?? {}), role: "verify", model_used: false, worktree_read_only: true } };
+  } finally {
+    await removeStudentWorktree(context.projectRoot, worktree);
+  }
 }
 
 export async function executeAgentKb(
@@ -2050,11 +2108,14 @@ export async function executeAgentKb(
   context: ExecContext,
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
-  if (!command.question || command.interactive) {
-    throw new CliError("agent kb requires a question; the role is answer-only and does not open a write-capable REPL", "failed");
-  }
   const manifest = await readStudentManifest(context.projectRoot);
   await syncStudentKbSources(context.projectRoot, manifest.manifest);
+  if (command.interactive) {
+    return executeAgentAsk({ kind: "agent_ask", question: command.question, scope: "student-kb", interactive: true }, context, evidence);
+  }
+  if (!command.question) {
+    throw new CliError("agent kb requires a question unless interactive mode is enabled", "failed");
+  }
   return executeAgentAsk({ kind: "agent_ask", question: command.question, scope: "student-kb", interactive: false }, context, evidence);
 }
 
@@ -2078,6 +2139,7 @@ interface StudentProposal {
   patch: string;
   files: string[];
   result: unknown;
+  baseHead: string | undefined;
 }
 
 function studentSpecContext(bundle: NormalizedSpecBundle, focus?: string): Record<string, unknown> {
@@ -2107,6 +2169,7 @@ async function runStudentProposalAgent(params: {
   const projectRoot = params.context.projectRoot;
   const state = await studentGitStatus(projectRoot);
   if (!state.clean) throw new CliError("agent spec/design requires a clean HEAD", "policy_blocked", { reason: "dirty_worktree", changed_targets: state.changed });
+  const baseHead = currentHead(projectRoot);
   const worktree = await createStudentWorktree(projectRoot, `${params.evidence.run_id}-${params.worktreeLabel}`);
   try {
     const result = await runAgentWithPrompt({
@@ -2134,9 +2197,23 @@ async function runStudentProposalAgent(params: {
     const changed = await studentChangedPaths(worktree);
     const violations = changed.filter((target) => !isOwnedStudentPath(target, params.allowedPaths, true));
     if (violations.length > 0) throw new CliError("agent proposal changed paths outside its scope", "policy_blocked", { reason: "owns_violation", changed_targets: violations });
+    const proposedBundle = await buildNormalizedSpecBundle({ projectRoot: worktree });
+    const targetDiagnostics = proposedBundle.diagnostics.filter((diagnostic) =>
+      diagnostic.severity === "error" && diagnostic.path && params.allowedPaths.some((allowed) => {
+        const normalizedDiagnostic = diagnostic.path!.replace(/\\/g, "/");
+        const normalizedAllowed = allowed.replace(/\\/g, "/").replace(/\/$/, "");
+        return normalizedDiagnostic === normalizedAllowed || normalizedDiagnostic.startsWith(`${normalizedAllowed}/`);
+      }),
+    );
+    if (targetDiagnostics.length > 0) {
+      throw new CliError(`${params.taskKind} proposal failed strict schema validation`, "validation_failed", {
+        reason: "proposal_schema_invalid",
+        diagnostics: targetDiagnostics,
+      });
+    }
     const patch = await studentWorktreeDiff(worktree);
     await writeStudentAgentArtifact(projectRoot, params.evidence, params.taskKind, { scope: params.requestedScope, patch, result: resultValue });
-    return { patch, files: changed, result: resultValue };
+    return { patch, files: changed, result: resultValue, baseHead };
   } finally {
     await removeStudentWorktree(projectRoot, worktree);
   }
@@ -2168,7 +2245,7 @@ async function finalizeStudentProposal(params: {
   const patchPath = path.join(params.evidence.artifacts_root, "student-proposal.patch");
   await writeFile(patchPath, params.proposal.patch);
   params.evidence.addArtifactFromPath("agent", patchPath, "student proposal diff");
-  const baseHead = currentHead(params.projectRoot);
+  const baseHead = params.proposal.baseHead;
   if (!params.confirm) {
     return { status: "planned", details: { proposal: params.description, confirmation_required: true, patch: path.relative(params.projectRoot, patchPath), files: params.proposal.files, spec_hash: params.specHash } };
   }
@@ -2185,13 +2262,13 @@ async function finalizeStudentProposal(params: {
   return { status: "passed", details: { proposal: params.description, committed: true, commit: commit.stdout.trim(), files: changed, spec_hash: params.specHash } };
 }
 
-async function studentOwnedPaths(projectRoot: string, bundle: NormalizedSpecBundle, module: { module: string; owns: string[] }): Promise<string[]> {
+async function studentOwnedPaths(projectRoot: string, bundle: NormalizedSpecBundle, module: { id?: string; module: string; owns: string[] }): Promise<string[]> {
   const paths = new Set(module.owns);
   for (const patch of bundle.patch_records) {
-    if (!(await isCommittedSpecPatch(projectRoot, patch, module.module))) continue;
-    if (patch.affected_modules.some((affected) => affected === module.module || moduleMatches(affected, module.module))) {
+    if (!(await isCommittedSpecPatch(projectRoot, patch, [module.module, module.id]))) continue;
+    if (patch.affected_modules.some((affected) => [module.module, module.id].some((ref) => Boolean(ref && (affected === ref || moduleMatches(affected, ref)))))) {
       for (const affected of patch.affected_modules) {
-        const owner = bundle.normalized_modules.find((candidate) => candidate.module === affected || moduleMatches(candidate.module, affected));
+        const owner = bundle.normalized_modules.find((candidate) => candidate.module === affected || candidate.id === affected || moduleMatches(candidate.module, affected) || moduleMatches(candidate.id, affected));
         for (const owned of owner?.owns ?? []) paths.add(owned);
       }
     }
@@ -2199,10 +2276,20 @@ async function studentOwnedPaths(projectRoot: string, bundle: NormalizedSpecBund
   return [...paths].map((value) => value.replace(/\\/g, "/"));
 }
 
-async function isCommittedSpecPatch(projectRoot: string, patch: SpecPatchRecord, module: string): Promise<boolean> {
-  if (!patch.commit_sha || !patch.affected_modules.some((affected) => affected === module || moduleMatches(affected, module))) return false;
-  const result = await runCommand({ command: ["git", "merge-base", "--is-ancestor", patch.commit_sha, "HEAD"], cwd: projectRoot });
+async function isCommittedSpecPatch(projectRoot: string, patch: SpecPatchRecord, modules: Array<string | undefined>): Promise<boolean> {
+  if (!patch.affected_modules.some((affected) => modules.some((module) => Boolean(module && (affected === module || moduleMatches(affected, module)))))) return false;
+  const commitSha = patch.commit_sha?.trim() || await inferSpecPatchCommit(projectRoot, patch.path);
+  if (!commitSha) return false;
+  const result = await runCommand({ command: ["git", "merge-base", "--is-ancestor", commitSha, "HEAD"], cwd: projectRoot });
   return result.exitCode === 0;
+}
+
+async function inferSpecPatchCommit(projectRoot: string, patchPath: string | undefined): Promise<string | undefined> {
+  if (!patchPath) return undefined;
+  const result = await runCommand({ command: ["git", "log", "-1", "--format=%H", "--", patchPath], cwd: projectRoot });
+  if (result.exitCode !== 0) return undefined;
+  const commit = result.stdout.trim().split(/\s+/)[0];
+  return /^[0-9a-f]{7,64}$/i.test(commit) ? commit : undefined;
 }
 
 function isOwnedStudentPath(target: string, ownedPaths: readonly string[], allowSpec = false): boolean {
@@ -3049,7 +3136,7 @@ export async function executeRunQemu(command: RunQemuCommand, context: ExecConte
       const manifest = await readStudentManifest(projectRoot);
       return { status: "planned", details: { target: "qemu", program: manifest.manifest.runners.qemu?.program, args: manifest.manifest.runners.qemu?.args } };
     }
-    const runner = new ManifestRunner(projectRoot, context.signal);
+    const runner = new QemuRunner(projectRoot, context.signal);
     const result = await runner.run("qemu");
     const bundle = await runner.collectEvidence();
     const artifact = path.join(evidence.artifacts_root, "student-qemu.json");
@@ -3095,7 +3182,7 @@ export async function executeRunHardware(command: RunHardwareCommand, context: E
     const manifest = await readStudentManifest(projectRoot);
     return { status: "planned", details: { target: "hardware", program: manifest.manifest.runners.hardware?.program, args: manifest.manifest.runners.hardware?.args, human_review: "pending_human_review" } };
   }
-  const runner = new ManifestRunner(projectRoot, context.signal);
+  const runner = new HardwareRunner(projectRoot, context.signal);
   const result = await runner.run("hardware");
   const bundle = await runner.collectEvidence();
   const artifact = path.join(evidence.artifacts_root, "student-hardware.json");
@@ -3183,7 +3270,7 @@ async function executeStudentVerify(
     const manifest = await readStudentManifest(projectRoot);
     return { status: "planned", details: { diagnostics, checks: Object.keys(manifest.manifest.checks), build: manifest.manifest.build.program } };
   }
-  const runner = new ManifestRunner(projectRoot, context.signal);
+  const runner = new HostRunner(projectRoot, context.signal);
   const build = await runner.build("build");
   const checks = [] as Array<Awaited<ReturnType<ManifestRunner["check"]>>>;
   if (build.status === "passed") {
@@ -3676,6 +3763,28 @@ export async function executeAgentDebug(
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
+  // Keep the frozen Portal/legacy command path intact. Student v2 projects are
+  // identified by vos.yaml and use the deterministic, read-only debug report
+  // below; legacy projects still expose their existing interactive profile.
+  if (!existsSync(path.join(projectRoot, "vos.yaml")) && !command.logPath && !command.runId) {
+    updateProgress(context, { stage: "agent debug", status: "running", message: "starting interactive repl" });
+    context.progress?.hide();
+    await runAgentInteractiveTask({
+      projectRoot,
+      taskKind: "debug",
+      requestedScope: "agent.debug",
+      courseMode: true,
+      allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      runner: context.interactiveAgentRunner,
+    });
+    return {
+      status: "passed",
+      details: {
+        interactive: true,
+        profile: "debug",
+      },
+    };
+  }
   if (!command.logPath && !command.runId) {
     const bundle = await buildNormalizedSpecBundle({ projectRoot });
     const state = await studentGitStatus(projectRoot).catch(() => ({ clean: false, changed: [] as string[] }));
@@ -5398,7 +5507,7 @@ function printResult(result: Record<string, unknown>, asJson: boolean, verbose: 
 }
 
 export function printHelp(topic?: string, stream: "stdout" | "stderr" = "stdout"): boolean {
-  const lines = STUDENT_HELP_TOPICS[topic ?? ""] ?? HELP_TOPICS[topic ?? ""];
+  const lines = STUDENT_HELP_TOPICS[topic ?? ""];
   const write = stream === "stdout" ? console.log : console.error;
   if (!lines) {
     console.error(`unknown help topic: ${topic}`);
@@ -5412,7 +5521,7 @@ export function printHelp(topic?: string, stream: "stdout" | "stderr" = "stdout"
 export function printCliError(error: unknown, argv: string[]): void {
   console.error(error instanceof Error ? error.message : "unknown error");
   const topic = inferHelpTopic(argv);
-  if (topic && (STUDENT_HELP_TOPICS[topic] || HELP_TOPICS[topic])) {
+  if (topic && STUDENT_HELP_TOPICS[topic]) {
     console.error("");
     printHelp(topic, "stderr");
   }

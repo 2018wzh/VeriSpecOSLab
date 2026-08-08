@@ -34,6 +34,31 @@ export async function loadProjectConfig(projectRoot: string): Promise<ProjectCon
 
 export async function loadPolicyConfig(projectRoot: string): Promise<PolicyConfig> {
   const policyPath = path.resolve(projectRoot, ".vos", "policy.yaml");
+  const isStudentV2 = existsSync(path.resolve(projectRoot, "vos.yaml")) && !existsSync(path.resolve(projectRoot, ".vos", "project.yaml"));
+  if (isStudentV2) {
+    return {
+      allowed_commands: [
+        "init",
+        "doctor",
+        "spec check",
+        "agent design",
+        "agent spec",
+        "agent implement",
+        "agent debug",
+        "agent verify",
+        "agent kb",
+        "agent review",
+        "build",
+        "run qemu",
+        "run hardware",
+        "verify",
+        "report",
+        "submit",
+      ],
+      allowed_paths: ["spec", "src", "tests", ".vos", "Makefile", "xtask"],
+      visibility_scope: "public",
+    };
+  }
   if (!existsSync(policyPath)) {
     return {
       allowed_commands: [

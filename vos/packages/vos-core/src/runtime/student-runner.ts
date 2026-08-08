@@ -70,7 +70,7 @@ export class ManifestRunner implements Runner {
   private readonly evidence: EvidenceBundle = { cleanHead: false, submittable: false, runs: [] };
   private readonly manifestPromise: Promise<{ path: string; manifest: ProjectManifest }>;
 
-  constructor(private readonly projectRoot: string, private readonly signal?: AbortSignal) {
+  constructor(protected readonly projectRoot: string, private readonly signal?: AbortSignal) {
     this.manifestPromise = readStudentManifest(projectRoot);
   }
 
@@ -153,7 +153,10 @@ export class ManifestRunner implements Runner {
 /** Host checks use the same structured command/evidence path as build. */
 export class HostRunner extends ManifestRunner {
   override async run(target = "host"): Promise<RunEvidence> {
-    return this.check(target);
+    const { manifest } = await readStudentManifest(this.projectRoot);
+    const checkId = target === "host" ? Object.keys(manifest.checks)[0] : target;
+    if (!checkId) throw new Error("host runner requires at least one public or contract check");
+    return this.check(checkId);
   }
 }
 
@@ -203,7 +206,7 @@ async function currentHead(projectRoot: string): Promise<string | undefined> {
 
 function isRuntimeArtifact(file: string): boolean {
   const normalized = file.replace(/\\/g, "/");
-  return normalized.startsWith(".vos/") || normalized === ".gitignore" || normalized === "AGENTS.md";
+  return normalized.startsWith(".vos/");
 }
 
 async function gitOutput(projectRoot: string, args: string[]): Promise<string[]> {

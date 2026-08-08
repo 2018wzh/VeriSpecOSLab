@@ -1,779 +1,140 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { executeCliInvocation } from "../src/main.ts";
-import type { AgentTaskRequest } from "vos-agent/headless";
 
-const tmpRoots: string[] = [];
+const roots: string[] = [];
 
 afterEach(() => {
-  for (const root of tmpRoots.splice(0)) {
-    rmSync(root, { recursive: true, force: true });
-  }
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-describe("reproducibility gate and agent-assisted toolchain generation", () => {
-  test("blocks evidence-producing build when current HEAD has no ledger entry", async () => {
-    const projectRoot = makeGitProject({ manifest: true });
+describe("student v2 initialization and reproducibility gates", () => {
+  test("doctor reports an actionable error before initialization without creating files", async () => {
+    const projectRoot = makeRoot();
+    const result = await invoke(projectRoot, "doctor");
 
-    const result = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "build",
-    ], { print: false });
-
-    expect(result.status).toBe("policy_blocked");
-    expect(result.message).toContain("ledger_missing");
-    expect(result.details?.suggested_next_commands).toContain('vos stage save --intent "record current stage state"');
+    expect(result.status).toBe("validation_failed");
+    expect(result.details?.missing).toContain("vos.yaml");
+    expect(result.details?.suggested_next_commands).toEqual(["vos init"]);
+    expect(existsSync(join(projectRoot, "vos.yaml"))).toBe(false);
+    expect(existsSync(join(projectRoot, ".vos"))).toBe(true);
+    expect(existsSync(join(projectRoot, ".vos", "project.yaml"))).toBe(false);
   });
 
-  test("allows dry-run build when current HEAD has no ledger entry and draft files exist", async () => {
-    const projectRoot = makeGitProject({ manifest: true });
-    writeFileSync(join(projectRoot, "draft-notes.md"), "human draft\n");
-
-    const result = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "build",
-      "--dry-run",
-    ], { print: false });
-
-    expect(result.status).toBe("ok");
-    const manifest = JSON.parse(readFileSync(join(projectRoot, ".vos", "runs", result.run_id, "manifest.json"), "utf8"));
-    expect(manifest.git_rev).toBeTruthy();
-    expect(manifest.ledger_ref).toBeUndefined();
-  });
-
-  test("allows read-only project commands when current HEAD has no ledger entry", async () => {
-    const projectRoot = makeGitProject({
-      manifest: true,
-      allowedCommands: ["spec lint", "stage show"],
-    });
-
-    const lint = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "spec",
-      "lint",
-      "--no-agent",
-    ], { print: false });
-
-    expect(lint.status).not.toBe("policy_blocked");
-    const lintManifest = JSON.parse(readFileSync(join(projectRoot, ".vos", "runs", lint.run_id, "manifest.json"), "utf8"));
-    expect(lintManifest.git_rev).toBeTruthy();
-    expect(lintManifest.ledger_ref).toBeUndefined();
-
-    const stage = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "stage",
-      "show",
-    ], { print: false });
-
-    expect(stage.status).toBe("passed");
-    expect(stage.details?.current_stage).toBe("boot");
-  });
-
-  test("allows agent ask from a dirty worktree", async () => {
-    const projectRoot = makeGitProject({
-      manifest: true,
-      allowedCommands: ["agent ask"],
-    });
-    writeFileSync(join(projectRoot, ".vos", "config.toml"), [
-      "[kb.embedding]",
-      "provider = \"openai-compatible\"",
-      "model = \"fake\"",
-      "base_url = \"http://127.0.0.1:1\"",
-      "",
-      "[kb.embedding.auth]",
-      "env = \"EMBEDDING_API_KEY\"",
-      "",
-    ].join("\n"));
-    writeFileSync(join(projectRoot, ".env"), "EMBEDDING_API_KEY=test-key\n");
-    writeFileSync(join(projectRoot, "draft-notes.md"), "human draft\n");
-    let captured: AgentTaskRequest | undefined;
-    const agentRunner = async (options: AgentTaskRequest) => {
-      captured = options;
-      return {
-        content: "ignored",
-        events: acceptedSubmitEvents("knowledgebase_answer.v1", {
-          answer: "Review the current stage specs before editing.",
-          stage_key: "boot",
-          design_goal_alignment: ["keep draft work visible"],
-          citations: [],
-          suggested_next_steps: ["run vos spec lint --no-agent"],
-          allowed_snippets: [],
-        }),
-      };
-    };
-
-    const result = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "agent",
-      "ask",
-      "--stage",
-      "boot",
-      "What should I check before editing?",
-    ], { print: false, agentRunner });
-
-    expect(result.status).toBe("passed");
-    expect(captured?.taskKind).toBe("knowledgebase_qa");
-    expect(result.details?.answer).toMatchObject({ answer: "Review the current stage specs before editing." });
-    const manifest = JSON.parse(readFileSync(join(projectRoot, ".vos", "runs", result.run_id, "manifest.json"), "utf8"));
-    expect(manifest.git_rev).toBeTruthy();
-    expect(manifest.ledger_ref).toBeUndefined();
-  });
-
-  test("blocks verification from a dirty worktree", async () => {
-    const projectRoot = makeGitProject({
-      manifest: true,
-      allowedCommands: ["verify public"],
-    });
-    await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
-    writeFileSync(join(projectRoot, "dirty.c"), "int dirty;\n");
-
-    const result = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "verify",
-      "public",
-    ], { print: false });
-
-    expect(result.status).toBe("policy_blocked");
-    expect(result.message).toContain("dirty_worktree");
-  });
-
-  test("init records current HEAD and allows build with generated manifest", async () => {
-    const projectRoot = makeGitProject({ manifest: true });
-    writeFileSync(join(projectRoot, ".gitignore"), "build/\n");
-
-    const init = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "init",
-    ], { print: false });
-    expect(init.status).toBe("passed");
-    expect(readFileSync(join(projectRoot, ".vos", "commit-ledger.jsonl"), "utf8")).toContain("\"actor\":\"human\"");
-    expect(readFileSync(join(projectRoot, ".gitignore"), "utf8")).toBe("build/\n.vos/\n.env\n");
-    expect(readFileSync(join(projectRoot, "AGENTS.md"), "utf8")).toContain("Update this file when new public project conventions");
-
-    await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "init",
-    ], { print: false });
-    expect(readFileSync(join(projectRoot, ".gitignore"), "utf8")).toBe("build/\n.vos/\n.env\n");
-    expect(readFileSync(join(projectRoot, "AGENTS.md"), "utf8")).toContain("Update this file when new public project conventions");
-
-    const build = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "build",
-      "--dry-run",
-    ], { print: false });
-
-    expect(build.status).toBe("ok");
-    const manifest = JSON.parse(readFileSync(join(projectRoot, ".vos", "runs", build.run_id, "manifest.json"), "utf8"));
-    expect(manifest.git_rev).toBeTruthy();
-    expect(manifest.ledger_ref).toContain(".vos/commit-ledger.jsonl#");
-    expect(manifest.spec_hash).toBeTruthy();
-    expect(manifest.input_files).toContain(".vos/toolchain.json");
-    expect(manifest.input_files).toContain("Makefile");
-    expect(manifest.output_files).toContain("build/kernel.bin");
-  });
-
-  test("init bootstraps an empty directory with git, default architecture stage, and a scoped initial commit", async () => {
-    const projectRoot = makeEmptyProject();
-    writeFileSync(join(projectRoot, "notes.txt"), "private scratch\n");
-
-    const result = await withGitIdentity(async () =>
-      await executeCliInvocation([
-        "bun",
-        "vos",
-        "--project-root",
-        projectRoot,
-        "--json",
-        "init",
-      ], { print: false })
-    );
+  test("init creates only the five-family student projection and commits it", async () => {
+    const projectRoot = makeRoot();
+    const result = await withGitIdentity(() => invoke(projectRoot, "init"));
 
     expect(result.status).toBe("passed");
     expect(existsSync(join(projectRoot, ".git"))).toBe(true);
-    expect(readFileSync(join(projectRoot, ".vos", "project.yaml"), "utf8")).toContain("current_stage: architecture-seed");
-    expect(readFileSync(join(projectRoot, ".vos", "commit-ledger.jsonl"), "utf8")).toContain("initialize VOS project ledger");
-    expect(git(projectRoot, ["log", "-1", "--pretty=%s"]).stdout.trim()).toBe("[vos][init] Initialize VOS project");
-    expect(git(projectRoot, ["ls-tree", "-r", "--name-only", "HEAD"]).stdout.split(/\r?\n/).filter(Boolean).sort()).toEqual([
-      ".gitignore",
-      "AGENTS.md",
-    ]);
-    expect(git(projectRoot, ["status", "--porcelain", "--untracked-files=all"]).stdout).toContain("?? notes.txt");
+    expect(existsSync(join(projectRoot, "vos.yaml"))).toBe(true);
+    expect(existsSync(join(projectRoot, "spec", "design.yaml"))).toBe(true);
+    expect(existsSync(join(projectRoot, "spec", "modules", "toolchain.yaml"))).toBe(true);
+    expect(existsSync(join(projectRoot, ".vos", "project.yaml"))).toBe(false);
+    expect(existsSync(join(projectRoot, ".vos", "policy.yaml"))).toBe(false);
+    expect(git(projectRoot, ["log", "-1", "--pretty=%s"]).trim()).toBe("[vos][init] Initialize VOS project");
+    expect(git(projectRoot, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
   });
 
-  test("init reports missing git identity instead of inventing an author", async () => {
-    const projectRoot = makeEmptyProject();
+  test("init is idempotent and never overwrites a student-authored projection", async () => {
+    const projectRoot = makeRoot();
+    await withGitIdentity(async () => {
+      expect((await invoke(projectRoot, "init")).status).toBe("passed");
+      const design = readFileSync(join(projectRoot, "spec", "design.yaml"), "utf8");
+      writeFileSync(join(projectRoot, "spec", "design.yaml"), `${design}# student note\n`);
+      const second = await invoke(projectRoot, "init");
+      expect(second.status).toBe("passed");
+      expect(readFileSync(join(projectRoot, "spec", "design.yaml"), "utf8")).toContain("# student note");
+      expect(git(projectRoot, ["status", "--porcelain"]).trim()).toContain("spec/design.yaml");
+    });
+  });
 
-    const result = await withoutGitIdentity(async () =>
-      await executeCliInvocation([
-        "bun",
-        "vos",
-        "--project-root",
-        projectRoot,
-        "--json",
-        "init",
-      ], { print: false })
-    );
+  test("init fails closed when Git identity is unavailable", async () => {
+    const projectRoot = makeRoot();
+    const result = await withoutGitIdentity(() => invoke(projectRoot, "init"));
 
     expect(result.status).toBe("policy_blocked");
     expect(result.message).toContain("git identity is required");
     expect(gitMaybe(projectRoot, ["rev-parse", "--verify", "HEAD"]).ok).toBe(false);
   });
 
-  test("init does not overwrite an existing AGENTS.md", async () => {
-    const projectRoot = makeGitProject({ manifest: false });
-    writeFileSync(join(projectRoot, "AGENTS.md"), "custom agent rules\n");
-
-    const init = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "init",
-    ], { print: false });
-
-    expect(init.status).toBe("passed");
-    expect(readFileSync(join(projectRoot, "AGENTS.md"), "utf8")).toBe("custom agent rules\n");
-  });
-
-  test("init default policy lists only supported verify scopes", async () => {
-    const projectRoot = makeGitProject({ manifest: false, policy: false });
-
-    const init = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "init",
-    ], { print: false });
-
-    expect(init.status).toBe("passed");
-    const policy = readFileSync(join(projectRoot, ".vos", "policy.yaml"), "utf8");
-    expect(policy).toContain("  - verify public");
-    expect(policy).toContain("  - verify patch");
-    expect(policy).toContain("  - verify full");
-    expect(policy).toContain("  - verify invariant");
-    expect(policy).toContain("  - verify fuzz");
-    expect(policy).not.toContain("  - verify base");
-    expect(policy).not.toContain("  - verify architecture");
-    expect(policy).not.toContain("  - verify composition");
-    expect(policy).not.toContain("  - verify goal");
-  });
-
-  test("build fails instead of auto-materializing a legacy manifest", async () => {
-    const projectRoot = makeGitProject({ manifest: false });
-    await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
-
-    const result = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "build",
-      "--dry-run",
-    ], { print: false });
-
-    expect(result.status).toBe("failed");
-    expect(result.message?.replace(/\\/g, "/")).toContain(".vos/toolchain.json");
-    expect(existsSync(join(projectRoot, ".vos", "toolchain.json"))).toBe(false);
-  });
-
-  test("agent-assisted build generate gates draft, writes ledger, and creates a commit", async () => {
-    const projectRoot = makeGitProject({ manifest: false });
-    await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
-    let captured: AgentTaskRequest | undefined;
-    const agentRunner = async (options: AgentTaskRequest) => {
-      captured = options;
-      const submitted = {
-        files: [{
-          path: "Makefile",
-          content: "all:\n\tprintf generated\n",
-        }],
-        manifest: {
-          manifest_version: 2,
-          generator: { name: "vos-agent", version: "toolchain-draft-v1" },
-          files: ["Makefile"],
-          environment: { required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }] },
-          build: { variants: [{ id: "baseline", commands: ["make all"], artifacts: ["build/kernel.bin"] }] },
-          run: {
-            profiles: [{ id: "default", command: "printf", args: ["boot ok"], artifacts: ["build/kernel.bin"], timeout_secs: 1 }],
-            cases: [{ id: "smoke", profile: "default", success_regex: "boot ok" }],
-          },
-          test: { suites: [] },
-        },
-        build_instructions: "Run `vos build` after generation.",
-        spec_refs: ["spec/toolchain/build.yaml"],
-        changed_targets: ["Makefile", ".vos/toolchain.json"],
-      };
-      return {
-        content: "ignored",
-        events: acceptedSubmitEvents("toolchain_generation_draft.v1", submitted),
-      };
-    };
-
-    const result = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "build",
-      "generate",
-      "--agent-session",
-      "session-1",
-    ], { print: false, agentRunner });
-
-    expect(result.status).toBe("passed");
-    expect(captured?.courseMode).toBe(true);
-    expect(captured?.taskKind).toBe("toolchain_generate");
-    expect(captured?.task).toContain("toolchain draft");
-    expect(readFileSync(join(projectRoot, "Makefile"), "utf8")).toContain("printf generated");
-    expect(JSON.parse(readFileSync(join(projectRoot, ".vos", "toolchain.json"), "utf8")).spec_hash).toBeTruthy();
-    expect(readFileSync(join(projectRoot, ".vos", "commit-ledger.jsonl"), "utf8")).toContain("toolchain-generate");
-    expect(git(projectRoot, ["log", "-1", "--pretty=%s"]).stdout.trim()).toBe("[vos][toolchain] Generate build system");
-  });
-
-  test("toolchain init writes a deterministic manifest from spec files", async () => {
-    const projectRoot = makeGitProject({ manifest: false });
-    await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
-
-    const result = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "toolchain",
-      "init",
-    ], { print: false });
-
-    expect(result.status).toBe("passed");
-    const manifest = JSON.parse(readFileSync(join(projectRoot, ".vos", "toolchain.json"), "utf8"));
-    expect(manifest.manifest_version).toBe(2);
-    expect(manifest.environment.required_tools[0].command).toBe("true");
-    expect(manifest.build.variants[0].commands[0].command).toEqual(["make", "all"]);
-    expect(manifest.run.profiles[0].command).toBe("printf");
-    expect(manifest.run.cases[0]).toMatchObject({ success_regex: "boot ok", exit_code: 0 });
-  });
-
-  test("build generate --no-agent reuses deterministic toolchain init", async () => {
-    const projectRoot = makeGitProject({ manifest: false });
-    await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
-
-    const result = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "build",
-      "generate",
-      "--no-agent",
-    ], {
-      print: false,
-      agentRunner: async () => {
-        throw new Error("agent should not be called");
-      },
+  test("legacy student command aliases are rejected after v2 initialization", async () => {
+    const projectRoot = makeRoot();
+    await withGitIdentity(async () => {
+      expect((await invoke(projectRoot, "init")).status).toBe("passed");
+      for (const args of [["build", "generate"], ["toolchain", "init"], ["agent", "plan"]]) {
+        const result = await invoke(projectRoot, ...args);
+        expect(result.status).toBe("validation_failed");
+        expect(result.message).toContain("removed from the student v2 surface");
+      }
     });
-
-    expect(result.status).toBe("passed");
-    expect(readFileSync(join(projectRoot, "Makefile"), "utf8")).toContain("printf existing");
-    expect(JSON.parse(readFileSync(join(projectRoot, ".vos", "toolchain.json"), "utf8")).generator.name).toBe("vos-deterministic");
-  });
-
-  test("stage save commits dirty worktree and records ledger", async () => {
-    const projectRoot = makeGitProject({ manifest: true });
-    writeFileSync(join(projectRoot, "Makefile"), "all:\n\tprintf changed\n");
-
-    const result = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "stage",
-      "save",
-      "--intent",
-      "save edited makefile",
-    ], { print: false });
-
-    expect(result.status).toBe("passed");
-    expect(git(projectRoot, ["status", "--porcelain"]).stdout.trim()).toBe("");
-    expect(git(projectRoot, ["log", "-1", "--pretty=%s"]).stdout.trim()).toBe("[vos][stage] Save stage state");
-    expect(readFileSync(join(projectRoot, ".vos", "commit-ledger.jsonl"), "utf8")).toContain("save edited makefile");
-  });
-
-  test("agent plan records raw output when PlanDraft schema is invalid", async () => {
-    const projectRoot = makeGitProject({ manifest: false });
-    await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
-    const badPlan = JSON.stringify({
-      task: { title: "inspect boot" },
-      related_specs: [],
-      suspected_files: [],
-      required_validations: [],
-      notes: [],
-    });
-
-    const result = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "agent",
-      "plan",
-      "--stage",
-      "boot",
-    ], {
-      print: false,
-      agentRunner: async () => ({
-        content: "ignored",
-        events: acceptedSubmitEvents("plan_draft.v1", JSON.parse(badPlan)),
-      }),
-    });
-
-    expect(result.status).toBe("agent_output_error");
-    expect(result.message).toContain("PlanDraft.task must be string");
-    expect(readFileSync(join(projectRoot, ".vos", "runs", result.run_id, "artifacts", "agent", "agent-plan-raw.txt"), "utf8")).toBe(`${JSON.stringify(JSON.parse(badPlan), null, 2)}\n`);
-  });
-
-  test("build generate records raw output when files are not objects", async () => {
-    const projectRoot = makeGitProject({ manifest: false });
-    await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
-    const badDraft = JSON.stringify({
-      files: ["Makefile"],
-      manifest: {
-        manifest_version: 2,
-        files: ["Makefile"],
-        environment: { required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }] },
-        build: { variants: [{ id: "baseline", commands: ["make all"], artifacts: [] }] },
-        run: { profiles: [{ id: "default", command: "printf", args: ["ok"], artifacts: [] }], cases: [{ id: "smoke", profile: "default", success_regex: "ok" }] },
-        test: { suites: [] },
-      },
-      build_instructions: "bad files",
-      spec_refs: ["spec/toolchain/build.yaml"],
-      changed_targets: ["Makefile"],
-    });
-
-    const result = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "build",
-      "generate",
-    ], {
-      print: false,
-      agentRunner: async () => ({
-        content: "ignored",
-        events: acceptedSubmitEvents("toolchain_generation_draft.v1", JSON.parse(badDraft)),
-      }),
-    });
-
-    expect(result.status).toBe("agent_output_error");
-    expect(result.message).toContain("toolchain draft file must be an object");
-    expect(readFileSync(join(projectRoot, ".vos", "runs", result.run_id, "artifacts", "toolchain", "build-generate-raw.txt"), "utf8")).toBe(`${JSON.stringify(JSON.parse(badDraft), null, 2)}\n`);
-  });
-
-  test("build generate rejects drafts missing manifest required tools", async () => {
-    const projectRoot = makeGitProject({ manifest: false });
-    await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
-    const agentRunner = async () => {
-      const submitted = {
-        files: [{ path: "Makefile", content: "all:\n\ttrue\n" }],
-        manifest: {
-          manifest_version: 2,
-          generator: { name: "vos-agent", version: "toolchain-draft-v1" },
-          files: ["Makefile"],
-          build: { variants: [{ id: "baseline", commands: ["make all"], artifacts: [] }] },
-          run: { profiles: [{ id: "default", command: "printf", args: ["ok"], artifacts: [] }], cases: [{ id: "smoke", profile: "default", success_regex: "ok" }] },
-          test: { suites: [] },
-        },
-        build_instructions: "missing tools",
-        spec_refs: ["spec/toolchain/build.yaml"],
-        changed_targets: ["Makefile"],
-      };
-      return {
-        content: "ignored",
-        events: acceptedSubmitEvents("toolchain_generation_draft.v1", submitted),
-      };
-    };
-
-    const result = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "build",
-      "generate",
-    ], { print: false, agentRunner });
-
-    expect(result.status).toBe("agent_output_error");
-    expect(result.message).toContain("toolchain environment.required_tools is required");
-    expect(existsSync(join(projectRoot, "Makefile"))).toBe(true);
-    expect(existsSync(join(projectRoot, ".vos", "toolchain.json"))).toBe(false);
-  });
-
-  test("build generate rejects drafts that write outside allowed_output_path", async () => {
-    const projectRoot = makeGitProject({ manifest: false });
-    await executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", "init"], { print: false });
-    const agentRunner = async () => {
-      const submitted = {
-        files: [{ path: "scripts/build.sh", content: "echo bad\n" }],
-        manifest: {
-          manifest_version: 2,
-          generator: { name: "vos-agent", version: "toolchain-draft-v1" },
-          files: ["scripts/build.sh"],
-          environment: { required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }] },
-          build: { variants: [{ id: "baseline", commands: ["sh scripts/build.sh"], artifacts: [] }] },
-          run: { profiles: [{ id: "default", command: "printf", args: ["ok"], artifacts: [] }], cases: [{ id: "smoke", profile: "default", success_regex: "ok" }] },
-          test: { suites: [] },
-        },
-        build_instructions: "bad",
-        spec_refs: ["spec/toolchain/build.yaml"],
-        changed_targets: ["scripts/build.sh"],
-      };
-      return {
-        content: "ignored",
-        events: acceptedSubmitEvents("toolchain_generation_draft.v1", submitted),
-      };
-    };
-
-    const result = await executeCliInvocation([
-      "bun",
-      "vos",
-      "--project-root",
-      projectRoot,
-      "--json",
-      "build",
-      "generate",
-    ], { print: false, agentRunner });
-
-    expect(result.status).toBe("policy_blocked");
-    expect(existsSync(join(projectRoot, "scripts", "build.sh"))).toBe(false);
   });
 });
 
-function acceptedSubmitEvents(schemaId: string, result: unknown): Array<Record<string, unknown>> {
-  return [
-    {
-      type: "tool.call",
-      name: "mcp__vos-progress__submit_result",
-      id: "call_submit",
-      arguments: JSON.stringify({ schema_id: schemaId, result }),
-    },
-    {
-      type: "tool.result",
-      name: "mcp__vos-progress__submit_result",
-      id: "call_submit",
-      content: JSON.stringify({
-        type: "vos-result-submission",
-        schema_id: schemaId,
-        accepted: true,
-      }),
-    },
-  ];
-}
-
-function makeGitProject(options: { manifest: boolean; policy?: boolean; allowedCommands?: string[] }): string {
-  const root = join("/tmp", `vos-repro-${Date.now()}-${Math.random().toString(16).slice(2)}`);
-  tmpRoots.push(root);
-  mkdirSync(join(root, ".vos"), { recursive: true });
-  mkdirSync(join(root, "spec", "architecture"), { recursive: true });
-  mkdirSync(join(root, "spec", "toolchain"), { recursive: true });
-  writeFileSync(join(root, ".vos", "project.yaml"), [
-    "project_id: local-project",
-    "spec_root: spec",
-    "current_stage: boot",
-    "",
-  ].join("\n"));
-  if (options.policy !== false) {
-    const allowedCommands = options.allowedCommands ?? [
-      "build",
-      "build generate",
-      "agent plan",
-      "ledger record",
-    ];
-    writeFileSync(join(root, ".vos", "policy.yaml"), [
-      "allowed_commands:",
-      ...allowedCommands.map((command) => `  - ${command}`),
-      "allowed_paths:",
-      "  - .vos",
-      "  - spec",
-      "  - Makefile",
-      "visibility_scope: public",
-      "",
-    ].join("\n"));
-  }
-  writeFileSync(join(root, "spec", "architecture", "timeline.yaml"), [
-    "timeline:",
-    "  - stage: boot",
-    "    title: Boot",
-    "",
-  ].join("\n"));
-  writeFileSync(join(root, "spec", "toolchain", "toolchain.yaml"), "includes:\n  - build.yaml\n  - run.yaml\n");
-  writeFileSync(join(root, "spec", "toolchain", "profile.yaml"), [
-    "environment:",
-    "  required_tools:",
-    "    - true: \">=0\"",
-    "  allowed_versions:",
-    "    - true >= 0",
-    "",
-  ].join("\n"));
-  writeFileSync(join(root, "spec", "toolchain", "build.yaml"), [
-    "build:",
-    "  allowed_output_path:",
-    "    - Makefile",
-    "  generated_artifacts:",
-    "    - build/kernel.bin",
-    "",
-  ].join("\n"));
-  writeFileSync(join(root, "spec", "toolchain", "run.yaml"), [
-    "run:",
-    "  command: printf",
-    "  success_signal: boot ok",
-    "  artifact: build/kernel.bin",
-    "  timeout_secs: 1",
-    "",
-  ].join("\n"));
-  writeFileSync(join(root, "Makefile"), "all:\n\tprintf existing\n");
-  if (options.manifest) {
-    writeFileSync(join(root, ".vos", "toolchain.json"), JSON.stringify({
-      manifest_version: 2,
-      generator: { name: "test", version: "1" },
-      files: ["Makefile"],
-      environment: { required_tools: [{ name: "true", command: "true", version_args: ["--version"], version_constraint: ">=0", kind: "utility" }] },
-      build: { variants: [{ id: "baseline", commands: ["make all"], artifacts: ["build/kernel.bin"] }] },
-      run: { profiles: [{ id: "default", command: "printf", args: ["boot ok"], artifacts: ["build/kernel.bin"] }], cases: [{ id: "smoke", profile: "default", success_regex: "boot ok" }] },
-      test: { suites: [] },
-    }, null, 2));
-  }
-  git(root, ["init"]);
-  git(root, ["config", "user.email", "test@example.com"]);
-  git(root, ["config", "user.name", "Test User"]);
-  git(root, ["add", "."]);
-  git(root, ["commit", "-m", "initial"]);
+function makeRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), "vos-student-repro-"));
+  roots.push(root);
   return root;
 }
 
-function makeEmptyProject(): string {
-  const root = mkdtempSync(join(tmpdir(), "vos-init-empty-"));
-  tmpRoots.push(root);
-  return root;
+function invoke(projectRoot: string, ...args: string[]) {
+  return executeCliInvocation(["bun", "vos", "--project-root", projectRoot, "--json", ...args], { print: false });
 }
 
 async function withGitIdentity<T>(fn: () => Promise<T>): Promise<T> {
-  return await withEnv({
-    GIT_AUTHOR_NAME: "VOS Test",
-    GIT_AUTHOR_EMAIL: "vos-test@example.com",
-    GIT_COMMITTER_NAME: "VOS Test",
-    GIT_COMMITTER_EMAIL: "vos-test@example.com",
-  }, fn);
+  const keys = ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"] as const;
+  const previous = new Map(keys.map((key) => [key, process.env[key]]));
+  process.env.GIT_AUTHOR_NAME = "VOS Student Test";
+  process.env.GIT_AUTHOR_EMAIL = "student@example.invalid";
+  process.env.GIT_COMMITTER_NAME = "VOS Student Test";
+  process.env.GIT_COMMITTER_EMAIL = "student@example.invalid";
+  try {
+    return await fn();
+  } finally {
+    for (const key of keys) {
+      const value = previous.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 }
 
 async function withoutGitIdentity<T>(fn: () => Promise<T>): Promise<T> {
   const isolatedConfigHome = mkdtempSync(join(tmpdir(), "vos-empty-git-config-"));
-  tmpRoots.push(isolatedConfigHome);
-  return await withEnv({
-    GIT_AUTHOR_NAME: undefined,
-    GIT_AUTHOR_EMAIL: undefined,
-    GIT_COMMITTER_NAME: undefined,
-    GIT_COMMITTER_EMAIL: undefined,
-    GIT_CONFIG_GLOBAL: join(tmpdir(), `vos-missing-global-${Date.now()}-${Math.random().toString(16).slice(2)}`),
-    GIT_CONFIG_NOSYSTEM: "1",
-    GIT_CONFIG_COUNT: "2",
-    GIT_CONFIG_KEY_0: "user.name",
-    GIT_CONFIG_VALUE_0: "",
-    GIT_CONFIG_KEY_1: "user.email",
-    GIT_CONFIG_VALUE_1: "",
-    XDG_CONFIG_HOME: isolatedConfigHome,
-  }, fn);
-}
-
-async function withEnv<T>(updates: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {
-  const previous = new Map<string, string | undefined>();
-  for (const [key, value] of Object.entries(updates)) {
-    previous.set(key, process.env[key]);
-    if (value === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = value;
-    }
-  }
+  roots.push(isolatedConfigHome);
+  const previous = new Map<string, string | undefined>([
+    ["GIT_AUTHOR_NAME", process.env.GIT_AUTHOR_NAME],
+    ["GIT_AUTHOR_EMAIL", process.env.GIT_AUTHOR_EMAIL],
+    ["GIT_COMMITTER_NAME", process.env.GIT_COMMITTER_NAME],
+    ["GIT_COMMITTER_EMAIL", process.env.GIT_COMMITTER_EMAIL],
+    ["GIT_CONFIG_GLOBAL", process.env.GIT_CONFIG_GLOBAL],
+    ["GIT_CONFIG_NOSYSTEM", process.env.GIT_CONFIG_NOSYSTEM],
+  ]);
+  delete process.env.GIT_AUTHOR_NAME;
+  delete process.env.GIT_AUTHOR_EMAIL;
+  delete process.env.GIT_COMMITTER_NAME;
+  delete process.env.GIT_COMMITTER_EMAIL;
+  process.env.GIT_CONFIG_GLOBAL = join(isolatedConfigHome, "config");
+  process.env.GIT_CONFIG_NOSYSTEM = "1";
   try {
     return await fn();
   } finally {
     for (const [key, value] of previous) {
-      if (value === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = value;
-      }
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
     }
   }
 }
 
-function git(cwd: string, args: string[]): { stdout: string; stderr: string } {
-  const result = gitMaybe(cwd, args);
-  if (!result.ok) {
-    throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
-  }
-  return {
-    stdout: result.stdout,
-    stderr: result.stderr,
-  };
+function git(cwd: string, args: string[]): string {
+  const result = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString() || result.stdout.toString());
+  return result.stdout.toString();
 }
 
-function gitMaybe(cwd: string, args: string[]): { ok: true; stdout: string; stderr: string } | { ok: false; stdout: string; stderr: string } {
-  const proc = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
-  const result = {
-    stdout: proc.stdout.toString(),
-    stderr: proc.stderr.toString(),
-  };
-  if (proc.exitCode !== 0) {
-    return { ok: false, ...result };
-  }
-  return { ok: true, ...result };
+function gitMaybe(cwd: string, args: string[]): { ok: boolean; stdout: string; stderr: string } {
+  const result = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  return { ok: result.exitCode === 0, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
 }

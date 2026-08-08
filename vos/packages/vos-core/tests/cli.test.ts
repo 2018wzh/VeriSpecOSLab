@@ -275,7 +275,7 @@ describe("vos-cli agent command parsing", () => {
     ).toThrow(/unsupported verify mode: trace/);
   });
 
-  test("help lists only supported verify scopes", () => {
+  test("help lists the reduced student command surface", () => {
     const result = Bun.spawnSync({
       cmd: ["bun", "run", "src/main.ts", "--help"],
       cwd: join(import.meta.dir, ".."),
@@ -285,12 +285,12 @@ describe("vos-cli agent command parsing", () => {
     const output = result.stdout.toString();
 
     expect(result.exitCode).toBe(0);
-    expect(output).toContain("verify public|patch|full|invariant|generated|fuzz");
-    expect(output).not.toContain("verify public|patch|full|invariant|fuzz|base|architecture|composition|goal");
-    expect(output).not.toContain("verify base");
-    expect(output).not.toContain("verify architecture");
-    expect(output).not.toContain("verify composition");
-    expect(output).not.toContain("verify goal");
+    expect(output).toContain("spec check");
+    expect(output).toContain("run hardware");
+    expect(output).toContain("verify");
+    expect(output).toContain("submit");
+    expect(output).not.toContain("verify public|patch|full|invariant|generated|fuzz");
+    expect(output).not.toContain("agent serve");
   });
 
   test("parses command help topics", () => {
@@ -314,7 +314,7 @@ describe("vos-cli agent command parsing", () => {
 
   test("command help prints focused usage", () => {
     const result = Bun.spawnSync({
-      cmd: ["bun", "run", "src/main.ts", "agent", "generate", "--help"],
+      cmd: ["bun", "run", "src/main.ts", "agent", "implement", "--help"],
       cwd: join(import.meta.dir, ".."),
       stdout: "pipe",
       stderr: "pipe",
@@ -322,23 +322,21 @@ describe("vos-cli agent command parsing", () => {
     const output = result.stdout.toString();
 
     expect(result.exitCode).toBe(0);
-    expect(output).toContain("Usage: vos agent generate");
-    expect(output).toContain("--apply");
-    expect(output).toContain("--build");
-    expect(output).toContain("--run");
+    expect(output).toContain("Usage: vos agent implement <module>");
+    expect(output).toContain("clean HEAD");
     expect(result.stderr.toString()).toBe("");
   });
 
   test("verify scope help prints focused usage", () => {
     const result = Bun.spawnSync({
-      cmd: ["bun", "run", "src/main.ts", "verify", "public", "--help"],
+      cmd: ["bun", "run", "src/main.ts", "verify", "--help"],
       cwd: join(import.meta.dir, ".."),
       stdout: "pipe",
       stderr: "pipe",
     });
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout.toString()).toContain("Usage: vos verify public");
+    expect(result.stdout.toString()).toContain("Usage: vos verify");
     expect(result.stderr.toString()).toBe("");
   });
 

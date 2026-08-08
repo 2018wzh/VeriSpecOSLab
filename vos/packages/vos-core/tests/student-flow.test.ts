@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { executeCliInvocation } from "../src/main.ts";
 import { parseArgs } from "../src/cli.ts";
 import { verifyAuditChain } from "../src/audit/chain.ts";
+import { ensureHeadLedgerEntry } from "../src/repro/ledger.ts";
 
 const roots: string[] = [];
 
@@ -62,6 +63,32 @@ describe("student v2 workflow", () => {
     });
   });
 
+  test("runs agent verify in a disposable worktree without changing the student tree", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      expect((await invoke(root, "init")).status).toBe("passed");
+      writeFileSync(join(root, "vos.yaml"), [
+        "version: vos.project.v1",
+        "build: { program: bun, args: [-e, \"require('node:fs').writeFileSync('build-output.txt', 'generated')\"], cwd: ., env: [], timeout: 30000, artifacts: [] }",
+        "runners: {}",
+        "checks:",
+        "  public-toolchain: { program: bun, args: [--version], cwd: ., env: [], timeout: 30000, verifies: [toolchain] }",
+        "knowledge: { sources: [] }",
+        "",
+      ].join("\n"));
+      writeFileSync(join(root, ".gitignore"), ".vos/\n.env\nbuild-output.txt\n");
+      git(root, ["add", "vos.yaml", ".gitignore"]);
+      git(root, ["commit", "-m", "configure verify worktree test"]);
+      await ensureHeadLedgerEntry({ projectRoot: root, actor: "human", intent: "record verify configuration", changedTargets: ["vos.yaml", ".gitignore"] });
+
+      const result = await invoke(root, "agent", "verify");
+
+      expect(result.status).toBe("passed");
+      expect(existsSync(join(root, "build-output.txt"))).toBe(false);
+      expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
+    });
+  }, 30_000);
+
   test("applies a confirmed DesignSpec proposal atomically and leaves a commit", async () => {
     const root = makeRoot();
     await withGitIdentity(async () => {
@@ -79,6 +106,128 @@ describe("student v2 workflow", () => {
       expect(result.status).toBe("passed");
       expect(readFileSync(join(root, "spec", "design.yaml"), "utf8")).toContain("language: rust");
       expect(readFileSync(join(root, ".git", "HEAD"), "utf8")).toBeTruthy();
+    });
+  }, 30_000);
+
+  test("implements a committed ModuleSpec in a detached worktree and commits only owned files", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      expect((await invoke(root, "init")).status).toBe("passed");
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(join(root, "spec", "modules", "memory.yaml"), [
+        "id: memory",
+        "module: memory",
+        "level: 1",
+        "purpose: Own the memory allocator implementation.",
+        "owns: [src/memory.ts]",
+        "interface: [allocate]",
+        "properties: [allocated blocks are aligned]",
+        "errors: [out_of_memory]",
+        "",
+      ].join("\n"));
+      writeFileSync(join(root, "vos.yaml"), [
+        "version: vos.project.v1",
+        "build: { program: bun, args: [--version], cwd: ., env: [], timeout: 30000, artifacts: [] }",
+        "runners: {}",
+        "checks:",
+        "  public-memory: { program: bun, args: [--version], cwd: ., env: [], timeout: 30000, verifies: [memory] }",
+        "  contract-memory: { program: bun, args: [--version], cwd: ., env: [], timeout: 30000, verifies: [memory] }",
+        "knowledge: { sources: [] }",
+        "",
+      ].join("\n"));
+      git(root, ["add", "vos.yaml", "spec/modules/memory.yaml"]);
+      git(root, ["commit", "-m", "add memory module spec"]);
+      await ensureHeadLedgerEntry({ projectRoot: root, actor: "human", intent: "record memory module spec", changedTargets: ["vos.yaml", "spec/modules/memory.yaml"] });
+
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+          writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 0;\n");
+          return {
+            content: "implemented",
+            events: acceptedSubmitEvents("student_implementation_result.v1", {
+              status: "passed",
+              changed_paths: ["src/memory.ts"],
+              validations: ["build", "public-memory", "contract-memory"],
+            }),
+          };
+        },
+      });
+
+      expect(result.status).toBe("passed");
+      expect(readFileSync(join(root, "src", "memory.ts"), "utf8")).toContain("allocate");
+      expect(git(root, ["log", "-1", "--pretty=%s"]).trim()).toBe("[vos][agent] Implement memory");
+      expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
+    });
+  }, 30_000);
+
+  test("does not land an implementation that crosses ModuleSpec owns", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      const before = git(root, ["rev-parse", "HEAD"]).trim();
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          writeFileSync(join(options.projectRoot, "outside.txt"), "must not land\n");
+          return { content: "bad", events: acceptedSubmitEvents("student_implementation_result.v1", { status: "passed" }) };
+        },
+      });
+
+      expect(result.status).toBe("policy_blocked");
+      expect(git(root, ["rev-parse", "HEAD"]).trim()).toBe(before);
+      expect(existsSync(join(root, "outside.txt"))).toBe(false);
+    });
+  }, 30_000);
+
+  test("extends implementation owns through a committed v2 SpecPatch", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      mkdirSync(join(root, "src"), { recursive: true });
+      mkdirSync(join(root, "spec", "patches"), { recursive: true });
+      writeFileSync(join(root, "spec", "modules", "shared.yaml"), [
+        "id: shared",
+        "module: shared",
+        "level: 1",
+        "purpose: Own shared implementation files.",
+        "owns: [src/shared.ts]",
+        "interface: [shared_value]",
+        "properties: [shared state is deterministic]",
+        "errors: []",
+        "",
+      ].join("\n"));
+      writeFileSync(join(root, "spec", "patches", "memory-shared.yaml"), [
+        "id: memory-shared",
+        "reason: share ownership between memory and shared modules",
+        "changes: [memory, shared]",
+        "new_invariants: [shared state remains deterministic]",
+        "",
+      ].join("\n"));
+      git(root, ["add", "spec/modules/shared.yaml", "spec/patches/memory-shared.yaml"]);
+      git(root, ["commit", "-m", "add committed memory shared patch"]);
+      await ensureHeadLedgerEntry({ projectRoot: root, actor: "human", intent: "record committed SpecPatch", changedTargets: ["spec/modules/shared.yaml", "spec/patches/memory-shared.yaml"] });
+
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+          writeFileSync(join(options.projectRoot, "src", "shared.ts"), "export const sharedValue = 1;\n");
+          return {
+            content: "implemented shared ownership",
+            events: acceptedSubmitEvents("student_implementation_result.v1", {
+              status: "passed",
+              changed_paths: ["src/shared.ts"],
+              validations: ["build", "public-memory", "contract-memory"],
+            }),
+          };
+        },
+      });
+
+      expect(result.status).toBe("passed");
+      expect(readFileSync(join(root, "src", "shared.ts"), "utf8")).toContain("sharedValue");
+      expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
     });
   }, 30_000);
 });
@@ -104,6 +253,47 @@ async function invokeWithAgent(root: string, args: string[], schemaId: string, r
       ],
     }),
   });
+}
+
+async function prepareModuleProject(root: string): Promise<void> {
+  expect((await invoke(root, "init")).status).toBe("passed");
+  writeFileSync(join(root, "spec", "modules", "memory.yaml"), [
+    "id: memory",
+    "module: memory",
+    "level: 1",
+    "purpose: Own the memory allocator implementation.",
+    "owns: [src/memory.ts]",
+    "interface: [allocate]",
+    "properties: [allocated blocks are aligned]",
+    "errors: [out_of_memory]",
+    "",
+  ].join("\n"));
+  writeFileSync(join(root, "vos.yaml"), [
+    "version: vos.project.v1",
+    "build: { program: bun, args: [--version], cwd: ., env: [], timeout: 30000, artifacts: [] }",
+    "runners: {}",
+    "checks:",
+    "  public-memory: { program: bun, args: [--version], cwd: ., env: [], timeout: 30000, verifies: [memory] }",
+    "  contract-memory: { program: bun, args: [--version], cwd: ., env: [], timeout: 30000, verifies: [memory] }",
+    "knowledge: { sources: [] }",
+    "",
+  ].join("\n"));
+  git(root, ["add", "vos.yaml", "spec/modules/memory.yaml"]);
+  git(root, ["commit", "-m", "add memory module spec"]);
+  await ensureHeadLedgerEntry({ projectRoot: root, actor: "human", intent: "record memory module spec", changedTargets: ["vos.yaml", "spec/modules/memory.yaml"] });
+}
+
+function git(cwd: string, args: string[]): string {
+  const result = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString() || result.stdout.toString());
+  return result.stdout.toString();
+}
+
+function acceptedSubmitEvents(schemaId: string, result: unknown): Array<Record<string, unknown>> {
+  return [
+    { type: "tool.call", name: "mcp__vos-progress__submit_result", id: "submit", arguments: JSON.stringify({ schema_id: schemaId, result }) },
+    { type: "tool.result", name: "mcp__vos-progress__submit_result", id: "submit", content: JSON.stringify({ type: "vos-result-submission", schema_id: schemaId, accepted: true }) },
+  ];
 }
 
 async function withGitIdentity<T>(fn: () => Promise<T>): Promise<T> {
