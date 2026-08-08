@@ -11,7 +11,7 @@
 - [04-experiment-and-spec-management.md](./04-experiment-and-spec-management.md)
 - [05-project-lifecycle-and-repository-provisioning.md](./05-project-lifecycle-and-repository-provisioning.md)
 - [../toolchain/README.md](../toolchain/README.md)
-- [../spec/06-verification-and-evidence.md](../spec/06-verification-and-evidence.md)
+- [../spec/README.md](../spec/README.md)
 
 下游消费者：
 

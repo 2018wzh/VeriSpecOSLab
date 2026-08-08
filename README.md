@@ -1,134 +1,74 @@
 # VeriSpecOSLab
 
-VeriSpecOSLab 是一个面向操作系统课程与实验的 spec-first 工作区。它把本地 `spec/`、`vos` 命令入口、构建/运行/验证、evidence 记录和 Agent 协作放在同一条可复现的流程里。
+VeriSpecOSLab 是一个面向操作系统课程的 spec-first 实验工具链。学生只需维护设计、模块契约和实现代码，`vos` 负责把它们连接到构建、QEMU、硬件运行、公开验证和提交归档。
 
-如果你第一次使用这个仓库，先读 [用户手册](docs/manual/README.md)。如果你想直接看一个完整 OS 示例，从 [xv6-spec](examples/xv6-spec/README.md) 开始。
+## 学生主链
 
-参赛文档在 [docs/comp/VeriSpecOSLab.pdf](docs/comp/VeriSpecOSLab.pdf) 和 [docs/comp/VeriSpecOSLab.pptx](docs/comp/VeriSpecOSLab.pptx) 里。
+```text
+空目录 → vos init → vos agent design → vos agent spec <module>
+       → vos agent implement <module> → vos build → vos verify
+       → vos run qemu / vos run hardware → vos report → vos submit
+```
 
-## 快速开始
+初始化不会询问问题，也不会生成内核骨架。它只创建空的 DesignSpec、工具链 ModuleSpec、`vos.yaml`、`.gitignore` 和初始 Git 提交。语言、ISA、板卡和内核组织由学生随后通过 `vos agent design` 决定。
 
 ```sh
 cd vos
 bun install --ignore-scripts
 cd apps/vos-cli
 bun link
-vos --help
-```
 
-`vos` 通过 Bun 链接到当前 checkout 的 `vos/apps/vos-cli`。修改 CLI 后重新运行命令即可使用当前源码；仓库不提供预构建二进制、npm 发布包或运行时更新机制。
-
-学生不需要 clone VeriSpecOSLab 仓库；拿到课程项目后，在项目目录运行：
-
-```bash
+mkdir my-os && cd my-os
+vos init
 vos doctor
-vos spec check-consistency
-vos build --dry-run
+vos spec check
 ```
 
-如果你已经有本仓库 checkout，也可以用内置 xv6 示例跑一遍基础检查：
+`vos` 使用 Bun 的 argv 子进程接口执行 `vos.yaml` 中的结构化命令，不拼接 shell 字符串。`build` 和开发态运行可以在脏树上执行，但 evidence 会标记为不可提交；`verify`、Agent 自动提交、权威硬件 evidence 和 `submit` 要求 clean HEAD。
 
-```bash
-vos --project-root examples/xv6-spec toolchain lint
-vos --project-root examples/xv6-spec spec check-consistency
-vos --project-root examples/xv6-spec build --dry-run
-```
+## 学生文件契约
 
-如果本机有 RISC-V 工具链和 QEMU，可以继续：
+- `spec/design.yaml`：唯一 DesignSpec，记录系统目标、语言、ISA、内核组织、QEMU、canonical board、硬件移植和最多三个组合不变量。
+- `spec/modules/<module>.yaml`：ModuleSpec。操作、接口、性质、错误、状态、并发、rely/guarantee 和算法意图集中在同一文件。
+- `spec/interfaces/<interface>.yaml`：syscall、IPC、驱动和用户/内核 ABI 等跨边界接口。
+- `spec/goals/<goal>.yaml`：可选的性能、兼容性和形式化目标。
+- `spec/patches/<patch>.yaml`：架构或跨模块语义变化的手写影响声明。
+- `vos.yaml`：工具链 ModuleSpec 的执行投影，只允许结构化 `program + args + cwd + env allowlist + timeout`、runner、测试 target、产物、稳定 Spec ID 和锁定的 KB 来源。
 
-```bash
-vos --project-root examples/xv6-spec build
-vos --project-root examples/xv6-spec run qemu --case boot-smoke
-vos --project-root examples/xv6-spec verify public
-```
+ModuleSpec 的 `level` 为 L1/L2/L3。缺少高等级字段只产生警告；`vos spec check` 只做确定性的 schema、引用、路径和等级检查。`owns` 必须是仓库相对路径，Agent 实现只能触及目标模块与已提交 SpecPatch 影响模块的 owns 并集。
 
-## 仓库里有什么
+## 公开命令
 
 ```text
-.
-├── docs/
-│   ├── manual/               # 面向使用者的中文手册（VOS 命令 + Spec Schema）
-│   ├── design/              # Spec、Toolchain、Workflow、Platform、Agent 设计
-│   └── portal/              # Portal 原型开发文档
-├── examples/
-│   └── xv6-spec/            # 规格驱动的 xv6 参考项目
-└── vos/
-    ├── apps/
-    │   ├── vos-cli          # vos 命令入口
-    │   ├── vos-agent        # Agent 后端和 OpenAI-compatible façade
-    │   └── vos-portal       # Portal Web、控制面 API、worker 与静态 Demo
-    └── packages/            # core、spec、policy、evidence、runtime、server 等共享包
+vos init                         vos doctor
+vos spec check                  vos agent design
+vos agent spec <module>         vos agent implement <module>
+vos agent debug                 vos agent verify
+vos agent kb [question]         vos agent review [module]
+vos build                       vos run qemu
+vos run hardware                vos verify
+vos report                      vos submit
 ```
 
-## 核心概念
+`--project-root`、`--json`、`--verbose` 和 `--progress` 是通用参数。`agent debug`、`agent verify`、`agent review` 和 `agent kb` 是只读或问答角色；`design`/`spec` 先展示 diff，只有确认后才原子应用并单独提交；`implement` 在 detached linked worktree 中修改、构建和验证，成功后才把 patch 应用回原工作树并创建带 Run-ID 和 Spec-Hash trailer 的提交。
 
-`spec/` 是项目设计真相源。架构、模块、操作契约、工具链、验证矩阵和报告契约都应尽量落在结构化规格里，而不是散落在聊天记录或临时脚本中。
+宿主命令默认直接继承当前用户权限、网络和凭据。linked worktree 只提供 Git 变更回滚和隔离，不是进程、网络、凭据或宿主文件安全边界。学生必须把本机参考资料可读性和 Agent 任意宿主命令风险视为已知的策略约束。
 
-`vos` 是统一命令入口。它读取项目里的 `spec/` 和 `.vos/`，再执行 lint、build、run、test、verify、report、submit 和 agent 子命令。
+## 证据、报告和隐私
 
-`evidence` 是每次执行留下的证据。命令会把 manifest、事件流水和日志产物写到 `<project-root>/.vos/runs/<run-id>/`，方便学生、助教、平台和 Agent 复盘同一次运行。
+运行记录位于被 `.gitignore` 忽略的 `.vos/`。事件同时写入连续哈希审计链；KB 来源同步到 `.vos/kb-sources` 并由 `vos.yaml` 的 revision/hash 锁定。`vos report` 不调用模型、不提交 Git，只从 commits、Spec ID、测试、日志和 evidence 确定性生成 `.vos/report.json`。`vos submit` 只归档 clean HEAD，并在导出时遮蔽凭据、把绝对路径替换为稳定别名；原始日志不进 Git。
 
-Agent 是受规格和策略约束的协作者。它可以生成计划、补丁、解释和报告素材，但写入范围、阶段门禁和验证要求由 VOS runtime 决定。
+硬件 Runner 的结果始终是 `pending_human_review`，本地串口启动不能替代人工验收。
 
-## 常用命令
+## 仓库结构与开发
 
-安装后可在任意目录运行；学生项目通常写作 `--project-root .`：
+`vos/apps/vos-cli` 是薄 CLI 入口，`vos/apps/vos-agent` 是进程内 headless/TUI/暂留 HTTP 后端，`vos/apps/vos-portal` 和 Demo 保留但冻结，`vos/packages/vos-core`、`vos-spec`、`vos-runtime`、`vos-kb`、`vos-server` 提供共享能力。Portal/Demo 不承诺旧 connected teaching loop。
 
-```bash
-# 项目和 spec
-vos --project-root <project-root> doctor
-vos --project-root <project-root> stage show
-vos --project-root <project-root> spec lint
-vos --project-root <project-root> spec check-consistency
-vos --project-root <project-root> arch compose spec/architecture/seed.yaml
-
-# 构建、运行和验证
-vos --project-root <project-root> toolchain lint
-vos --project-root <project-root> build --dry-run
-vos --project-root <project-root> build
-vos --project-root <project-root> run qemu --case <case-id>
-vos --project-root <project-root> test --suite <suite-name>
-vos --project-root <project-root> verify public
-
-# Agent 和报告
-vos --project-root <project-root> agent context --scope public
-vos --project-root <project-root> agent plan --stage <stage>
-vos --project-root <project-root> agent generate <target> --apply
-vos --project-root <project-root> report generate --stage <stage>
-vos --project-root <project-root> submit pack
-```
-
-完整说明见 [用户手册](docs/manual/README.md)。
-
-## 开发命令
-
-所有 workspace 命令从 `vos/` 目录运行：
-
-```bash
-bun install --ignore-scripts
+```sh
+cd vos
 bun run typecheck
 bun run test
 bun run build
-bun run vos -- --help
 ```
 
-启动 Portal 生产开发环境或完全离线的静态 Demo：
-
-```bash
-bun run dev:portal
-bun run dev:portal:demo
-```
-
-## 推荐阅读
-
-- [用户手册](docs/manual/README.md)：日常使用 `vos` 的入口（命令参考 + Spec Schema）。
-- [xv6-spec 示例](examples/xv6-spec/README.md)：跟着一个完整示例跑构建、QEMU 和公开验证。
-- [Spec 设计文档](docs/design/spec/README.md)：`spec/` 的结构和写法。
-- [VOS Runtime 设计文档](docs/design/toolchain/README.md)：`vos` 如何消费规格并编排命令。
-- [Workflow 设计文档](docs/design/workflow/README.md)：课程过程、角色和证据流。
-- [Platform 设计文档](docs/design/platform/README.md)：课程平台、评分和审计模型。
-- [Agent 设计文档](docs/design/agent/README.md)：Agent 身份、能力和边界。
-
-## 当前状态
-
-当前实现以 Bun / TypeScript 为主。`vos/apps/vos-cli` 是 CLI 入口，`vos/apps/vos-agent` 提供 Agent 后端，`vos/apps/vos-portal` 提供独立 Portal 控制面、Web、worker 与静态 Demo，`vos/packages/*` 承载共享运行时能力。
+完整学生说明见 [`docs/manual/README.md`](docs/manual/README.md)，契约定义见 [`docs/design/spec/README.md`](docs/design/spec/README.md)，Runner 和证据边界见 [`docs/design/toolchain/README.md`](docs/design/toolchain/README.md)。参考 xv6 源码仍保留在 [`examples/xv6-spec`](examples/xv6-spec) 子模块中；它是完整源码参考，不是安全边界。

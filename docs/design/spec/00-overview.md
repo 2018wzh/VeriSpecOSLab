@@ -1,83 +1,21 @@
-# VeriSpecOSLab Spec 标准总览
+# Student Spec v2 Overview
 
-## 1. 目标
+学生 Spec 的目标是让设计、实现边界和公开验证共享同一份可解析输入，而不是维护一套互相重复的架构、操作、测试和报告文件。
 
-VeriSpecOSLab 的 Spec 标准服务于以下闭环 — Architecture Design → Module/Operation Spec → Toolchain Binding → Patch → Build/Test/Verify → Evidence/Report → Spec Evolution — 并由此展开四个核心目标：
-
-1. 让学生仓库中的 `spec/` 成为项目设计真相，而不是附属说明文档。
-2. 让 Agent 的 patch、测试和解释都能追溯到明确的 Spec 条款。
-3. 让课程平台可以从 Spec 派生公开验证、私有验证和评分证据。
-4. 让架构、模块、操作、组合、工具链、验证义务处于同一规范体系内。
-
-## 2. 适用范围
-
-本标准覆盖以下本地 Spec 类型：
-
-- Architecture Spec
-- Module Spec
-- Operation Contract
-- Composition Spec
-- Goal Validation Contract
-- Spec Patch
-- Toolchain Spec
-- Verification / Evidence Spec
-- Reports / Audit Records
-
-本标准不覆盖以下云端私有内容：
-
-- 完整 hidden tests
-- mutation plan 细节
-- anti-gaming 规则细节
-- staff-only grading policy
-
-## 3. 最重要的设计决定
-
-VeriSpecOSLab 不只保留“模块级 Spec”，还正式引入“操作级 Spec”。
-
-原因是：
-
-- 模块级 Spec 适合表达状态空间和接口族。
-- 操作级 Spec 适合表达一个函数或一次系统调用的前后置条件、锁规则、失败语义和测试义务。
-- LLM 驱动开发真正需要的是操作级上下文，而不是只有高层设计摘要。
-
-因此标准采用三层表达：Architecture（为什么这样设计）→ Module（模块状态、接口、边界、不变量）→ Operation（具体操作依赖什么、修改什么、保证什么、如何验证）。
-
-## 4. 与 specfs / SYSSPEC 方法的关系
-
-本标准借鉴 `specfs` 的三个做法，但不直接照搬其文件系统领域结构：
-
-1. 采用比“模块总说明”更细的操作级规格粒度。
-2. 强调 `rely / guarantee / failure semantics / tests` 的结构化表达。
-3. 要求规格演化先于代码演化，复杂修改先通过 commit-backed `SpecPatch` 进入验证。
-
-VeriSpecOSLab 在此基础上增加课程与平台场景必需的字段：
-
-- stage 绑定
-- public / agent-only 可见性
-- grading evidence 映射
-- student explainability
-- toolchain binding
-
-## 5. 规范形态
-
-推荐规则：
-
-1. 机器消费的 Spec 使用 YAML。
-2. 面向阅读的解释、报告和审计日志使用 Markdown。
-3. 所有 YAML 都应可被 `vos spec lint`、`vos arch lint` 或后续工具链消费。
-
-## 6. 目录入口
-
-标准推荐的本地仓库结构如下：
+## 五类文件
 
 ```text
-spec/
-  architecture/
-  modules/
-  composition/
-  goals/
-  evolution/
-  toolchain/
-  verification/
-  reports/
+spec/design.yaml
+spec/modules/<module>.yaml
+spec/interfaces/<interface>.yaml
+spec/goals/<goal>.yaml
+spec/patches/<patch>.yaml
 ```
+
+DesignSpec 记录系统方向与硬件目标；ModuleSpec 把模块的接口、性质、错误和并发契约集中起来；InterfaceSpec 只承载跨边界或开发 ABI；GoalSpec 是可选高级目标；SpecPatch 记录架构或跨模块语义变化。
+
+## 确定性消费
+
+`vos spec check` 严格拒绝未知字段、旧 kind、重复稳定 ID、缺失依赖、越界 `owns`、错误接口引用和未知 `verifies` Spec ID。L1/L2/L3 由学生声明，等级不足只产生 warning。执行不调用模型，也不把 prompt 当校验器。
+
+工具链以 `spec/modules/toolchain.yaml` 的特殊 ModuleSpec 管理；`vos.yaml` 是结构化执行投影，测试 target 通过 `verifies` 绑定稳定 Spec ID。KB source 必须锁定相对路径或 Git URL、revision 和 content hash。

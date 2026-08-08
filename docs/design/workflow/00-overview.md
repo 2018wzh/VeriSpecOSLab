@@ -1,117 +1,27 @@
-# 00 Overview
+# Student workflow
 
-回答的问题：
-
-- 为什么 `workflow/` 需要独立成目录化文档集
-- 课程实验的总闭环是什么
-- 教师、助教、学生、平台、Agent 如何协作
-
-上游依赖文档：
-
-- [README.md](./README.md)
-- [../spec/00-overview.md](../spec/00-overview.md)
-- [../toolchain/00-overview.md](../toolchain/00-overview.md)
-- [../platform/00-overview.md](../platform/00-overview.md)
-
-下游消费者：
-
-- 课程设计者
-- 教师与助教实施团队
-- 平台产品与实现设计
-- Agent 治理与审计设计
-
-## 1. 定位
-
-`workflow/` 定义课程的递进式教学过程。它不管某个服务具体怎么实现，只管谁在什么时候做什么、依赖什么输入与证据、触发什么系统动作、看到什么反馈、如何进入下一阶段。
-
-对 VeriSpecOSLab 而言，课程不是“交一次代码跑一次评测”，而是一个连续工程闭环：
+课程入口只保留一条本地循环：
 
 ```text
-Progressive Design
-  -> Spec Authoring
-  -> Implementation
-  -> Verification
-  -> Feedback
-  -> Evolution
-  -> Final Synthesis
+vos init → design/spec → implement → build → verify
+        → qemu/hardware → report → submit
 ```
 
-## 2. 核心原则
+## State transitions
 
-1. 学生先提交设计，再提交实现，再通过证据证明实现与设计一致。
-2. 教师定义课程边界、阶段门禁和评分规则，不直接提供唯一标准答案。
-3. 助教负责协助审核、异常排查、补跑、答疑和申诉处理，不替代教师做最终课程裁决。
-4. Agent 只能在受控权限下读取公开投影和本地上下文，不能绕过阶段门禁与审计。
-5. 平台依据设计、验证和过程证据评分，而不是只依据最终镜像是否跑通。
+1. `vos init` 在空目录写入空 DesignSpec、工具链 ModuleSpec、`vos.yaml`、`.gitignore` 并创建初始 Git commit。
+2. `vos agent design` 和 `vos agent spec <module>` 在临时 linked worktree 生成结构化 diff；学生确认后才原子应用并单独提交。
+3. `vos agent implement <module>` 要求 clean HEAD 和已提交 Spec；跨模块变化还必须引用已提交 SpecPatch。Agent 只能修改目标模块与 SpecPatch 影响模块 owns 并集。
+4. `vos build`、开发态 `vos run qemu` 和 `vos run hardware` 可以在脏树执行，但 evidence 明确标记为不可提交。
+5. `vos verify` 确定性执行 spec check、build、所有 public tests 和 contract checks，不调用模型，不执行 fuzz、trace 或 hidden tests。
+6. `vos report` 从 commits、Spec IDs、测试、日志和 evidence 生成 `.vos/report.json`；`vos submit` 在 clean HEAD 上刷新报告并生成绑定 commit/spec/config hashes 的归档。
 
-## 3. 角色协作总览
+## Read-only roles
 
-```text
-教师
-  -> 创建课程与实验
-  -> 配置 stage gates / rubric / AI policy
-  -> 审核关键阶段与最终结果
+`agent debug`、`agent verify`、`agent review` 只报告证据、缺口、根因和修复方向；`agent kb` 只回答问题。它们可以写入 gitignored evidence 和 audit，但不能修改项目源码或 Spec。
 
-助教
-  -> 维护审核队列
-  -> 归因公开失败
-  -> 处理补跑与申诉
-  -> 向教师升级风险
+## Trust boundary
 
-学生
-  -> 维护本地 spec/
-  -> 提交 ArchitectureSlice / ModuleSpec / 实现 / 报告
-  -> 根据公开反馈继续修正设计与代码
+linked worktree 只提供 Git 变更回滚，不提供进程、网络、凭据或宿主文件安全。Agent 默认可执行宿主命令并继承当前用户权限；本机参考 OS 对学生可读也是已接受的策略风险。KB、对话、工具调用、diff 和结果写入连续哈希 audit，导出时遮蔽凭据并替换绝对路径。
 
-平台
-  -> 供应仓库与工作区
-  -> 派生公开/私有验证
-  -> 归档 evidence
-  -> 管理阶段状态与成绩发布
-
-Agent
-  -> 基于权限投影提供设计、实现、验证和报告辅助
-  -> 保留完整审计链
-```
-
-## 4. 课程闭环
-
-课程主线可以压缩为：
-
-```text
-course setup
-  -> experiment publish
-  -> enrollment and provisioning
-  -> staged design review
-  -> staged implementation and verification
-  -> final freeze and scoring
-  -> appeal and teaching retrospective
-```
-
-如果按角色视角展开，则是：
-
-```text
-教师发布实验
-  -> 学生加入并获得仓库
-  -> 学生提交阶段设计
-  -> 平台执行自动检查
-  -> 助教处理审核与异常
-  -> 教师在关键阶段做裁决
-  -> 学生继续演化设计与实现
-  -> 平台冻结、评分、发布结果
-  -> 教师与助教复盘课程数据
-```
-
-## 5. 阶段模板
-
-`workflow/` 中每个阶段都按同一模板理解：
-
-- 目标
-- 输入
-- 检查
-- 角色动作
-- 证据
-- 失败分支
-- 解锁条件
-
-这套模板用于统一教师审核、助教排障、学生执行和平台状态流转。
+Portal/Demo 的控制面、内部 HTTP 和静态 Demo 在本阶段冻结，只维持 typecheck/build/unit test，不扩展到学生主链。

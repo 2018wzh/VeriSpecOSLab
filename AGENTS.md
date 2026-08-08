@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository is a spec-first OS lab platform. `docs/design/` contains the design source for specs, workflow, platform, toolchain, and agent boundaries. `examples/xv6-spec/` is the reference xv6-style lab project with `spec/`, kernel/user stubs, and `.vos/` runtime artifacts. `vos/` is the Bun workspace. Active apps are `vos/apps/vos-cli` for the command entrypoint, `vos/apps/vos-agent` for the headless/TUI/HTTP agent backend, and `vos/apps/vos-portal` for the production Portal API, worker, Web UI, and isolated static Demo build. The retired Portal prototype must not be reintroduced. Shared packages are limited to `vos-core`, `vos-runtime`, `vos-kb`, `vos-spec`, and `vos-server`.
+This repository is a spec-first OS lab platform. The student contract is the v2 five-file-family model: `spec/design.yaml`, `spec/modules/*.yaml`, `spec/interfaces/*.yaml`, optional `spec/goals/*.yaml`, and handwritten `spec/patches/*.yaml`. `vos.yaml` is the structured execution projection and must never be treated as a shell script. `examples/xv6-spec/` is a complete-source reference submodule; its local source is not a security boundary. `vos/` is the Bun workspace. Active apps are `vos/apps/vos-cli` for the command entrypoint, `vos/apps/vos-agent` for the in-process headless/TUI backend and temporary internal HTTP service, and `vos/apps/vos-portal` for the retained frozen Portal API, worker, Web UI, and isolated static Demo build. Do not reintroduce the retired Portal prototype or promise the old connected teaching loop. Shared packages are limited to `vos-core`, `vos-runtime`, `vos-kb`, `vos-spec`, and `vos-server`.
 
 ## Build, Test, and Development Commands
 
@@ -31,11 +31,13 @@ Tests use Bun’s built-in test runner. Name tests `*.test.ts` and place them un
 
 ## Dirty Worktree & Reproducibility Gates
 
-Dirty worktree restrictions apply only to commands that generate code, apply patches, run build/test/verify evidence, package submissions, or mutate persistent project state. Read-only checks and Q&A commands such as `stage show`, `spec lint --no-agent`, `toolchain lint`, `agent context`, `agent plan`, `agent ask`, `debug explain-log`, and `kb search` may run with local draft files present. Keep clean tree and current `HEAD` ledger gates for `build generate`, non-dry-run `build`/`run qemu`/`test`/`verify`/`trace syscall`, `agent generate`, `agent apply-patch`, `agent validate-generated`, `spec patch apply`, `toolchain init`, `report generate`, mutating KB commands, and `submit pack`.
+The public student surface is intentionally small: `init`, `doctor`, `spec check`, the seven `agent` roles (`design`, `spec`, `implement`, `debug`, `verify`, `kb`, `review`), `build`, `run qemu`, `run hardware`, `verify`, `report`, and `submit`. Keep clean tree and current `HEAD` ledger gates for `verify`, `agent implement`, authoritative hardware evidence, and `submit`. Dirty `build` and development QEMU/hardware runs are allowed but their evidence is marked non-submittable. `design` and `spec` require confirmation before an atomic commit. `debug`, `verify`, `review`, and `kb` must not modify project files.
+
+The Agent implementation worktree is a detached linked Git worktree. It protects the original tree from failed patches and ownership violations; it is not a process, network, credentials, or host-filesystem sandbox. Host commands inherit the current user and network by design. Keep this limitation explicit in code, tests, and docs.
 
 ## Commit & Pull Request Guidelines
 
-Recent commits use bracketed scopes such as `[vos][cli] Fix xv6 offline runtime` and `[docs][agent] Document headless profile API`. Use the same pattern: `[area][component] Imperative summary`. Pull requests should describe the behavioral change, list tests run, note affected docs/specs, and call out any generated `.vos/` artifacts or local-only files.
+Recent commits use bracketed scopes such as `[vos][cli] Simplify student workflow` and `[docs][spec] Document ModuleSpec v2`. Use the same pattern: `[area][component] Imperative summary`. This branch is pushed without creating or merging a PR. Describe the behavioral change, list tests run, note affected docs/specs, and call out generated `.vos/` artifacts or local-only files.
 
 ## Agent-Specific Instructions
 

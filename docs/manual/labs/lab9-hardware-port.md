@@ -1,90 +1,11 @@
-# Lab 9: 移植到实际硬件 — 走出模拟器
+# Lab 9：硬件移植
 
-## 1. 设计问题
+在 DesignSpec 的 `hardware_port` 固定 canonical board、启动、串口和中断约定；在 `vos.yaml` hardware runner 填 board、serial、workload、build target 和环境 allowlist。
 
-你的 OS 在 QEMU 中运行，但 QEMU 是一个模拟器——它宽容、可预测、隐藏了许多真实硬件的复杂性。让 OS 在真实物理硬件上启动，是对你系统设计质量的终极检验。
+```sh
+vos build
+vos run qemu
+vos run hardware
+```
 
-## 2. 设计空间
-
-| 决策 | 你需要回答的问题 |
-|------|----------------|
-| 目标硬件 | 选择什么 RISC-V 开发板？它的外设和内存布局与 QEMU `virt` 有何不同？ |
-| 启动链 | 固件给你的内核了什么状态？用什么 bootloader？ |
-| 驱动适配 | 哪些外设驱动需要重写？你的 HAL 抽象足够吗？ |
-| 调试策略 | 没有 GDB 的情况下如何定位问题？ |
-
-## 3. 背景阅读
-
-- 你目标硬件的技术手册
-- 你目标硬件的设备树源文件
-- [Spec: GoalValidationContract 编写指南](../specs/goal-validation-contract.md)
-
-## 4. 任务
-
-### Task 1: 目标设定
-
-编写 GoalValidationContract，明确：
-- 移植目标（启动、输出、用户程序运行等）
-- correctness_guard（QEMU 版本不受影响）
-- 验证方法（真实硬件启动日志）
-
-### Task 2: 硬件调研
-
-对比目标硬件与 QEMU `virt`：
-- 内存布局差异
-- 外设差异（UART、中断控制器、定时器）
-- 启动方式差异
-
-### Task 3: 适配实现
-
-- 修改链接脚本（如 RAM 起始地址不同）
-- 适配或重写 UART 驱动
-- 适配中断控制器配置
-- 修改设备发现逻辑（使用真实设备树）
-
-### Task 4: 验证
-
-- 在真实硬件上启动内核
-- 确认串口输出正确
-- 确认 QEMU 版本不受影响
-
-## 5. 质量门禁
-
-- [ ] 真实硬件上内核启动并输出 banner
-- [ ] 串口可正常收发
-- [ ] QEMU 版本继续通过全部已有测试
-- [ ] GoalValidationContract 通过
-
-## 6. 设计理据要求
-
-1. 真实硬件与 QEMU 之间最让你意外的差异是什么？
-2. 你的 HAL 设计在处理硬件差异时表现了什么优缺点？
-3. 如果你要支持更多硬件平台，你的架构需要做哪些修改？
-
-## 7. 提交物
-
-- GoalValidationContract（硬件移植）
-- ADR（硬件适配决策）
-- 移植报告
-- 真实硬件启动日志
-- 移植后的源码
-
-## 8. 备注
-
-本 Lab 为选做。如果不具备硬件条件，可以：
-- 在 QEMU 中选择不同机器型号（如 `sifive_u`）作为替代移植目标
-- 将时间投入到阶段 8 的个性化目标深化
-
-## 9. 常见错误与排查
-
-### 错误 1：UART 没输出——最绝望的场景
-
-真实硬件调试的入门仪式就是"串口一片空白"。按 [Book 9.5 常见陷阱](../book/ch09-hardware-port.md) 逐条排查。最重要的第一步：**用示波器/逻辑分析仪看 TX 引脚有信号吗？** 有信号 → 问题在 USB-TTL 转换器或波特率。没信号 → 你的内核根本没运行到 UART 输出那一步。
-
-### 错误 2：U-Boot 找不到你的内核镜像
-
-U-Boot 的 `fatload` 命令对文件名大小写敏感。SD 卡上的 `KERNEL.ELF` 和 `fatload mmc 0:1 kernel.elf` 不匹配。另外，某些 U-Boot 版本只支持 FAT16（不支持 FAT32），或只支持 8.3 短文件名。
-
-### 错误 3：真实硬件上时钟中断不触发
-
-QEMU 的 `mtimecmp` 地址是硬编码的。真实硬件上可能在不同地址——需要通过设备树获取。如果你的定时器中断触发了一次就不触发了，检查 handler 中是否更新了下一个 `mtimecmp` 值。
+Hardware evidence 记录 board 标识、commit、串口日志和 workload，但状态永远是 `pending_human_review`。本地启动记录不能写成已通过人工验收。

@@ -1,5 +1,7 @@
 # SpecLab Platform 文档集
 
+> 冻结边界：本目录只记录后续平台、Portal、Judge 和部署方向，不定义学生 v2 主链。当前阶段只保持 Portal/Demo 的 typecheck、build 和 unit test；学生以 `docs/design/spec/README.md`、`docs/design/toolchain/README.md` 和 `docs/design/workflow/README.md` 为准。
+
 本目录描述 `SpecLab Platform` 的实现设计，涵盖以下问题：
 
 - 课程平台如何管理课程、实验、项目、阶段门禁、评分与审计

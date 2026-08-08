@@ -1,144 +1,25 @@
-# 05 Student Workflow
+# Student Workflow v2
 
-回答的问题：
+学生主链不再按一组互相依赖的架构碎片推进，而是围绕 DesignSpec、ModuleSpec 和可回放 evidence 纵向切片。
 
-- 学生在整个实验周期内的主线工作是什么
-- 每个阶段学生要提交什么、运行什么、看到什么
-- 学生如何通过 commit-backed SpecPatch 演化设计并完成最终综合提交
+## 1. 初始化
 
-上游依赖文档：
+在空目录中执行 `vos init`。命令不提问、不生成内核 skeleton，只创建 v2 文件夹、空 DesignSpec、工具链 ModuleSpec、结构化 `vos.yaml`、`.gitignore` 和初始提交。之后 `vos doctor` 给出缺失工具或契约的可操作提示。
 
-- [02-stage-model-and-lifecycle.md](./02-stage-model-and-lifecycle.md)
-- [01-artifacts-and-visibility.md](./01-artifacts-and-visibility.md)
-- [../spec/README.md](../spec/README.md)
-- [../toolchain/README.md](../toolchain/README.md)
+## 2. 设计与规格
 
-下游消费者：
+`vos agent design` 先展示 `spec/design.yaml` 的结构化差异；确认后才原子写入并单独提交。`vos agent spec <module>` 采用同样流程，操作、性质、错误和并发契约集中写在目标 ModuleSpec。L1/L2/L3 是学生声明的精度等级，等级不足只告警。
 
-- 学生课程说明
-- 本地工作流与 CLI 设计
-- Agent 教学辅助流程
+跨边界 syscall、IPC、驱动和 ABI 写入 `spec/interfaces/`。改变架构或跨模块语义时，先提交 `spec/patches/<patch>.yaml`；VOS 从 changes 推导影响模块和回归范围。
 
-## 1. 角色职责
+## 3. 实现与修复
 
-学生负责：
+`vos agent implement <module>` 要求 clean HEAD 和已提交 ModuleSpec；跨模块变更还要求已提交 SpecPatch。Agent 在 detached linked worktree 中修改、构建、运行 public/contract checks，直到全部通过、主动中止或已有 maxIterations 上限命中。只有原工作树 HEAD 未漂移、changed paths 全部在 owns 并集内且 evidence 通过时，VOS 才应用 patch 并创建 `[vos][agent] Implement <module>` 提交。
 
-- 维护本地 `spec/` 中的设计真相
-- 按阶段提交 `ArchitectureSlice`、`ModuleSpec`、实现、测试与报告
-- 根据公开反馈修正设计与代码
-- 记录 AI 协作日志、错误案例和最终综合报告
+失败、越界、漂移和迭代上限不会修改原工作树，只保留诊断、diff 和 evidence。`debug`、`verify`、`review` 和 `kb` 永远只读或问答。
 
-学生不能做：
+## 4. 运行、验证和提交
 
-- 绕过阶段门禁直接跳到后续机制实现
-- 删除测试或关闭检查器以通过验证
-- 伪造验证结果或隐瞒 AI 参与
+脏树可以 `vos build` 和开发态 `vos run qemu`/`vos run hardware`，但 evidence 不可提交。`vos verify` 必须在 clean HEAD 上确定性执行 spec check、build、所有 public checks 和 contract checks。硬件 evidence 仍是 `pending_human_review`。
 
-## 2. 入组与初始化
-
-```text
-加入课程实验
-  -> 获得仓库、模板、spec/ 骨架、CI 配置、Agent Workspace
-  -> 阅读课程要求摘要和 AI Policy 摘要
-  -> 只看到当前阶段公开投影
-```
-
-学生在本地可见的主要输入：
-
-- 本项目代码与 `spec/`
-- 当前阶段公开门禁
-- 公开验证结果摘要
-- 允许公开的 Agent 建议
-
-## 3. Stage 0: ArchitectureSeed
-
-学生首先维护：
-
-```text
-spec/architecture/seed.yaml
-```
-
-此阶段目标是：
-
-- 说明系统方向
-- 限定目标范围
-- 声明 non-goals
-- 避免只贴标签式设计
-
-学生可请求：
-
-```bash
-vos agent arch review spec/architecture/seed.yaml
-```
-
-## 4. Stage 1 到 Stage N 的统一模式
-
-每个后续阶段都遵循同一闭环：
-
-```text
-1. 更新当前 ArchitectureSlice
-2. 更新相关 ModuleSpec / GoalSpec / CompositionSpec
-3. 运行 spec lint / arch lint
-4. 实现或修改代码
-5. 运行公开验证
-6. 接收 public summary
-7. 修正 spec 或代码并再次提交
-```
-
-例如 `memory-management` 阶段：
-
-```bash
-vos spec lint spec/modules/kernel/memory/ops/kalloc.yaml
-vos arch lint spec/architecture/slices/02-memory.yaml
-vos verify public --stage memory-management
-```
-
-## 5. 通过 commit-backed SpecPatch 演化设计
-
-当学生引入新机制或改变关键设计时，必须先更新：
-
-```text
-spec/evolution/patch-*.yaml
-  -> ArchitectureSlice / ADR / CompositionSpec
-  -> 形成可引用的 spec commit
-  -> 再进入 build / test / verify
-```
-
-本地命令流程：
-
-```bash
-vos spec patch lint spec/evolution/patch-003-refcount-pages.yaml
-vos spec patch apply spec/evolution/patch-003-refcount-pages.yaml
-vos verify patch spec/evolution/patch-003-refcount-pages.yaml
-```
-
-`lint` 只报告结构、DAG、影响范围和回归选择；`apply` 是严格 gate，会要求
-`commit_sha` / `parent_sha` 可在本地 Git 中解析，要求 SpecPatch metadata
-完整覆盖真实 diff impact，并默认执行 `verify patch`。只有验证通过后，VOS
-才会刷新 `.vos/cache/patches/applied.json` 和本地 student / agent / staff
-projection。
-
-Agent 生成的 unified diff 只能通过 `vos agent apply-patch` 作为局部写入入口，
-不能替代 commit-backed SpecPatch 演化记录。
-
-这保证：
-
-- 新机制是被解释过的
-- 平台能重新派生验证计划
-- 教师与助教能追踪设计变化来源
-- 验证和审计能绑定到不可变 commit SHA
-
-## 6. 最终综合提交
-
-课程末期，学生需要提交：
-
-- `spec/architecture/seed.yaml`
-- `spec/architecture/slices/**`
-- `spec/architecture/decisions/**`
-- `spec/architecture/composition.yaml`
-- `spec/architecture/final-synthesis.yaml`
-- `spec/reports/student-verification-report.md`
-- `spec/reports/ai-collaboration-log.md`
-- `spec/reports/final-report.md`
-
-最终目标不是重写一份脱离历史的总设计，而是把整个设计演化过程综合成可追溯结论。
+`vos report` 从 commit、Spec IDs、测试、日志和 evidence 写出 `.vos/report.json`，不调用模型、不提交 Git。`vos submit` 刷新报告、校验 clean HEAD/审计链并创建绑定 commit/spec/config hashes 的归档；导出日志时遮蔽凭据和本机绝对路径。

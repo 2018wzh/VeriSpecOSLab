@@ -1,55 +1,19 @@
-# Spec 总论：为什么写规格
+# Spec v2 总览
 
-## 规格在 VeriSpecOSLab 中的角色
-
-在传统 OS 实验中，你的设计存在于你的头脑中，教师无法看到，AI 无法理解，测试只能验证最终行为。在 VeriSpecOSLab 中，**规格是你设计的外部化**——它让教师能审查你的设计，让 AI 能在受控边界内辅助你，让验证能从"跑通测试"升级到"验证你的设计意图是否被正确实现"。
-
-## 规格不是什么
-
-澄清几个常见误解：
-
-- **规格不是文档注释。** 文档注释描述"这行代码做什么"。规格描述"这个模块保证什么、在什么条件下、有什么副作用"。
-- **规格不是实现方案的详细描述。** 规格描述 **what**（什么行为、什么不变量），不描述 **how**（用什么算法、什么数据结构）。
-- **规格不会限制你的设计自由。** 规格让你显式化你的设计选择，但不规定你必须做什么选择。
-
-## VeriSpecOSLab 的七层 Spec 体系
-
-| 层 | Spec 类型 | 回答的问题 |
-|----|---------|-----------|
-| 架构层 | ArchitectureSeed | 我要构建什么样的 OS？目标、非目标、参考系统？ |
-| 架构层 | ArchitectureSlice | 这个阶段引入了什么机制？依赖什么？ |
-| 架构层 | ADR | 这个关键决策为什么这么做？有什么替代方案？ |
-| 模块层 | ModuleSpec | 这个模块管理什么状态？提供什么接口？维护什么不变量？ |
-| 操作层 | OperationContract | 这个操作的前提条件、后置条件、失败语义是什么？ |
-| 组合层 | CompositionSpec | 跨模块的不变量是什么？ |
-| 演化层 | SpecPatch | 规格如何随时间演化？每次变更的原因和影响？ |
-| 工具链层 | ToolchainSpec | 如何构建、链接、运行、调试？ |
-| 验证层 | EvidenceSchema | 验证了什么？证据在哪里？ |
-| 目标层 | GoalValidationContract | 我的个性化目标是什么？如何衡量？ |
-
-## 规格与代码的关系
-
-VeriSpecOSLab 的核心约束是：**先有规格，后有代码**。这不是官僚流程，而是工程纪律。
+学生项目只维护五类 YAML：
 
 ```text
-错误的流程：写代码 → 代码能跑了 → 补规格（如果记得的话）
-正确的流程：写规格 → 审查规格 → 按规格实现 → 验证实现是否符合规格
+spec/design.yaml
+spec/modules/<module>.yaml
+spec/interfaces/<interface>.yaml
+spec/goals/<goal>.yaml
+spec/patches/<patch>.yaml
 ```
 
-当规格和代码发生冲突时，**必须修改规格（通过 SpecPatch）再修改代码**，不能跳过规格直接改代码。
+这些文件共同描述设计、模块边界、跨边界 ABI、可选高级目标和语义变化。`vos spec check` 会严格解析字段、检查稳定 ID、引用和 `owns` 路径；缺少高等级字段只给出 warning。历史上的分拆文件不再属于学生接口。
 
-## 规格的质量标准
+## 写作顺序
 
-好的规格：
+先用 `vos agent design` 写清系统目标、语言、ISA、内核组织、QEMU 和 canonical board，再为每个可交付模块运行 `vos agent spec <module>`。模块从 L1 开始也可以；准备好状态、前后置条件和不变量后升到 L2，需要并发契约和算法意图时升到 L3。跨模块语义变化由手写 SpecPatch 声明，VOS 自动计算影响范围。
 
-- **可验证**：规格中描述的不变量、前置条件、后置条件可以被测试或检查器验证。
-- **精确**：不说"正确处理错误"，而是说"当传入空指针时返回 EINVAL"。
-- **完整**：覆盖正常路径、错误路径和边界条件。
-- **可追溯**：每次修改通过 SpecPatch 记录原因和影响。
-
-## 后续阅读
-
-- [Spec-first 工作流详解](spec-workflow.md) — 从设计到验证的完整流程
-- [ArchitectureDesignSpec 编写指南](architecture-design-spec.md)
-- [ModuleSpec 编写指南](module-spec.md)
-- [OperationContract 编写指南](operation-contract.md)
+每个接口、性质和测试目标都应能追溯到稳定 Spec ID。工具链作为 `toolchain` ModuleSpec，`vos.yaml` 中的 public/contract target 用 `verifies` 绑定这些 ID。
