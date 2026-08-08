@@ -12,6 +12,92 @@ import {
 } from "./index.ts";
 
 describe("vos-spec semantic bundle", () => {
+  test("normalizes the student v2 contract and manifest", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vos-spec-v2-"));
+    await mkdir(path.join(root, "spec", "modules"), { recursive: true });
+    await mkdir(path.join(root, "spec", "interfaces"), { recursive: true });
+    await writeFile(path.join(root, "spec", "design.yaml"), [
+      "system: { name: demo-os, language: rust, isa: riscv64 }",
+      "machine: { qemu: { machine: virt }, hardware: {} }",
+      "kernel: { organization: monolithic, execution: preemptive, protection: paging, communication: ipc, resource_model: ownership }",
+      "required_mechanisms: [syscall]",
+      "composition_invariants: [all syscalls validate pointers]",
+      "hardware_port: { board: demo, boot: serial, console: uart, interrupt: plic }",
+      "",
+    ].join("\n"));
+    await writeFile(path.join(root, "spec", "modules", "memory.yaml"), [
+      "id: kernel/memory",
+      "module: kernel/memory",
+      "level: 3",
+      "purpose: allocate pages",
+      "owns: [kernel/memory.c, tests/memory]",
+      "interface:",
+      "  - name: kalloc",
+      "    pre: [initialized]",
+      "    post: [page returned]",
+      "    errors: [out_of_memory]",
+      "    properties: [{ id: aligned, text: page is aligned, check: memory_alignment }]",
+      "properties: [{ id: safe, text: no aliasing }]",
+      "errors: [out_of_memory]",
+      "state: { free_pages: counter }",
+      "preconditions: [initialized]",
+      "postconditions: [ownership transferred]",
+      "invariants: [safe]",
+      "dependencies: []",
+      "concurrency: { lock: spinlock }",
+      "rely: [scheduler does not mutate free list]",
+      "guarantee: [allocation is atomic]",
+      "algorithm_intent: bitmap",
+      "",
+    ].join("\n"));
+    await writeFile(path.join(root, "spec", "interfaces", "console.yaml"), [
+      "id: abi/console",
+      "name: console ABI",
+      "boundary: abi",
+      "module: kernel/memory",
+      "operations:",
+      "  - name: putc",
+      "    pre: []",
+      "    post: [byte visible]",
+      "    errors: []",
+      "",
+    ].join("\n"));
+    await writeFile(path.join(root, "vos.yaml"), [
+      "version: vos.project.v1",
+      "build: { program: bun, args: [--version], cwd: ., env: [], timeout: 1000, artifacts: [build/kernel.elf] }",
+      "runners: { qemu: { program: bun, args: [--version], cwd: ., env: [], timeout: 1000, artifacts: [] } }",
+      "checks: { public-memory: { program: bun, args: [--version], cwd: ., env: [], timeout: 1000, verifies: [kernel/memory] } }",
+      "knowledge: { sources: [] }",
+      "",
+    ].join("\n"));
+    const bundle = await buildNormalizedSpecBundle({ projectRoot: root });
+    expect(hasBlockingDiagnostics(bundle.diagnostics)).toBe(false);
+    expect(bundle.version).toBe("vos-spec.bundle.v2");
+    expect(bundle.design?.path).toBe("spec/design.yaml");
+    expect(bundle.normalized_modules[0]?.level).toBe(3);
+    expect(bundle.normalized_modules[0]?.operations.map((operation) => operation.id)).toEqual(["kernel/memory.kalloc"]);
+    expect(bundle.interfaces[0]?.boundary).toBe("abi");
+    expect(bundle.manifest?.checks[0]?.verifies).toEqual(["kernel/memory"]);
+    expect(deriveTestMatrix(bundle).public_tests.map((test) => test.id)).toContain("public-memory");
+  });
+
+  test("reports v2 owns traversal and strict unknown fields", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vos-spec-v2-invalid-"));
+    await mkdir(path.join(root, "spec", "modules"), { recursive: true });
+    await writeFile(path.join(root, "spec", "modules", "broken.yaml"), [
+      "id: broken",
+      "module: broken",
+      "level: 1",
+      "purpose: broken",
+      "owns: [../outside]",
+      "unexpected: true",
+      "",
+    ].join("\n"));
+    const bundle = await buildNormalizedSpecBundle({ projectRoot: root });
+    expect(bundle.diagnostics.some((diagnostic) => diagnostic.code === "schema.validation_failed")).toBe(true);
+    expect(bundle.normalized_modules).toEqual([]);
+  });
+
   test("normalizes modules, operations, architecture, and derived tests", async () => {
     const root = await fixtureProject();
     const bundle = await buildNormalizedSpecBundle({ projectRoot: root });

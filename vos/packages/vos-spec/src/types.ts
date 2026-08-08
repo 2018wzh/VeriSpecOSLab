@@ -15,7 +15,14 @@ export interface SpecSource {
 }
 
 export type SpecDocumentKind =
+  | "design"
   | "module"
+  | "interface"
+  | "goal"
+  | "spec_patch"
+  | "unknown"
+  // Internal projections retained while the runtime is migrated. These are
+  // never accepted as student-facing document paths by the new classifier.
   | "operation"
   | "concurrency"
   | "module_tests"
@@ -25,11 +32,53 @@ export type SpecDocumentKind =
   | "architecture_slice"
   | "adr"
   | "composition"
-  | "goal"
-  | "spec_patch"
   | "verification_public_matrix"
   | "toolchain"
-  | "unknown";
+  ;
+
+export type ModuleLevel = 1 | 2 | 3;
+
+export interface ModuleProperty {
+  id: string;
+  text: string;
+  check?: string;
+}
+
+export interface NormalizedInterface {
+  id: string;
+  name: string;
+  path: string;
+  boundary: "syscall" | "ipc" | "driver" | "abi" | "other";
+  module?: string;
+  operations: NormalizedOperation[];
+}
+
+export interface NormalizedDesign {
+  id: string;
+  path: string;
+  document: Record<string, unknown>;
+}
+
+export interface NormalizedModuleV2 {
+  id: string;
+  module: string;
+  path: string;
+  level: ModuleLevel;
+  purpose: string;
+  owns: string[];
+  state: Record<string, unknown> | null;
+  dependencies: string[];
+  properties: ModuleProperty[];
+  preconditions: string[];
+  postconditions: string[];
+  invariants: ModuleProperty[];
+  errors: string[];
+  concurrency: Record<string, unknown> | null;
+  rely: string[];
+  guarantee: string[];
+  algorithm_intent?: string;
+  operations: NormalizedOperation[];
+}
 
 export interface NormalizedModule {
   id: string;
@@ -69,10 +118,13 @@ export interface ArchitectureStage {
 }
 
 export interface NormalizedSpecBundle {
-  version: "vos-spec.bundle.v1";
+  version: "vos-spec.bundle.v2";
   spec_root: string;
   generated_at: string;
   sources: SpecSource[];
+  design: NormalizedDesign | null;
+  interfaces: NormalizedInterface[];
+  normalized_modules: NormalizedModuleV2[];
   modules: NormalizedModule[];
   operations: NormalizedOperation[];
   architecture: {
@@ -85,6 +137,13 @@ export interface NormalizedSpecBundle {
   patch_records: SpecPatchRecord[];
   goals: Array<{ goal_id: string; category?: string; path: string; evidence_required: string[] }>;
   toolchain_profiles: Array<{ path: string; id?: string; includes: string[] }>;
+  manifest?: {
+    path: string;
+    hash: string;
+    targets: string[];
+    artifacts: string[];
+    checks: Array<{ id: string; command: string; verifies: string[] }>;
+  };
   verification: {
     public_requirements: Array<{ id: string; related_specs: string[]; required_tests: string[]; required_artifacts: string[] }>;
   };

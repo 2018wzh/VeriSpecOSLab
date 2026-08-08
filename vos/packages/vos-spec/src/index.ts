@@ -10,11 +10,17 @@ import {
   agentSpecReviewSchema,
   architectureSliceSchema,
   compositionSchema,
+  designSpecSchema,
   goalSchema,
+  goalV2Schema,
+  interfaceSpecSchema,
+  moduleV2Schema,
   moduleSchema,
   operationSchema,
   publicMatrixSchema,
+  projectManifestSchema,
   seedSchema,
+  specPatchV2Schema,
   specPatchSchema,
   timelineSchema,
 } from "./schemas.ts";
@@ -24,6 +30,8 @@ import type {
   ArchitectureStage,
   DerivedTestMatrix,
   NormalizedModule,
+  NormalizedModuleV2,
+  NormalizedInterface,
   NormalizedOperation,
   NormalizedSpecBundle,
   PatchImpactReport,
@@ -55,6 +63,8 @@ export type {
   DerivedTestMatrix,
   DiagnosticSeverity,
   NormalizedModule,
+  NormalizedModuleV2,
+  NormalizedInterface,
   NormalizedOperation,
   NormalizedSpecBundle,
   PatchImpactReport,
@@ -63,6 +73,14 @@ export type {
   SpecPatchRecord,
   SpecSource,
 } from "./types.ts";
+
+export type ProjectManifest = z.infer<typeof projectManifestSchema>;
+
+export { moduleMatches } from "./utils.ts";
+
+export function parseProjectManifest(value: unknown): ProjectManifest {
+  return projectManifestSchema.parse(value);
+}
 
 export function parseAgentSpecReview(value: unknown, rawText?: string): AgentSpecReview {
   const parsed = agentSpecReviewSchema.parse(value);
@@ -87,6 +105,8 @@ export async function buildNormalizedSpecBundle(params: {
   const sources: SpecSource[] = [];
   const hashes: Record<string, string> = {};
   const modules: NormalizedModule[] = [];
+  const normalizedModules: NormalizedModuleV2[] = [];
+  const interfaces: NormalizedInterface[] = [];
   const operations: NormalizedOperation[] = [];
   const stages: ArchitectureStage[] = [];
   const slices: NormalizedSpecBundle["architecture"]["slices"] = [];
@@ -96,6 +116,7 @@ export async function buildNormalizedSpecBundle(params: {
   const toolchainProfiles: NormalizedSpecBundle["toolchain_profiles"] = [];
   const publicRequirements: NormalizedSpecBundle["verification"]["public_requirements"] = [];
   const patchRecords: SpecPatchRecord[] = [];
+  let design: NormalizedSpecBundle["design"] = null;
   let seedDoc: Record<string, unknown> | null = null;
 
   for (const file of files) {
@@ -119,7 +140,25 @@ export async function buildNormalizedSpecBundle(params: {
     }
 
     try {
-      if (kind === "module") {
+      if (kind === "design") {
+        const doc = designSpecSchema.parse(parsed);
+        design = { id: "design", path: rel, document: doc };
+      } else if (kind === "module" && typeof parsed.level === "number") {
+        const doc = moduleV2Schema.parse(parsed);
+        const normalized = normalizeModuleV2(doc, rel);
+        normalizedModules.push(normalized);
+        modules.push({
+          id: doc.id,
+          module: doc.module,
+          stage: "design",
+          path: rel,
+          purpose: doc.purpose,
+          related_slices: [],
+          related_adrs: [],
+          test_surfaces: doc.owns,
+        });
+        operations.push(...normalized.operations);
+      } else if (kind === "module") {
         const doc = moduleSchema.parse(parsed);
         modules.push({
           id: doc.id,
@@ -183,6 +222,26 @@ export async function buildNormalizedSpecBundle(params: {
           affected_modules: doc.affected_modules,
           tests: unique(doc.cross_component_rules.flatMap((rule) => rule.tests)),
         });
+      } else if (kind === "interface") {
+        const doc = interfaceSpecSchema.parse(parsed);
+        const operationsForInterface = doc.operations.map((operation) => normalizeOperation(operation, doc.name, rel));
+        interfaces.push({
+          id: doc.id,
+          name: doc.name,
+          path: rel,
+          boundary: doc.boundary,
+          module: doc.module,
+          operations: operationsForInterface,
+        });
+        operations.push(...operationsForInterface);
+      } else if (kind === "goal" && isRecord(parsed) && typeof parsed.objective === "string") {
+        const doc = goalV2Schema.parse(parsed);
+        goals.push({
+          goal_id: doc.id,
+          category: "goal",
+          path: rel,
+          evidence_required: [...doc.correctness, ...(doc.metric ? [doc.metric] : [])],
+        });
       } else if (kind === "goal") {
         const doc = goalSchema.parse(parsed);
         goals.push({
@@ -204,6 +263,19 @@ export async function buildNormalizedSpecBundle(params: {
         // Only report diagnostics for malformed values (wrong types), not missing fields.
         const doc = seedSchema.parse(parsed);
         seedDoc = doc as Record<string, unknown>;
+      } else if (kind === "spec_patch" && isRecord(parsed) && Array.isArray(parsed.changes)) {
+        const doc = specPatchV2Schema.parse(parsed);
+        patchRecords.push({
+          id: doc.id,
+          stage: "design",
+          title: doc.reason,
+          kind: "module_change",
+          path: rel,
+          affected_specs: doc.changes,
+          affected_modules: doc.changes,
+          affected_operations: [],
+          required_regressions: [],
+        });
       } else if (kind === "spec_patch") {
         const doc = specPatchSchema.parse(parsed);
         patchRecords.push({
@@ -242,12 +314,30 @@ export async function buildNormalizedSpecBundle(params: {
     }
   }
 
-  diagnostics.push(...runSemanticChecks({ projectRoot, specRoot, modules, operations, stages, slices, compositions, publicRequirements, patchRecords }));
+  const manifest = await loadProjectManifest(projectRoot, diagnostics);
+  diagnostics.push(...runSemanticChecks({
+    projectRoot,
+    specRoot,
+    modules,
+    normalizedModules,
+    interfaces,
+    design,
+    operations,
+    stages,
+    slices,
+    compositions,
+    publicRequirements,
+    patchRecords,
+    manifest,
+  }));
   return {
-    version: "vos-spec.bundle.v1",
+    version: "vos-spec.bundle.v2",
     spec_root: normalizePath(path.relative(projectRoot, specRoot)) || "spec",
     generated_at: new Date().toISOString(),
     sources: sources.sort(byPath),
+    design,
+    interfaces: interfaces.sort(byId),
+    normalized_modules: normalizedModules.sort(byId),
     modules: modules.sort(byId),
     operations: operations.sort(byId),
     architecture: {
@@ -265,6 +355,7 @@ export async function buildNormalizedSpecBundle(params: {
     },
     hashes,
     visibility: Object.fromEntries(sources.map((source) => [source.path, inferVisibility(source.path)])),
+    manifest,
     diagnostics,
   };
 }
@@ -284,6 +375,117 @@ export async function discoverSpecFiles(root: string): Promise<string[]> {
   return files.sort();
 }
 
+function normalizeModuleV2(
+  doc: z.infer<typeof moduleV2Schema>,
+  rel: string,
+): NormalizedModuleV2 {
+  const operations = doc.interface.map((operation) => normalizeOperation(operation, doc.module, rel));
+  return {
+    id: doc.id,
+    module: doc.module,
+    path: rel,
+    level: doc.level,
+    purpose: doc.purpose,
+    owns: doc.owns,
+    state: doc.state ?? null,
+    dependencies: doc.dependencies,
+    properties: doc.properties.map(normalizeProperty),
+    preconditions: doc.preconditions,
+    postconditions: doc.postconditions,
+    invariants: doc.invariants.map(normalizeProperty),
+    errors: doc.errors,
+    concurrency: doc.concurrency ?? null,
+    rely: doc.rely,
+    guarantee: doc.guarantee,
+    algorithm_intent: doc.algorithm_intent,
+    operations,
+  };
+}
+
+function normalizeOperation(operation: unknown, owner: string, rel: string): NormalizedOperation {
+  const record = typeof operation === "string" ? { name: operation } : (operation as Record<string, unknown>);
+  const name = typeof record.name === "string" ? record.name : "operation";
+  const properties = Array.isArray(record.properties) ? record.properties.map(normalizeProperty) : [];
+  const preconditions = stringList(record.pre);
+  const postconditions = stringList(record.post);
+  const errors = stringList(record.errors);
+  const checks = properties.map((property) => property.check).filter((value): value is string => Boolean(value));
+  return {
+    id: `${owner}.${name}`,
+    module: owner,
+    operation: name,
+    stage: "design",
+    path: rel,
+    requires_modules: [],
+    requires_ops: [],
+    public_tests: checks,
+    generated_tests: [],
+    hidden_tags: [],
+    codegen_targets: [],
+    invariants_preserved: properties.map((property) => property.text),
+    required_followup_checks: [...preconditions, ...postconditions, ...errors],
+  };
+}
+
+function normalizeProperty(value: unknown): { id: string; text: string; check?: string } {
+  if (typeof value === "string") {
+    const id = value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "property";
+    return { id, text: value };
+  }
+  const record = value as Record<string, unknown>;
+  return {
+    id: String(record.id ?? "property"),
+    text: String(record.text ?? ""),
+    check: typeof record.check === "string" ? record.check : undefined,
+  };
+}
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+async function loadProjectManifest(
+  projectRoot: string,
+  diagnostics: SpecDiagnostic[],
+): Promise<NormalizedSpecBundle["manifest"]> {
+  const manifestPath = path.join(projectRoot, "vos.yaml");
+  if (!existsSync(manifestPath)) return undefined;
+  const rel = normalizePath(path.relative(projectRoot, manifestPath));
+  const raw = await readFile(manifestPath, "utf8");
+  try {
+    const parsed = projectManifestSchema.parse(parseYaml(raw));
+    const checks = Object.entries(parsed.checks).map(([id, target]) => ({
+      id,
+      command: [target.program, ...target.args].join(" "),
+      verifies: target.verifies,
+    })).sort(byId);
+    return {
+      path: rel,
+      hash: sha256(raw),
+      targets: ["build", ...Object.keys(parsed.runners).map((name) => `run:${name}`)],
+      artifacts: [
+        ...parsed.build.artifacts,
+        ...Object.values(parsed.runners).flatMap((target) => target?.artifacts ?? []),
+      ].sort(),
+      checks,
+    };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      for (const issue of error.issues) {
+        diagnostics.push(errorDiagnostic(
+          "manifest.validation_failed",
+          `${issue.path.join(".") || "root"}: ${issue.message}`,
+          rel,
+        ));
+      }
+    } else {
+      diagnostics.push(errorDiagnostic("manifest.parse_failed", errorMessage(error), rel));
+    }
+    return undefined;
+  }
+}
+
 export function composeArchitecture(bundle: NormalizedSpecBundle, targetStage?: string): ArchitectureCompositionReport {
   const stage = targetStage ?? bundle.architecture.stages.at(-1)?.stage ?? "";
   const stageIndex = bundle.architecture.stages.findIndex((item) => item.stage === stage);
@@ -292,7 +494,9 @@ export function composeArchitecture(bundle: NormalizedSpecBundle, targetStage?: 
   const modulesFromSlices = bundle.architecture.slices
     .filter((slice) => !slice.stage || activeStages.some((item) => item.stage === slice.stage || item.slice === slice.id))
     .flatMap((slice) => slice.enabled_modules);
-  const enabledModules = expandModuleRefs(unique([...modulesFromStages, ...modulesFromSlices]), bundle.modules);
+  const enabledModules = modulesFromStages.length === 0 && modulesFromSlices.length === 0
+    ? bundle.modules.map((module) => module.module)
+    : expandModuleRefs(unique([...modulesFromStages, ...modulesFromSlices]), bundle.modules);
   const enabledOperations = bundle.operations
     .filter((operation) => enabledModules.some((module) => moduleMatches(operation.module, module)))
     .map((operation) => operation.id);
@@ -342,6 +546,9 @@ export function deriveTestMatrix(bundle: NormalizedSpecBundle, targetStage?: str
     for (const test of rule.tests) {
       generatedTests.set(test, { id: test, related_specs: [rule.id], source: rule.id });
     }
+  }
+  for (const check of bundle.manifest?.checks ?? []) {
+    publicTests.set(check.id, { id: check.id, related_specs: check.verifies, source: bundle.manifest?.path ?? "vos.yaml" });
   }
   return {
     target_stage: composition.target_stage,
@@ -636,14 +843,33 @@ function runSemanticChecks(args: {
   projectRoot: string;
   specRoot: string;
   modules: NormalizedModule[];
+  normalizedModules: NormalizedModuleV2[];
+  interfaces: NormalizedInterface[];
+  design: NormalizedSpecBundle["design"];
   operations: NormalizedOperation[];
   stages: ArchitectureStage[];
   slices: NormalizedSpecBundle["architecture"]["slices"];
   compositions: NormalizedSpecBundle["composition"];
   publicRequirements: NormalizedSpecBundle["verification"]["public_requirements"];
   patchRecords: SpecPatchRecord[];
+  manifest?: NormalizedSpecBundle["manifest"];
 }): SpecDiagnostic[] {
   const diagnostics: SpecDiagnostic[] = [];
+  diagnostics.push(...validateV2Documents(args));
+  if (args.manifest) {
+    const stableIds = new Set([
+      ...(args.design ? ["design"] : []),
+      ...args.normalizedModules.map((module) => module.id),
+      ...args.interfaces.map((iface) => iface.id),
+    ]);
+    for (const check of args.manifest.checks) {
+      for (const ref of check.verifies) {
+        if (!stableIds.has(ref)) {
+          diagnostics.push(errorDiagnostic("manifest.verifies_missing", `test target ${check.id} verifies unknown Spec ID ${ref}`, args.manifest.path, ref));
+        }
+      }
+    }
+  }
   diagnostics.push(...duplicates(args.modules.map((item) => ({ id: item.id, path: item.path })), "module.duplicate_id"));
   diagnostics.push(...duplicates(args.operations.map((item) => ({ id: item.id, path: item.path })), "operation.duplicate_id"));
   const stages = new Set(args.stages.map((stage) => stage.stage));
@@ -651,6 +877,7 @@ function runSemanticChecks(args: {
   const operations = new Set(args.operations.map((operation) => operation.id));
 
   for (const module of args.modules) {
+    if (!normalizePath(module.path).endsWith("/module.yaml")) continue;
     const expectedPath = `spec/modules/${module.module}/module.yaml`;
     if (normalizePath(module.path) !== expectedPath) {
       diagnostics.push(errorDiagnostic("module.path_mismatch", `module ${module.module} must live at ${expectedPath}`, module.path, module.module));
@@ -660,6 +887,7 @@ function runSemanticChecks(args: {
     }
   }
   for (const op of args.operations) {
+    if (!op.path.includes("/ops/")) continue;
     const expectedPrefix = `spec/modules/${op.module}/ops/`;
     if (!op.path.startsWith(expectedPrefix)) {
       diagnostics.push(errorDiagnostic("operation.path_mismatch", `operation ${op.id} must live under ${expectedPrefix}`, op.path, op.id));
@@ -699,6 +927,72 @@ function runSemanticChecks(args: {
   return diagnostics;
 }
 
+function validateV2Documents(args: {
+  projectRoot: string;
+  normalizedModules: NormalizedModuleV2[];
+  interfaces: NormalizedInterface[];
+  design: NormalizedSpecBundle["design"];
+  operations: NormalizedOperation[];
+}): SpecDiagnostic[] {
+  const diagnostics: SpecDiagnostic[] = [];
+  const moduleIds = new Set(args.normalizedModules.map((module) => module.module));
+  const specIds = new Set<string>();
+  if (args.design) specIds.add("design");
+
+  for (const module of args.normalizedModules) {
+    if (specIds.has(module.id)) {
+      diagnostics.push(errorDiagnostic("spec.duplicate_id", `duplicate stable Spec ID ${module.id}`, module.path, module.id));
+    }
+    specIds.add(module.id);
+    for (const owned of module.owns) {
+      const normalized = normalizePath(owned);
+      const isAbsolute = path.posix.isAbsolute(normalized) || /^[A-Za-z]:\//.test(normalized);
+      const hasTraversal = normalized === ".." || normalized.startsWith("../") || normalized.includes("/../");
+      if (isAbsolute || hasTraversal) {
+        diagnostics.push(errorDiagnostic("module.owns_path_invalid", `owns path must be repository-relative and cannot traverse: ${owned}`, module.path, module.id));
+      }
+      const resolved = path.resolve(args.projectRoot, owned);
+      const relative = path.relative(args.projectRoot, resolved);
+      if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        diagnostics.push(errorDiagnostic("module.owns_path_escape", `owns path escapes the project root: ${owned}`, module.path, module.id));
+      }
+    }
+    for (const dependency of module.dependencies) {
+      if (![...moduleIds].some((candidate) => moduleMatches(candidate, dependency))) {
+        diagnostics.push(errorDiagnostic("module.dependency_missing", `module dependency does not exist: ${dependency}`, module.path, module.id));
+      }
+    }
+    if (module.level < 2) {
+      diagnostics.push(warningDiagnostic("module.level_incomplete", `module ${module.id} is L${module.level}; state, pre/postconditions, and invariants are not required`, module.path, module.id));
+    }
+    if (module.level < 3 && (module.concurrency || module.rely.length > 0 || module.guarantee.length > 0 || module.algorithm_intent)) {
+      diagnostics.push(warningDiagnostic("module.level_overdeclared", `module ${module.id} declares L3 fields while level is L${module.level}`, module.path, module.id));
+    }
+  }
+
+  for (const iface of args.interfaces) {
+    if (specIds.has(iface.id)) {
+      diagnostics.push(errorDiagnostic("spec.duplicate_id", `duplicate stable Spec ID ${iface.id}`, iface.path, iface.id));
+    }
+    specIds.add(iface.id);
+    if (iface.module && ![...moduleIds].some((candidate) => moduleMatches(candidate, iface.module!))) {
+      diagnostics.push(errorDiagnostic("interface.module_missing", `interface references missing module ${iface.module}`, iface.path, iface.id));
+    }
+    if (iface.operations.length === 0) {
+      diagnostics.push(errorDiagnostic("interface.operations_missing", `interface ${iface.id} must declare at least one operation`, iface.path, iface.id));
+    }
+  }
+
+  const opIds = new Set<string>();
+  for (const operation of args.operations) {
+    if (opIds.has(operation.id)) {
+      diagnostics.push(errorDiagnostic("operation.duplicate_id", `duplicate stable operation ID ${operation.id}`, operation.path, operation.id));
+    }
+    opIds.add(operation.id);
+  }
+  return diagnostics;
+}
+
 function validateCompositionRefs(
   compositions: NormalizedSpecBundle["composition"],
   modules: NormalizedModule[],
@@ -720,6 +1014,12 @@ function validateCompositionRefs(
 
 function classifySpecFile(relPath: string): SpecDocumentKind {
   const rel = normalizePath(relPath);
+  if (rel === "spec/design.yaml") return "design";
+  if (rel.startsWith("spec/interfaces/") && (rel.endsWith(".yaml") || rel.endsWith(".yml"))) return "interface";
+  if (rel.startsWith("spec/modules/") && (rel.endsWith(".yaml") || rel.endsWith(".yml")) && !rel.includes("/ops/")) {
+    if (!rel.endsWith("/module.yaml") && !rel.endsWith("/concurrency.yaml") && !rel.endsWith("/tests.yaml")) return "module";
+  }
+  if (rel.startsWith("spec/patches/") && (rel.endsWith(".yaml") || rel.endsWith(".yml"))) return "spec_patch";
   if (rel.startsWith("spec/modules/") && rel.endsWith("/module.yaml")) return "module";
   if (rel.startsWith("spec/modules/") && rel.includes("/ops/")) return "operation";
   if (rel.startsWith("spec/modules/") && rel.endsWith("/concurrency.yaml")) return "concurrency";

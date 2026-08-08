@@ -154,3 +154,168 @@ export const agentSpecReviewSchema = z.object({
   })).default([]),
   summary: z.string().default("agent review completed"),
 }).passthrough();
+
+// Student-facing v2 contracts. Keep these separate from the legacy parser
+// exports above while the runtime projection is migrated slice by slice.
+const v2StringArray = z.preprocess(
+  (value) => normalizeStringList(value),
+  z.array(z.string()).default([]),
+);
+
+const v2PropertySchema = z.union([
+  z.string().min(1),
+  z.object({
+    id: z.string().min(1),
+    text: z.string().min(1),
+    check: z.string().min(1).optional(),
+  }).strict(),
+]);
+
+const v2OperationSchema = z.object({
+  name: z.string().min(1),
+  input: z.unknown().optional(),
+  output: z.unknown().optional(),
+  pre: v2StringArray,
+  post: v2StringArray,
+  errors: v2StringArray,
+  properties: z.array(v2PropertySchema).default([]),
+}).strict();
+
+export const designSpecSchema = z.object({
+  system: z.object({
+    name: z.string().min(1),
+    language: z.string().min(1),
+    isa: z.string().min(1),
+  }).strict(),
+  machine: z.object({
+    qemu: z.record(z.unknown()).optional(),
+    hardware: z.record(z.unknown()).optional(),
+  }).strict(),
+  kernel: z.object({
+    organization: z.string().min(1),
+    execution: z.string().min(1),
+    protection: z.string().min(1),
+    communication: z.string().min(1),
+    resource_model: z.string().min(1),
+  }).strict(),
+  required_mechanisms: z.array(z.string()).default([]),
+  composition_invariants: z.array(z.string()).max(3).default([]),
+  non_goals: z.array(z.string()).default([]),
+  hardware_port: z.object({
+    board: z.string().min(1),
+    boot: z.string().min(1),
+    console: z.string().min(1),
+    interrupt: z.string().min(1),
+  }).strict(),
+}).strict();
+
+export const moduleV2Schema = z.object({
+  id: z.string().min(1),
+  module: z.string().min(1),
+  level: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  purpose: z.string().min(1),
+  owns: z.array(z.string().min(1)).min(1),
+  interface: z.array(z.union([z.string().min(1), v2OperationSchema])).default([]),
+  properties: z.array(v2PropertySchema).default([]),
+  errors: v2StringArray,
+  state: z.record(z.unknown()).optional(),
+  preconditions: v2StringArray,
+  postconditions: v2StringArray,
+  invariants: z.array(v2PropertySchema).default([]),
+  dependencies: v2StringArray,
+  concurrency: z.record(z.unknown()).optional(),
+  rely: v2StringArray,
+  guarantee: v2StringArray,
+  algorithm_intent: z.string().min(1).optional(),
+}).strict();
+
+export const interfaceSpecSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  boundary: z.enum(["syscall", "ipc", "driver", "abi", "other"]),
+  module: z.string().min(1).optional(),
+  operations: z.array(v2OperationSchema).min(1),
+}).strict();
+
+export const goalV2Schema = z.object({
+  id: z.string().min(1),
+  objective: z.string().min(1),
+  metric: z.string().min(1).optional(),
+  oracle: z.string().min(1).optional(),
+  correctness: v2StringArray,
+}).strict();
+
+export const specPatchV2Schema = z.object({
+  id: z.string().min(1),
+  reason: z.string().min(1),
+  changes: z.array(z.string().min(1)).min(1),
+  new_invariants: z.array(z.string().min(1)).default([]),
+}).strict();
+
+const v2EnvSchema = z.preprocess(
+  (value) => Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? Object.keys(value as Record<string, unknown>)
+      : value,
+  z.array(z.string().min(1)).default([]),
+);
+
+const commandSchema = z.object({
+  program: z.string().min(1),
+  args: z.array(z.string()).default([]),
+  cwd: z.string().min(1).optional(),
+  env: v2EnvSchema,
+  timeout: z.number().int().positive().optional(),
+}).strict();
+
+const targetSchema = z.preprocess(
+  (value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+    const record = value as Record<string, unknown>;
+    if (record.command && typeof record.command === "object" && !Array.isArray(record.command)) {
+      const { command, ...rest } = record;
+      return { ...(command as Record<string, unknown>), ...rest };
+    }
+    return record;
+  },
+  commandSchema.extend({
+    artifacts: z.array(z.string().min(1)).default([]),
+  }).strict(),
+);
+
+const checkTargetSchema = z.preprocess(
+  (value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+    const record = value as Record<string, unknown>;
+    if (record.command && typeof record.command === "object" && !Array.isArray(record.command)) {
+      const { command, ...rest } = record;
+      return { ...(command as Record<string, unknown>), ...rest };
+    }
+    return record;
+  },
+  commandSchema.extend({
+    verifies: z.array(z.string().min(1)).default([]),
+  }).strict(),
+);
+
+export const projectManifestSchema = z.object({
+  version: z.literal("vos.project.v1"),
+  build: targetSchema,
+  runners: z.object({
+    qemu: targetSchema.optional(),
+    hardware: targetSchema.optional(),
+  }).strict(),
+  checks: z.record(checkTargetSchema).default({}),
+  knowledge: z.object({
+    sources: z.array(z.object({
+      id: z.string().min(1),
+      path: z.string().min(1).optional(),
+      url: z.string().url().optional(),
+      revision: z.string().min(1).optional(),
+      sha256: z.string().regex(/^[0-9a-f]{64}$/i),
+    }).strict().refine((source) => Boolean(source.path || source.url), {
+      message: "source requires either a repository-relative path or a Git URL",
+    })).default([]),
+  }).strict().default({ sources: [] }),
+}).strict();
