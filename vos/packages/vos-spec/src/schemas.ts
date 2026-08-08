@@ -281,6 +281,9 @@ const targetSchema = z.preprocess(
   },
   commandSchema.extend({
     artifacts: z.array(z.string().min(1)).default([]),
+    board: z.string().min(1).optional(),
+    serial: z.string().min(1).optional(),
+    workload: z.string().min(1).optional(),
   }).strict(),
 );
 
@@ -316,6 +319,41 @@ export const projectManifestSchema = z.object({
       sha256: z.string().regex(/^[0-9a-f]{64}$/i),
     }).strict().refine((source) => Boolean(source.path || source.url), {
       message: "source requires either a repository-relative path or a Git URL",
+    }).refine((source) => !source.url || Boolean(source.revision), {
+      message: "Git KB sources require a pinned revision",
     })).default([]),
   }).strict().default({ sources: [] }),
-}).strict();
+}).strict().superRefine((manifest, ctx) => {
+  const checkTargetPaths = (target: { cwd?: string; artifacts?: string[] }, path: (string | number)[]) => {
+    if (target.cwd) {
+      const normalized = target.cwd.replace(/\\/g, "/");
+      if (normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized) || normalized === ".." || normalized.startsWith("../") || normalized.includes("/../")) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...path, "cwd"], message: "command cwd must be repository-relative and cannot traverse" });
+      }
+    }
+    for (const [index, artifact] of (target.artifacts ?? []).entries()) {
+      const normalized = artifact.replace(/\\/g, "/");
+      if (normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized) || normalized === ".." || normalized.startsWith("../") || normalized.includes("/../")) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...path, "artifacts", index], message: "artifact path must be repository-relative and cannot traverse" });
+      }
+    }
+  };
+  checkTargetPaths(manifest.build, ["build"]);
+  if (manifest.runners.qemu) checkTargetPaths(manifest.runners.qemu, ["runners", "qemu"]);
+  if (manifest.runners.hardware) checkTargetPaths(manifest.runners.hardware, ["runners", "hardware"]);
+  for (const [id, target] of Object.entries(manifest.checks)) checkTargetPaths(target, ["checks", id]);
+  const qemu = manifest.runners.qemu;
+  if (qemu && /qemu-system/i.test(qemu.program) && !qemu.args.includes("-nographic")) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["runners", "qemu", "args"], message: "QEMU targets must include -nographic for serial-only evidence" });
+  }
+  for (const [index, source] of manifest.knowledge.sources.entries()) {
+    if (source.path && source.url) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["knowledge", "sources", index], message: "source must use either path or url, not both" });
+    }
+    if (!source.path) continue;
+    const normalized = source.path.replace(/\\/g, "/");
+    if (normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized) || normalized.split("/").some((segment) => segment === "..")) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["knowledge", "sources", index, "path"], message: "source path must be repository-relative and cannot traverse" });
+    }
+  }
+});

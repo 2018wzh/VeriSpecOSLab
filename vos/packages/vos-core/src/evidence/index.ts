@@ -7,6 +7,7 @@ import { createRunEvent, eventToLine, type RunEvent } from "./events.ts";
 import type { RunAuthContext } from "../types.ts";
 import { writeEvidenceIndex } from "../repro/ledger.ts";
 import { relativeProjectPath } from "../utils/paths.ts";
+import { appendAuditEvent } from "../audit/chain.ts";
 
 export interface EvidenceWriterOptions {
   runId?: string;
@@ -251,6 +252,7 @@ export class EvidenceWriter {
 
   private async writeEvent(event: RunEvent): Promise<void> {
     appendFileSync(this.eventsPath, eventToLine(event));
+    await appendAuditEvent(this.projectRoot, event);
     await this.onEvent?.(event);
   }
 }

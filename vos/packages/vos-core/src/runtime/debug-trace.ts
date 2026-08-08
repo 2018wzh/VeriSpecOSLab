@@ -584,7 +584,7 @@ export async function ensureCleanGitWorktree(projectRoot: string): Promise<void>
     .filter(Boolean)
     .filter((line) => {
       const file = line.slice(2).trim().replace(/^"|"$/g, "");
-      return !file.startsWith(".vos/runs/") && !file.startsWith(".vos/worktrees/");
+      return !file.startsWith(".vos/");
     });
   if (dirty.length > 0) {
     throw new CliError(`agent debug trace requires a clean git worktree: ${dirty.join(", ")}`, "policy_blocked");

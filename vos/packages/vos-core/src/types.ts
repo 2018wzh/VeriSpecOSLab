@@ -125,6 +125,10 @@ export interface SpecLintCommand extends BaseCommand {
   noAgent?: boolean;
 }
 
+export interface SpecCheckCommand extends BaseCommand {
+  kind: "spec_check";
+}
+
 export interface SpecNormalizeCommand extends BaseCommand {
   kind: "spec_normalize";
 }
@@ -182,6 +186,12 @@ export interface RunQemuCommand extends BaseCommand {
   caseId?: string;
   listProfiles?: boolean;
   listCases?: boolean;
+}
+
+export interface RunHardwareCommand extends BaseCommand {
+  kind: "run_hardware";
+  dryRun: boolean;
+  timeoutMs?: number;
 }
 
 export interface TestCommand extends BaseCommand {
@@ -281,6 +291,42 @@ export interface AgentDebugCommand extends BaseCommand {
   display?: boolean;
 }
 
+export interface AgentDesignCommand extends BaseCommand {
+  kind: "agent_design";
+  confirm?: boolean;
+  display?: boolean;
+}
+
+export interface AgentSpecCommand extends BaseCommand {
+  kind: "agent_spec";
+  module: string;
+  confirm?: boolean;
+  display?: boolean;
+}
+
+export interface AgentImplementCommand extends BaseCommand {
+  kind: "agent_implement";
+  module: string;
+  display?: boolean;
+}
+
+export interface AgentVerifyCommand extends BaseCommand {
+  kind: "agent_verify";
+  display?: boolean;
+}
+
+export interface AgentKbCommand extends BaseCommand {
+  kind: "agent_kb";
+  question?: string;
+  interactive: boolean;
+}
+
+export interface AgentReviewCommand extends BaseCommand {
+  kind: "agent_review";
+  module?: string;
+  display?: boolean;
+}
+
 export interface AgentLogCommand extends BaseCommand {
   kind: "agent_log";
   append: boolean;
@@ -359,6 +405,7 @@ export type CliCommand =
   | ToolchainLintCommand
   | ToolchainInitCommand
   | SpecLintCommand
+  | SpecCheckCommand
   | SpecNormalizeCommand
   | SpecCheckConsistencyCommand
   | SpecPatchLintCommand
@@ -369,6 +416,7 @@ export type CliCommand =
   | BuildCommand
   | BuildGenerateCommand
   | RunQemuCommand
+  | RunHardwareCommand
   | TestCommand
   | VerifyCommand
   | TraceSyscallCommand
@@ -383,6 +431,12 @@ export type CliCommand =
   | AgentApplyPatchCommand
   | AgentValidateGeneratedCommand
   | AgentDebugCommand
+  | AgentDesignCommand
+  | AgentSpecCommand
+  | AgentImplementCommand
+  | AgentVerifyCommand
+  | AgentKbCommand
+  | AgentReviewCommand
   | AgentLogCommand
   | AgentReviewSpecCommand
   | AgentAskCommand

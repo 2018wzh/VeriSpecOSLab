@@ -42,6 +42,9 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
     case "spec_lint":
       return handlers.executeSpecLint(command, projectRoot, context, evidence);
 
+    case "spec_check":
+      return handlers.executeSpecCheck(command, projectRoot, context, evidence);
+
     case "spec_normalize":
       return handlers.executeSpecNormalize(command, projectRoot, context, evidence);
 
@@ -71,6 +74,9 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
 
     case "run_qemu":
       return handlers.executeRunQemu(command, context, evidence, projectRoot);
+
+    case "run_hardware":
+      return handlers.executeRunHardware(command, context, evidence, projectRoot);
 
     case "test":
       return handlers.executeTest(command, context, evidence, projectRoot);
@@ -137,6 +143,24 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
 
     case "agent_debug":
       return handlers.executeAgentDebug(command, context, evidence);
+
+    case "agent_design":
+      return handlers.executeAgentDesign(command, context, evidence);
+
+    case "agent_spec":
+      return handlers.executeAgentSpec(command, context, evidence);
+
+    case "agent_implement":
+      return handlers.executeAgentImplement(command, context, evidence);
+
+    case "agent_verify":
+      return handlers.executeAgentVerify(command, context, evidence);
+
+    case "agent_kb":
+      return handlers.executeAgentKb(command, context, evidence);
+
+    case "agent_review":
+      return handlers.executeAgentReview(command, context, evidence);
 
     case "agent_log":
       return handlers.executeAgentLog(command, projectRoot, evidence);

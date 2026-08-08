@@ -9,6 +9,12 @@ import type {
   AgentServeCommand,
   AgentValidateGeneratedCommand,
   AgentAskCommand,
+  AgentDesignCommand,
+  AgentSpecCommand,
+  AgentImplementCommand,
+  AgentVerifyCommand,
+  AgentKbCommand,
+  AgentReviewCommand,
   ArchComposeCommand,
   ArchDeriveTestsCommand,
   ArchLintCommand,
@@ -34,11 +40,13 @@ import type {
   ProjectBindCommand,
   ReportGenerateCommand,
   RunQemuCommand,
+  RunHardwareCommand,
   ServeCommand,
   StageShowCommand,
   StageSaveCommand,
   SeedStatusCommand,
   SpecCheckConsistencyCommand,
+  SpecCheckCommand,
   SpecLintCommand,
   SpecNormalizeCommand,
   SpecPatchApplyCommand,
@@ -404,6 +412,10 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
 
   if (command === "spec") {
     const second = rest[0];
+    if (second === "check") {
+      if (rest.length > 1) throw new Error("spec check does not accept positional arguments");
+      return { kind: "spec_check" } satisfies SpecCheckCommand;
+    }
     if (second === "lint") {
       let noAgent = false;
       let target: string | undefined;
@@ -585,6 +597,31 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
 
   if (command === "run") {
     const second = rest[0];
+    if (second === "hardware") {
+      let dryRun = false;
+      let timeoutMs: number | undefined;
+      for (let i = 1; i < rest.length; i++) {
+        const arg = rest[i];
+        if (arg === "--dry-run") {
+          dryRun = true;
+          continue;
+        }
+        if (arg === "--timeout") {
+          timeoutMs = Number(resolveRequiredValue(rest, i, arg));
+          i++;
+          continue;
+        }
+        if (arg.startsWith("--timeout=")) {
+          timeoutMs = Number(arg.slice("--timeout=".length));
+          continue;
+        }
+        throw new Error(`unknown flag for run hardware: ${arg}`);
+      }
+      if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs < 0)) {
+        throw new Error("--timeout requires a non-negative integer");
+      }
+      return { kind: "run_hardware", dryRun, timeoutMs } satisfies RunHardwareCommand;
+    }
     if (second !== "qemu") {
       throw new Error("only `run qemu` is supported");
     }
@@ -696,7 +733,7 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
   }
 
   if (command === "verify") {
-    const scope = rest[0] as VerifyScope;
+    const scope = (rest[0] ?? "public") as VerifyScope;
     if (!isVerifyScope(scope)) {
       throw new Error(`unsupported verify mode: ${rest[0]}`);
     }
@@ -779,6 +816,7 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
 
   if (command === "report") {
     const second = rest[0];
+    if (!second) return { kind: "report_generate", final: false } satisfies ReportGenerateCommand;
     if (second !== "generate") {
       throw new Error("only `report generate` is supported");
     }
@@ -812,6 +850,7 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
 
   if (command === "submit") {
     const second = rest[0];
+    if (!second) return { kind: "submit_pack" } satisfies SubmitPackCommand;
     if (second !== "pack") {
       throw new Error("only `submit pack` is supported");
     }
@@ -941,6 +980,47 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
 
   if (command === "agent") {
     const second = rest[0];
+    if (second === "design") {
+      const display = rest.slice(1).some(isInteractiveDisplayFlag);
+      const confirm = rest.slice(1).some((arg) => arg === "--confirm" || arg === "--yes");
+      if (rest.slice(1).some((arg) => !isInteractiveDisplayFlag(arg) && arg !== "--confirm" && arg !== "--yes")) {
+        throw new Error("agent design accepts --confirm and --interactive");
+      }
+      return { kind: "agent_design", ...(confirm ? { confirm: true } : {}), ...(display ? { display: true } : {}) } satisfies AgentDesignCommand;
+    }
+    if (second === "spec") {
+      const module = rest[1];
+      if (!module || module.startsWith("-")) throw new Error("agent spec requires <module>");
+      const tail = rest.slice(2);
+      const confirm = tail.some((arg) => arg === "--confirm" || arg === "--yes");
+      if (tail.some((arg) => !isInteractiveDisplayFlag(arg) && arg !== "--confirm" && arg !== "--yes")) throw new Error("agent spec accepts one module, --confirm, and --interactive");
+      return { kind: "agent_spec", module, ...(confirm ? { confirm: true } : {}), ...(tail.some(isInteractiveDisplayFlag) ? { display: true } : {}) } satisfies AgentSpecCommand;
+    }
+    if (second === "implement") {
+      const module = rest[1];
+      if (!module || module.startsWith("-")) throw new Error("agent implement requires <module>");
+      const tail = rest.slice(2);
+      if (tail.some((arg) => !isInteractiveDisplayFlag(arg))) throw new Error("agent implement accepts one module and --interactive");
+      return { kind: "agent_implement", module, ...(tail.some(isInteractiveDisplayFlag) ? { display: true } : {}) } satisfies AgentImplementCommand;
+    }
+    if (second === "verify") {
+      const display = rest.slice(1).some(isInteractiveDisplayFlag);
+      if (rest.slice(1).some((arg) => !isInteractiveDisplayFlag(arg))) throw new Error("agent verify accepts only --interactive");
+      return { kind: "agent_verify", ...(display ? { display: true } : {}) } satisfies AgentVerifyCommand;
+    }
+    if (second === "kb") {
+      const question = rest.slice(1).filter((arg) => !isInteractiveDisplayFlag(arg)).join(" ").trim() || undefined;
+      const interactive = rest.slice(1).some(isInteractiveDisplayFlag) || !question;
+      if (rest.slice(1).some((arg) => arg.startsWith("--") && !isInteractiveDisplayFlag(arg))) {
+        throw new Error("agent kb accepts a question and optional --interactive");
+      }
+      return { kind: "agent_kb", question, interactive } satisfies AgentKbCommand;
+    }
+    if (second === "review") {
+      const positional = rest.slice(1).filter((arg) => !isInteractiveDisplayFlag(arg));
+      if (positional.length > 1) throw new Error("agent review accepts at most one module");
+      return { kind: "agent_review", module: positional[0], ...(rest.some(isInteractiveDisplayFlag) ? { display: true } : {}) } satisfies AgentReviewCommand;
+    }
     if (second === "serve") {
       let host: string | undefined;
       let port: number | undefined;

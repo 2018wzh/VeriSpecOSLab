@@ -113,7 +113,7 @@ export async function writeEvidenceIndex(params: {
     run_id: params.runId,
     command: params.command,
     status: params.status,
-    manifest: path.relative(params.projectRoot, params.manifestPath),
+    manifest: path.relative(params.projectRoot, params.manifestPath).replace(/\\/g, "/"),
     started_at: params.startedAt,
     finished_at: params.finishedAt,
   });
@@ -154,9 +154,7 @@ async function findLedgerEntry(projectRoot: string, commitSha: string): Promise<
 }
 
 function isIgnoredRuntimeArtifact(file: string): boolean {
-  return file.startsWith(".vos/runs/") ||
-    file.startsWith(".vos/index/") ||
-    file === ".vos/commit-ledger.jsonl" ||
+  return file.startsWith(".vos/") ||
     file === ".gitignore" ||
     file === "AGENTS.md";
 }

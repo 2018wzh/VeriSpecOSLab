@@ -824,7 +824,7 @@ async function runBehaviorTestsForObligations(params: {
         recursive: true,
         filter: (source) => {
           const rel = relativeProjectPath(params.projectRoot, source);
-          return !rel.startsWith(".vos/runs") && !rel.startsWith(".vos/worktrees") && rel !== ".git";
+          return !rel.startsWith(".vos/") && rel !== ".git";
         },
       });
       const patchPolicy = validateBehaviorPatch(patch.patch);
@@ -982,7 +982,7 @@ async function runBehaviorCase(params: {
 function validateBehaviorPatch(patchText: string): { ok: true } | { ok: false } {
   for (const changedPath of extractPatchPaths(patchText)) {
     const normalized = changedPath.replace(/\\/g, "/").replace(/^\/+/, "");
-    if (normalized.startsWith("../") || normalized.startsWith("spec/") || normalized.startsWith(".git/") || normalized.startsWith(".vos/runs/") || normalized.startsWith(".vos/worktrees/")) {
+    if (normalized.startsWith("../") || normalized.startsWith("spec/") || normalized.startsWith(".git/") || normalized.startsWith(".vos/")) {
       return { ok: false };
     }
   }
@@ -1005,7 +1005,7 @@ async function collectProjectTree(projectRoot: string): Promise<string[]> {
     for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
       const absolute = path.join(dir, entry.name);
       const relative = relativeProjectPath(projectRoot, absolute);
-      if (relative === ".git" || relative.startsWith(".vos/runs/")) continue;
+      if (relative === ".git" || relative.startsWith(".vos/")) continue;
       if (entry.isDirectory()) {
         await visit(absolute);
       } else {

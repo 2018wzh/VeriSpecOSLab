@@ -2,6 +2,7 @@ export {
   executeBuild,
   executeBuildGenerate,
   executeRunQemu,
+  executeRunHardware,
   executeTest,
   executeVerify,
   executeTraceSyscall,

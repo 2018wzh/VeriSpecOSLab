@@ -57,6 +57,7 @@ export function assertCommandAllowed(command: string[], policy: EffectivePolicy,
 export function matchCommandIntent(command: readonly string[]): string {
   if (command.length === 0) return "";
   if (command[0] === "spec" && command[1] === "lint") return "spec lint";
+  if (command[0] === "spec" && command[1] === "check") return "spec check";
   if (command[0] === "spec" && command[1] === "normalize") return "spec normalize";
   if (command[0] === "spec" && command[1] === "check-consistency") return "spec check-consistency";
   if (command[0] === "spec" && command[1] === "patch" && command[2] === "lint") return "spec patch lint";
@@ -70,6 +71,9 @@ export function matchCommandIntent(command: readonly string[]): string {
   if (command[0] === "toolchain" && command[1] === "lint") return "toolchain lint";
   if (command[0] === "build" && command[1] === "generate") return "build generate";
   if (command[0] === "run" && command[1] === "qemu") return "run qemu";
+  if (command[0] === "run" && command[1] === "hardware") return "run hardware";
+  if (command[0] === "report") return "report";
+  if (command[0] === "submit") return "submit";
   if (command[0] === "ledger" && command[1] === "record") return "ledger record";
   if (command[0] === "verify" && command[1]) return `verify ${command[1]}`;
   if (command[0] === "trace" && command[1] === "syscall") return "trace syscall";

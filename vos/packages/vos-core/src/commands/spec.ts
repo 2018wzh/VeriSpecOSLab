@@ -4,6 +4,7 @@ export {
   executeToolchainLint,
   executeToolchainInit,
   executeSpecLint,
+  executeSpecCheck,
   executeSpecNormalize,
   executeSpecCheckConsistency,
   executeSpecPatchLint,

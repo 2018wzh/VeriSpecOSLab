@@ -116,6 +116,9 @@ export async function buildNormalizedSpecBundle(params: {
   const toolchainProfiles: NormalizedSpecBundle["toolchain_profiles"] = [];
   const publicRequirements: NormalizedSpecBundle["verification"]["public_requirements"] = [];
   const patchRecords: SpecPatchRecord[] = [];
+  const v2ModulePaths = new Set<string>();
+  const v2GoalPaths = new Set<string>();
+  const v2PatchPaths = new Set<string>();
   let design: NormalizedSpecBundle["design"] = null;
   let seedDoc: Record<string, unknown> | null = null;
 
@@ -146,6 +149,7 @@ export async function buildNormalizedSpecBundle(params: {
       } else if (kind === "module" && typeof parsed.level === "number") {
         const doc = moduleV2Schema.parse(parsed);
         const normalized = normalizeModuleV2(doc, rel);
+        v2ModulePaths.add(rel);
         normalizedModules.push(normalized);
         modules.push({
           id: doc.id,
@@ -236,6 +240,7 @@ export async function buildNormalizedSpecBundle(params: {
         operations.push(...operationsForInterface);
       } else if (kind === "goal" && isRecord(parsed) && typeof parsed.objective === "string") {
         const doc = goalV2Schema.parse(parsed);
+        v2GoalPaths.add(rel);
         goals.push({
           goal_id: doc.id,
           category: "goal",
@@ -265,6 +270,7 @@ export async function buildNormalizedSpecBundle(params: {
         seedDoc = doc as Record<string, unknown>;
       } else if (kind === "spec_patch" && isRecord(parsed) && Array.isArray(parsed.changes)) {
         const doc = specPatchV2Schema.parse(parsed);
+        v2PatchPaths.add(rel);
         patchRecords.push({
           id: doc.id,
           stage: "design",
@@ -315,6 +321,9 @@ export async function buildNormalizedSpecBundle(params: {
   }
 
   const manifest = await loadProjectManifest(projectRoot, diagnostics);
+  if (manifest) {
+    diagnostics.push(...validateStudentSourceKinds(sources, v2ModulePaths, v2GoalPaths, v2PatchPaths));
+  }
   diagnostics.push(...runSemanticChecks({
     projectRoot,
     specRoot,
@@ -327,6 +336,7 @@ export async function buildNormalizedSpecBundle(params: {
     slices,
     compositions,
     publicRequirements,
+    goals,
     patchRecords,
     manifest,
   }));
@@ -358,6 +368,33 @@ export async function buildNormalizedSpecBundle(params: {
     manifest,
     diagnostics,
   };
+}
+
+function validateStudentSourceKinds(
+  sources: SpecSource[],
+  v2ModulePaths: Set<string>,
+  v2GoalPaths: Set<string>,
+  v2PatchPaths: Set<string>,
+): SpecDiagnostic[] {
+  const diagnostics: SpecDiagnostic[] = [];
+  for (const source of sources) {
+    if (source.kind === "module" && !v2ModulePaths.has(source.path)) {
+      diagnostics.push(errorDiagnostic("spec.legacy_kind_rejected", "student projects require the strict v2 ModuleSpec schema with a level field", source.path));
+      continue;
+    }
+    if (source.kind === "goal" && !v2GoalPaths.has(source.path)) {
+      diagnostics.push(errorDiagnostic("spec.legacy_kind_rejected", "student projects require the strict v2 GoalSpec schema", source.path));
+      continue;
+    }
+    if (source.kind === "spec_patch" && !v2PatchPaths.has(source.path)) {
+      diagnostics.push(errorDiagnostic("spec.legacy_kind_rejected", "student projects require patches under spec/patches using the strict v2 SpecPatch schema", source.path));
+      continue;
+    }
+    if (!["design", "module", "interface", "goal", "spec_patch"].includes(source.kind)) {
+      diagnostics.push(errorDiagnostic("spec.legacy_kind_rejected", `student projects do not accept legacy Spec kind ${source.kind}`, source.path));
+    }
+  }
+  return diagnostics;
 }
 
 export function hasBlockingDiagnostics(diagnostics: readonly SpecDiagnostic[]): boolean {
@@ -851,6 +888,7 @@ function runSemanticChecks(args: {
   slices: NormalizedSpecBundle["architecture"]["slices"];
   compositions: NormalizedSpecBundle["composition"];
   publicRequirements: NormalizedSpecBundle["verification"]["public_requirements"];
+  goals: NormalizedSpecBundle["goals"];
   patchRecords: SpecPatchRecord[];
   manifest?: NormalizedSpecBundle["manifest"];
 }): SpecDiagnostic[] {
@@ -861,8 +899,13 @@ function runSemanticChecks(args: {
       ...(args.design ? ["design"] : []),
       ...args.normalizedModules.map((module) => module.id),
       ...args.interfaces.map((iface) => iface.id),
+      ...args.goals.map((goal) => goal.goal_id),
+      ...args.patchRecords.map((patch) => patch.id),
     ]);
     for (const check of args.manifest.checks) {
+      if (check.verifies.length === 0) {
+        diagnostics.push(errorDiagnostic("manifest.verifies_empty", `test target ${check.id} must verify at least one stable Spec ID`, args.manifest.path, check.id));
+      }
       for (const ref of check.verifies) {
         if (!stableIds.has(ref)) {
           diagnostics.push(errorDiagnostic("manifest.verifies_missing", `test target ${check.id} verifies unknown Spec ID ${ref}`, args.manifest.path, ref));
@@ -931,6 +974,8 @@ function validateV2Documents(args: {
   projectRoot: string;
   normalizedModules: NormalizedModuleV2[];
   interfaces: NormalizedInterface[];
+  goals: NormalizedSpecBundle["goals"];
+  patchRecords: SpecPatchRecord[];
   design: NormalizedSpecBundle["design"];
   operations: NormalizedOperation[];
 }): SpecDiagnostic[] {
@@ -981,6 +1026,19 @@ function validateV2Documents(args: {
     if (iface.operations.length === 0) {
       diagnostics.push(errorDiagnostic("interface.operations_missing", `interface ${iface.id} must declare at least one operation`, iface.path, iface.id));
     }
+  }
+
+  for (const goal of args.goals) {
+    if (specIds.has(goal.goal_id)) {
+      diagnostics.push(errorDiagnostic("spec.duplicate_id", `duplicate stable Spec ID ${goal.goal_id}`, goal.path, goal.goal_id));
+    }
+    specIds.add(goal.goal_id);
+  }
+  for (const patch of args.patchRecords) {
+    if (specIds.has(patch.id)) {
+      diagnostics.push(errorDiagnostic("spec.duplicate_id", `duplicate stable Spec ID ${patch.id}`, patch.path, patch.id));
+    }
+    specIds.add(patch.id);
   }
 
   const opIds = new Set<string>();

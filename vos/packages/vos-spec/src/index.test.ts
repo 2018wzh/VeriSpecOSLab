@@ -8,6 +8,7 @@ import {
   composeArchitecture,
   deriveTestMatrix,
   hasBlockingDiagnostics,
+  parseProjectManifest,
   resolveSpecPatch,
 } from "./index.ts";
 
@@ -96,6 +97,36 @@ describe("vos-spec semantic bundle", () => {
     const bundle = await buildNormalizedSpecBundle({ projectRoot: root });
     expect(bundle.diagnostics.some((diagnostic) => diagnostic.code === "schema.validation_failed")).toBe(true);
     expect(bundle.normalized_modules).toEqual([]);
+  });
+
+  test("rejects legacy manifest and KB path traversal", () => {
+    expect(() => parseProjectManifest({
+      version: "legacy",
+      build: { program: "bun", args: [] },
+      runners: {},
+      checks: {},
+    })).toThrow();
+    expect(() => parseProjectManifest({
+      version: "vos.project.v1",
+      build: { program: "bun", args: [] },
+      runners: {},
+      checks: {},
+      knowledge: { sources: [{ id: "bad", path: "../outside", sha256: "0".repeat(64) }] },
+    })).toThrow(/repository-relative|traverse/);
+    expect(() => parseProjectManifest({
+      version: "vos.project.v1",
+      build: { program: "bun", args: [] },
+      runners: { qemu: { program: "qemu-system-riscv64", args: [] } },
+      checks: {},
+      knowledge: { sources: [{ id: "remote", url: "https://example.invalid/os.git", sha256: "0".repeat(64) }] },
+    })).toThrow(/-nographic|pinned revision/);
+    expect(() => parseProjectManifest({
+      version: "vos.project.v1",
+      build: { program: "bun", args: [], cwd: "../outside" },
+      runners: {},
+      checks: {},
+      knowledge: { sources: [] },
+    })).toThrow(/cwd/);
   });
 
   test("normalizes modules, operations, architecture, and derived tests", async () => {
