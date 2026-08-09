@@ -1,5 +1,6 @@
 import type {
   AgentApplyPatchCommand,
+  AgentAskCommand,
   AgentContextCommand,
   AgentDebugCommand,
   AgentGenerateCommand,
@@ -8,12 +9,10 @@ import type {
   AgentReviewSpecCommand,
   AgentServeCommand,
   AgentValidateGeneratedCommand,
-  AgentAskCommand,
   AgentDesignCommand,
   AgentSpecCommand,
   AgentImplementCommand,
   AgentVerifyCommand,
-  AgentKbCommand,
   AgentReviewCommand,
   AgentConfigCommand,
   ArchComposeCommand,
@@ -1073,13 +1072,13 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       if (rest.slice(1).some((arg) => !isInteractiveDisplayFlag(arg))) throw new Error("agent verify accepts only --interactive");
       return { kind: "agent_verify", ...(display ? { display: true } : {}) } satisfies AgentVerifyCommand;
     }
-    if (second === "kb") {
+    if (second === "ask") {
       const question = rest.slice(1).filter((arg) => !isInteractiveDisplayFlag(arg)).join(" ").trim() || undefined;
       const interactive = rest.slice(1).some(isInteractiveDisplayFlag) || !question;
       if (rest.slice(1).some((arg) => arg.startsWith("--") && !isInteractiveDisplayFlag(arg))) {
-        throw new Error("agent kb accepts a question and optional --interactive");
+        throw new Error("agent ask accepts a question and optional --interactive");
       }
-      return { kind: "agent_kb", question, interactive } satisfies AgentKbCommand;
+      return { kind: "agent_ask", question, interactive } satisfies AgentAskCommand;
     }
     if (second === "review") {
       const positional = rest.slice(1).filter((arg) => !isInteractiveDisplayFlag(arg));
@@ -1454,42 +1453,6 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       }
       return { kind: "agent_review_spec", target, ...displayFlag(display) } satisfies AgentReviewSpecCommand;
     }
-    if (second === "ask") {
-      let question: string | undefined;
-      let interactive = false;
-      const scope = parseOptionalStringValue(rest, "--scope") ?? parseOptionalStringValue(rest, "--stage");
-      for (let i = 1; i < rest.length; i++) {
-        const arg = rest[i];
-        if (arg === "-i" || arg === "--interactive") {
-          interactive = true;
-          continue;
-        }
-        if (arg === "--scope" || arg === "--stage") {
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--scope=") || arg.startsWith("--stage=")) continue;
-        if (arg === "--task") {
-          question = resolveRequiredValue(rest, i, arg);
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--task=")) {
-          question = arg.slice("--task=".length);
-          continue;
-        }
-        if (arg.startsWith("--")) throw new Error(`unknown flag for agent ask: ${arg}`);
-        question = [question, arg].filter(Boolean).join(" ");
-      }
-      const trimmedQuestion = question?.trim();
-      return {
-        kind: "agent_ask",
-        question: trimmedQuestion || undefined,
-        scope,
-        interactive: interactive || !trimmedQuestion,
-      } satisfies AgentAskCommand;
-    }
-
     throw new Error(`unknown agent subcommand: ${second}`);
   }
 

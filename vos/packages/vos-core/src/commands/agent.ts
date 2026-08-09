@@ -11,7 +11,6 @@ export {
   executeAgentSpec,
   executeAgentImplement,
   executeAgentVerify,
-  executeAgentKb,
   executeAgentReview,
   executeAgentLog,
   executeAgentReviewSpec,

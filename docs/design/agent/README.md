@@ -11,10 +11,10 @@
 | `implement <module>` | 只写 owns 并集 | worktree patch、build/public/contract evidence、成功提交 |
 | `debug` | 只读 | 根因、证据和修复方向 |
 | `verify` | 只读 | 公开测试、契约和 Spec ID 覆盖报告 |
-| `kb` | 问答 | 锁定来源、revision、hash、片段和策略结论 |
+| `ask` | 问答 | 锁定来源、revision、hash、片段和策略结论 |
 | `review` | 只读 | Spec、代码、测试和 diff 审查 |
 
-`debug`、`verify`、`review` 和 `kb` 不得写项目文件。`design`、`spec` 不接受未确认的写入。`implement` 必须从 clean HEAD 和已提交 Spec 开始，跨模块修改还必须有已提交的 `spec/patches/<patch>.yaml`。Agent 最终 patch 由 VOS 再次执行 owns、HEAD、schema 和验证门禁。
+`debug`、`verify`、`review` 和 `ask` 不得写项目文件。`design`、`spec` 不接受未确认的写入。`implement` 必须从 clean HEAD 和已提交 Spec 开始，跨模块修改还必须有已提交的 `spec/patches/<patch>.yaml`。Agent 最终 patch 由 VOS 再次执行 owns、HEAD、schema 和验证门禁。
 
 临时 worktree 只隔离 Git 变更；宿主命令默认直接使用当前用户权限、网络和凭据。它不是安全边界，文档、日志和 UI 都必须明确这一点。模型输出采用 best effort 的提示约束，不承诺确定性过滤或保密。
 

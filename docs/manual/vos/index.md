@@ -7,7 +7,7 @@
 - [`01-overview.md`](./01-overview.md)：主链和全局参数
 - `vos init`、`vos doctor`、`vos spec check`
 - `vos agent design`、`vos agent spec <module>`、`vos agent implement <module>`
-- `vos agent debug`、`vos agent verify`、`vos agent kb`、`vos agent review`
+- `vos agent debug`、`vos agent verify`、`vos agent ask`、`vos agent review`
 - `vos build`、`vos run qemu`、`vos run hardware`、`vos verify`
 - `vos report`、`vos submit`
 

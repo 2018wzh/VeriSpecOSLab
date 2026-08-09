@@ -45,14 +45,14 @@ vos init                         vos doctor
 vos spec check                  vos agent config
 vos agent design                vos agent spec <module>
 vos agent implement <module>    vos agent debug
-vos agent verify                vos agent kb [question]
+vos agent verify                vos agent ask [question]
 vos agent review [module]       vos build
 vos run qemu                    vos run hardware
 vos verify                      vos report
 vos submit
 ```
 
-`--project-root`、`--json`、`--verbose` 和 `--progress` 是通用参数。`agent debug`、`agent verify`、`agent review` 和 `agent kb` 是只读或问答角色；`design`/`spec` 先展示 diff，只有确认后才原子应用并单独提交；`implement` 在 detached linked worktree 中修改、构建和验证，成功后才把 patch 应用回原工作树并创建带 Run-ID 和 Spec-Hash trailer 的提交。
+`--project-root`、`--json`、`--verbose` 和 `--progress` 是通用参数。`agent debug`、`agent verify`、`agent review` 和 `agent ask` 是只读或问答角色；`design`/`spec` 先展示 diff，只有确认后才原子应用并单独提交；`implement` 在 detached linked worktree 中修改、构建和验证，成功后才把 patch 应用回原工作树并创建带 Run-ID 和 Spec-Hash trailer 的提交。
 
 宿主命令默认直接继承当前用户权限、网络和凭据。linked worktree 只提供 Git 变更回滚和隔离，不是进程、网络、凭据或宿主文件安全边界。学生必须把本机参考资料可读性和 Agent 任意宿主命令风险视为已知的策略约束。
 

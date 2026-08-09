@@ -65,15 +65,18 @@ export async function buildContextBundle(params: {
   effectivePolicy?: EffectivePolicy;
 }): Promise<ContextBundle> {
   const projectFile = path.join(params.projectRoot, ".vos", "project.yaml");
-  if (!existsSync(projectFile)) {
+  const studentV2 = !existsSync(projectFile) && existsSync(path.join(params.projectRoot, "vos.yaml"));
+  if (!existsSync(projectFile) && !studentV2) {
     throw new CliError("project configuration missing", "failed", {
       path: projectFile,
       kind: "missing_project_config",
     });
   }
-  const project = await loadProjectConfig(params.projectRoot);
+  const project = studentV2
+    ? { current_stage: params.requestedScope ?? "student", spec_root: "spec" }
+    : await loadProjectConfig(params.projectRoot);
   const policy = await loadPolicyConfig(params.projectRoot);
-  const stages = await loadTimeline(params.projectRoot);
+  const stages = studentV2 ? [] : await loadTimeline(params.projectRoot);
   if (!project.current_stage) {
     throw new CliError("project current_stage missing", "failed", {
       path: projectFile,
@@ -148,8 +151,7 @@ export interface SpecSnippet {
 }
 
 async function collectSpecSnippets(projectRoot: string): Promise<string[]> {
-  const project = await loadProjectConfig(projectRoot);
-  const specRoot = path.resolve(projectRoot, project.spec_root ?? "spec");
+  const specRoot = await resolveSpecRoot(projectRoot);
 
   const files = (await readDirectory(specRoot, [".yaml", ".yml"])) as string[];
   return files.slice(0, 20);
@@ -201,8 +203,7 @@ async function collectEditablePathsFromNormalizedCache(projectRoot: string): Pro
 }
 
 async function collectEditablePathsFromSpecYaml(projectRoot: string): Promise<string[]> {
-  const project = await loadProjectConfig(projectRoot);
-  const specRoot = path.resolve(projectRoot, project.spec_root ?? "spec");
+  const specRoot = await resolveSpecRoot(projectRoot);
   const files = await readDirectory(specRoot, [".yaml", ".yml"]);
   const out: string[] = [];
   for (const file of files) {
@@ -224,6 +225,14 @@ async function collectEditablePathsFromSpecYaml(projectRoot: string): Promise<st
     }
   }
   return uniquePaths(out);
+}
+
+async function resolveSpecRoot(projectRoot: string): Promise<string> {
+  if (existsSync(path.join(projectRoot, "vos.yaml")) && !existsSync(path.join(projectRoot, ".vos", "project.yaml"))) {
+    return path.resolve(projectRoot, "spec");
+  }
+  const project = await loadProjectConfig(projectRoot);
+  return path.resolve(projectRoot, project.spec_root ?? "spec");
 }
 
 function walkJson(value: unknown, visit: (key: string, value: unknown) => void): void {

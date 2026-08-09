@@ -89,13 +89,13 @@ linked worktree 只是 Git 变更回滚机制，不是进程、网络、凭据�
 ```sh
 vos agent debug
 vos agent verify
-vos agent kb "Sv39 的三级页表如何索引？"
+vos agent ask "Sv39 的三级页表如何索引？"
 vos agent review memory
 ```
 
 - `debug`：报告根因、证据和修复方向；
 - `verify`：报告公开测试、契约和 Spec ID 覆盖缺口；
-- `kb`：基于锁定知识来源回答问题；
+- `ask`：基于锁定知识来源回答问题；
 - `review`：审查 Spec、代码、测试和 diff。
 
 这些角色不得修改项目文件。

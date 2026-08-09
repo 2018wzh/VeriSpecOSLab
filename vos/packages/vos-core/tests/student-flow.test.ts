@@ -34,6 +34,12 @@ describe("student v2 workflow", () => {
       check: false,
     });
     expect(() => parseArgs(["bun", "vos", "agent", "config", "--with-embedding", "--without-embedding"])).toThrow("cannot combine");
+    expect(parseArgs(["bun", "vos", "agent", "ask", "What is Sv39?"]).command).toEqual({
+      kind: "agent_ask",
+      question: "What is Sv39?",
+      interactive: false,
+    });
+    expect(() => parseArgs(["bun", "vos", "agent", "kb", "What is Sv39?"])).toThrow("unknown agent subcommand: kb");
     expect(parseArgs(["bun", "vos", "verify"]).command).toEqual({ kind: "verify", scope: "public", target: undefined, dryRun: false, staffPolicy: undefined });
   });
 
@@ -57,6 +63,43 @@ describe("student v2 workflow", () => {
     expect(existsSync(join(root, ".vos", "policy.yaml"))).toBe(false);
     expect(readFileSync(join(root, "vos.yaml"), "utf8")).toContain("program: bun");
   });
+
+  test("runs agent ask without an embedding provider when no KB sources are configured", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      expect((await invoke(root, "init")).status).toBe("passed");
+      writeFileSync(join(root, ".vos", "config.toml"), [
+        "[agent]",
+        'provider = "openai"',
+        'model = "gpt-5"',
+        "[agent.auth]",
+        'env = "OPENAI_API_KEY"',
+        "",
+      ].join("\n"));
+      writeFileSync(join(root, ".env"), "OPENAI_API_KEY=test-only\n");
+      const result = await executeCliInvocation([
+        "bun", "vos", "--project-root", root, "--json", "agent", "ask", "What is Sv39?",
+      ], {
+        print: false,
+        agentRunner: async (options) => {
+          expect(options.extraMcpServers?.map((server) => server.name)).not.toContain("vos-kb");
+          return {
+            content: "ignored",
+            events: acceptedSubmitEvents("knowledgebase_answer.v1", {
+              answer: "Sv39 is the RISC-V 39-bit virtual-memory scheme.",
+              stage_key: "student-kb",
+              design_goal_alignment: [],
+              citations: [],
+              suggested_next_steps: [],
+              allowed_snippets: [],
+            }),
+          };
+        },
+      });
+      expect(result.status).toBe("passed");
+      expect(result.details?.scope).toBe("student-kb");
+    });
+  }, 30_000);
 
   test("allows dirty development build but requires clean HEAD for verify and hardware evidence", async () => {
     const root = makeRoot();

@@ -486,27 +486,28 @@ describe("vos-cli agent command parsing", () => {
   });
 
   test("parses knowledgebase ask and CRUD commands", () => {
-    expect(parseArgs(["bun", "vos", "agent", "ask", "--stage", "memory", "How should I design kalloc?"]).command)
+    expect(parseArgs(["bun", "vos", "agent", "ask", "How should I design kalloc?"]).command)
       .toEqual({
         kind: "agent_ask",
         question: "How should I design kalloc?",
-        scope: "memory",
         interactive: false,
       });
     expect(parseArgs(["bun", "vos", "agent", "ask"]).command)
       .toEqual({
         kind: "agent_ask",
         question: undefined,
-        scope: undefined,
         interactive: true,
       });
     expect(parseArgs(["bun", "vos", "agent", "ask", "-i", "How should I design kalloc?"]).command)
       .toEqual({
         kind: "agent_ask",
         question: "How should I design kalloc?",
-        scope: undefined,
         interactive: true,
       });
+    expect(() => parseArgs(["bun", "vos", "agent", "ask", "--stage", "memory", "question"]))
+      .toThrow("agent ask accepts a question and optional --interactive");
+    expect(() => parseArgs(["bun", "vos", "agent", "kb", "question"]))
+      .toThrow("unknown agent subcommand: kb");
 
     expect(parseArgs([
       "bun",

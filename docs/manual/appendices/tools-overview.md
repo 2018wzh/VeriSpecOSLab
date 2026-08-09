@@ -13,7 +13,7 @@ vos init → vos agent config → vos doctor → vos agent design → vos agent 
 ```sh
 vos agent debug
 vos agent verify
-vos agent kb "问题"
+vos agent ask "问题"
 vos agent review [module]
 ```
 

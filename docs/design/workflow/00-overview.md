@@ -18,7 +18,7 @@ vos init → design/spec → implement → build → verify
 
 ## Read-only roles
 
-`agent debug`、`agent verify`、`agent review` 只报告证据、缺口、根因和修复方向；`agent kb` 只回答问题。它们可以写入 gitignored evidence 和 audit，但不能修改项目源码或 Spec。
+`agent debug`、`agent verify`、`agent review` 只报告证据、缺口、根因和修复方向；`agent ask` 只回答问题。它们可以写入 gitignored evidence 和 audit，但不能修改项目源码或 Spec。
 
 ## Trust boundary
 

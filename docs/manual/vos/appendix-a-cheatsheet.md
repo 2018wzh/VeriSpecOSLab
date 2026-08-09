@@ -11,7 +11,7 @@
 | `vos agent implement <module>` | 在临时 linked worktree 中实现并验证 |
 | `vos agent debug` | 只读根因和证据摘要 |
 | `vos agent verify` | 只读公开验证摘要 |
-| `vos agent kb "<question>"` | 只问答，使用 manifest 锁定的 KB |
+| `vos agent ask "<question>"` | 只问答，使用 manifest 锁定的 KB |
 | `vos agent review [module]` | 只读审查 Spec、代码、测试和 diff |
 | `vos build` | 执行 manifest build（脏树允许但不可提交） |
 | `vos run qemu` | 执行非图形串口 QEMU runner |

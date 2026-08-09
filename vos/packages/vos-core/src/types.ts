@@ -315,12 +315,6 @@ export interface AgentVerifyCommand extends BaseCommand {
   display?: boolean;
 }
 
-export interface AgentKbCommand extends BaseCommand {
-  kind: "agent_kb";
-  question?: string;
-  interactive: boolean;
-}
-
 export interface AgentReviewCommand extends BaseCommand {
   kind: "agent_review";
   module?: string;
@@ -454,7 +448,6 @@ export type CliCommand =
   | AgentSpecCommand
   | AgentImplementCommand
   | AgentVerifyCommand
-  | AgentKbCommand
   | AgentReviewCommand
   | AgentConfigCommand
   | AgentLogCommand

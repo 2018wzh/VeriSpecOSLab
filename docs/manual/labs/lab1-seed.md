@@ -281,7 +281,7 @@ hardware_port:
 配置后先做只读问答：
 
 ```sh
-vos agent kb "RISC-V 与 x86-64 的教学取舍是什么？"
+vos agent ask "RISC-V 与 x86-64 的教学取舍是什么？"
 ```
 
 `kb` 只回答问题，不修改项目。`design` 和 `spec` 必须经过 `--confirm` 才写回；`debug`、`verify` 和 `review` 也都是只读角色。
@@ -306,7 +306,7 @@ knowledge:
 
 Git URL 必须锁定 revision；本地来源必须是仓库相对路径。两者都必须提供内容哈希。VOS 同步后的资料位于 gitignored 的 `.vos/kb-sources`。查询日志只保存学生实际看到的片段及其 source、hash 和 range，不复制未展示的检索上下文。
 
-锁定来源后可以继续使用 `vos agent kb` 提问。若哈希不匹配，先核对来源内容，不要用新哈希掩盖来源漂移。
+锁定来源后可以继续使用 `vos agent ask` 提问。若哈希不匹配，先核对来源内容，不要用新哈希掩盖来源漂移。
 
 ### 步骤 6：检查基线（预计 10 分钟）
 

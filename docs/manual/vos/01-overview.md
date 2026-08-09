@@ -11,7 +11,7 @@ vos agent spec <module>
 vos agent implement <module>
 vos agent debug
 vos agent verify
-vos agent kb [question]
+vos agent ask [question]
 vos agent review [module]
 vos build
 vos run qemu

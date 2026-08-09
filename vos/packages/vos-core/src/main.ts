@@ -18,7 +18,6 @@ import type {
   AgentSpecCommand,
   AgentImplementCommand,
   AgentVerifyCommand,
-  AgentKbCommand,
   AgentProviderName,
   AgentReviewCommand,
   ArchComposeCommand,
@@ -348,19 +347,19 @@ function assertStudentCommandSurface(projectRoot: string, command: CliCommand): 
     "spec_check_consistency", "spec_patch_lint", "spec_patch_apply", "arch_lint", "arch_compose",
     "arch_derive_tests", "test", "trace_syscall", "debug_explain_log", "build_generate", "agent_serve",
     "agent_context", "agent_plan", "agent_generate", "agent_apply_patch", "agent_validate_generated",
-    "agent_log", "agent_review_spec", "agent_ask", "kb_add", "kb_list", "kb_search", "kb_remove",
+    "agent_log", "agent_review_spec", "kb_add", "kb_list", "kb_search", "kb_remove",
     "kb_clear", "kb_export_manifest", "kb_import_manifest",
   ]);
   const studentCommands = new Set<CliCommand["kind"]>([
     "init", "doctor", "spec_check", "agent_config", "agent_design", "agent_spec", "agent_implement", "agent_debug",
-    "agent_verify", "agent_kb", "agent_review", "build", "run_qemu", "run_hardware", "verify",
+    "agent_verify", "agent_ask", "agent_review", "build", "run_qemu", "run_hardware", "verify",
     "report_generate", "submit_pack",
   ]);
   const hasStudentManifest = existsSync(path.join(projectRoot, "vos.yaml"));
   if (removed.has(command.kind)) {
     throw new CliError(`command removed from the student v2 surface: ${commandToArray(command).join(" ")}; use the documented student workflow`, "validation_failed", {
       reason: "student_command_removed",
-      suggested_next_commands: ["vos agent config", "vos spec check", "vos agent design", "vos agent kb \"your question\""],
+      suggested_next_commands: ["vos agent config", "vos spec check", "vos agent design", "vos agent ask \"your question\""],
     });
   }
   if (!hasStudentManifest && !isLegacyProject(projectRoot) && studentCommands.has(command.kind) && command.kind !== "init" && command.kind !== "doctor") {
@@ -2399,22 +2398,6 @@ export async function executeAgentVerify(
   }
 }
 
-export async function executeAgentKb(
-  command: AgentKbCommand,
-  context: ExecContext,
-  evidence: EvidenceWriter,
-): Promise<CommandOutcome> {
-  const manifest = await readStudentManifest(context.projectRoot);
-  await syncStudentKbSources(context.projectRoot, manifest.manifest);
-  if (command.interactive) {
-    return executeAgentAsk({ kind: "agent_ask", question: command.question, scope: "student-kb", interactive: true }, context, evidence);
-  }
-  if (!command.question) {
-    throw new CliError("agent kb requires a question unless interactive mode is enabled", "failed");
-  }
-  return executeAgentAsk({ kind: "agent_ask", question: command.question, scope: "student-kb", interactive: false }, context, evidence);
-}
-
 export async function executeAgentReview(
   command: AgentReviewCommand,
   context: ExecContext,
@@ -3834,15 +3817,24 @@ export async function executeAgentAsk(
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
-  const requestedScope = command.scope ?? await currentStageForProject(projectRoot).catch(() => "agent.ask");
+  const studentProject = existsSync(path.join(projectRoot, "vos.yaml")) && !isLegacyProject(projectRoot);
+  let studentHasKbSources = false;
+  if (studentProject) {
+    const manifest = await readStudentManifest(projectRoot);
+    await syncStudentKbSources(projectRoot, manifest.manifest);
+    studentHasKbSources = manifest.manifest.knowledge.sources.length > 0;
+  }
+  const requestedScope = studentProject
+    ? "student-kb"
+    : command.scope ?? await currentStageForProject(projectRoot).catch(() => "agent.ask");
   updateProgress(context, { stage: "agent ask", status: "running", message: "building context" });
   const bundle = await buildContextBundle({
     projectRoot,
     requestedScope,
     effectivePolicy: context.effectivePolicy,
   });
-  const embedder = createKbEmbedder(projectRoot);
-  const kbHits = command.question
+  const embedder = !studentProject || studentHasKbSources ? createKbEmbedder(projectRoot) : undefined;
+  const kbHits = command.question && embedder
     ? await searchKb(projectRoot, command.question, { limit: 5, embedder })
     : [];
   const kbManifest = await exportKbManifest(projectRoot);
@@ -3857,13 +3849,13 @@ export async function executeAgentAsk(
       policy: context.effectivePolicy?.visibilityScope ?? "local",
     },
   });
-  const kbMcpServer = {
+  const kbMcpServer = embedder ? {
     name: "vos-kb",
     command: process.execPath,
     args: [path.resolve(import.meta.dir, "../../../packages/vos-kb/src/mcp.ts")],
     cwd: projectRoot,
     env: { VOS_PROJECT_ROOT: projectRoot, ...kbEmbeddingEnv(projectRoot) },
-  };
+  } : undefined;
   if (command.interactive) {
     updateProgress(context, { stage: "agent ask", status: "running", message: "starting interactive repl" });
     context.progress?.hide();
@@ -3875,7 +3867,7 @@ export async function executeAgentAsk(
       context: { bundle, kb_hits: kbHits, object_manifest: kbManifest },
       courseMode: true,
       allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
-      extraMcpServers: [kbMcpServer],
+      extraMcpServers: kbMcpServer ? [kbMcpServer] : [],
       runner: context.interactiveAgentRunner,
     });
     return {
@@ -3905,7 +3897,7 @@ export async function executeAgentAsk(
     resultSubmissionSchema: "knowledgebase_answer.v1",
     extraMcpServers: [
       ...agentProgress.extraMcpServers,
-      kbMcpServer,
+      ...(kbMcpServer ? [kbMcpServer] : []),
     ],
     onEvent: agentProgress.onEvent,
     taskRunner: context.agentRunner,
@@ -5057,8 +5049,6 @@ export function commandToArray(command: CliCommand): string[] {
       return ["agent", "implement", command.module, ...(command.display ? ["--interactive"] : [])];
     case "agent_verify":
       return ["agent", "verify", ...(command.display ? ["--interactive"] : [])];
-    case "agent_kb":
-      return ["agent", "kb", ...(command.interactive ? ["--interactive"] : []), ...(command.question ? [command.question] : [])];
     case "agent_review":
       return ["agent", "review", ...(command.module ? [command.module] : []), ...(command.display ? ["--interactive"] : [])];
     case "agent_log":
@@ -5081,7 +5071,6 @@ export function commandToArray(command: CliCommand): string[] {
         "agent",
         "ask",
         ...(command.interactive && command.question ? ["-i"] : []),
-        ...(command.scope ? ["--stage", command.scope] : []),
         ...(command.question ? [command.question] : []),
       ];
     case "kb_add":
@@ -5889,7 +5878,7 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
     "  agent implement <module>",
     "  agent debug",
     "  agent verify",
-    "  agent kb [question]",
+    "  agent ask [question]",
     "  agent review [module]",
     "  build",
     "  run qemu",
@@ -5904,14 +5893,14 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
   "doctor": helpBlock("doctor", ["Checks the student manifest, strict specs, and required command entrypoints."], ["vos doctor"]),
   "spec": helpBlock("spec check", ["Deterministic schema, stable-ID, reference, path, owns, and level checks."], ["vos spec check"]),
   "spec check": helpBlock("spec check", ["No model, fuzz, trace, or hidden tests are run."], ["vos spec check"]),
-  "agent": helpBlock("agent config|design|spec|implement|debug|verify|kb|review", ["config [--show|--check|--reset]", "design [--confirm]", "spec <module> [--confirm]", "implement <module>", "debug", "verify", "kb [question]", "review [module]"], ["vos agent config", "vos agent design", "vos agent implement memory"]),
+  "agent": helpBlock("agent config|design|spec|implement|debug|verify|ask|review", ["config [--show|--check|--reset]", "design [--confirm]", "spec <module> [--confirm]", "implement <module>", "debug", "verify", "ask [question]", "review [module]"], ["vos agent config", "vos agent ask \"What is a syscall boundary?\"", "vos agent implement memory"]),
   "agent config": helpBlock("agent config [options]", ["No options: run the interactive setup wizard.", "--provider <anthropic|openai|openai-compatible|deepseek|ollama>", "--model <id>", "--base-url <url>", "--auth-env <name>", "--with-embedding | --without-embedding", "--embedding-provider <openai|openai-compatible>", "--embedding-model <id>", "--embedding-base-url <url>", "--embedding-auth-env <name>", "--show: show configuration without secret values", "--check: validate configuration and referenced credentials", "--reset: remove agent and embedding sections"], ["vos agent config", "vos agent config --check", "vos agent config --provider openai --model gpt-5 --auth-env OPENAI_API_KEY"]),
   "agent design": helpBlock("agent design [--confirm]", ["--confirm applies and commits the proposal; without it only a diff is produced."], ["vos agent design", "vos agent design --confirm"]),
   "agent spec": helpBlock("agent spec <module> [--confirm]", ["--confirm applies and commits the ModuleSpec proposal."], ["vos agent spec memory"]),
   "agent implement": helpBlock("agent implement <module>", ["Requires clean HEAD and a committed ModuleSpec; validates build, public checks, contract checks, and owns scope."], ["vos agent implement memory"]),
   "agent debug": helpBlock("agent debug", ["Read-only root-cause and evidence summary."], ["vos agent debug"]),
   "agent verify": helpBlock("agent verify", ["Read-only deterministic verification report."], ["vos agent verify"]),
-  "agent kb": helpBlock("agent kb [question]", ["Question answering only; it does not modify project files."], ["vos agent kb \"What is a syscall boundary?\""]),
+  "agent ask": helpBlock("agent ask [question]", ["Question answering only; omit the question or pass --interactive for a continuing conversation. It does not modify project files."], ["vos agent ask \"What is a syscall boundary?\"", "vos agent ask"]),
   "agent review": helpBlock("agent review [module]", ["Read-only review of specs, code scope, tests, and diff."], ["vos agent review memory"]),
   "build": helpBlock("build", ["Runs the structured argv build target from vos.yaml."], ["vos build"]),
   "run": helpBlock("run qemu|hardware", ["qemu", "hardware (evidence remains pending_human_review)"], ["vos run qemu"]),

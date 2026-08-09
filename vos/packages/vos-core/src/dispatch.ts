@@ -159,9 +159,6 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
     case "agent_verify":
       return handlers.executeAgentVerify(command, context, evidence);
 
-    case "agent_kb":
-      return handlers.executeAgentKb(command, context, evidence);
-
     case "agent_review":
       return handlers.executeAgentReview(command, context, evidence);
 
