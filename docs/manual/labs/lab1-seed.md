@@ -1,8 +1,13 @@
 # Lab 1：CTF 热身与项目初始化
 
-> **对应 Book 章节**：[第 1 章：操作系统初步](../book/ch01-overview-design.md)
+> **对应教材**：[第 1 章：操作系统初步](../book/ch01-overview-design.md)
+
+> **本 Lab 概览**
 >
-> Book 第 1 章解释操作系统、语言、ISA 与设计先行的理由。本 Lab 先保留课程原有的 CTF 双环境热身，再进入当前 VOS 学生主链。两部分都要完成，前者建立裸机直觉，后者留下后续实验需要的设计基线。
+> - **学完能做什么**：在 Linux 和裸机两种环境读取同一份 flag 镜像，建立"操作系统替程序做了什么"的直觉；随后初始化 VOS 项目，完成 DesignSpec 与 Agent、知识库配置，为后续十个 Lab 打地基。
+> - **预计耗时**：8–12 小时，建议安排 1 周。CTF 双环境热身约占一半，项目初始化与 DesignSpec 占另一半。
+> - **前置依赖**：无需前置 Lab。第一次接触 OS 开发也没关系，Book 第 1 章会先解释操作系统、语言、ISA 与设计先行的理由。
+> - **产出物**：双环境 flag 读取程序与证据、`spec/design.yaml`、初始化版 `toolchain.yaml` 与 `vos.yaml`、一次通过的 `vos spec check` evidence、干净且可追溯的 Git HEAD。
 
 ## 1. CTF 双环境热身
 
@@ -53,9 +58,9 @@ if (fd < 0) {
 
 完成热身后，再为后续 Lab 建立项目。你需要回答三个问题：
 
-1. **你的 OS 项目身份是什么？** — 项目名、目标平台、编程语言。这些是后续所有 Lab 的基础，一旦选定就不轻易更改。
-2. **你的技术路线选的什么？为什么？** — ISA 选 RISC-V / x86-64 / ARM？语言选 C / C++ / Rust / Zig？不是随机选——你要有理由。
-3. **你的开发环境和知识库如何搭建？** — 工具链安装、Agent 配置、DesignSpec 骨架创建、参考资料导入。它们是你后续九个阶段的"基础设施"。
+1. **你的 OS 项目身份是什么？** 项目名、目标平台、编程语言。这些是后续所有 Lab 的基础，一旦选定就不轻易更改。
+2. **你的技术路线选的什么？为什么？** ISA 选 RISC-V / x86-64 / ARM？语言选 C / C++ / Rust / Zig？不是随机选，你要有理由。
+3. **你的开发环境和知识库如何搭建？** 工具链安装、Agent 配置、DesignSpec 骨架创建、参考资料导入。它们是你后续十个 Lab 的"基础设施"。
 
 ## 3. 设计空间
 
@@ -71,23 +76,23 @@ if (fd < 0) {
 
 ### 决策 1：选择目标 ISA
 
-三种主流 ISA 的关键差异已列在 [Book §1.10.3](../book/ch01-overview-design.md#1103-问题三你的-os-跑在什么上) 的对比表中，并附有同一操作在三种 ISA 上的汇编对比——建议先看那些实例再做决定。
+三种主流 ISA 的关键差异已列在 [Book §1.10.3](../book/ch01-overview-design.md#1103-问题三你的-os-跑在什么上) 的对比表中，并附有同一操作在三种 ISA 上的汇编对比，建议先看那些实例再做决定。
 
-**默认推荐：RISC-V 64 + QEMU `virt`。** RISC-V 规范简洁（特权级规范约 100 页，x86 超过 2000 页），QEMU `virt` 是课程工具链的一等公民，xv6-riscv 参考资料最丰富。选择 x86-64 或 ARM 不会受到惩罚——你需要额外调研，并确保课程工具链对你的 ISA 支持到位。
+**默认推荐：RISC-V 64 + QEMU `virt`。** RISC-V 规范简洁（特权级规范约 100 页，x86 超过 2000 页），QEMU `virt` 是课程工具链的一等公民，xv6-riscv 参考资料最丰富。选择 x86-64 或 ARM 不会受到惩罚，你需要额外调研，并确保课程工具链对你的 ISA 支持到位。
 
-**设计自检**：你选的 ISA 的 syscall 指令是什么？特权级有几层？页表结构的名称是什么？（不必现在就全部精确回答——这些问题会在 Lab 2-5 中逐一展开。但你至少要能说出选这个 ISA 的 2 个理由。）
+**设计自检**：你选的 ISA 的 syscall 指令是什么？特权级有几层？页表结构的名称是什么？（不必现在就全部精确回答，这些问题会在 Lab 2-5 中逐一展开，但你至少要能说出选这个 ISA 的 2 个理由。）
 
 ### 决策 2：选择编程语言
 
-四种语言的宏观对比、代码实例（freelist 页分配器）、OS 开发 vs 普通开发差异、构建系统对比详见 [Book §1.10.4](../book/ch01-overview-design.md#1104-问题四用什么语言写你的内核)——建议先看完再决定。
+四种语言的宏观对比、代码实例（freelist 页分配器）、OS 开发 vs 普通开发差异、构建系统对比详见 [Book §1.10.4](../book/ch01-overview-design.md#1104-问题四用什么语言写你的内核)，建议先看完再决定。
 
-**默认推荐：C。** 参考资料最丰富（xv6、Linux、OSDev wiki），语法简单，你不会花数周学习语言特性。"内存不安全"在教学场景中反而是优势——你会亲身经历 buffer overflow，从而深刻理解 MMU 和隔离的价值。
+**默认推荐：C。** 参考资料最丰富（xv6、Linux、OSDev wiki），语法简单，你不会花数周学习语言特性。"内存不安全"在教学场景中反而是优势，你会亲身经历 buffer overflow，从而深刻理解 MMU 和隔离的价值。
 
-如果你已有 C++ 基础，选 C++ 也可以——RAII 和模板能减少重复代码，但需要在 freestanding 环境下禁用异常（`-fno-exceptions`）和 RTTI（`-fno-rtti`），且 STL 容器不可用。详见 [Book §1.10.4c](../book/ch01-overview-design.md#1104c-从普通开发到-os-开发四种语言的关键差异)。
+如果你已有 C++ 基础，选 C++ 也可以，RAII 和模板能减少重复代码，但需要在 freestanding 环境下禁用异常（`-fno-exceptions`）和 RTTI（`-fno-rtti`），且 STL 容器不可用。详见 [Book §1.10.4c](../book/ch01-overview-design.md#1104c-从普通开发到-os-开发四种语言的关键差异)。
 
 选择 Rust、Zig 或 C++ 不会受到惩罚，你需要在后续 Lab 中自行解决语言特有的问题（Rust 的 `unsafe` 边界、Zig 的交叉编译配置、C++ 的全局构造函数和 vtable 管理）。
 
-**设计自检**：如果你选的语言不是你最熟悉的——你知道它在 OS 开发中需要禁用哪些特性吗？（如 C++ 的异常/RTTI、Rust 的 std。）在 [Book §1.10.4c](../book/ch01-overview-design.md#1104c-从普通开发到-os-开发四种语言的关键差异) 查"✗ 丢失"列。
+**设计自检**：如果你选的语言不是你最熟悉的，你知道它在 OS 开发中需要禁用哪些特性吗？（如 C++ 的异常/RTTI、Rust 的 std。）在 [Book §1.10.4c](../book/ch01-overview-design.md#1104c-从普通开发到-os-开发四种语言的关键差异) 查"✗ 丢失"列。
 
 ### 决策 3：开发环境
 
@@ -104,7 +109,7 @@ Agent 的定位和约束在 [Book §1.7](../book/ch01-overview-design.md#ai-agen
 
 vos-agent 支持五种 LLM provider：**Anthropic**（Claude）、**OpenAI**（GPT/o 系列）、**OpenAI-compatible**（兼容网关，如 Azure/DeepSeek API/自建代理）、**DeepSeek**（原生 DeepSeek API）、**Ollama**（本地模型）。Lab 1 阶段至少配置一个。
 
-**API key 不要放在 shell 配置文件里。** 推荐使用项目根目录的 `.env` 文件，配合 `.vos/config.toml` 声明使用哪个 key。这套机制是 vos-agent 的原生设计——不需要手动 `export` 环境变量，也避免了 key 通过 shell history 或 `env` 命令泄露。
+**API key 不要放在 shell 配置文件里。** 推荐使用项目根目录的 `.env` 文件，配合 `.vos/config.toml` 声明使用哪个 key。这套机制是 vos-agent 的原生设计，不需要手动 `export` 环境变量，也避免了 key 通过 shell history 或 `env` 命令泄露。
 
 ---
 
@@ -164,7 +169,7 @@ vos init
 
 `vos init` 会创建空的 `spec/design.yaml`、`spec/modules/toolchain.yaml`、`vos.yaml` 和 `.gitignore`，并建立五类 Spec 所需的目录。`.gitignore` 已包含 `.vos/` 和 `.env`，API key 文件与 VOS 运行目录不会被 Git 跟踪。如果当前目录还不是 Git 仓库，`vos init` 会先执行 `git init`。初始提交只包含它创建或维护的入口文件，不会顺带提交你的草稿。
 
-如果 `vos init` 提示缺少 Git 用户名或邮箱，先按上面的命令配置本仓库的 Git identity.
+如果 `vos init` 提示缺少 Git 用户名或邮箱，先按上面的命令配置本仓库的 Git identity。
 
 ### 步骤 3：完成 DesignSpec（预计 30 分钟）
 
@@ -316,7 +321,11 @@ git log -2 --oneline
 - [ ] 一段不采用备选 ISA 或语言的理由；
 - [ ] 干净且可追溯的 Git HEAD。
 
-## 9. 常见问题
+## 9. AI 使用边界
+
+Agent 可以解释 ISA 差异、对比语言优劣和审查 DesignSpec 字段。学生必须亲自决定项目身份、技术路线和知识库策略，并审查 Agent 给出的每一处建议。`design`、`spec` 必须经 `--confirm` 才写回；`debug`、`verify`、`review` 只读，不修改项目。
+
+## 10. 常见问题
 
 ### QEMU 能启动，但读不到 flag
 

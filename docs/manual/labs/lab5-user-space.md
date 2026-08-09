@@ -1,8 +1,13 @@
 # Lab 5：用户空间——从 trap 到第一个进程
 
-> 对应教材：[第 5 章：用户空间](../book/ch05-user-space.md)
+> **对应教材**：[第 5 章：用户空间](../book/ch05-user-space.md)
 
-本 Lab 分三段完成：用户 trap、进程与调度、syscall 与第一个用户程序。每段都必须独立可验证，避免把 trap、页表、调度和 ABI 问题混成一次黑屏。
+> **本 Lab 概览**
+>
+> - **学完能做什么**：让第一个用户程序在自己的地址空间中运行，通过 syscall 请求内核服务并正常退出；能解释用户态进入内核、调度切换、返回用户态的完整路径。
+> - **预计耗时**：20–28 小时，建议安排 2–3 周。这是课程中工作量最大的阶段之一，三个子阶段各占约三分之一。
+> - **前置依赖**：已完成 Lab 4（中断与定时器可用），阅读第 5 章与对应 ISA 的用户态/特权级参考。
+> - **产出物**：trap、process/scheduler、syscall 三个 ModuleSpec，trap-frame 与 syscall 两个 InterfaceSpec，三个子阶段的实现与独立测试，上下文切换与坏指针证据。
 
 ## 1. 设计问题
 
@@ -11,6 +16,8 @@
 - 调度器的公平性和抢占点如何定义？
 - syscall 编号、参数、返回值和错误码如何形成稳定 ABI？
 - 用户指针如何校验，复制过程中遇到页错误怎么办？
+
+本 Lab 分三段完成：用户 trap、进程与调度、syscall 与第一个用户程序。每段都必须独立可验证，避免把 trap、页表、调度和 ABI 问题混成一次黑屏。
 
 ## 2. 子阶段 A：用户 trap
 
@@ -22,6 +29,8 @@
 
 trap frame 是跨边界 ABI，应写入 `spec/interfaces/trap-frame.yaml`。明确通用寄存器、PC、状态寄存器、用户栈、内核栈和地址空间标识。非法指令、用户页错误和未知 trap 不得直接破坏内核。
 
+**自检点**：`ecall` 被正确识别，返回 PC 不会重复执行同一指令；trap 返回后，承诺保留的用户寄存器不变。
+
 门禁：
 
 - [ ] `ecall` 被正确识别，返回 PC 不会重复执行同一指令。
@@ -31,16 +40,18 @@ trap frame 是跨边界 ABI，应写入 `spec/interfaces/trap-frame.yaml`。明�
 
 ## 3. 子阶段 B：进程与调度
 
-进程 ModuleSpec 至少声明 created、runnable、running、blocked、zombie/terminated 等状态及合法转换。调度器为 L3，写清每核运行状态、run queue 锁、抢占点和“同一进程不得同时在两个 CPU 运行”的保证。
+进程 ModuleSpec 至少声明 created、runnable、running、blocked、zombie/terminated 等状态及合法转换。调度器为 L3，写清每核运行状态、run queue 锁、抢占点和"同一进程不得同时在两个 CPU 运行"的保证。
 
-先跑协作式切换，再打开定时器抢占。每次上下文切换记录前后 PID、CPU、原因和单调序号；常规构建可以降低日志级别，但证据模式必须可恢复。
+先跑协作式切换，再打开定时器抢占。每次上下文切换记录前后 PID、CPU、原因和单调序号；常规构建可以降低日志级别，但证据字段必须完整保留。
+
+**自检点**：多个进程可创建、运行、阻塞、唤醒和退出；状态转换只经过 Spec 允许的边。
 
 门禁：
 
 - [ ] 多个进程可创建、运行、阻塞、唤醒和退出。
 - [ ] 状态转换只经过 Spec 允许的边。
 - [ ] 同一进程不会同时运行在两个 CPU。
-- [ ] 公平性测试符合你声明的窗口和误差，而不是只检查“都运行过一次”。
+- [ ] 公平性测试符合你声明的窗口和误差，而不是只检查"都运行过一次"。
 - [ ] lost wakeup 测试能重复运行并留下等待队列证据。
 
 ## 4. 子阶段 C：syscall 与用户程序
@@ -48,6 +59,8 @@ trap frame 是跨边界 ABI，应写入 `spec/interfaces/trap-frame.yaml`。明�
 跨用户/内核边界的 syscall 写入 InterfaceSpec。至少定义 syscall number、参数寄存器、返回寄存器、错误表示、指针方向、长度单位和可观察副作用。
 
 首批接口建议只保留 `write`、`exit` 以及加载测试所需的最小集合。`copyin`/`copyout` 必须逐页验证权限和范围，防止跨页尾部绕过检查。
+
+**自检点**：第一个用户程序能加载、调用 `write` 并正常 `exit`；未知 syscall 返回稳定错误。
 
 门禁：
 
@@ -100,14 +113,14 @@ Agent 可以审查 trap 保存集合、状态机和 ABI 测试。学生必须决
 
 ## 9. 提交物
 
-- trap、process/scheduler、syscall ModuleSpec；
-- trap-frame 与 syscall InterfaceSpec；
-- 三个子阶段的实现和独立 public/contract targets；
-- 上下文切换与异常证据；
-- 调度公平性和坏指针测试；
-- 必要的 SpecPatch。
+- [ ] trap、process/scheduler、syscall ModuleSpec；
+- [ ] trap-frame 与 syscall InterfaceSpec；
+- [ ] 三个子阶段的实现和独立 public/contract targets；
+- [ ] 上下文切换与异常证据；
+- [ ] 调度公平性和坏指针测试；
+- [ ] 必要的 SpecPatch。
 
-## 10. 常见错误
+## 10. 常见问题与排查
 
 ### 用户态不断重复 `ecall`
 
@@ -132,3 +145,12 @@ Agent 可以审查 trap 保存集合、状态机和 ABI 测试。学生必须决
 ### `exit` 后父进程永远等待
 
 退出路径没有在发布 zombie/terminated 状态后唤醒等待者，或唤醒发生在状态可见之前。将状态发布与 wait queue 语义写入同一 L3 契约。
+
+## 11. 背景阅读
+
+- [Book 第 5 章：用户空间](../book/ch05-user-space.md)：trap、进程、调度与 syscall 的完整背景。
+- [RISC-V 参考](../appendices/riscv-reference.md)：S/U 特权级切换、`sret` 与 `ecall`。
+- [x86-64 启动参考](../appendices/x86-boot-reference.md)：ring 0/3、`syscall`/`sysret`。
+- [ARM 启动参考](../appendices/arm-boot-reference.md)：EL0/EL1、SVC 异常。
+- [ModuleSpec](../specs/module-spec.md) 与 [InterfaceSpec](../specs/overview.md)：模块与接口契约写法。
+- [SpecPatch](../specs/spec-patch.md)：跨模块语义变化的手写契约。

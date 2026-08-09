@@ -63,24 +63,6 @@ vos submit
 
 命令和平台细节见[附录索引](appendices/tools-overview.md)、[vos 学生命令参考](appendices/vos-commands.md)、[RISC-V](appendices/riscv-reference.md)、[x86-64](appendices/x86-boot-reference.md)与[AArch64](appendices/arm-boot-reference.md)参考。
 
-## Lab 恢复审计
-
-本轮逐个对照简化前版本审计了全部实验。恢复的是教学问题、实施层次、验证门禁、设计理据和故障排查；旧 Architecture Seed/Slice、独立 Operation/Concurrency Spec、旧 `vos stage/test/verify public` 等契约没有重新引入。
-
-| Lab | 恢复并迁移的重点 |
-| --- | --- |
-| Lab 1 | CTF 双环境 flag 热身、Linux/裸机对比、证据与隐私；随后进入 DesignSpec 初始化 |
-| Lab 2 | 启动方式、栈/BSS、多核、结构化工具链、QEMU 和常见故障 |
-| Lab 3 | 内存地图、分配器、分页、隔离、不变量与 TLB 排查 |
-| Lab 4 | trap、时钟、外部中断、UART、多核分发与压力门禁 |
-| Lab 5 | trap、进程/调度、syscall 三个子阶段及坏指针验证 |
-| Lab 6 | 块设备、buffer cache、inode/目录、日志与崩溃注入 |
-| Lab 7 | 句柄生命周期、pipe、共享语义、shell 与资源回收 |
-| Lab 8 | 方向选择、GoalSpec、baseline、护栏指标与可复现实验 |
-| Lab 9 | 板卡调研、启动链、UART/定时器移植、QEMU 回归与人工验收边界 |
-| Lab 10 | Spec ID 覆盖、不变量、故障注入、失败分析、report/submit 证据 |
-| Final Lab | 报告、追溯链、答辩、长时间运行和最终归档 |
-
 ## 五类 Spec
 
 - `spec/design.yaml`：系统目标、语言、ISA、内核组织、QEMU、canonical board、硬件移植和最多三个组合不变量。
