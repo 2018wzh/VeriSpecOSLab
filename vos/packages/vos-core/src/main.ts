@@ -2423,6 +2423,7 @@ export async function executeAgentImplement(
   let patch = "";
   let validation: Record<string, unknown> = {};
   let implementation: StudentImplementationPayload | undefined;
+  let agentSubmission: unknown;
   let implementationEvents: Array<Record<string, unknown>> = [];
   try {
     const agentResult = await runAgentWithPrompt({
@@ -2439,6 +2440,7 @@ export async function executeAgentImplement(
       onEvent: createAgentProgressParams(context, "agent implement").onEvent,
     });
     implementationEvents = agentResult.rawEvents;
+    agentSubmission = agentResult.parsedResult;
     implementation = parseStudentImplementationPayload(agentResult.parsedResult, module.id, bundle);
     const agentChanged = await studentChangedPaths(worktree);
     const violations = agentChanged.filter((target) => !isOwnedStudentPath(target, ownedPaths));
@@ -2470,12 +2472,22 @@ export async function executeAgentImplement(
       }
     }
   } catch (error) {
-    validation = { status: "validation_failed", message: errorMessage(error) };
+    validation = {
+      status: "validation_failed",
+      message: errorMessage(error),
+      ...(agentSubmission === undefined ? {} : { agent_result: agentSubmission }),
+    };
   } finally {
     await removeStudentWorktree(projectRoot, worktree);
   }
 
-  await writeStudentAgentArtifact(projectRoot, evidence, "implement", { module: module.id, base_head: baseHead, patch, validation });
+  await writeStudentAgentArtifact(projectRoot, evidence, "implement", {
+    module: module.id,
+    base_head: baseHead,
+    patch,
+    validation,
+    agent_events: implementationEvents,
+  });
   if (validation.status !== "passed") {
     return { status: validation.status === "owns_violation" ? "policy_blocked" : "validation_failed", details: { module: module.id, base_head: baseHead, validation, patch_available: Boolean(patch) } };
   }

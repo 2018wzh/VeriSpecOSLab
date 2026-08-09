@@ -291,6 +291,32 @@ describe("student v2 workflow", () => {
     });
   }, 30_000);
 
+  test("preserves a partial implementation submission and Agent events in local evidence", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      const proposal = implementationResult();
+      proposal.status = "partial";
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async () => ({
+          content: "partial implementation",
+          events: acceptedSubmitEvents("student_implementation_result.v1", proposal),
+        }),
+      });
+
+      expect(result.status).toBe("validation_failed");
+      const artifact = result.artifacts.find((item) => item.summary === "student implement evidence");
+      expect(artifact).toBeDefined();
+      const recorded = JSON.parse(readFileSync(join(root, artifact!.path), "utf8")) as Record<string, unknown>;
+      expect(recorded).toMatchObject({
+        validation: { agent_result: { status: "partial" } },
+      });
+      expect(Array.isArray(recorded.agent_events)).toBe(true);
+      expect((recorded.agent_events as unknown[]).length).toBeGreaterThan(0);
+    });
+  }, 30_000);
+
   test("does not land code, tests, or manifest targets when a proposed regression fails", async () => {
     const root = makeRoot();
     await withGitIdentity(async () => {
