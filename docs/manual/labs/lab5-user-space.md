@@ -1,12 +1,134 @@
-# Lab 5：用户态与 syscall ABI
+# Lab 5：用户空间——从 trap 到第一个进程
 
-模块负责实现，跨边界语义写入 `spec/interfaces/*.yaml`。例如 syscall 接口声明输入、输出、bad pointer 等错误和 ABI 可观察性质；不要为每个操作再建独立 Spec。
+> 对应教材：[第 5 章：用户空间](../book/ch05-user-space.md)
+
+本 Lab 分三段完成：用户 trap、进程与调度、syscall 与第一个用户程序。每段都必须独立可验证，避免把 trap、页表、调度和 ABI 问题混成一次黑屏。
+
+## 1. 设计问题
+
+- 用户进入内核时，trap frame 在哪里，哪些状态由硬件保存？
+- 进程拥有哪些资源，生命周期如何转换，退出后谁回收？
+- 调度器的公平性和抢占点如何定义？
+- syscall 编号、参数、返回值和错误码如何形成稳定 ABI？
+- 用户指针如何校验，复制过程中遇到页错误怎么办？
+
+## 2. 子阶段 A：用户 trap
+
+先构造最小用户页表和一段只执行 `ecall` 的用户代码。验证路径：
+
+```text
+用户指令 → trap 入口 → 保存用户状态 → 内核分发 → 恢复状态 → 用户继续
+```
+
+trap frame 是跨边界 ABI，应写入 `spec/interfaces/trap-frame.yaml`。明确通用寄存器、PC、状态寄存器、用户栈、内核栈和地址空间标识。非法指令、用户页错误和未知 trap 不得直接破坏内核。
+
+门禁：
+
+- [ ] `ecall` 被正确识别，返回 PC 不会重复执行同一指令。
+- [ ] trap 返回后，承诺保留的用户寄存器不变。
+- [ ] 用户页错误终止或通知当前进程，不让内核 panic。
+- [ ] 用户不能伪造内核 trap frame 地址或特权状态。
+
+## 3. 子阶段 B：进程与调度
+
+进程 ModuleSpec 至少声明 created、runnable、running、blocked、zombie/terminated 等状态及合法转换。调度器为 L3，写清每核运行状态、run queue 锁、抢占点和“同一进程不得同时在两个 CPU 运行”的保证。
+
+先跑协作式切换，再打开定时器抢占。每次上下文切换记录前后 PID、CPU、原因和单调序号；常规构建可以降低日志级别，但证据模式必须可恢复。
+
+门禁：
+
+- [ ] 多个进程可创建、运行、阻塞、唤醒和退出。
+- [ ] 状态转换只经过 Spec 允许的边。
+- [ ] 同一进程不会同时运行在两个 CPU。
+- [ ] 公平性测试符合你声明的窗口和误差，而不是只检查“都运行过一次”。
+- [ ] lost wakeup 测试能重复运行并留下等待队列证据。
+
+## 4. 子阶段 C：syscall 与用户程序
+
+跨用户/内核边界的 syscall 写入 InterfaceSpec。至少定义 syscall number、参数寄存器、返回寄存器、错误表示、指针方向、长度单位和可观察副作用。
+
+首批接口建议只保留 `write`、`exit` 以及加载测试所需的最小集合。`copyin`/`copyout` 必须逐页验证权限和范围，防止跨页尾部绕过检查。
+
+门禁：
+
+- [ ] 第一个用户程序能加载、调用 `write` 并正常 `exit`。
+- [ ] 未知 syscall 返回稳定错误，不执行任意分支。
+- [ ] NULL、内核地址、跨页坏指针和长度溢出均被拒绝。
+- [ ] 返回值和错误码与 InterfaceSpec 一致。
+
+## 5. Spec 与 Agent 工作流
 
 ```sh
+vos agent spec trap
+vos agent spec process
 vos agent spec syscall
-vos agent implement syscall
 vos spec check
+vos agent implement trap
+vos agent implement process
+vos agent implement syscall
 vos verify
 ```
 
-每个 syscall public test 在 `vos.yaml` 绑定 interface Spec ID；用户指针校验、权限恢复和返回值约束必须能从测试 evidence 追溯。
+trap、process/scheduler 和 syscall 分属不同 ModuleSpec；trap frame 与 syscall ABI 使用 InterfaceSpec。若一个实现切片必须跨模块修改，先提交 SpecPatch。每个测试 target 用 `verifies` 绑定对应模块或接口稳定 ID。
+
+## 6. 可观测性与故障注入
+
+至少保留以下诊断能力：trap 原因与 PC、进程状态转换、上下文切换原因、syscall 编号与遮蔽后的参数类别。不要在日志中打印用户缓冲区原文或凭据。
+
+故障注入至少覆盖：非法指令、用户页错误、未知 syscall、坏用户指针、运行队列重复项和退出时仍持有资源。
+
+建议使用统一事件格式：
+
+```text
+TRAP cpu=<n> pid=<n> cause=<kind> pc=<hex>
+SCHED seq=<n> cpu=<n> from=<pid> to=<pid> reason=<kind>
+SYSCALL pid=<n> id=<n> result=<code>
+```
+
+不要记录完整用户缓冲区。需要证明 copyin/copyout 跨页时，可记录页数、权限类别、失败页索引和内容哈希。
+
+## 7. 设计理据
+
+1. 为什么选择当前内核组织方式，宏内核/微内核取舍体现在哪里？
+2. 调度公平性如何定义，测试窗口为什么足够？
+3. syscall ABI 如何保持稳定，又如何允许未来扩展？
+4. 用户指针检查在哪个可信边界完成？
+
+## 8. AI 使用边界
+
+Agent 可以审查 trap 保存集合、状态机和 ABI 测试。学生必须决定进程模型、调度策略和 ABI。不能用关闭抢占、跳过坏指针检查或把用户异常提升为内核 panic 的方式换取短期通过。
+
+## 9. 提交物
+
+- trap、process/scheduler、syscall ModuleSpec；
+- trap-frame 与 syscall InterfaceSpec；
+- 三个子阶段的实现和独立 public/contract targets；
+- 上下文切换与异常证据；
+- 调度公平性和坏指针测试；
+- 必要的 SpecPatch。
+
+## 10. 常见错误
+
+### 用户态不断重复 `ecall`
+
+返回 PC 没有越过触发指令，或保存/恢复了错误的 PC 字段。记录 trap 前后 PC 并对照 ISA 约定。
+
+### 第二个进程启动后随机崩溃
+
+检查每进程内核栈、上下文结构和地址空间切换，尤其是被错误共享的 trap frame 或页表根。
+
+### `write` 的短缓冲通过，跨页缓冲失败
+
+指针只验证了起始地址。按页遍历整个 `[ptr, ptr + len)`，同时检查整数溢出和每页权限。
+
+### trap 返回后第一个用户寄存器错误
+
+入口保存顺序与结构偏移不一致，或出口提前覆盖了保存区。用哨兵寄存器测试逐项定位，不要只调整汇编偏移直到 hello 偶然运行。
+
+### 多核下偶发同一 PID 同时运行
+
+从 run queue 取出进程和把状态改为 running 不是一个原子状态转换。检查持锁范围、每核 current 指针和抢占路径。
+
+### `exit` 后父进程永远等待
+
+退出路径没有在发布 zombie/terminated 状态后唤醒等待者，或唤醒发生在状态可见之前。将状态发布与 wait queue 语义写入同一 L3 契约。
