@@ -43,6 +43,26 @@ vos submit
 
 `design`、`spec` 只先给出结构化 diff；不带 `--confirm` 不会写回项目。`implement` 需要 clean HEAD 和已提交 Spec；成功后自动创建 `[vos][agent] Implement <module>` 提交。失败、越界或 HEAD 漂移只保留诊断和 patch，不修改原工作树。
 
+## 教材与实验索引
+
+教材保留完整的背景、设计空间、参考实现、故障分析和进阶方向。实验卡片负责把这些内容映射到当前学生契约；两者不能互相替代。
+
+| 阶段 | 教材 | 实验 |
+| --- | --- | --- |
+| 系统设计 | [第 1 章](book/ch01-overview-design.md) | [Lab 1](labs/lab1-seed.md) |
+| 启动 | [第 2 章](book/ch02-boot.md) | [Lab 2](labs/lab2-boot.md) |
+| 内存 | [第 3 章](book/ch03-memory.md) | [Lab 3](labs/lab3-memory.md) |
+| 中断与设备 | [第 4 章](book/ch04-interrupts.md) | [Lab 4](labs/lab4-interrupts.md) |
+| 用户空间 | [第 5 章](book/ch05-user-space.md) | [Lab 5](labs/lab5-user-space.md) |
+| 文件系统 | [第 6 章](book/ch06-filesystem.md) | [Lab 6](labs/lab6-filesystem.md) |
+| 资源与 ABI | [第 7 章](book/ch07-resource-abi.md) | [Lab 7](labs/lab7-resource-abi.md) |
+| 个性化目标 | [第 8 章](book/ch08-personal-goal.md) | [Lab 8](labs/lab8-personal-goal.md) |
+| 硬件移植 | [第 9 章](book/ch09-hardware-port.md) | [Lab 9](labs/lab9-hardware-port.md) |
+| 验证 | [第 10 章](book/ch10-verification.md) | [Lab 10](labs/lab10-verification.md) |
+| 综合验收 | [第 11 章](book/ch11-comprehensive-assessment.md) | [Final Lab](labs/final-lab.md) |
+
+命令和平台细节见[附录索引](appendices/tools-overview.md)、[vos 学生命令参考](appendices/vos-commands.md)、[RISC-V](appendices/riscv-reference.md)、[x86-64](appendices/x86-boot-reference.md)与[AArch64](appendices/arm-boot-reference.md)参考。
+
 ## 五类 Spec
 
 - `spec/design.yaml`：系统目标、语言、ISA、内核组织、QEMU、canonical board、硬件移植和最多三个组合不变量。

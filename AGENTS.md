@@ -42,3 +42,5 @@ Recent commits use bracketed scopes such as `[vos][cli] Simplify student workflo
 ## Agent-Specific Instructions
 
 The root guide applies repo-wide. For `vos/apps/vos-agent`, also follow the more detailed local guide at `vos/apps/vos-agent/AGENTS.md`, especially provider, tool, and headless API rules.
+
+When editing existing Chinese documentation with `humanizer-zh`, default to a light language pass. Preserve technical facts, examples, section structure, information density, and the author’s level of certainty. Fix translationese, mechanical phrasing, punctuation, and local repetition only. Do not delete or reorganize substantive content unless the task explicitly requests structural rewriting; if a contract has changed, migrate the affected explanation instead of replacing an entire chapter with a summary.
