@@ -223,15 +223,16 @@ describe("student v2 workflow", () => {
         print: false,
         agentRunner: async (options) => {
           expect(options.context).toMatchObject({
-            counts: { operations: 1, public_requirements: 2 },
+            counts: { operations: 1, mapped_checks: 2 },
             inventory: {
               operations: ["memory.allocate"],
-              public_requirements: [
+              mapped_checks: [
                 { id: "contract-memory", verifies: ["memory"] },
                 { id: "public-memory", verifies: ["memory"] },
               ],
             },
           });
+          expect(options.task).toContain("strict ModuleSpec schema has no such field");
           return { content: "reviewed", events: acceptedSubmitEvents("spec_review.v1", { findings: [], summary: "ready" }) };
         },
       });
@@ -246,9 +247,10 @@ describe("student v2 workflow", () => {
           expect(options.task).toContain("Choose new module-prefixed IDs");
           expect(options.task).toContain("hard 50-iteration limit");
           expect(options.task).toContain("write the implementation and every non-hidden test by iteration 24");
-          expect(options.task).toContain("call submit_result no later than iteration 45");
+          expect(options.task).toContain("submit by iteration 45");
+          expect(options.completionReserveIterations).toBe(6);
           expect(options.task).toContain("Never spend more than five iterations debugging one failed command");
-          expect(options.task).toContain("batch independent Read/Write/Bash calls");
+          expect(options.task).toContain("Batch independent Read/Write/Bash calls");
           expect(options.task).toContain("Do not inspect parent or sibling directories");
           expect(options.task).toContain("Do not perform repo-wide schema searches");
           expect(options.task).toContain("Each hidden_tests entry is");
@@ -403,6 +405,49 @@ describe("student v2 workflow", () => {
       expect(git(root, ["rev-parse", "HEAD"]).trim()).toBe(beforeHead);
       expect(readFileSync(join(root, "vos.yaml"), "utf8")).toBe(beforeManifest);
       expect(existsSync(join(root, "src", "memory.ts"))).toBe(false);
+    });
+  }, 30_000);
+
+  test("feeds authoritative failures back into the same bounded Agent thread", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      let turn = 0;
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          turn++;
+          mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+          writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 0;\n");
+          const proposal = implementationResult();
+          if (turn === 1) {
+            proposal.test_targets[0]!.args = ["-e", "process.exit(1)"];
+            expect(options.maxIterations).toBe(50);
+            expect(options.completionReserveIterations).toBe(6);
+          } else {
+            expect(options.threadId).toBe("repair-thread");
+            expect(options.maxIterations).toBe(5);
+            expect(options.completionReserveIterations).toBe(2);
+            expect(options.task).toContain("authoritative validation rejected");
+            expect(options.task).toContain("generated-public-memory");
+          }
+          return {
+            content: "submitted",
+            threadId: "repair-thread",
+            events: [
+              { type: "model.usage", thread_id: "repair-thread", iteration: turn === 1 ? 45 : 2 },
+              ...acceptedSubmitEvents("student_implementation_result.v1", proposal).map((event) => ({ ...event, thread_id: "repair-thread", iteration: turn === 1 ? 45 : 2 })),
+            ],
+          };
+        },
+      });
+
+      expect(turn).toBe(2);
+      expect(result.details?.reason).toBeUndefined();
+      expect((result.details?.validation as { status?: string } | undefined)?.status).toBe("passed");
+      expect(result.status).toBe("passed");
+      expect(readFileSync(join(root, "src", "memory.ts"), "utf8")).toContain("allocate");
+      expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
     });
   }, 30_000);
 

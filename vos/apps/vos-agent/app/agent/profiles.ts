@@ -244,7 +244,7 @@ const TOOL_PROFILE_TOOLS: Record<ToolProfile, readonly string[]> = {
   "readonly-spec": ["Read", "Glob", "Grep", "Bash", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
   "readonly-codegen": ["Read", "Glob", "Grep", "Bash", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
   "readonly-validation": ["Read", "Glob", "Grep", "Bash", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
-  "student-implementation": ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
+  "student-implementation": ["Read", "Glob", "Grep", "Write", "WriteFiles", "Edit", "Bash", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
   "readonly-debug": ["Read", "Glob", "Grep", "Bash", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS, "mcp__gdb__gdb_start", "mcp__gdb__gdb_load", "mcp__gdb__gdb_load_core", "mcp__gdb__gdb_command", "mcp__gdb__gdb_set_breakpoint", "mcp__gdb__gdb_continue", "mcp__gdb__gdb_step", "mcp__gdb__gdb_next", "mcp__gdb__gdb_finish", "mcp__gdb__gdb_print", "mcp__gdb__gdb_examine", "mcp__gdb__gdb_backtrace", "mcp__gdb__gdb_info_registers", "mcp__gdb__gdb_list_source", "mcp__gdb__gdb_list_sessions", "mcp__gdb__gdb_attach", "mcp__gdb__gdb_terminate", "mcp__qemu-monitor__qmp_query", "mcp__qemu-monitor__hmp_info", ...VISUALIZATION_TOOL_NAMES],
   "readonly-doctor": ["Read", "Glob", "Grep", "Bash", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
   "readonly-reference": ["Read", "Glob", "Grep", "Bash", "TodoRead", "Task", "WebSearch", "WebFetch", ...PROJECT_CONTEXT_TOOLS, "mcp__vos-kb__kb_search", "mcp__vos-kb__kb_lookup", "mcp__vos-kb__kb_list_sources", ...VISUALIZATION_TOOL_NAMES],

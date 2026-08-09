@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { createReadTool } from "./read.ts";
 import { createWriteTool } from "./write.ts";
+import { createWriteFilesTool } from "./write-files.ts";
 import { createEditTool } from "./edit.ts";
 import { createGlobTool } from "./glob.ts";
 import { createGrepTool } from "./grep.ts";
@@ -63,6 +64,7 @@ export function createBuiltinToolRegistry(
   ];
   if (!opts.courseMode) {
     tools.push(createWriteTool({ rootDir }));
+    tools.push(createWriteFilesTool({ rootDir }));
     tools.push(createEditTool({ rootDir }));
   }
   tools.push(...(opts.extraTools ?? []));
@@ -102,7 +104,7 @@ export function createBuiltinToolRegistry(
 }
 
 function createCourseModeWritePolicy(): ToolPolicy {
-  const blocked = new Set(["write", "edit"]);
+  const blocked = new Set(["write", "writefiles", "edit"]);
   return {
     canAdvertise: (tool) => !blocked.has(tool.name.trim().toLowerCase()),
     canExecute: ({ name }) => blocked.has(name.trim().toLowerCase())

@@ -33,6 +33,8 @@ export interface AgentRunResult {
   rawEvents: Array<Record<string, unknown>>;
   agentProfile?: AgentTaskResult["agentProfile"];
   exitCode: number | null;
+  threadId?: string;
+  iterations: number;
 }
 
 export type HeadlessAgentTaskRunner = (options: AgentTaskRequest) => Promise<{
@@ -40,6 +42,7 @@ export type HeadlessAgentTaskRunner = (options: AgentTaskRequest) => Promise<{
   structuredOutput?: unknown;
   events: unknown[];
   agentProfile?: AgentTaskResult["agentProfile"];
+  threadId?: string;
 }>;
 export type InteractiveAgentTaskRunner = (options: InteractiveAgentTaskOptions) => Promise<void>;
 export type ReadonlyAgentDisplayStarter = (options: ReadonlyAgentDisplayOptions) => ReadonlyAgentDisplayHandle;
@@ -123,7 +126,23 @@ export async function runAgentWithPrompt(params: {
     rawEvents,
     agentProfile: result.agentProfile,
     exitCode: 0,
+    threadId: result.threadId ?? lastAgentThreadId(rawEvents),
+    iterations: maxAgentIteration(rawEvents),
   };
+}
+
+function lastAgentThreadId(events: readonly Record<string, unknown>[]): string | undefined {
+  for (let index = events.length - 1; index >= 0; index--) {
+    if (typeof events[index]?.thread_id === "string") return events[index].thread_id as string;
+  }
+  return undefined;
+}
+
+function maxAgentIteration(events: readonly Record<string, unknown>[]): number {
+  return events.reduce((highest, event) =>
+    typeof event.iteration === "number" && Number.isInteger(event.iteration)
+      ? Math.max(highest, event.iteration)
+      : highest, 0);
 }
 
 function mergeMcpServers(servers: readonly McpServerConfig[]): McpServerConfig[] {
@@ -291,6 +310,8 @@ export async function runInteractiveAgentWithPrompt(params: {
     parsedResult: submitted,
     rawEvents: events,
     exitCode: 0,
+    threadId: lastAgentThreadId(events),
+    iterations: maxAgentIteration(events),
   };
 }
 

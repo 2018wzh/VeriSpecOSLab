@@ -121,6 +121,7 @@ describe("agent task profiles", () => {
     expect(await allowed(policy, "mcp__project-context__spec_summary")).toBe(true);
     expect(await allowed(policy, "mcp__http-server__publish_html")).toBe(true);
     expect(await allowed(policy, "Write")).toBe(false);
+    expect(await allowed(policy, "WriteFiles")).toBe(false);
     expect(await allowed(policy, "Edit")).toBe(false);
     expect(policy.canAdvertise?.(tool("mcp__vos-kb__kb_lookup")) ?? true).toBe(true);
     expect(policy.canAdvertise?.(tool("mcp__project-context__evidence_summary")) ?? true).toBe(true);
@@ -146,6 +147,7 @@ describe("agent task profiles", () => {
     expect(profile.outputSchema).toBe("student_implementation_result.v1");
     expect(await allowed(policy, "Read")).toBe(true);
     expect(await allowed(policy, "Write")).toBe(true);
+    expect(await allowed(policy, "WriteFiles")).toBe(true);
     expect(await allowed(policy, "Edit")).toBe(true);
     expect(await allowed(policy, "Bash")).toBe(true);
     expect(await allowed(policy, "Vos", { command: "build" })).toBe(true);

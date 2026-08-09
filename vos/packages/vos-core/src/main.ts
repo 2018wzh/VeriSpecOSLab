@@ -2430,55 +2430,83 @@ export async function executeAgentImplement(
   const commitMessage = `[vos][agent] Implement ${module.module}\n\nRun-ID: ${evidence.run_id}\nSpec-Hash: ${specHash}`;
   try {
     const progress = createAgentProgressParams(context, "agent implement");
-    const agentResult = await runAgentWithPrompt({
-      projectRoot: worktree,
-      taskPrompt: `Implement ModuleSpec ${module.id}. Work only within these owned paths: ${ownedPaths.join(", ")}. Generate the implementation plus concrete public, contract, fixed-seed bounded fuzz, bounded trace/oracle, and local hidden tests for this module. Test source paths must also be covered by owns. This is an implementation task, not a planning task: do not stop after describing a plan; write the owned files, run validation, and call submit_result. Read only the current project root: its Spec, vos.yaml, owned files, and public test framework. Reuse helpers under tests/public and do not reimplement them in generated tests. Do not inspect parent or sibling directories, other checkouts/worktrees, VOS implementation source, Git history, old Lab implementations/diffs, or previous .vos runs; the current Spec and the result contract below are the complete authority. Do not perform repo-wide schema searches or toolchain discovery. Do not edit vos.yaml: return structured test_targets and hidden_tests so VOS can validate and project them atomically. Existing test target IDs are immutable and MUST NOT be proposed again: ${JSON.stringify(existingTargetIds)}. Choose new module-prefixed IDs that do not collide with that list. Each test_targets entry is {id, kind, program, args, cwd, env, timeout, verifies, artifacts}; use env: [\"PATH\"] for every target whose program or script resolves host tools by name. Fuzz additionally requires seed, cases, reproduction_artifact; trace additionally requires workload and oracle. Each hidden_tests entry is {id, path, content, program, args, cwd, env, timeout, verifies, seed}, and args may use {hidden_test}; hidden tests that resolve host tools also require PATH in env. Every verifies list must include ${module.id}. Hidden test content is returned in the result and must not be written into Git. The loop has a hard 50-iteration limit. Finish discovery by iteration 8, write the implementation and every non-hidden test by iteration 24, finish useful local validation by iteration 38, and call submit_result no later than iteration 45; batch independent Read/Write/Bash calls in the same response. Never spend more than five iterations debugging one failed command: either fix it, choose a simpler Spec-compliant implementation, or submit a failed result with the root cause. Do not spend iterations investigating harmless output formatting after the declared oracle passes. Run useful local checks, but VOS will independently run the build and every existing and proposed non-hidden target before applying anything. Do not edit specs, .git, .vos, or worktrees. Stop when evidence is complete or report the root cause.`,
-      taskKind: "implementation",
-      requestedScope: `implement:${module.id}`,
-      context: studentSpecContext(bundle, module.id),
-      allowedPaths: ownedPaths,
-      requiredValidations: ["build", "public tests", "contract tests", "fixed-seed fuzz tests", "bounded trace/oracle tests"],
-      courseMode: false,
-      maxIterations: 50,
-      completionReserveIterations: 6,
-      resultSubmissionSchema: "student_implementation_result.v1",
-      taskRunner: context.agentRunner,
-      onEvent: async (event) => {
-        implementationEvents.push(event);
-        await progress.onEvent(event);
-      },
-    });
-    implementationEvents = agentResult.rawEvents;
-    agentSubmission = agentResult.parsedResult;
-    implementation = parseStudentImplementationPayload(agentResult.parsedResult, module.id, bundle);
-    const agentChanged = await studentChangedPaths(worktree);
-    const violations = agentChanged.filter((target) => !isOwnedStudentPath(target, ownedPaths));
-    if (violations.length > 0) {
-      validation = { status: "owns_violation", changed: agentChanged, violations };
-    } else {
-      await applyStudentTestTargetProposals(worktree, implementation.test_targets);
-      patch = await studentWorktreeDiff(worktree);
-      const changed = await studentChangedPaths(worktree);
-      if (!patch.trim() || agentChanged.length === 0) {
-        validation = { status: "no_changes", agent_result: agentResult.parsedResult };
+    const initialPrompt = `Implement ModuleSpec ${module.id}. Work only within these owned paths: ${ownedPaths.join(", ")}. Generate the implementation plus concrete public, contract, fixed-seed bounded fuzz, bounded trace/oracle, and local hidden tests for this module. Test source paths must also be covered by owns. This is an implementation task, not a planning task: do not stop after describing a plan; write the owned files, run validation, and call submit_result. Read only the current project root: its Spec, vos.yaml, owned files, and public test framework. Reuse helpers under tests/public and do not reimplement them in generated tests. Do not inspect parent or sibling directories, other checkouts/worktrees, VOS implementation source, Git history, old Lab implementations/diffs, or previous .vos runs; the current Spec and the result contract below are the complete authority. Do not perform repo-wide schema searches or toolchain discovery. Do not edit vos.yaml: return structured test_targets and hidden_tests so VOS can validate and project them atomically. Existing test target IDs are immutable and MUST NOT be proposed again: ${JSON.stringify(existingTargetIds)}. Choose new module-prefixed IDs that do not collide with that list. Each test_targets entry is {id, kind, program, args, cwd, env, timeout, verifies, artifacts}; use env: [\"PATH\"] for every target whose program or script resolves host tools by name. Fuzz additionally requires seed, cases, reproduction_artifact; trace additionally requires workload and oracle. Each hidden_tests entry is {id, path, content, program, args, cwd, env, timeout, verifies, seed}, and args may use {hidden_test}; hidden tests that resolve host tools also require PATH in env. Every verifies list must include ${module.id}. Hidden test content is returned in the result and must not be written into Git. The loop has a hard 50-iteration limit shared by implementation and repair. Finish discovery by iteration 8, write the implementation and every non-hidden test by iteration 24, and submit by iteration 45 so VOS can run authoritative gates and return bounded failure evidence within the remaining iterations. Batch independent Read/Write/Bash calls in the same response. Never spend more than five iterations debugging one failed command: either fix it, choose a simpler Spec-compliant implementation, or submit a failed result with the root cause. Do not spend iterations investigating harmless output formatting after the declared oracle passes. Run useful local checks, but VOS will independently run the build and every existing and proposed non-hidden target before applying anything. Do not edit specs, .git, .vos, or worktrees. Stop when evidence is complete or report the root cause.`;
+    let taskPrompt = `${initialPrompt}\nPrefer WriteFiles to create a related implementation or test-file batch in one tool call.`;
+    let threadId: string | undefined;
+    let remainingIterations = 50;
+    const projectedTargetIds = new Set<string>();
+    while (remainingIterations > 0) {
+      const eventCountBeforeRun = implementationEvents.length;
+      const agentResult = await runAgentWithPrompt({
+        projectRoot: worktree,
+        taskPrompt,
+        taskKind: "implementation",
+        requestedScope: `implement:${module.id}`,
+        context: studentSpecContext(bundle, module.id),
+        allowedPaths: ownedPaths,
+        requiredValidations: ["build", "public tests", "contract tests", "fixed-seed fuzz tests", "bounded trace/oracle tests"],
+        courseMode: false,
+        threadId,
+        maxIterations: remainingIterations,
+        completionReserveIterations: threadId ? 2 : 6,
+        resultSubmissionSchema: "student_implementation_result.v1",
+        taskRunner: context.agentRunner,
+        onEvent: async (event) => {
+          implementationEvents.push(event);
+          await progress.onEvent(event);
+        },
+      });
+      if (implementationEvents.length === eventCountBeforeRun) implementationEvents.push(...agentResult.rawEvents);
+      agentSubmission = agentResult.parsedResult;
+      implementation = parseStudentImplementationPayload(agentResult.parsedResult, module.id, bundle);
+      const usedIterations = Math.max(1, agentResult.iterations);
+      remainingIterations = Math.max(0, remainingIterations - usedIterations);
+      threadId = agentResult.threadId ?? threadId;
+
+      const agentChanged = await studentChangedPaths(worktree);
+      const violations = agentChanged.filter((target) =>
+        !(target === "vos.yaml" && projectedTargetIds.size > 0) && !isOwnedStudentPath(target, ownedPaths)
+      );
+      if (violations.length > 0) {
+        validation = { status: "owns_violation", changed: agentChanged, violations };
       } else {
-      const proposedBundle = await buildNormalizedSpecBundle({ projectRoot: worktree });
-      const specDiagnostics = proposedBundle.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
-      if (specDiagnostics.length > 0) {
-        validation = { status: "validation_failed", spec_diagnostics: specDiagnostics, agent_result: agentResult.parsedResult };
-      } else {
-        const runner = new HostRunner(worktree, context.signal);
-        const build = await runner.build("build");
-        const manifest = await readStudentManifest(worktree);
-        const checks = [] as unknown[];
-        if (build.status === "passed") {
-          for (const id of Object.keys(manifest.manifest.checks)) {
-            checks.push(await runner.check(id));
+        const proposedIds = new Set(implementation.test_targets.map((target) => target.id));
+        if (projectedTargetIds.size > 0 && (proposedIds.size !== projectedTargetIds.size || [...proposedIds].some((id) => !projectedTargetIds.has(id)))) {
+          validation = { status: "validation_failed", message: "repair submission changed the projected test target ID set", expected_ids: [...projectedTargetIds], actual_ids: [...proposedIds] };
+        } else {
+          await applyStudentTestTargetProposals(worktree, implementation.test_targets, projectedTargetIds);
+          for (const id of proposedIds) projectedTargetIds.add(id);
+          patch = await studentWorktreeDiff(worktree);
+          if (!patch.trim() || agentChanged.length === 0) {
+            validation = { status: "no_changes", agent_result: agentResult.parsedResult };
+          } else {
+            const proposedBundle = await buildNormalizedSpecBundle({ projectRoot: worktree });
+            const specDiagnostics = proposedBundle.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+            if (specDiagnostics.length > 0) {
+              validation = { status: "validation_failed", spec_diagnostics: specDiagnostics, agent_result: agentResult.parsedResult };
+            } else {
+              const runner = new HostRunner(worktree, context.signal);
+              const build = await runner.build("build");
+              const manifest = await readStudentManifest(worktree);
+              const checks = [] as unknown[];
+              if (build.status === "passed") {
+                for (const id of Object.keys(manifest.manifest.checks)) checks.push(await runner.check(id));
+              }
+              const gatesPassed = build.status === "passed" && checks.length > 0 && (checks as Array<{ status?: string }>).every((check) => check.status === "passed");
+              validation = {
+                status: gatesPassed && implementation.status === "passed" ? "passed" : "validation_failed",
+                ...(implementation.status === "passed" ? {} : { message: `student implementation Agent reported ${implementation.status}` }),
+                build,
+                checks,
+                evidence: await runner.collectEvidence(),
+                agent_result: agentResult.parsedResult,
+              };
+            }
           }
         }
-        validation = { status: build.status === "passed" && checks.length > 0 && (checks as Array<{ status?: string }>).every((check) => check.status === "passed") ? "passed" : "validation_failed", build, checks, evidence: await runner.collectEvidence(), agent_result: agentResult.parsedResult };
       }
-      }
+      if (validation.status === "passed" || validation.status === "owns_violation" || remainingIterations === 0 || !threadId) break;
+      taskPrompt = `VOS authoritative validation rejected the current implementation. Keep the existing projected test target IDs, inspect and correct only the current worktree files, run the failing commands, and resubmit status passed when every gate succeeds. This continuation shares the original 50-iteration budget; ${remainingIterations} iterations remain. Bounded validation evidence:\n${JSON.stringify(studentImplementationRepairSummary(validation), null, 2)}`;
     }
     if (validation.status === "passed") {
       if (!implementation) throw new CliError("implementation result disappeared before commit preparation", "failed");
@@ -2577,11 +2605,33 @@ interface StudentImplementationPayload {
   hidden_tests: StudentHiddenTestProposal[];
 }
 
+function studentImplementationRepairSummary(validation: Record<string, unknown>): Record<string, unknown> {
+  const build = isRecord(validation.build) ? validation.build : undefined;
+  const checks = Array.isArray(validation.checks) ? validation.checks : [];
+  return {
+    status: validation.status,
+    message: validation.message,
+    spec_diagnostics: validation.spec_diagnostics,
+    build: build ? boundedRunnerFailure(build) : undefined,
+    failed_checks: checks.filter((check) => isRecord(check) && check.status !== "passed").map((check) => boundedRunnerFailure(check as Record<string, unknown>)),
+  };
+}
+
+function boundedRunnerFailure(result: Record<string, unknown>): Record<string, unknown> {
+  const tail = (value: unknown): unknown => typeof value === "string" ? value.slice(-4000) : value;
+  return {
+    target: result.target,
+    status: result.status,
+    exitCode: result.exitCode,
+    stdout: tail(result.stdout),
+    stderr: tail(result.stderr),
+  };
+}
+
 function parseStudentImplementationPayload(value: unknown, moduleId: string, bundle: NormalizedSpecBundle): StudentImplementationPayload {
   if (!isRecord(value) || typeof value.status !== "string" || !Array.isArray(value.test_targets) || !Array.isArray(value.hidden_tests)) {
     throw new AgentOutputError("student implementation result must include test_targets and hidden_tests");
   }
-  if (value.status !== "passed") throw new AgentOutputError(`student implementation Agent reported ${value.status}`);
   const stableRefs = new Set<string>([
     "design",
     ...bundle.normalized_modules.flatMap((item) => [item.id, item.module]),
@@ -2665,12 +2715,18 @@ function assertSafeStudentRelativePath(value: string, label: string, allowDot = 
   }
 }
 
-async function applyStudentTestTargetProposals(projectRoot: string, targets: StudentTestTargetProposal[]): Promise<void> {
+async function applyStudentTestTargetProposals(
+  projectRoot: string,
+  targets: StudentTestTargetProposal[],
+  replaceIds: ReadonlySet<string> = new Set(),
+): Promise<void> {
   const manifestPath = path.join(projectRoot, "vos.yaml");
   const raw = parseTopLevelYaml(await readFile(manifestPath, "utf8"));
   const checks = isRecord(raw.checks) ? { ...raw.checks } : {};
   for (const target of targets) {
-    if (checks[target.id] !== undefined) throw new AgentOutputError(`test target already exists: ${target.id}`);
+    if (checks[target.id] !== undefined && !replaceIds.has(target.id)) {
+      throw new AgentOutputError(`test target already exists: ${target.id}`);
+    }
     const { id, ...projection } = target;
     checks[id] = projection;
   }
@@ -5057,11 +5113,11 @@ async function runDefaultAgentSpecReview(params: {
       sources: params.bundle.sources.length,
       modules: params.bundle.modules.length,
       operations: operations.length,
-      public_requirements: publicChecks.length,
+      mapped_checks: publicChecks.length,
     },
     inventory: {
       operations: operations.map((operation) => operation.id),
-      public_requirements: publicChecks.map((check) => ({ id: check.id, verifies: check.verifies })),
+      mapped_checks: publicChecks.map((check) => ({ id: check.id, verifies: check.verifies })),
     },
     architecture: {
       stages: [...stages].sort(),
@@ -5074,6 +5130,7 @@ async function runDefaultAgentSpecReview(params: {
     "Return JSON only with { findings: [{ severity, message, related_specs, suggested_actions }], summary }.",
     "Severity must be one of info, warning, error, blocker.",
     "Your findings are advisory and must be grounded in the provided diagnostics or spec refs.",
+    "inventory.mapped_checks is the current vos.yaml verifies projection, not a ModuleSpec field. It is expected to be empty while reviewing a newly handwritten Spec before agent implement; do not propose a public_requirements field because the strict ModuleSpec schema has no such field. Instead assess whether properties name observable checks that implement can propose and VOS can validate before projection.",
     "If a missing public spec or agent workflow convention belongs in AGENTS.md, mention that in suggested_actions.",
     JSON.stringify(reviewInput, null, 2),
   ].join("\n\n");
