@@ -3,6 +3,7 @@
 import { parseArgs } from "./cli.ts";
 import type {
   AgentApplyPatchCommand,
+  AgentEmbeddingProviderName,
   AgentContextCommand,
   AgentDebugCommand,
   AgentGenerateCommand,
@@ -12,11 +13,13 @@ import type {
   AgentServeCommand,
   AgentValidateGeneratedCommand,
   AgentAskCommand,
+  AgentConfigCommand,
   AgentDesignCommand,
   AgentSpecCommand,
   AgentImplementCommand,
   AgentVerifyCommand,
   AgentKbCommand,
+  AgentProviderName,
   AgentReviewCommand,
   ArchComposeCommand,
   ArchDeriveTestsCommand,
@@ -69,7 +72,7 @@ import { CliError, AgentOutputError } from "./errors.ts";
 import { EvidenceWriter } from "./evidence/index.ts";
 import type { CommandOutcome, ExecContext, ExecuteCliOptions } from "./bootstrap.ts";
 import { collectStringListByKey, parseTopLevelYaml } from "./utils/yaml.ts";
-import { withProjectEnv } from "./utils/dotenv.ts";
+import { readProjectEnv, withProjectEnv } from "./utils/dotenv.ts";
 import { executeCommand } from "./dispatch.ts";
 import {
   ensureDefaultProjectConfig,
@@ -82,6 +85,7 @@ import { appendLogEntry, readLogEntries } from "./agent/helpers.ts";
 import { mkdir, readFile, readdir, writeFile, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { createInterface } from "node:readline/promises";
 import path from "node:path";
 import { isWindows } from "vos-platform";
 import { renderOutput } from "./output.ts";
@@ -132,6 +136,20 @@ import {
 import { isRecord, parseDebugOutput, parseKnowledgebaseAnswer, parsePatchProposal, parsePlanDraft } from "./agent/schemas.ts";
 import { applyPatchText, readPatchFromStdin } from "./agent/apply-patch.ts";
 import { createKbEmbedder, kbEmbeddingEnv } from "./kb/embedding.ts";
+import {
+  AGENT_EMBEDDING_PROVIDER_NAMES,
+  AGENT_PROVIDER_DEFAULTS,
+  AGENT_PROVIDER_NAMES,
+  DEFAULT_EMBEDDING_MODEL,
+  checkAgentConfig,
+  defaultEmbeddingAuthEnv,
+  defaultEmbeddingBaseUrl,
+  defaultEmbeddingProvider,
+  readAgentConfig,
+  resetAgentConfig,
+  writeAgentConfig,
+  type ProviderConfig,
+} from "./agent/config.ts";
 import { defaultPortalClient, type PortalClient } from "./auth/portal-client.ts";
 import { getToken, normalizePortalUrl, removeToken, saveToken, updateStoredUser } from "./auth/store.ts";
 import { assertCommandAllowed, mergeEffectivePolicy } from "./policy/effective-policy.ts";
@@ -334,7 +352,7 @@ function assertStudentCommandSurface(projectRoot: string, command: CliCommand): 
     "kb_clear", "kb_export_manifest", "kb_import_manifest",
   ]);
   const studentCommands = new Set<CliCommand["kind"]>([
-    "init", "doctor", "spec_check", "agent_design", "agent_spec", "agent_implement", "agent_debug",
+    "init", "doctor", "spec_check", "agent_config", "agent_design", "agent_spec", "agent_implement", "agent_debug",
     "agent_verify", "agent_kb", "agent_review", "build", "run_qemu", "run_hardware", "verify",
     "report_generate", "submit_pack",
   ]);
@@ -342,7 +360,7 @@ function assertStudentCommandSurface(projectRoot: string, command: CliCommand): 
   if (removed.has(command.kind)) {
     throw new CliError(`command removed from the student v2 surface: ${commandToArray(command).join(" ")}; use the documented student workflow`, "validation_failed", {
       reason: "student_command_removed",
-      suggested_next_commands: ["vos spec check", "vos agent design", "vos agent kb \"your question\""],
+      suggested_next_commands: ["vos agent config", "vos spec check", "vos agent design", "vos agent kb \"your question\""],
     });
   }
   if (!hasStudentManifest && !isLegacyProject(projectRoot) && studentCommands.has(command.kind) && command.kind !== "init" && command.kind !== "doctor") {
@@ -896,6 +914,7 @@ function isReproBypassCommand(command: CliCommand): boolean {
     command.kind === "whoami" ||
     command.kind === "help" ||
     command.kind === "init" ||
+    command.kind === "agent_config" ||
     command.kind === "stage_save" ||
     command.kind === "ledger_record";
 }
@@ -959,6 +978,7 @@ export async function executeInit(
       ledger: true,
       git_initialized: gitInitialized,
       initial_commit_created: initialCommitCreated,
+      suggested_next_commands: ["vos agent config", "vos doctor", "vos agent design"],
     },
   };
 }
@@ -1293,6 +1313,7 @@ function executeUninitializedStudentDoctor(projectRoot: string): CommandOutcome 
 
 async function executeStudentDoctor(projectRoot: string): Promise<CommandOutcome> {
   const checks: Array<Record<string, unknown>> = [];
+  let requireEmbedding = false;
   for (const command of ["bun", "git"]) {
     checks.push({ name: command, category: "base", required: true, ok: commandExists(command), hint: commandExists(command) ? undefined : `install ${command} and rerun vos doctor` });
   }
@@ -1301,6 +1322,7 @@ async function executeStudentDoctor(projectRoot: string): Promise<CommandOutcome
   }
   try {
     const manifest = await readStudentManifest(projectRoot);
+    requireEmbedding = manifest.manifest.knowledge.sources.length > 0;
     checks.push({ name: "manifest-schema", category: "project", required: true, ok: true, message: path.relative(projectRoot, manifest.path) });
     const kbLock = await syncStudentKbSources(projectRoot, manifest.manifest);
     checks.push({ name: "kb-sources", category: "knowledge", required: true, ok: true, message: `${kbLock.sources.length} source(s) locked` });
@@ -1310,10 +1332,27 @@ async function executeStudentDoctor(projectRoot: string): Promise<CommandOutcome
   } catch (error) {
     checks.push({ name: "manifest-schema", category: "project", required: true, ok: false, message: errorMessage(error), hint: "fix vos.yaml schema errors, then rerun vos doctor" });
   }
+  for (const check of checkAgentConfig(projectRoot, mergedProjectEnv(projectRoot), { requireEmbedding })) {
+    checks.push({
+      ...check,
+      category: check.name === "kb-embedding" ? "knowledge" : "agent",
+      required: true,
+    });
+  }
   const bundle = await buildNormalizedSpecBundle({ projectRoot });
   checks.push({ name: "spec-contract", category: "spec", required: true, ok: !hasBlockingDiagnostics(bundle.diagnostics), message: `${bundle.diagnostics.length} diagnostic(s)`, hint: "run vos spec check for exact diagnostics" });
   const missing = checks.filter((check) => check.required && check.ok !== true).map((check) => String(check.name));
-  return { status: missing.length === 0 ? "passed" : "validation_failed", details: { checks, missing, suggested_next_commands: missing.length > 0 ? ["vos spec check", "vos agent design"] : ["vos build", "vos verify"] } };
+  const agentMissing = missing.some((name) => name === "agent" || name === "agent-config" || name === "kb-embedding");
+  return {
+    status: missing.length === 0 ? "passed" : "validation_failed",
+    details: {
+      checks,
+      missing,
+      suggested_next_commands: missing.length > 0
+        ? [...(agentMissing ? ["vos agent config", "vos agent config --check"] : []), "vos spec check", "vos agent design"]
+        : ["vos build", "vos verify"],
+    },
+  };
 }
 
 export async function executeStageShow(
@@ -1930,6 +1969,263 @@ export async function executeSubmitPack(
       manifest_path: path.relative(projectRoot, pack.manifestPath),
       ...pack.manifest,
     },
+  };
+}
+
+export async function executeAgentConfig(
+  command: AgentConfigCommand,
+  context: ExecContext,
+): Promise<CommandOutcome> {
+  const projectRoot = context.projectRoot;
+  const requireEmbedding = await studentProjectRequiresEmbedding(projectRoot);
+
+  if (command.reset) {
+    const removed = resetAgentConfig(projectRoot);
+    return {
+      status: "passed",
+      details: {
+        removed,
+        config_path: ".vos/config.toml",
+        message: removed.agent || removed.embedding
+          ? "agent and KB embedding configuration removed"
+          : "agent configuration was already empty",
+        suggested_next_commands: ["vos agent config"],
+      },
+    };
+  }
+
+  if (command.check) {
+    return agentConfigCheckOutcome(projectRoot, requireEmbedding);
+  }
+
+  const existing = readAgentConfig(projectRoot);
+  if (command.show) {
+    return {
+      status: existing.agent ? "passed" : "validation_failed",
+      details: {
+        config_path: ".vos/config.toml",
+        agent: sanitizedProviderDetails(existing.agent, mergedProjectEnv(projectRoot)),
+        kb_embedding: sanitizedProviderDetails(existing.embedding, mergedProjectEnv(projectRoot)),
+        kb_embedding_required: requireEmbedding,
+        suggested_next_commands: existing.agent ? ["vos agent config --check"] : ["vos agent config"],
+      },
+    };
+  }
+
+  let agent: ProviderConfig<AgentProviderName>;
+  let embedding: ProviderConfig<AgentEmbeddingProviderName> | undefined;
+  if (!hasAgentConfigValues(command)) {
+    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+      throw new CliError(
+        "agent config wizard requires an interactive terminal; pass --provider, --model, --base-url, and --auth-env for non-interactive use",
+        "validation_failed",
+        { reason: "agent_config_non_interactive" },
+      );
+    }
+    context.progress?.hide();
+    ({ agent, embedding } = await promptAgentConfiguration(existing, requireEmbedding));
+  } else {
+    agent = mergeAgentProvider(command, existing.agent);
+    embedding = mergeEmbeddingProvider(command, existing.embedding, agent);
+  }
+
+  writeAgentConfig(projectRoot, agent, embedding);
+  const outcome = agentConfigCheckOutcome(projectRoot, requireEmbedding);
+  return {
+    ...outcome,
+    details: {
+      ...outcome.details,
+      config_path: ".vos/config.toml",
+      agent: sanitizedProviderDetails(agent, mergedProjectEnv(projectRoot)),
+      kb_embedding: sanitizedProviderDetails(embedding, mergedProjectEnv(projectRoot)),
+      message: outcome.status === "passed"
+        ? "agent configuration saved and validated"
+        : "agent configuration saved, but required credentials or KB embedding configuration are missing",
+    },
+  };
+}
+
+function hasAgentConfigValues(command: AgentConfigCommand): boolean {
+  return Boolean(
+    command.provider || command.model || command.baseUrl || command.authEnv ||
+    command.embeddingProvider || command.embeddingModel || command.embeddingBaseUrl ||
+    command.embeddingAuthEnv || command.configureEmbedding !== undefined,
+  );
+}
+
+function mergeAgentProvider(
+  command: AgentConfigCommand,
+  existing: ProviderConfig<AgentProviderName> | undefined,
+): ProviderConfig<AgentProviderName> {
+  const provider = command.provider ?? existing?.provider;
+  if (!provider) throw new CliError("agent provider is required", "validation_failed", { reason: "agent_config_provider_missing" });
+  const changedProvider = command.provider !== undefined && command.provider !== existing?.provider;
+  const defaults = AGENT_PROVIDER_DEFAULTS[provider];
+  const model = command.model?.trim() || (!changedProvider ? existing?.model : undefined);
+  if (!model) throw new CliError("agent model is required", "validation_failed", { reason: "agent_config_model_missing" });
+  const baseUrl = command.baseUrl?.trim() || (!changedProvider ? existing?.baseUrl : undefined) || defaults.baseUrl;
+  const authEnv = command.authEnv?.trim() || (!changedProvider ? existing?.authEnv : undefined) || defaults.authEnv;
+  return { provider, model, ...(baseUrl ? { baseUrl } : {}), ...(authEnv ? { authEnv } : {}) };
+}
+
+function mergeEmbeddingProvider(
+  command: AgentConfigCommand,
+  existing: ProviderConfig<AgentEmbeddingProviderName> | undefined,
+  agent: ProviderConfig<AgentProviderName>,
+): ProviderConfig<AgentEmbeddingProviderName> | undefined {
+  if (command.configureEmbedding === false) return undefined;
+  const requested = command.configureEmbedding === true || Boolean(
+    command.embeddingProvider || command.embeddingModel || command.embeddingBaseUrl || command.embeddingAuthEnv,
+  );
+  if (!requested) return existing;
+  const provider = command.embeddingProvider ?? existing?.provider ?? defaultEmbeddingProvider(agent.provider);
+  if (!provider) {
+    throw new CliError(
+      `${agent.provider} has no default embedding provider; pass --embedding-provider openai or openai-compatible`,
+      "validation_failed",
+      { reason: "agent_embedding_provider_missing" },
+    );
+  }
+  const changedProvider = command.embeddingProvider !== undefined && command.embeddingProvider !== existing?.provider;
+  const model = command.embeddingModel?.trim() || (!changedProvider ? existing?.model : undefined) || DEFAULT_EMBEDDING_MODEL;
+  const baseUrl = command.embeddingBaseUrl?.trim() || (!changedProvider ? existing?.baseUrl : undefined) || defaultEmbeddingBaseUrl(provider, agent);
+  const authEnv = command.embeddingAuthEnv?.trim() || (!changedProvider ? existing?.authEnv : undefined) || defaultEmbeddingAuthEnv(provider, agent);
+  return { provider, model, ...(baseUrl ? { baseUrl } : {}), authEnv };
+}
+
+async function promptAgentConfiguration(
+  existing: ReturnType<typeof readAgentConfig>,
+  requireEmbedding: boolean,
+): Promise<{
+  agent: ProviderConfig<AgentProviderName>;
+  embedding?: ProviderConfig<AgentEmbeddingProviderName>;
+}> {
+  const terminal = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const provider = await promptChoice(terminal, "Agent provider", AGENT_PROVIDER_NAMES, existing.agent?.provider);
+    const defaults = AGENT_PROVIDER_DEFAULTS[provider];
+    const sameProvider = provider === existing.agent?.provider;
+    const model = await promptRequired(terminal, "Model", sameProvider ? existing.agent?.model : undefined);
+    const baseUrl = await promptOptional(terminal, "Base URL", sameProvider ? existing.agent?.baseUrl : defaults.baseUrl);
+    const authEnv = provider === "ollama"
+      ? await promptOptional(terminal, "Credential environment variable (optional)", sameProvider ? existing.agent?.authEnv : defaults.authEnv)
+      : await promptRequired(terminal, "Credential environment variable", sameProvider ? existing.agent?.authEnv : defaults.authEnv);
+    const agent = { provider, model, ...(baseUrl ? { baseUrl } : {}), ...(authEnv ? { authEnv } : {}) };
+    const withEmbedding = await promptBoolean(
+      terminal,
+      "Configure KB embeddings",
+      requireEmbedding || Boolean(existing.embedding),
+    );
+    if (!withEmbedding) return { agent };
+    const suggestedProvider = existing.embedding?.provider ?? defaultEmbeddingProvider(provider);
+    const embeddingProvider = await promptChoice(terminal, "Embedding provider", AGENT_EMBEDDING_PROVIDER_NAMES, suggestedProvider);
+    const sameEmbeddingProvider = embeddingProvider === existing.embedding?.provider;
+    const embeddingModel = await promptRequired(terminal, "Embedding model", sameEmbeddingProvider ? existing.embedding?.model : DEFAULT_EMBEDDING_MODEL);
+    const embeddingBaseUrl = await promptOptional(
+      terminal,
+      "Embedding base URL",
+      sameEmbeddingProvider ? existing.embedding?.baseUrl : defaultEmbeddingBaseUrl(embeddingProvider, agent),
+    );
+    const embeddingAuthEnv = await promptRequired(
+      terminal,
+      "Embedding credential environment variable",
+      sameEmbeddingProvider ? existing.embedding?.authEnv : defaultEmbeddingAuthEnv(embeddingProvider, agent),
+    );
+    return {
+      agent,
+      embedding: {
+        provider: embeddingProvider,
+        model: embeddingModel,
+        ...(embeddingBaseUrl ? { baseUrl: embeddingBaseUrl } : {}),
+        authEnv: embeddingAuthEnv,
+      },
+    };
+  } finally {
+    terminal.close();
+  }
+}
+
+type TerminalQuestions = Pick<ReturnType<typeof createInterface>, "question">;
+
+async function promptChoice<T extends string>(
+  terminal: TerminalQuestions,
+  label: string,
+  values: readonly T[],
+  current?: T,
+): Promise<T> {
+  const choices = values.map((value, index) => `${index + 1}) ${value}`).join("  ");
+  while (true) {
+    const answer = (await terminal.question(`${label} [${choices}]${current ? ` (${current})` : ""}: `)).trim();
+    if (!answer && current) return current;
+    const index = Number(answer) - 1;
+    if (Number.isInteger(index) && values[index]) return values[index];
+    const exact = values.find((value) => value === answer.toLowerCase());
+    if (exact) return exact;
+    process.stdout.write(`Choose one of: ${values.join(", ")}\n`);
+  }
+}
+
+async function promptRequired(terminal: TerminalQuestions, label: string, current?: string): Promise<string> {
+  while (true) {
+    const answer = (await terminal.question(`${label}${current ? ` (${current})` : ""}: `)).trim();
+    if (answer) return answer;
+    if (current) return current;
+    process.stdout.write(`${label} is required.\n`);
+  }
+}
+
+async function promptOptional(terminal: TerminalQuestions, label: string, current?: string): Promise<string | undefined> {
+  const answer = (await terminal.question(`${label}${current ? ` (${current})` : ""}: `)).trim();
+  return answer || current;
+}
+
+async function promptBoolean(terminal: TerminalQuestions, label: string, current: boolean): Promise<boolean> {
+  while (true) {
+    const answer = (await terminal.question(`${label}? ${current ? "[Y/n]" : "[y/N]"} `)).trim().toLowerCase();
+    if (!answer) return current;
+    if (answer === "y" || answer === "yes") return true;
+    if (answer === "n" || answer === "no") return false;
+    process.stdout.write("Enter y or n.\n");
+  }
+}
+
+async function studentProjectRequiresEmbedding(projectRoot: string): Promise<boolean> {
+  try {
+    return (await readStudentManifest(projectRoot)).manifest.knowledge.sources.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function mergedProjectEnv(projectRoot: string): NodeJS.ProcessEnv {
+  return { ...readProjectEnv(projectRoot), ...process.env };
+}
+
+function agentConfigCheckOutcome(projectRoot: string, requireEmbedding: boolean): CommandOutcome {
+  const checks = checkAgentConfig(projectRoot, mergedProjectEnv(projectRoot), { requireEmbedding });
+  const missing = checks.filter((check) => !check.ok).map((check) => check.name);
+  return {
+    status: missing.length === 0 ? "passed" : "validation_failed",
+    details: {
+      checks,
+      missing,
+      kb_embedding_required: requireEmbedding,
+      suggested_next_commands: missing.length === 0 ? ["vos doctor"] : ["vos agent config", "vos agent config --check"],
+    },
+  };
+}
+
+function sanitizedProviderDetails(
+  config: ProviderConfig | undefined,
+  env: NodeJS.ProcessEnv,
+): Record<string, unknown> | null {
+  if (!config) return null;
+  return {
+    provider: config.provider,
+    model: config.model,
+    base_url: config.baseUrl,
+    auth_env: config.authEnv,
+    credential_present: config.authEnv ? Boolean(env[config.authEnv]) : true,
   };
 }
 
@@ -4683,6 +4979,24 @@ export function commandToArray(command: CliCommand): string[] {
         ...(command.host ? ["--host", command.host] : []),
         ...(command.port ? ["--port", String(command.port)] : []),
       ];
+    case "agent_config":
+      return [
+        "agent",
+        "config",
+        ...(command.provider ? ["--provider", command.provider] : []),
+        ...(command.model ? ["--model", command.model] : []),
+        ...(command.baseUrl ? ["--base-url", command.baseUrl] : []),
+        ...(command.authEnv ? ["--auth-env", command.authEnv] : []),
+        ...(command.configureEmbedding === true ? ["--with-embedding"] : []),
+        ...(command.configureEmbedding === false ? ["--without-embedding"] : []),
+        ...(command.embeddingProvider ? ["--embedding-provider", command.embeddingProvider] : []),
+        ...(command.embeddingModel ? ["--embedding-model", command.embeddingModel] : []),
+        ...(command.embeddingBaseUrl ? ["--embedding-base-url", command.embeddingBaseUrl] : []),
+        ...(command.embeddingAuthEnv ? ["--embedding-auth-env", command.embeddingAuthEnv] : []),
+        ...(command.show ? ["--show"] : []),
+        ...(command.reset ? ["--reset"] : []),
+        ...(command.check ? ["--check"] : []),
+      ];
     case "agent_context":
       return [
         "agent",
@@ -5569,6 +5883,7 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
     "  init",
     "  doctor",
     "  spec check",
+    "  agent config [--show|--check|--reset]",
     "  agent design [--confirm]",
     "  agent spec <module> [--confirm]",
     "  agent implement <module>",
@@ -5589,7 +5904,8 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
   "doctor": helpBlock("doctor", ["Checks the student manifest, strict specs, and required command entrypoints."], ["vos doctor"]),
   "spec": helpBlock("spec check", ["Deterministic schema, stable-ID, reference, path, owns, and level checks."], ["vos spec check"]),
   "spec check": helpBlock("spec check", ["No model, fuzz, trace, or hidden tests are run."], ["vos spec check"]),
-  "agent": helpBlock("agent design|spec|implement|debug|verify|kb|review", ["design [--confirm]", "spec <module> [--confirm]", "implement <module>", "debug", "verify", "kb [question]", "review [module]"], ["vos agent design", "vos agent implement memory"]),
+  "agent": helpBlock("agent config|design|spec|implement|debug|verify|kb|review", ["config [--show|--check|--reset]", "design [--confirm]", "spec <module> [--confirm]", "implement <module>", "debug", "verify", "kb [question]", "review [module]"], ["vos agent config", "vos agent design", "vos agent implement memory"]),
+  "agent config": helpBlock("agent config [options]", ["No options: run the interactive setup wizard.", "--provider <anthropic|openai|openai-compatible|deepseek|ollama>", "--model <id>", "--base-url <url>", "--auth-env <name>", "--with-embedding | --without-embedding", "--embedding-provider <openai|openai-compatible>", "--embedding-model <id>", "--embedding-base-url <url>", "--embedding-auth-env <name>", "--show: show configuration without secret values", "--check: validate configuration and referenced credentials", "--reset: remove agent and embedding sections"], ["vos agent config", "vos agent config --check", "vos agent config --provider openai --model gpt-5 --auth-env OPENAI_API_KEY"]),
   "agent design": helpBlock("agent design [--confirm]", ["--confirm applies and commits the proposal; without it only a diff is produced."], ["vos agent design", "vos agent design --confirm"]),
   "agent spec": helpBlock("agent spec <module> [--confirm]", ["--confirm applies and commits the ModuleSpec proposal."], ["vos agent spec memory"]),
   "agent implement": helpBlock("agent implement <module>", ["Requires clean HEAD and a committed ModuleSpec; validates build, public checks, contract checks, and owns scope."], ["vos agent implement memory"]),

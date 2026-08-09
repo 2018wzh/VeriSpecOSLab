@@ -111,7 +111,7 @@ describe(".env loading", () => {
     }
   });
 
-  test("builds KB embedding config from dedicated section before agent fallback", () => {
+  test("builds KB embedding config from its dedicated section", () => {
     const projectRoot = makeProject();
     mkdirSync(join(projectRoot, ".vos"), { recursive: true });
     writeFileSync(join(projectRoot, ".vos", "config.toml"), [
@@ -141,7 +141,7 @@ describe(".env loading", () => {
     });
   });
 
-  test("uses deepseek auth key as fallback when kb.embedding omits auth.env", () => {
+  test("rejects kb.embedding when auth.env is omitted", () => {
     const projectRoot = makeProject();
     mkdirSync(join(projectRoot, ".vos"), { recursive: true });
     writeFileSync(join(projectRoot, ".vos", "config.toml"), [
@@ -161,14 +161,12 @@ describe(".env loading", () => {
     ].join("\n"));
     writeFileSync(join(projectRoot, ".env"), "DEEPSEEK_API_KEY=embed-key\n");
 
-    expect(buildKbEmbeddingConfig(projectRoot, {} as NodeJS.ProcessEnv)).toEqual({
-      baseUrl: "https://embed.example/v1",
-      model: "text-embedding-3-small",
-      apiKey: "embed-key",
-    });
+    expect(() => buildKbEmbeddingConfig(projectRoot, {} as NodeJS.ProcessEnv)).toThrow(
+      "[kb.embedding].auth.env is required",
+    );
   });
 
-  test("rejects DeepSeek agent config fallback for KB embeddings", () => {
+  test("does not infer KB embeddings from the Agent provider", () => {
     const projectRoot = makeProject();
     mkdirSync(join(projectRoot, ".vos"), { recursive: true });
     writeFileSync(join(projectRoot, ".vos", "config.toml"), [
@@ -184,7 +182,7 @@ describe(".env loading", () => {
     writeFileSync(join(projectRoot, ".env"), "DEEPSEEK_API_KEY=agent-key\n");
 
     expect(() => buildKbEmbeddingConfig(projectRoot, {} as NodeJS.ProcessEnv)).toThrow(
-      /DeepSeek does not provide an embeddings API/,
+      /KB embedding provider is not configured/,
     );
   });
 

@@ -33,7 +33,7 @@ Tests use Bun’s built-in test runner. Name tests `*.test.ts` and place them un
 
 ## Dirty Worktree & Reproducibility Gates
 
-The public student surface is intentionally small: `init`, `doctor`, `spec check`, the seven `agent` roles (`design`, `spec`, `implement`, `debug`, `verify`, `kb`, `review`), `build`, `run qemu`, `run hardware`, `verify`, `report`, and `submit`. Keep clean tree and current `HEAD` ledger gates for `verify`, `agent implement`, authoritative hardware evidence, and `submit`. Dirty `build` and development QEMU/hardware runs are allowed but their evidence is marked non-submittable. `design` and `spec` require confirmation before an atomic commit. `debug`, `verify`, `review`, and `kb` must not modify project files.
+The public student surface is intentionally small: `init`, `doctor`, `spec check`, the `agent config` setup command, the seven `agent` roles (`design`, `spec`, `implement`, `debug`, `verify`, `kb`, `review`), `build`, `run qemu`, `run hardware`, `verify`, `report`, and `submit`. Keep clean tree and current `HEAD` ledger gates for `verify`, `agent implement`, authoritative hardware evidence, and `submit`. Dirty `build` and development QEMU/hardware runs are allowed but their evidence is marked non-submittable. `design` and `spec` require confirmation before an atomic commit. `debug`, `verify`, `review`, and `kb` must not modify project files.
 
 The Agent implementation worktree is a detached linked Git worktree. It protects the original tree from failed patches and ownership violations; it is not a process, network, credentials, or host-filesystem sandbox. Host commands inherit the current user and network by design. Keep this limitation explicit in code, tests, and docs.
 

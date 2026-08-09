@@ -32,6 +32,30 @@ vos spec check
 
 ## Agent
 
+### `vos agent config`
+
+配置 Agent provider、模型、base URL 和凭据环境变量名。无参数时启动交互向导；真实凭据始终放在项目根目录的 `.env`，向导不会要求或回显 key。
+
+```sh
+vos agent config
+vos agent config --show
+vos agent config --check
+vos agent config --reset
+```
+
+非交互环境使用结构化参数：
+
+```sh
+vos agent config \
+  --provider openai \
+  --model gpt-5 \
+  --auth-env OPENAI_API_KEY
+```
+
+可用 provider 为 `anthropic`、`openai`、`openai-compatible`、`deepseek` 和 `ollama`。OpenAI-compatible 还需要 `--base-url`。KB 有锁定来源时，使用 `--with-embedding`，并按需传入 `--embedding-provider`、`--embedding-model`、`--embedding-base-url` 和 `--embedding-auth-env`；embedding provider 只支持 `openai` 与 `openai-compatible`。
+
+`--show` 只显示非秘密字段与凭据是否存在；`--check` 严格验证配置和 `.env` 引用；`--reset` 只移除 `[agent]` 与 `[kb.embedding]`，不会删除 `.env`。格式错误和未知字段会直接失败，不会被静默忽略。
+
 ### `vos agent design [--confirm]`
 
 生成 DesignSpec 的结构化差异。默认不写项目；`--confirm` 才原子应用并单独提交。

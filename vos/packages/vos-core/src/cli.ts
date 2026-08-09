@@ -15,6 +15,7 @@ import type {
   AgentVerifyCommand,
   AgentKbCommand,
   AgentReviewCommand,
+  AgentConfigCommand,
   ArchComposeCommand,
   ArchDeriveTestsCommand,
   ArchLintCommand,
@@ -980,6 +981,70 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
 
   if (command === "agent") {
     const second = rest[0];
+    if (second === "config") {
+      let provider: AgentConfigCommand["provider"];
+      let model: string | undefined;
+      let baseUrl: string | undefined;
+      let authEnv: string | undefined;
+      let embeddingProvider: AgentConfigCommand["embeddingProvider"];
+      let embeddingModel: string | undefined;
+      let embeddingBaseUrl: string | undefined;
+      let embeddingAuthEnv: string | undefined;
+      let configureEmbedding: boolean | undefined;
+      let embeddingChoiceSeen = false;
+      let show = false;
+      let reset = false;
+      let check = false;
+      for (let i = 1; i < rest.length; i++) {
+        const arg = rest[i];
+        const valueFlag = (name: string): string | undefined => {
+          if (arg === name) {
+            const value = resolveRequiredValue(rest, i, arg);
+            i++;
+            return value;
+          }
+          return arg.startsWith(`${name}=`) ? arg.slice(name.length + 1) : undefined;
+        };
+        const providerValue = valueFlag("--provider");
+        if (providerValue !== undefined) { provider = parseAgentProvider(providerValue); continue; }
+        const modelValue = valueFlag("--model");
+        if (modelValue !== undefined) { model = modelValue; continue; }
+        const baseUrlValue = valueFlag("--base-url");
+        if (baseUrlValue !== undefined) { baseUrl = baseUrlValue; continue; }
+        const authEnvValue = valueFlag("--auth-env");
+        if (authEnvValue !== undefined) { authEnv = authEnvValue; continue; }
+        const embeddingProviderValue = valueFlag("--embedding-provider");
+        if (embeddingProviderValue !== undefined) { embeddingProvider = parseAgentEmbeddingProvider(embeddingProviderValue); configureEmbedding = true; continue; }
+        const embeddingModelValue = valueFlag("--embedding-model");
+        if (embeddingModelValue !== undefined) { embeddingModel = embeddingModelValue; configureEmbedding = true; continue; }
+        const embeddingBaseUrlValue = valueFlag("--embedding-base-url");
+        if (embeddingBaseUrlValue !== undefined) { embeddingBaseUrl = embeddingBaseUrlValue; configureEmbedding = true; continue; }
+        const embeddingAuthEnvValue = valueFlag("--embedding-auth-env");
+        if (embeddingAuthEnvValue !== undefined) { embeddingAuthEnv = embeddingAuthEnvValue; configureEmbedding = true; continue; }
+        if (arg === "--with-embedding" || arg === "--without-embedding") {
+          const next = arg === "--with-embedding";
+          if (embeddingChoiceSeen && configureEmbedding !== next) {
+            throw new Error("agent config cannot combine --with-embedding and --without-embedding");
+          }
+          embeddingChoiceSeen = true;
+          configureEmbedding = next;
+          continue;
+        }
+        if (arg === "--show") { show = true; continue; }
+        if (arg === "--reset") { reset = true; continue; }
+        if (arg === "--check") { check = true; continue; }
+        throw new Error(`unknown flag for agent config: ${arg}`);
+      }
+      const modes = [show, reset, check].filter(Boolean).length;
+      if (modes > 1) throw new Error("agent config accepts only one of --show, --reset, or --check");
+      const hasValues = Boolean(provider || model || baseUrl || authEnv || embeddingProvider || embeddingModel || embeddingBaseUrl || embeddingAuthEnv || configureEmbedding !== undefined);
+      if (modes > 0 && hasValues) throw new Error("agent config --show/--reset/--check cannot be combined with configuration flags");
+      return {
+        kind: "agent_config", provider, model, baseUrl, authEnv,
+        embeddingProvider, embeddingModel, embeddingBaseUrl, embeddingAuthEnv,
+        configureEmbedding, show, reset, check,
+      } satisfies AgentConfigCommand;
+    }
     if (second === "design") {
       const display = rest.slice(1).some(isInteractiveDisplayFlag);
       const confirm = rest.slice(1).some((arg) => arg === "--confirm" || arg === "--yes");
@@ -1433,6 +1498,20 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
   }
 
   throw new Error(`unknown command: ${command}`);
+}
+
+function parseAgentProvider(value: string): AgentConfigCommand["provider"] {
+  const normalized = value.trim().toLowerCase();
+  const providers = ["anthropic", "openai", "openai-compatible", "deepseek", "ollama"];
+  if (!providers.includes(normalized)) throw new Error(`--provider must be one of: ${providers.join(", ")}`);
+  return normalized as AgentConfigCommand["provider"];
+}
+
+function parseAgentEmbeddingProvider(value: string): AgentConfigCommand["embeddingProvider"] {
+  const normalized = value.trim().toLowerCase();
+  const providers = ["openai", "openai-compatible"];
+  if (!providers.includes(normalized)) throw new Error(`--embedding-provider must be one of: ${providers.join(", ")}`);
+  return normalized as AgentConfigCommand["embeddingProvider"];
 }
 
 function isVerifyScope(value: string): value is VerifyScope {

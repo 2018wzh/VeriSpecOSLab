@@ -18,6 +18,22 @@ describe("student v2 workflow", () => {
     expect(parseArgs(["bun", "vos", "spec", "check"]).command).toEqual({ kind: "spec_check" });
     expect(parseArgs(["bun", "vos", "run", "hardware", "--timeout", "42"]).command).toEqual({ kind: "run_hardware", dryRun: false, timeoutMs: 42 });
     expect(parseArgs(["bun", "vos", "agent", "spec", "memory", "--confirm"]).command).toEqual({ kind: "agent_spec", module: "memory", confirm: true });
+    expect(parseArgs(["bun", "vos", "agent", "config", "--provider", "openai", "--model", "gpt-5", "--auth-env", "OPENAI_API_KEY"]).command).toEqual({
+      kind: "agent_config",
+      provider: "openai",
+      model: "gpt-5",
+      baseUrl: undefined,
+      authEnv: "OPENAI_API_KEY",
+      embeddingProvider: undefined,
+      embeddingModel: undefined,
+      embeddingBaseUrl: undefined,
+      embeddingAuthEnv: undefined,
+      configureEmbedding: undefined,
+      show: false,
+      reset: false,
+      check: false,
+    });
+    expect(() => parseArgs(["bun", "vos", "agent", "config", "--with-embedding", "--without-embedding"])).toThrow("cannot combine");
     expect(parseArgs(["bun", "vos", "verify"]).command).toEqual({ kind: "verify", scope: "public", target: undefined, dryRun: false, staffPolicy: undefined });
   });
 
@@ -26,6 +42,13 @@ describe("student v2 workflow", () => {
     await withGitIdentity(async () => {
       const result = await invoke(root, "init");
       expect(result.status).toBe("passed");
+      const unconfigured = await invoke(root, "doctor");
+      expect(unconfigured.status).toBe("validation_failed");
+      expect(unconfigured.details?.missing).toContain("agent");
+      writeFileSync(join(root, ".env"), "OPENAI_API_KEY=test-only\n");
+      const configured = await invoke(root, "agent", "config", "--provider", "openai", "--model", "gpt-5", "--auth-env", "OPENAI_API_KEY");
+      expect(configured.status).toBe("passed");
+      expect((await invoke(root, "doctor")).status).toBe("passed");
     });
     expect(existsSync(join(root, "vos.yaml"))).toBe(true);
     expect(existsSync(join(root, "spec", "design.yaml"))).toBe(true);

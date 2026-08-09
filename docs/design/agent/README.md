@@ -2,6 +2,8 @@
 
 学生只面对一个 Agent Runtime。角色由 `taskKind` 和请求范围自动路由到已有 provider/profile；学生不需要选择 smart、deep 或 rush。
 
+`vos agent config` 是独立的设置入口，不是 Agent 角色。交互向导只收集 provider、模型、base URL 和凭据环境变量名；凭据值保存在项目 `.env`。KB 有来源时才要求 `[kb.embedding]`。`--check`、`vos doctor`、Agent Runtime 与 KB Runtime 共用严格配置解析，格式错误、未知字段和缺失凭据不得静默降级。
+
 | 角色 | 权限 | 输出 |
 | --- | --- | --- |
 | `design` | 只写 `spec/design.yaml` | 结构化提案，确认后单独提交 |

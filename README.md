@@ -5,7 +5,7 @@ VeriSpecOSLab 是一个面向操作系统课程的 spec-first 实验工具链。
 ## 学生主链
 
 ```text
-空目录 → vos init → vos agent design → vos agent spec <module>
+空目录 → vos init → vos agent config → vos agent design → vos agent spec <module>
        → vos agent implement <module> → vos build → vos verify
        → vos run qemu / vos run hardware → vos report → vos submit
 ```
@@ -20,6 +20,7 @@ bun link
 
 mkdir my-os && cd my-os
 vos init
+vos agent config
 vos doctor
 vos spec check
 ```
@@ -41,13 +42,14 @@ ModuleSpec 的 `level` 为 L1/L2/L3。缺少高等级字段只产生警告；`vo
 
 ```text
 vos init                         vos doctor
-vos spec check                  vos agent design
-vos agent spec <module>         vos agent implement <module>
-vos agent debug                 vos agent verify
-vos agent kb [question]         vos agent review [module]
-vos build                       vos run qemu
-vos run hardware                vos verify
-vos report                      vos submit
+vos spec check                  vos agent config
+vos agent design                vos agent spec <module>
+vos agent implement <module>    vos agent debug
+vos agent verify                vos agent kb [question]
+vos agent review [module]       vos build
+vos run qemu                    vos run hardware
+vos verify                      vos report
+vos submit
 ```
 
 `--project-root`、`--json`、`--verbose` 和 `--progress` 是通用参数。`agent debug`、`agent verify`、`agent review` 和 `agent kb` 是只读或问答角色；`design`/`spec` 先展示 diff，只有确认后才原子应用并单独提交；`implement` 在 detached linked worktree 中修改、构建和验证，成功后才把 patch 应用回原工作树并创建带 Run-ID 和 Spec-Hash trailer 的提交。

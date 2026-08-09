@@ -6,6 +6,7 @@
 
 ```sh
 vos init
+vos agent config
 vos doctor
 vos spec check
 ```

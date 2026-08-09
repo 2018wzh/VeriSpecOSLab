@@ -103,7 +103,7 @@ describe("xv6-spec offline runtime flow", () => {
       "spec/modules/toolchain.yaml",
       "spec/interfaces/kernel-console.yaml",
       "spec/goals/xv6-core.yaml",
-      "spec/patches/patch-001-initial-spec.yaml",
+      "spec/patches/lab5-process-syscall.yaml",
     ]) {
       expect(existsSync(join(xv6Root, relativePath))).toBe(true);
     }

@@ -1,4 +1,5 @@
 export {
+  executeAgentConfig,
   executeAgentServe,
   executeAgentContext,
   executeAgentPlan,

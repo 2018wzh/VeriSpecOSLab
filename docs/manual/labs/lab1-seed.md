@@ -173,9 +173,47 @@ vos init
 
 如果 `vos init` 提示缺少 Git 用户名或邮箱，先按上面的命令配置本仓库的 Git identity。
 
-### 步骤 3：完成 DesignSpec（预计 30 分钟）
+### 步骤 3：配置 Agent 并完成 DesignSpec（预计 45 分钟）
 
-`vos init` 已经创建空的 `spec/design.yaml`。先不要手工猜字段，也不要让 Agent 直接写代码。运行：
+`vos init` 已经创建空的 `spec/design.yaml`。第一次调用 Agent 前，先在项目根目录创建 `.env`，只保存实际凭据：
+
+```dotenv
+# 示例变量名；只保留你实际使用的 provider
+OPENAI_API_KEY=<你的 API key>
+```
+
+`.env` 已被 `.gitignore` 排除。不要把真实值写进命令行、`.vos/config.toml`、`vos.yaml`、聊天、截图或文档。然后运行配置向导：
+
+```sh
+vos agent config
+```
+
+向导只询问 provider、模型、base URL 和凭据的**环境变量名**，不会读取或回显 key。支持 Anthropic、OpenAI、OpenAI-compatible、DeepSeek 和 Ollama。使用 OpenAI-compatible 时必须填写完整的 API base URL；Ollama 可以不配置凭据变量。
+
+如果 `vos.yaml` 已声明 `knowledge.sources`，还要配置 OpenAI 或 OpenAI-compatible embedding provider。没有知识库来源时可以跳过，普通 Agent 配置不会再强制生成 embedding 配置。
+
+配置完成后执行：
+
+```sh
+vos agent config --show   # 只显示非秘密字段和凭据是否存在
+vos agent config --check  # 严格检查字段、URL、变量名和凭据引用
+vos doctor                # 连同项目、Spec、工具链和 KB 配置一起检查
+```
+
+`--show` 不显示凭据值。配置缺少凭据时，向导仍会保存非秘密设置，但命令和 `vos doctor` 会明确返回失败，并指出应补充到 `.env` 的变量名。
+
+CI 或脚本中不能使用交互向导，应显式传入参数：
+
+```sh
+vos agent config \
+  --provider openai \
+  --model gpt-5 \
+  --auth-env OPENAI_API_KEY
+```
+
+需要 embedding 时添加 `--with-embedding`；若 Agent provider 不能推导出 embedding provider，还要指定 `--embedding-provider openai` 或 `openai-compatible`。`vos agent config --reset` 只删除 `.vos/config.toml` 中的 `[agent]` 和 `[kb.embedding]` 段，不删除 `.env`，也不改动其他 TOML 配置。
+
+现在再完成 DesignSpec。先不要手工猜字段，也不要让 Agent 直接写代码。运行：
 
 ```sh
 vos agent design
@@ -236,9 +274,9 @@ hardware_port:
 
 严格 schema 会拒绝未知字段。不要把旧版的种子、切片、时间线或独立决策记录字段塞进 DesignSpec；需要跨模块变更时，后续单独提交 SpecPatch。
 
-### 步骤 4：配置 Agent（预计 15 分钟）
+### 步骤 4：检查 Agent 的使用边界（预计 5 分钟）
 
-在项目根目录的 `.env` 中保存 provider 凭据。`.env` 已被 `.gitignore` 排除，不要把真实值粘贴到命令行、聊天、截图或文档中。模型、provider 和超时等非秘密配置写入 `.vos/config.toml`。具体字段以仓库内 Agent 配置文档和当前 `vos doctor` 输出为准。
+模型、provider、base URL 和凭据变量名保存在 `.vos/config.toml`；真实凭据只保存在 `.env`。不要手工复制另一台机器上的整份配置：先准备对应的 `.env`，再运行 `vos agent config --check`，让 VOS 检查当前环境。
 
 配置后先做只读问答：
 
@@ -347,7 +385,7 @@ Agent 可以解释 ISA 差异、对比语言优劣和审查 DesignSpec 字段。
 
 ### Agent 报 provider 未配置
 
-先运行 `vos doctor`，核对 `.vos/config.toml` 中的 provider 与 `.env` 变量名。不要把 key 写进 `vos.yaml` 或提交到 Git。
+先运行 `vos agent config --show` 和 `vos agent config --check`。未配置时运行 `vos agent config`；凭据缺失时，按提示把对应变量写入项目根目录的 `.env`。如果 `.vos/config.toml` 语法错误或包含未知字段，VOS 会直接报错，不会忽略配置继续运行。不要把 key 写进 `vos.yaml` 或提交到 Git。
 
 ### 知识库来源哈希不匹配
 

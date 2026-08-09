@@ -126,6 +126,9 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
     case "agent_serve":
       return handlers.executeAgentServe(command, projectRoot, evidence);
 
+    case "agent_config":
+      return handlers.executeAgentConfig(command, context);
+
     case "agent_context":
       return handlers.executeAgentContext(command, projectRoot, context);
 

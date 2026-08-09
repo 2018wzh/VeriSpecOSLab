@@ -491,7 +491,7 @@ describe("vos-cli package agent runner", () => {
     expect(result.env.SMART_MODEL).toBe("deepseek-v4-pro");
   });
 
-  test("maps examples/xv6-spec DeepSeek config to DeepSeek agent env", () => {
+  test("rejects retired Agent configuration fields", () => {
     const projectRoot = makeProject();
     writeFileSync(join(projectRoot, ".vos", "config.toml"), [
       "spec_root = \"spec\"",
@@ -506,19 +506,10 @@ describe("vos-cli package agent runner", () => {
       "",
     ].join("\n"));
 
-    const result = buildAgentEnv({
+    expect(() => buildAgentEnv({
       projectRoot,
-      env: {
-        DEEPSEEK_API_KEY: "xv6-key",
-      } as NodeJS.ProcessEnv,
-    });
-
-    expect(result.model).toBe("deepseek-v4-pro");
-    expect(result.env.DEEPSEEK_API_KEY).toBe("xv6-key");
-    expect(result.env.DEEPSEEK_BASE_URL).toBe("https://api.deepseek.com/v1");
-    expect(result.env.OPENAI_API_KEY).toBeUndefined();
-    expect(result.env.OPENAI_BASE_URL).toBeUndefined();
-    expect(result.env.SMART_MODEL).toBe("deepseek-v4-pro");
+      env: { DEEPSEEK_API_KEY: "xv6-key" } as NodeJS.ProcessEnv,
+    })).toThrow("unknown field(s): timeout_secs");
   });
 
   test("agent generate prompt requires verify suites and mappings for build/run", () => {

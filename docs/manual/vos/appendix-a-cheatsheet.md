@@ -5,6 +5,7 @@
 | `vos init` | 创建空 v2 项目并提交初始文件 |
 | `vos doctor` | 检查 Bun、Git、manifest、Spec 和 KB lock |
 | `vos spec check` | 确定性 schema、引用、路径和等级校验 |
+| `vos agent config` | 配置并检查 provider、模型和凭据引用 |
 | `vos agent design` | 提案并确认 DesignSpec |
 | `vos agent spec <module>` | 提案并确认 ModuleSpec |
 | `vos agent implement <module>` | 在临时 linked worktree 中实现并验证 |

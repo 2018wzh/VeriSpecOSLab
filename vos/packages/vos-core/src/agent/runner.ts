@@ -1,6 +1,3 @@
-import path from "node:path";
-import { existsSync } from "node:fs";
-import { readFileSync } from "node:fs";
 import type {
   AgentHttpPackageServerOptions,
   AgentHttpPackageServerResult,
@@ -26,6 +23,7 @@ import {
   SUBMIT_RESULT_MCP_TOOL_NAME,
 } from "../progress/agent.ts";
 import { readProjectEnv } from "../utils/dotenv.ts";
+import { readAgentConfig } from "./config.ts";
 
 export interface AgentRunResult {
   resultText: string;
@@ -250,18 +248,11 @@ export function startAgentReadonlyDisplay(
   return (starter ?? startReadonlyAgentDisplay)(options);
 }
 
-interface ProjectAgentToml {
-  provider?: string;
-  model?: string;
-  baseUrl?: string;
-  authEnv?: string;
-}
-
 export function buildAgentEnv(params: {
   projectRoot: string;
   env: NodeJS.ProcessEnv;
 }): { env: Record<string, string | undefined>; model?: string } {
-  const config = readLocalAgentConfig(params.projectRoot);
+  const config = readAgentConfig(params.projectRoot).agent;
 
   const mapped: Record<string, string | undefined> = {
     ...readProjectEnv(params.projectRoot),
@@ -330,53 +321,4 @@ function normalizeAgentModelForProvider(
     return model;
   }
   return `anthropic:${model}`;
-}
-
-function readLocalAgentConfig(projectRoot: string): ProjectAgentToml | null {
-  const configPath = path.join(projectRoot, ".vos", "config.toml");
-  if (!existsSync(configPath)) return null;
-
-  try {
-    const raw = readFileSync(configPath, "utf8");
-    return parseTomlConfig(raw);
-  } catch {
-    return null;
-  }
-}
-
-function parseTomlConfig(raw: string): ProjectAgentToml | null {
-  try {
-    const parsed = Bun.TOML.parse(raw);
-    if (!parsed || typeof parsed !== "object" || parsed === null) {
-      return null;
-    }
-    const agentSection = (parsed as Record<string, unknown>).agent;
-    if (!agentSection || typeof agentSection !== "object" || Array.isArray(agentSection)) {
-      return null;
-    }
-    const normalized: ProjectAgentToml = {};
-    const agent = agentSection as Record<string, unknown>;
-    if (typeof agent.provider === "string" && agent.provider.trim()) {
-      normalized.provider = agent.provider.trim();
-    }
-    if (typeof agent.model === "string" && agent.model.trim()) {
-      normalized.model = agent.model.trim();
-    }
-    if (typeof agent.base_url === "string" && agent.base_url.trim()) {
-      normalized.baseUrl = agent.base_url.trim();
-    }
-    const authSection = agent.auth;
-    if (authSection && typeof authSection === "object" && !Array.isArray(authSection)) {
-      const auth = authSection as Record<string, unknown>;
-      if (typeof auth.env === "string" && auth.env.trim()) {
-        normalized.authEnv = auth.env.trim();
-      }
-    }
-    if (!normalized.provider && !normalized.model && !normalized.baseUrl && !normalized.authEnv) {
-      return null;
-    }
-    return normalized;
-  } catch {
-    return null;
-  }
 }

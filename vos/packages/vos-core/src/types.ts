@@ -327,6 +327,25 @@ export interface AgentReviewCommand extends BaseCommand {
   display?: boolean;
 }
 
+export type AgentProviderName = "anthropic" | "openai" | "openai-compatible" | "deepseek" | "ollama";
+export type AgentEmbeddingProviderName = "openai" | "openai-compatible";
+
+export interface AgentConfigCommand extends BaseCommand {
+  kind: "agent_config";
+  provider?: AgentProviderName;
+  model?: string;
+  baseUrl?: string;
+  authEnv?: string;
+  embeddingProvider?: AgentEmbeddingProviderName;
+  embeddingModel?: string;
+  embeddingBaseUrl?: string;
+  embeddingAuthEnv?: string;
+  configureEmbedding?: boolean;
+  show: boolean;
+  reset: boolean;
+  check: boolean;
+}
+
 export interface AgentLogCommand extends BaseCommand {
   kind: "agent_log";
   append: boolean;
@@ -437,6 +456,7 @@ export type CliCommand =
   | AgentVerifyCommand
   | AgentKbCommand
   | AgentReviewCommand
+  | AgentConfigCommand
   | AgentLogCommand
   | AgentReviewSpecCommand
   | AgentAskCommand
