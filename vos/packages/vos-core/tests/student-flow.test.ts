@@ -301,6 +301,49 @@ describe("student v2 workflow", () => {
     });
   }, 30_000);
 
+  test("accumulates hidden tests from multiple modules under one Spec hash", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      writeFileSync(join(root, "spec", "modules", "scheduler.yaml"), [
+        "id: scheduler",
+        "module: scheduler",
+        "level: 1",
+        "purpose: Own the scheduler implementation.",
+        "owns: [src/scheduler.ts, tests/scheduler]",
+        "interface: [schedule]",
+        "properties: [runnable work is selected]",
+        "errors: [no_runnable_work]",
+        "",
+      ].join("\n"));
+      git(root, ["add", "spec/modules/scheduler.yaml"]);
+      git(root, ["commit", "-m", "add scheduler module spec"]);
+      await ensureHeadLedgerEntry({ projectRoot: root, actor: "human", intent: "record scheduler module spec", changedTargets: ["spec/modules/scheduler.yaml"] });
+
+      for (const moduleId of ["memory", "scheduler"]) {
+        const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", moduleId], {
+          print: false,
+          agentRunner: async (options) => {
+            mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+            writeFileSync(join(options.projectRoot, "src", `${moduleId}.ts`), `export const ${moduleId} = true;\n`);
+            return {
+              content: `implemented ${moduleId}`,
+              events: acceptedSubmitEvents("student_implementation_result.v1", implementationResult(moduleId)),
+            };
+          },
+        });
+        expect(result.status).toBe("passed");
+      }
+
+      const hiddenRoots = [...new Bun.Glob("*/manifest.json").scanSync({ cwd: join(root, ".vos", "hidden-tests"), absolute: true })];
+      expect(hiddenRoots).toHaveLength(1);
+      const manifest = JSON.parse(readFileSync(hiddenRoots[0]!, "utf8")) as { tests: Array<Record<string, unknown>> };
+      expect(manifest.tests.map((test) => test.module_id).sort()).toEqual(["memory", "scheduler"]);
+      expect(manifest.tests.map((test) => test.generation_run_id).every((value) => typeof value === "string")).toBe(true);
+      expect((await invoke(root, "verify", "--hidden")).status).toBe("passed");
+    });
+  }, 60_000);
+
   test("does not project invalid test targets or land code when structured validation fails", async () => {
     const root = makeRoot();
     await withGitIdentity(async () => {
@@ -561,36 +604,36 @@ function acceptedSubmitEvents(schemaId: string, result: unknown): Array<Record<s
   ];
 }
 
-function implementationResult() {
+function implementationResult(moduleId = "memory") {
   const base = {
     program: "bun",
     args: ["--version"],
     cwd: ".",
     env: [] as string[],
     timeout: 30_000,
-    verifies: ["memory"],
+    verifies: [moduleId],
     artifacts: [] as string[],
   };
   return {
     status: "passed",
-    changed_paths: ["src/memory.ts"],
+    changed_paths: [`src/${moduleId}.ts`],
     validations: ["build"],
     test_targets: [
-      { ...base, id: "generated-public-memory", kind: "public" },
-      { ...base, id: "generated-contract-memory", kind: "contract" },
-      { ...base, id: "generated-fuzz-memory", kind: "fuzz", seed: 7, cases: 32, reproduction_artifact: ".vos/fuzz/memory-min.txt" },
-      { ...base, id: "generated-trace-memory", kind: "trace", workload: "allocator-smoke", oracle: "all allocations remain aligned", artifacts: [".vos/trace/memory.json"] },
+      { ...base, id: `generated-public-${moduleId}`, kind: "public" },
+      { ...base, id: `generated-contract-${moduleId}`, kind: "contract" },
+      { ...base, id: `generated-fuzz-${moduleId}`, kind: "fuzz", seed: 7, cases: 32, reproduction_artifact: `.vos/fuzz/${moduleId}-min.txt` },
+      { ...base, id: `generated-trace-${moduleId}`, kind: "trace", workload: `${moduleId}-smoke`, oracle: `${moduleId} behavior is preserved`, artifacts: [`.vos/trace/${moduleId}.json`] },
     ],
     hidden_tests: [{
-      id: "hidden-memory",
-      path: "memory.hidden.ts",
+      id: `hidden-${moduleId}`,
+      path: `${moduleId}.hidden.ts`,
       content: "if (1 + 1 !== 2) process.exit(1);\n",
       program: "bun",
       args: ["{hidden_test}"],
       cwd: ".",
       env: [] as string[],
       timeout: 30_000,
-      verifies: ["memory"],
+      verifies: [moduleId],
       seed: 11,
     }],
   };

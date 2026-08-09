@@ -2747,21 +2747,47 @@ async function persistStudentHiddenTests(params: {
 }): Promise<Record<string, unknown>> {
   const root = path.join(params.projectRoot, ".vos", "hidden-tests", params.specHash);
   await mkdir(root, { recursive: true });
-  const tests = [] as Array<Record<string, unknown>>;
+  const manifestPath = path.join(root, "manifest.json");
+  const previousManifest = existsSync(manifestPath)
+    ? JSON.parse(await readFile(manifestPath, "utf8")) as unknown
+    : undefined;
+  const previousTests = isRecord(previousManifest) && previousManifest.version === "vos.hidden-tests.v1" && previousManifest.spec_hash === params.specHash && Array.isArray(previousManifest.tests)
+    ? previousManifest.tests.filter(isRecord)
+    : [];
+  const legacyModuleId = isRecord(previousManifest) && typeof previousManifest.module_id === "string"
+    ? previousManifest.module_id
+    : undefined;
+  const retainedTests = previousTests.filter((test) => {
+    const moduleId = typeof test.module_id === "string" ? test.module_id : legacyModuleId;
+    return moduleId !== params.moduleId;
+  });
+  const retainedIds = new Set(retainedTests.flatMap((test) => typeof test.id === "string" ? [test.id] : []));
+  const retainedPaths = new Set(retainedTests.flatMap((test) => typeof test.path === "string" ? [test.path] : []));
+  const model = params.events.find((event) => event.type === "model.usage" && typeof event.model === "string")?.model ?? "unknown";
+  const generatedTests = [] as Array<Record<string, unknown>>;
   for (const proposal of params.payload.hidden_tests) {
     const relative = proposal.path.replace(/\\/g, "/");
     const file = path.join(root, relative);
+    const hiddenPath = studentRelativePath(params.projectRoot, file);
+    if (retainedIds.has(proposal.id)) {
+      throw new AgentOutputError(`hidden test id already belongs to another module: ${proposal.id}`);
+    }
+    if (retainedPaths.has(hiddenPath)) {
+      throw new AgentOutputError(`hidden test path already belongs to another module: ${hiddenPath}`);
+    }
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, proposal.content);
-    const hiddenPath = studentRelativePath(params.projectRoot, file);
-    tests.push({
+    generatedTests.push({
       ...proposal,
       path: hiddenPath,
       args: proposal.args.map((value) => value.replaceAll("{hidden_test}", hiddenPath)),
       content_hash: hashString(proposal.content),
+      module_id: params.moduleId,
+      model,
+      generation_run_id: params.runId,
     });
   }
-  const model = params.events.find((event) => event.type === "model.usage" && typeof event.model === "string")?.model ?? "unknown";
+  const tests = [...retainedTests, ...generatedTests];
   const manifest = {
     version: "vos.hidden-tests.v1",
     commit_sha: currentHead(params.projectRoot),
@@ -2772,9 +2798,14 @@ async function persistStudentHiddenTests(params: {
     generation_run_id: params.runId,
     tests,
   };
-  const manifestPath = path.join(root, "manifest.json");
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  return { manifest: studentRelativePath(params.projectRoot, manifestPath), count: tests.length, model };
+  return {
+    manifest: studentRelativePath(params.projectRoot, manifestPath),
+    count: tests.length,
+    generated_count: generatedTests.length,
+    retained_count: retainedTests.length,
+    model,
+  };
 }
 
 export async function executeAgentVerify(
