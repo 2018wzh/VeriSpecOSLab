@@ -2415,6 +2415,7 @@ export async function executeAgentImplement(
   if (!module) throw new CliError(`ModuleSpec not found: ${command.module}`, "validation_failed", { module: command.module });
   const baseHead = currentHead(projectRoot);
   if (!baseHead) throw new CliError("agent implement requires a committed Git HEAD", "policy_blocked", { reason: "head_missing" });
+  await assertStudentGitIdentity(projectRoot);
   const ownedPaths = await studentOwnedPaths(projectRoot, bundle, module);
   const specHash = hashString(JSON.stringify(bundle.hashes));
   const currentManifest = await readStudentManifest(projectRoot);
@@ -2425,6 +2426,8 @@ export async function executeAgentImplement(
   let implementation: StudentImplementationPayload | undefined;
   let agentSubmission: unknown;
   let implementationEvents: Array<Record<string, unknown>> = [];
+  let implementationCommit = "";
+  const commitMessage = `[vos][agent] Implement ${module.module}\n\nRun-ID: ${evidence.run_id}\nSpec-Hash: ${specHash}`;
   try {
     const progress = createAgentProgressParams(context, "agent implement");
     const agentResult = await runAgentWithPrompt({
@@ -2475,6 +2478,14 @@ export async function executeAgentImplement(
       }
       }
     }
+    if (validation.status === "passed") {
+      if (!implementation) throw new CliError("implementation result disappeared before commit preparation", "failed");
+      const preparedChanged = await studentChangedPaths(worktree);
+      await runStudentGit(worktree, ["add", "--", ...preparedChanged]);
+      await runStudentGit(worktree, ["commit", "-m", commitMessage]);
+      implementationCommit = currentHead(worktree) ?? "";
+      if (!implementationCommit) throw new CliError("prepared implementation commit has no Git identity", "failed");
+    }
   } catch (error) {
     let changedPaths: string[] = [];
     let patchCaptureError: string | undefined;
@@ -2509,14 +2520,17 @@ export async function executeAgentImplement(
   if (currentHead(projectRoot) !== baseHead) {
     return { status: "policy_blocked", details: { module: module.id, reason: "head_drift", expected_head: baseHead, actual_head: currentHead(projectRoot), patch_available: true } };
   }
-  await applyStudentPatch(projectRoot, patch);
-  const changed = await studentChangedPaths(projectRoot);
+  const landingState = await studentGitStatus(projectRoot);
+  if (!landingState.clean) {
+    return { status: "policy_blocked", details: { module: module.id, reason: "worktree_drift", changed_targets: landingState.changed, patch_available: true } };
+  }
+  if (!implementationCommit) throw new CliError("validated implementation commit is missing", "failed");
+  const changedResult = await runStudentGit(projectRoot, ["diff-tree", "--no-commit-id", "--name-only", "-r", implementationCommit]);
+  const changed = changedResult.stdout.split(/\r?\n/).map((value) => value.trim().replace(/\\/g, "/")).filter(Boolean);
   if (changed.some((target) => target !== "vos.yaml" && !isOwnedStudentPath(target, ownedPaths))) {
     throw new CliError("agent implementation changed a path outside the ModuleSpec owns set", "policy_blocked", { reason: "owns_violation", changed_targets: changed });
   }
-  await runStudentGit(projectRoot, ["add", "--", ...changed]);
-  const commitMessage = `[vos][agent] Implement ${module.module}\n\nRun-ID: ${evidence.run_id}\nSpec-Hash: ${specHash}`;
-  const commit = await runStudentGit(projectRoot, ["commit", "-m", commitMessage]);
+  const commit = await runStudentGit(projectRoot, ["merge", "--ff-only", implementationCommit]);
   if (!implementation) throw new CliError("implementation result disappeared before hidden-test persistence", "failed");
   const hidden = await persistStudentHiddenTests({ projectRoot, specHash, runId: evidence.run_id, moduleId: module.id, payload: implementation, events: implementationEvents });
   await ensureHeadLedgerEntry({ projectRoot, actor: "agent", intent: `implement ${module.module}`, specRefs: [module.path], changedTargets: changed, runId: evidence.run_id, evidenceRefs: [{ id: evidence.run_id, kind: "run", path: path.relative(projectRoot, evidence.manifest_path) }] });
@@ -2891,6 +2905,19 @@ async function runStudentGit(projectRoot: string, args: string[]): Promise<{ std
   return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode };
 }
 
+async function assertStudentGitIdentity(projectRoot: string): Promise<void> {
+  try {
+    await runStudentGit(projectRoot, ["var", "GIT_AUTHOR_IDENT"]);
+    await runStudentGit(projectRoot, ["var", "GIT_COMMITTER_IDENT"]);
+  } catch {
+    throw new CliError(
+      "agent implement requires a valid Git author and committer identity; configure user.name and user.email for this repository",
+      "policy_blocked",
+      { reason: "git_identity_missing" },
+    );
+  }
+}
+
 async function createStudentWorktree(projectRoot: string, id: string): Promise<string> {
   const worktree = path.join(projectRoot, ".vos", "worktrees", id.replace(/[^A-Za-z0-9._-]+/g, "-"));
   await mkdir(path.dirname(worktree), { recursive: true });
@@ -2915,11 +2942,6 @@ async function studentWorktreeDiff(projectRoot: string): Promise<string> {
   if (untrackedPaths.length > 0) await runStudentGit(projectRoot, ["add", "-N", "--", ...untrackedPaths]);
   const result = await runStudentGit(projectRoot, ["diff", "--binary", "HEAD"]);
   return result.stdout;
-}
-
-async function applyStudentPatch(projectRoot: string, patch: string): Promise<void> {
-  const result = await runCommand({ command: ["git", "apply", "--index", "--whitespace=nowarn", "-"], cwd: projectRoot, stdin: patch });
-  if (result.exitCode !== 0) throw new CliError(result.stderr.trim() || "student proposal could not be applied atomically", "failed", { reason: "patch_apply_failed" });
 }
 
 async function writeStudentAgentArtifact(projectRoot: string, evidence: EvidenceWriter, name: string, value: unknown): Promise<void> {
