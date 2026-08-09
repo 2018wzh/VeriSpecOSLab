@@ -69,9 +69,7 @@ describe("project context MCP server", () => {
 
 function callProjectContextMcp(projectRoot: string, messages: unknown[]): Array<any> {
   const proc = spawnSync(process.execPath, [
-    join(import.meta.dir, "..", "..", "app", "main.ts"),
-    "internal",
-    "project-context-mcp",
+    join(import.meta.dir, "..", "..", "app", "mcp", "project-context-entry.ts"),
   ], {
     input: `${messages.map((message) => JSON.stringify(message)).join("\n")}\n`,
     encoding: "utf8",

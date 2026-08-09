@@ -317,7 +317,7 @@ export function resolveBuiltInProfileMcpServers(
   return [{
     name: "project-context",
     command: process.execPath,
-    args: [fileURLToPath(new URL("../main.ts", import.meta.url)), "internal", "project-context-mcp"],
+    args: [fileURLToPath(new URL("../mcp/project-context-entry.ts", import.meta.url))],
     env: { VOS_PROJECT_ROOT: workspaceRoot },
     cwd: workspaceRoot,
   }];
