@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./app/main.ts",
-    "./headless": "./app/headless.ts"
+    "./headless": "./app/headless.ts",
+    "./output-schemas": "./app/agent/output-schemas.ts",
+    "./schema-validation": "./app/tools/structured-output.ts"
   },
   "bin": {
     "vos-agent": "./app/main.ts"

@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline";
-import { outputSchemaForId, validateSchema } from "vos-agent/headless";
+import { outputSchemaForId } from "vos-agent/output-schemas";
+import { validateSchema } from "vos-agent/schema-validation";
 import type { ProgressStatus, ProgressUpdate } from "./types.ts";
 
 const REPORT_PROGRESS_TOOL_NAME = "report_progress";
