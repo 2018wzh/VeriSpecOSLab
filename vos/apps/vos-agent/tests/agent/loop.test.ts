@@ -249,10 +249,35 @@ describe("runAgent", () => {
     expect(result.iterations).toBe(1);
     expect(calls).toHaveLength(1);
     expect(chat.requests[0].tools.map((entry) => entry.function.name)).toEqual(["Submit"]);
+    expect(chat.requests[0].requiredTool).toBe("Submit");
     expect(chat.requests[0].messages.at(-1)).toMatchObject({
       role: "user",
       content: expect.stringContaining("final allowed iteration"),
     });
+  });
+
+  test("starts a configured completion reserve with a required tool choice", async () => {
+    const { tool, calls } = recordingTool("Submit", ["accepted"]);
+    const chat = new ScriptedChatClient([
+      toolCallResponse([{ name: "Write", args: { file_path: "x" } }]),
+      toolCallResponse([{ name: "Submit", args: { status: "done" } }]),
+    ]);
+    const { tool: writeTool } = recordingTool("Write", ["OK"]);
+    const result = await runAgent({
+      model: TEST_MODEL,
+      chat,
+      registry: new ToolRegistry([writeTool, tool]),
+      prompt: "implement",
+      maxIterations: 4,
+      completionReserveIterations: 3,
+      requiredCompletionTool: "Submit",
+    });
+
+    expect(result.iterations).toBe(2);
+    expect(calls).toHaveLength(1);
+    expect(chat.requests[0].requiredTool).toBeUndefined();
+    expect(chat.requests[1].requiredTool).toBe("Submit");
+    expect(chat.requests[1].tools.map((entry) => entry.function.name)).toEqual(["Submit"]);
   });
 
   test("reserves the final iteration to correct a rejected completion payload", async () => {

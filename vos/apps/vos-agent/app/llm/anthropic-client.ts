@@ -78,6 +78,9 @@ export function createAnthropicChatClient(
           ...(translated.system ? { system: translated.system } : {}),
           messages: translated.messages,
           ...(translated.tools.length > 0 ? { tools: translated.tools } : {}),
+          ...(request.requiredTool
+            ? { tool_choice: { type: "tool", name: request.requiredTool, disable_parallel_tool_use: true } }
+            : {}),
         };
         if (request.onEvent) {
           return await streamAnthropicMessage(client, body, request);

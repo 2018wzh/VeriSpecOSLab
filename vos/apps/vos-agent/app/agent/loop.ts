@@ -10,6 +10,8 @@ export interface ChatRequest {
   reasoningEffort?: ReasoningEffort;
   messages: OpenAI.Chat.ChatCompletionMessageParam[];
   tools: OpenAI.Chat.ChatCompletionFunctionTool[];
+  /** Require one named function tool on this turn when the provider supports tool choice. */
+  requiredTool?: string;
   /** Optional provider-native structured-output response format hint. */
   responseFormat?: unknown;
   /** Optional provider text streaming hook. Final messages are still returned by chat(). */
@@ -100,6 +102,8 @@ export interface RunAgentOptions {
   responseFormat?: unknown;
   /** Keep the turn open until this tool has been called at least once. */
   requiredCompletionTool?: string;
+  /** Number of trailing iterations reserved exclusively for a structured submission and corrections. */
+  completionReserveIterations?: number;
   /** Existing transcript to continue. Copied before mutation. */
   history?: OpenAI.Chat.ChatCompletionMessageParam[];
   /** When true, ask capable providers to emit assistant text deltas. */
@@ -170,6 +174,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     system,
     responseFormat,
     requiredCompletionTool,
+    completionReserveIterations = 2,
     history,
     streamAssistant = false,
     onEvent,
@@ -200,7 +205,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
     throwIfAborted(signal);
-    const submissionPhase = iteration >= Math.max(1, maxIterations - 1)
+    const submissionPhase = iteration >= Math.max(1, maxIterations - completionReserveIterations + 1)
       && requiredCompletionTool
       && !completionToolAccepted;
     if (submissionPhase) {
@@ -218,6 +223,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       tools: submissionPhase
         ? tools.filter((tool) => tool.function.name === requiredCompletionTool)
         : tools,
+      ...(submissionPhase && requiredCompletionTool ? { requiredTool: requiredCompletionTool } : {}),
       responseFormat,
       ...(signal ? { signal } : {}),
       ...(streamAssistant && onEvent

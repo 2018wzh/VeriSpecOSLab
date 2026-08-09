@@ -2439,6 +2439,8 @@ export async function executeAgentImplement(
       allowedPaths: ownedPaths,
       requiredValidations: ["build", "public tests", "contract tests", "fixed-seed fuzz tests", "bounded trace/oracle tests"],
       courseMode: false,
+      maxIterations: 50,
+      completionReserveIterations: 6,
       resultSubmissionSchema: "student_implementation_result.v1",
       taskRunner: context.agentRunner,
       onEvent: async (event) => {

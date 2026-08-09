@@ -58,6 +58,7 @@ export class ScriptedChatClient implements ChatClient {
       reasoningEffort: request.reasoningEffort,
       messages: [...request.messages],
       tools: request.tools,
+      requiredTool: request.requiredTool,
     });
     if (this.cursor >= this.script.length) {
       throw new Error(
@@ -92,6 +93,7 @@ export class CallbackChatClient implements ChatClient {
       reasoningEffort: request.reasoningEffort,
       messages: [...request.messages],
       tools: request.tools,
+      requiredTool: request.requiredTool,
     });
     return await this.handler(request, index);
   }

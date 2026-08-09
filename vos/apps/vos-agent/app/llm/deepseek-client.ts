@@ -91,6 +91,9 @@ function deepSeekChatBody(request: ChatRequest): DeepSeekChatBody {
       : {}),
     messages: request.messages,
     tools: request.tools,
+    ...(request.requiredTool
+      ? { tool_choice: { type: "function", function: { name: request.requiredTool } } }
+      : {}),
     ...(deepSeekResponseFormat(request.responseFormat)
       ? { response_format: deepSeekResponseFormat(request.responseFormat) }
       : {}),

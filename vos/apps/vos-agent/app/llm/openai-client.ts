@@ -57,6 +57,9 @@ export function createOpenAIChatClient(
           ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
           messages: request.messages,
           tools: request.tools,
+          ...(request.requiredTool
+            ? { tool_choice: { type: "function", function: { name: request.requiredTool } } }
+            : {}),
           ...(request.responseFormat ? { response_format: request.responseFormat } : {}),
         } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming;
         response = await client.chat.completions.create(body, request.signal ? { signal: request.signal } : undefined);
@@ -92,6 +95,9 @@ async function streamChatCompletion(
       ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
       messages: request.messages,
       tools: request.tools,
+      ...(request.requiredTool
+        ? { tool_choice: { type: "function", function: { name: request.requiredTool } } }
+        : {}),
       ...(request.responseFormat ? { response_format: request.responseFormat } : {}),
       stream: true,
       ...(request.onUsage ? { stream_options: { include_usage: true } } : {}),

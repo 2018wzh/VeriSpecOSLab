@@ -92,6 +92,9 @@ function openAICompatibleChatBody(
       : {}),
     messages: request.messages,
     tools: request.tools,
+    ...(request.requiredTool
+      ? { tool_choice: { type: "function", function: { name: request.requiredTool } } }
+      : {}),
     ...(compatibleResponseFormat(config.responseFormat, request.responseFormat)
       ? { response_format: compatibleResponseFormat(config.responseFormat, request.responseFormat) }
       : {}),
