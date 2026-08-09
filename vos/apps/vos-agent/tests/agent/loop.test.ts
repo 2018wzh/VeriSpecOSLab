@@ -232,6 +232,29 @@ describe("runAgent", () => {
     expect(calls).toEqual([]);
   });
 
+  test("uses the final iteration for the required completion tool", async () => {
+    const { tool, calls } = recordingTool("Submit", ["accepted"]);
+    const chat = new ScriptedChatClient([
+      toolCallResponse([{ name: "Submit", args: { status: "done" } }]),
+    ]);
+    const result = await runAgent({
+      model: TEST_MODEL,
+      chat,
+      registry: new ToolRegistry([tool]),
+      prompt: "implement",
+      maxIterations: 1,
+      requiredCompletionTool: "Submit",
+    });
+
+    expect(result.iterations).toBe(1);
+    expect(calls).toHaveLength(1);
+    expect(chat.requests[0].tools.map((entry) => entry.function.name)).toEqual(["Submit"]);
+    expect(chat.requests[0].messages.at(-1)).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("final allowed iteration"),
+    });
+  });
+
   test("prepends an optional system prompt", async () => {
     const chat = new ScriptedChatClient([textResponse("ok")]);
     const registry = new ToolRegistry();

@@ -200,11 +200,20 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
     throwIfAborted(signal);
+    const finalSubmissionIteration = iteration === maxIterations && requiredCompletionTool && !completionToolCalled;
+    if (finalSubmissionIteration) {
+      messages.push({
+        role: "user",
+        content: `This is the final allowed iteration. Call ${requiredCompletionTool} now with the best complete result supported by the work already performed. Do not call any other tool and do not add more implementation work.`,
+      });
+    }
     const message = await chat.chat({
       model,
       reasoningEffort,
       messages,
-      tools,
+      tools: finalSubmissionIteration
+        ? tools.filter((tool) => tool.function.name === requiredCompletionTool)
+        : tools,
       responseFormat,
       ...(signal ? { signal } : {}),
       ...(streamAssistant && onEvent
@@ -246,7 +255,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       return { content: message.content, messages, iterations: iteration };
     }
 
-    if (iteration === maxIterations) {
+    if (iteration === maxIterations && (!requiredCompletionTool || toolCalls.some((call) =>
+      call.type !== "function" || call.function.name !== requiredCompletionTool
+    ))) {
       throw new Error(
         `agent loop reached max iterations (${maxIterations}) before tool calls could be completed`,
       );
@@ -279,6 +290,10 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         tool_call_id: call.id,
         content: result,
       });
+    }
+    if (iteration === maxIterations) {
+      await onEvent?.({ type: "agent.done", iteration, content: message.content });
+      return { content: message.content, messages, iterations: iteration };
     }
   }
   throw new Error(`agent loop exceeded max iterations (${maxIterations})`);
