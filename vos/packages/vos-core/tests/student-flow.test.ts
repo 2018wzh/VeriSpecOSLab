@@ -231,6 +231,7 @@ describe("student v2 workflow", () => {
           expect(options.task).toContain("Each hidden_tests entry is");
           expect(options.task).toContain("This is an implementation task, not a planning task");
           expect(options.task).toContain("write the owned files, run validation, and call submit_result");
+          expect(options.task).toContain("Reuse helpers under tests/public");
           mkdirSync(join(options.projectRoot, "src"), { recursive: true });
           writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 0;\n");
           return {
