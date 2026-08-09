@@ -56,6 +56,7 @@ export interface AgentTaskRequest {
   allowedVosCommands?: readonly string[];
   extraMcpServers?: readonly McpServerConfig[];
   structuredOutput?: boolean;
+  requiredCompletionTool?: string;
   toolPolicy?: ToolPolicy;
   chat?: ChatClient;
   env?: Record<string, string | undefined>;
@@ -274,6 +275,9 @@ export async function runAgentTask(
     startDir: workspaceRoot,
     fixedSystemPrompt: buildAgentTaskSystemPrompt(profile, { structuredOutput: structuredOutputEnabled }),
     responseFormat: structuredOutputEnabled ? jsonSchemaResponseFormat(outputSchema.id, outputSchema.schema) : undefined,
+    requiredCompletionTool: structuredOutputEnabled
+      ? structuredOutputTool.name
+      : options.requiredCompletionTool,
     streamAssistant: options.streamAssistant ?? false,
     signal: options.signal,
     onEvent: async (event) => {

@@ -45,6 +45,7 @@ export interface RunSessionTurnOptions {
   streamAssistant?: boolean;
   fixedSystemPrompt?: string;
   responseFormat?: unknown;
+  requiredCompletionTool?: string;
   contextCompaction?: ContextCompactionSetting;
   signal?: AbortSignal;
   onEvent?: (event: SessionEvent) => void | Promise<void>;
@@ -262,6 +263,7 @@ export async function runSessionTurn(
       maxIterations: opts.maxIterations,
       streamAssistant,
       responseFormat: opts.responseFormat,
+      requiredCompletionTool: opts.requiredCompletionTool,
       ...(historyForRun ? { history: historyForRun } : { system }),
       signal: opts.signal,
       onEvent: handleAgentEvent,

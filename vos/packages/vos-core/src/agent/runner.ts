@@ -99,6 +99,7 @@ export async function runAgentWithPrompt(params: {
     toolPolicy: params.toolPolicy,
     allowedVosCommands: params.allowedVosCommands,
     structuredOutput: false,
+    requiredCompletionTool: SUBMIT_RESULT_MCP_TOOL_NAME,
     extraMcpServers: mergeMcpServers([
       createProgressMcpServerConfig(params.projectRoot),
       ...(params.extraMcpServers ?? []),

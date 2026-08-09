@@ -98,6 +98,8 @@ export interface RunAgentOptions {
   system?: string;
   /** Optional provider-native structured-output response format hint. */
   responseFormat?: unknown;
+  /** Keep the turn open until this tool has been called at least once. */
+  requiredCompletionTool?: string;
   /** Existing transcript to continue. Copied before mutation. */
   history?: OpenAI.Chat.ChatCompletionMessageParam[];
   /** When true, ask capable providers to emit assistant text deltas. */
@@ -167,6 +169,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     maxIterations = 50,
     system,
     responseFormat,
+    requiredCompletionTool,
     history,
     streamAssistant = false,
     onEvent,
@@ -180,6 +183,10 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
   throwIfAborted(signal);
 
   const tools = registry.schemas();
+  if (requiredCompletionTool && !registry.names().includes(requiredCompletionTool)) {
+    throw new Error(`required completion tool is unavailable: ${requiredCompletionTool}`);
+  }
+  let completionToolCalled = false;
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = history
     ? [...history]
     : [];
@@ -223,6 +230,18 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
     const toolCalls = message.tool_calls;
     if (!toolCalls || toolCalls.length === 0) {
+      if (requiredCompletionTool && !completionToolCalled) {
+        if (iteration === maxIterations) {
+          throw new Error(
+            `agent loop reached max iterations (${maxIterations}) without calling required completion tool ${requiredCompletionTool}`,
+          );
+        }
+        messages.push({
+          role: "user",
+          content: `You stopped without calling the required completion tool ${requiredCompletionTool}. Continue the task now. Do not repeat the plan. Finish the owned-file work that remains, then call ${requiredCompletionTool}; final prose is not an accepted result.`,
+        });
+        continue;
+      }
       await onEvent?.({ type: "agent.done", iteration, content: message.content });
       return { content: message.content, messages, iterations: iteration };
     }
@@ -237,6 +256,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       throwIfAborted(signal);
       if (call.type !== "function") {
         throw new Error(`unsupported tool call type: ${call.type}`);
+      }
+      if (call.function.name === requiredCompletionTool) {
+        completionToolCalled = true;
       }
       await onEvent?.({ type: "tool.call", iteration, toolCall: call });
       const result = await registry.execute(

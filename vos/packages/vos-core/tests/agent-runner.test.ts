@@ -62,6 +62,7 @@ describe("vos-cli package agent runner", () => {
     expect(captured?.courseMode).toBe(true);
     expect(captured?.allowedVosCommands).toEqual(["build"]);
     expect(captured?.structuredOutput).toBe(false);
+    expect(captured?.requiredCompletionTool).toBe(SUBMIT_RESULT_TOOL);
     expect(Object.keys(captured ?? {})).not.toContain("binary");
   });
 

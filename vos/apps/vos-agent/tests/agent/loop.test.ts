@@ -45,6 +45,40 @@ describe("runAgent", () => {
     expect(result.messages[0]).toEqual({ role: "user", content: "hi" });
   });
 
+  test("continues after premature prose until the required completion tool is called", async () => {
+    const chat = new ScriptedChatClient([
+      textResponse("I will implement it next."),
+      toolCallResponse([{ name: "Submit", args: {} }]),
+      textResponse("done"),
+    ]);
+    const { tool, calls } = recordingTool("Submit", ["accepted"]);
+    const result = await runAgent({
+      model: TEST_MODEL,
+      chat,
+      registry: new ToolRegistry([tool]),
+      prompt: "implement",
+      requiredCompletionTool: "Submit",
+    });
+
+    expect(result.content).toBe("done");
+    expect(result.iterations).toBe(3);
+    expect(calls).toHaveLength(1);
+    expect(chat.requests[1].messages.at(-1)).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("Do not repeat the plan"),
+    });
+  });
+
+  test("fails fast when the required completion tool is unavailable", async () => {
+    await expect(runAgent({
+      model: TEST_MODEL,
+      chat: new ScriptedChatClient([textResponse("done")]),
+      registry: new ToolRegistry(),
+      prompt: "implement",
+      requiredCompletionTool: "Submit",
+    })).rejects.toThrow(/required completion tool is unavailable/);
+  });
+
   test("seeds first request with the user prompt and the tool schemas", async () => {
     const chat = new ScriptedChatClient([textResponse("done")]);
     const { tool } = recordingTool("Read", []);
