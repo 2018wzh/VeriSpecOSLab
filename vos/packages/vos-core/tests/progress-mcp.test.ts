@@ -5,9 +5,7 @@ import { join } from "node:path";
 describe("vos-cli progress MCP server", () => {
   test("lists and calls report_progress", async () => {
     const proc = spawnSync(process.execPath, [
-      join(import.meta.dir, "..", "src", "main.ts"),
-      "internal",
-      "progress-mcp",
+      join(import.meta.dir, "..", "src", "progress", "mcp-entry.ts"),
     ], {
       input: [
         JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
@@ -42,9 +40,7 @@ describe("vos-cli progress MCP server", () => {
 
   test("returns validation errors as MCP tool results", async () => {
     const proc = spawnSync(process.execPath, [
-      join(import.meta.dir, "..", "src", "main.ts"),
-      "internal",
-      "progress-mcp",
+      join(import.meta.dir, "..", "src", "progress", "mcp-entry.ts"),
     ], {
       input: `${JSON.stringify({
         jsonrpc: "2.0",
@@ -113,9 +109,7 @@ describe("vos-cli progress MCP server", () => {
 
 function callProgressMcp(params: Record<string, unknown>): { result: { isError: boolean; content: Array<{ text: string }> } } {
   const proc = spawnSync(process.execPath, [
-    join(import.meta.dir, "..", "src", "main.ts"),
-    "internal",
-    "progress-mcp",
+    join(import.meta.dir, "..", "src", "progress", "mcp-entry.ts"),
   ], {
     input: `${JSON.stringify({
       jsonrpc: "2.0",

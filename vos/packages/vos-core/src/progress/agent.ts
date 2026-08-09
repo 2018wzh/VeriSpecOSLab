@@ -8,7 +8,7 @@ export const PROGRESS_MCP_TOOL_NAME = "mcp__vos-progress__report_progress";
 export const SUBMIT_RESULT_MCP_TOOL_NAME = "mcp__vos-progress__submit_result";
 
 export function createProgressMcpServerConfig(projectRoot: string): McpServerConfig {
-  const mainPath = fileURLToPath(new URL("../main.ts", import.meta.url));
+  const mainPath = fileURLToPath(new URL("./mcp-entry.ts", import.meta.url));
   const executable = path.basename(process.execPath).toLowerCase().replace(/\.exe$/, "");
   const bunLike = executable === "bun" || executable.startsWith("bun-");
   return {
