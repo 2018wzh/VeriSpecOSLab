@@ -226,6 +226,9 @@ describe("student v2 workflow", () => {
           expect(options.task).toContain("Choose new module-prefixed IDs");
           expect(options.task).toContain("hard 50-iteration limit");
           expect(options.task).toContain("batch independent Read/Write/Bash calls");
+          expect(options.task).toContain("Do not inspect parent or sibling directories");
+          expect(options.task).toContain("Do not perform repo-wide schema searches");
+          expect(options.task).toContain("Each hidden_tests entry is");
           mkdirSync(join(options.projectRoot, "src"), { recursive: true });
           writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 0;\n");
           return {
