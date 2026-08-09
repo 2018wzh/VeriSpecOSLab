@@ -186,7 +186,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
   if (requiredCompletionTool && !registry.names().includes(requiredCompletionTool)) {
     throw new Error(`required completion tool is unavailable: ${requiredCompletionTool}`);
   }
-  let completionToolCalled = false;
+  let completionToolAccepted = false;
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = history
     ? [...history]
     : [];
@@ -200,18 +200,22 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
     throwIfAborted(signal);
-    const finalSubmissionIteration = iteration === maxIterations && requiredCompletionTool && !completionToolCalled;
-    if (finalSubmissionIteration) {
+    const submissionPhase = iteration >= Math.max(1, maxIterations - 1)
+      && requiredCompletionTool
+      && !completionToolAccepted;
+    if (submissionPhase) {
       messages.push({
         role: "user",
-        content: `This is the final allowed iteration. Call ${requiredCompletionTool} now with the best complete result supported by the work already performed. Do not call any other tool and do not add more implementation work.`,
+        content: iteration === maxIterations
+          ? `This is the final allowed iteration. Correct any validation errors from the prior submission and call ${requiredCompletionTool} now. Do not call any other tool and do not add more implementation work.`
+          : `The submission phase has started. Call ${requiredCompletionTool} now with the best complete result supported by the work already performed. Do not call any other tool and do not add more implementation work; if validation rejects the payload, the final iteration is reserved for one corrected submission.`,
       });
     }
     const message = await chat.chat({
       model,
       reasoningEffort,
       messages,
-      tools: finalSubmissionIteration
+      tools: submissionPhase
         ? tools.filter((tool) => tool.function.name === requiredCompletionTool)
         : tools,
       responseFormat,
@@ -239,7 +243,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
     const toolCalls = message.tool_calls;
     if (!toolCalls || toolCalls.length === 0) {
-      if (requiredCompletionTool && !completionToolCalled) {
+      if (requiredCompletionTool && !completionToolAccepted) {
         if (iteration === maxIterations) {
           throw new Error(
             `agent loop reached max iterations (${maxIterations}) without calling required completion tool ${requiredCompletionTool}`,
@@ -268,9 +272,6 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       if (call.type !== "function") {
         throw new Error(`unsupported tool call type: ${call.type}`);
       }
-      if (call.function.name === requiredCompletionTool) {
-        completionToolCalled = true;
-      }
       await onEvent?.({ type: "tool.call", iteration, toolCall: call });
       const result = await registry.execute(
         call.function.name,
@@ -290,6 +291,13 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         tool_call_id: call.id,
         content: result,
       });
+      if (call.function.name === requiredCompletionTool && isAcceptedCompletionResult(result)) {
+        completionToolAccepted = true;
+      }
+    }
+    if (completionToolAccepted) {
+      await onEvent?.({ type: "agent.done", iteration, content: message.content });
+      return { content: message.content, messages, iterations: iteration };
     }
     if (iteration === maxIterations) {
       await onEvent?.({ type: "agent.done", iteration, content: message.content });
@@ -297,4 +305,15 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     }
   }
   throw new Error(`agent loop exceeded max iterations (${maxIterations})`);
+}
+
+function isAcceptedCompletionResult(result: string): boolean {
+  if (/^accepted$/i.test(result.trim()) || result.startsWith("StructuredOutput accepted for ")) return true;
+  try {
+    const value = JSON.parse(result) as unknown;
+    return Boolean(value && typeof value === "object" && !Array.isArray(value)
+      && (value as Record<string, unknown>).accepted === true);
+  } catch {
+    return false;
+  }
 }

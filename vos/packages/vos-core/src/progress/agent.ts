@@ -43,7 +43,7 @@ export function appendAgentProgressInstructions(prompt: string, resultSchemaId?:
 
 function resultSubmissionContract(schemaId: string): string {
   if (schemaId === "student_implementation_result.v1") {
-    return "- The result object must contain status plus test_targets and hidden_tests. Propose at least one public, contract, fixed-seed fuzz, and bounded trace target. Keep paths relative; use {hidden_test} in hidden-test args for the generated private file path.";
+    return "- The result object must contain status (one of passed, failed, blocked, partial) plus test_targets and hidden_tests. Propose at least one public, contract, fixed-seed fuzz, and bounded trace target. Every fuzz seed and hidden-test seed must be a JSON integer, not a quoted string. Keep paths relative; use {hidden_test} in hidden-test args for the generated private file path.";
   }
   return "";
 }

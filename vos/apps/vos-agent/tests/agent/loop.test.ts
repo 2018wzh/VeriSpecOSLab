@@ -60,8 +60,8 @@ describe("runAgent", () => {
       requiredCompletionTool: "Submit",
     });
 
-    expect(result.content).toBe("done");
-    expect(result.iterations).toBe(3);
+    expect(result.content).toBeNull();
+    expect(result.iterations).toBe(2);
     expect(calls).toHaveLength(1);
     expect(chat.requests[1].messages.at(-1)).toMatchObject({
       role: "user",
@@ -252,6 +252,29 @@ describe("runAgent", () => {
     expect(chat.requests[0].messages.at(-1)).toMatchObject({
       role: "user",
       content: expect.stringContaining("final allowed iteration"),
+    });
+  });
+
+  test("reserves the final iteration to correct a rejected completion payload", async () => {
+    const { tool, calls } = recordingTool("Submit", ["validation error: seed must be integer", "accepted"]);
+    const chat = new ScriptedChatClient([
+      toolCallResponse([{ name: "Submit", args: { seed: "42" } }]),
+      toolCallResponse([{ name: "Submit", args: { seed: 42 } }]),
+    ]);
+    const result = await runAgent({
+      model: TEST_MODEL,
+      chat,
+      registry: new ToolRegistry([tool]),
+      prompt: "implement",
+      maxIterations: 2,
+      requiredCompletionTool: "Submit",
+    });
+
+    expect(result.iterations).toBe(2);
+    expect(calls).toHaveLength(2);
+    expect(chat.requests[1].messages.at(-1)).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("Correct any validation errors"),
     });
   });
 
