@@ -2458,10 +2458,21 @@ export async function executeAgentImplement(
       });
       if (implementationEvents.length === eventCountBeforeRun) implementationEvents.push(...agentResult.rawEvents);
       agentSubmission = agentResult.parsedResult;
-      implementation = parseStudentImplementationPayload(agentResult.parsedResult, module.id, bundle);
       const usedIterations = Math.max(1, agentResult.iterations);
       remainingIterations = Math.max(0, remainingIterations - usedIterations);
       threadId = agentResult.threadId ?? threadId;
+      try {
+        implementation = parseStudentImplementationPayload(agentResult.parsedResult, module.id, bundle);
+      } catch (error) {
+        validation = {
+          status: "validation_failed",
+          message: errorMessage(error),
+          agent_result: agentResult.parsedResult,
+        };
+        if (remainingIterations === 0 || !threadId) break;
+        taskPrompt = `VOS rejected the structured implementation result before running gates. Preserve the current worktree, correct the result fields and any incomplete owned files, run validation, and resubmit status passed. This continuation shares the original 50-iteration budget; ${remainingIterations} iterations remain. Bounded validation evidence:\n${JSON.stringify(studentImplementationRepairSummary(validation), null, 2)}`;
+        continue;
+      }
 
       const agentChanged = await studentChangedPaths(worktree);
       const violations = agentChanged.filter((target) =>

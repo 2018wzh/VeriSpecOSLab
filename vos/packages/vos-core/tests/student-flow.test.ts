@@ -494,6 +494,41 @@ describe("student v2 workflow", () => {
     });
   }, 30_000);
 
+  test("feeds malformed structured test targets back into the same Agent thread", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      let turn = 0;
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          turn++;
+          mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+          writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 0;\n");
+          const proposal = implementationResult();
+          if (turn === 1) {
+            proposal.test_targets.find((target) => target.kind === "trace")!.artifacts = [];
+          } else {
+            expect(options.threadId).toBe("structured-repair-thread");
+            expect(options.task).toContain("rejected the structured implementation result");
+            expect(options.task).toContain("requires workload, oracle, timeout, and artifacts");
+          }
+          return {
+            content: "submitted",
+            threadId: "structured-repair-thread",
+            events: [
+              { type: "model.usage", thread_id: "structured-repair-thread", iteration: turn === 1 ? 45 : 2 },
+              ...acceptedSubmitEvents("student_implementation_result.v1", proposal).map((event) => ({ ...event, thread_id: "structured-repair-thread", iteration: turn === 1 ? 45 : 2 })),
+            ],
+          };
+        },
+      });
+
+      expect(turn).toBe(2);
+      expect(result.status).toBe("passed");
+    });
+  }, 30_000);
+
   test("extends implementation owns through a committed v2 SpecPatch", async () => {
     const root = makeRoot();
     await withGitIdentity(async () => {
