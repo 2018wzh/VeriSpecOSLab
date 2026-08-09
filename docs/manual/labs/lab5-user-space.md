@@ -72,13 +72,13 @@ trap frame 是跨边界 ABI，应写入 `spec/interfaces/trap-frame.yaml`。明�
 ## 5. Spec 与 Agent 工作流
 
 ```sh
-vos agent spec trap
-vos agent spec process
-vos agent spec syscall
+vos agent spec kernel/trap
+vos agent spec kernel/process
+vos agent spec kernel/syscall
 vos spec check
-vos agent implement trap
-vos agent implement process
-vos agent implement syscall
+vos agent implement kernel/trap
+vos agent implement kernel/process
+vos agent implement kernel/syscall
 vos verify
 ```
 

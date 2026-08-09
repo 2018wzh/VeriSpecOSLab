@@ -9,8 +9,10 @@ import type {
   ReadonlyAgentDisplayHandle,
   ReadonlyAgentDisplayOptions,
   ToolPolicy,
+  ChatClient,
 } from "vos-agent/headless";
 import {
+  createChatClientFromRuntimeProvider,
   runAgentTask,
   runInteractiveAgentTask,
   startReadonlyAgentDisplay,
@@ -88,6 +90,7 @@ export async function runAgentWithPrompt(params: {
     requiredValidations: params.requiredValidations,
     policyFlags: params.policyFlags,
     model: params.model ?? bootstrap.model,
+    chat: bootstrap.chat,
     mode: params.mode,
     threadId: params.threadId,
     maxIterations: params.maxIterations,
@@ -236,7 +239,56 @@ export async function runAgentInteractiveTask(
     ...options,
     model: options.model ?? bootstrap.model,
     env: bootstrap.env,
+    chat: options.chat ?? bootstrap.chat,
   });
+}
+
+export async function runInteractiveAgentWithPrompt(params: {
+  projectRoot: string;
+  taskPrompt: string;
+  taskKind: string;
+  requestedScope: string;
+  agentProfile: AgentTaskProfileInput;
+  context?: unknown;
+  allowedPaths?: readonly string[];
+  policyFlags?: readonly string[];
+  courseMode?: boolean;
+  allowedVosCommands?: readonly string[];
+  resultSubmissionSchema: string;
+  extraMcpServers?: readonly McpServerConfig[];
+  runner?: InteractiveAgentTaskRunner;
+  onEvent?: (event: Record<string, unknown>) => void | Promise<void>;
+}): Promise<AgentRunResult> {
+  const events: Array<Record<string, unknown>> = [];
+  await runAgentInteractiveTask({
+    projectRoot: params.projectRoot,
+    taskKind: params.taskKind,
+    requestedScope: params.requestedScope,
+    initialTask: appendAgentProgressInstructions(params.taskPrompt, params.resultSubmissionSchema),
+    agentProfile: params.agentProfile,
+    context: params.context,
+    allowedPaths: params.allowedPaths,
+    policyFlags: params.policyFlags,
+    courseMode: params.courseMode,
+    allowedVosCommands: params.allowedVosCommands,
+    extraMcpServers: mergeMcpServers([
+      createProgressMcpServerConfig(params.projectRoot),
+      ...(params.extraMcpServers ?? []),
+    ]),
+    runner: params.runner,
+    onEvent: async (event) => {
+      const raw = event as Record<string, unknown>;
+      events.push(raw);
+      await params.onEvent?.(raw);
+    },
+  });
+  const submitted = extractAcceptedMcpSubmission(events, params.resultSubmissionSchema);
+  return {
+    resultText: `${JSON.stringify(submitted, null, 2)}\n`,
+    parsedResult: submitted,
+    rawEvents: events,
+    exitCode: 0,
+  };
 }
 
 export function startAgentReadonlyDisplay(
@@ -251,7 +303,7 @@ export function startAgentReadonlyDisplay(
 export function buildAgentEnv(params: {
   projectRoot: string;
   env: NodeJS.ProcessEnv;
-}): { env: Record<string, string | undefined>; model?: string } {
+}): { env: Record<string, string | undefined>; model?: string; chat?: ChatClient } {
   const config = readAgentConfig(params.projectRoot).agent;
 
   const mapped: Record<string, string | undefined> = {
@@ -308,7 +360,35 @@ export function buildAgentEnv(params: {
   return {
     env: mapped,
     model,
+    chat: createConfiguredChatClient(config, mapped),
   };
+}
+
+function createConfiguredChatClient(
+  config: NonNullable<ReturnType<typeof readAgentConfig>["agent"]>,
+  env: Record<string, string | undefined>,
+): ChatClient {
+  const secret = config.authEnv ? env[config.authEnv] : undefined;
+  if (config.provider !== "ollama" && !secret) {
+    throw new Error(`configured ${config.provider} provider credential ${config.authEnv ?? "<unset>"} is missing; run \`vos agent config --check\``);
+  }
+  return createChatClientFromRuntimeProvider({
+    kind: config.provider,
+    base_url: config.baseUrl ?? defaultProviderBaseUrl(config.provider),
+    ...(secret ? { secret } : {}),
+    ...(config.provider === "anthropic" && config.authEnv === "ANTHROPIC_AUTH_TOKEN" ? { auth_kind: "bearer" as const } : {}),
+    max_output_tokens: 16_384,
+  });
+}
+
+function defaultProviderBaseUrl(provider: NonNullable<ReturnType<typeof readAgentConfig>["agent"]>["provider"]): string {
+  switch (provider) {
+    case "anthropic": return "https://api.anthropic.com";
+    case "openai": return "https://api.openai.com/v1";
+    case "openai-compatible": throw new Error("configured openai-compatible provider requires base_url");
+    case "deepseek": return "https://api.deepseek.com/v1";
+    case "ollama": return "http://localhost:11434/api";
+  }
 }
 
 function normalizeAgentModelForProvider(

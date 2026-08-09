@@ -96,7 +96,7 @@ describe("xv6-spec offline runtime flow", () => {
     const gitignore = readFileSync(join(xv6Root, ".gitignore"), "utf8");
 
     expect(manifest).toContain("version: vos.project.v1");
-    expect(manifest).toContain("knowledge:");
+    expect(manifest).not.toContain("knowledge:");
     expect(design).toContain("system:");
     expect(design).toContain("composition_invariants:");
     for (const relativePath of [

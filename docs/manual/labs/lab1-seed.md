@@ -190,7 +190,7 @@ vos agent config
 
 向导只询问 provider、模型、base URL 和凭据的**环境变量名**，不会读取或回显 key。支持 Anthropic、OpenAI、OpenAI-compatible、DeepSeek 和 Ollama。使用 OpenAI-compatible 时必须填写完整的 API base URL；Ollama 可以不配置凭据变量。
 
-如果 `vos.yaml` 已声明 `knowledge.sources`，还要配置 OpenAI 或 OpenAI-compatible embedding provider。没有知识库来源时可以跳过，普通 Agent 配置不会再强制生成 embedding 配置。
+如果准备使用 `vos kb add` 建立知识库，还要配置 OpenAI 或 OpenAI-compatible embedding provider。没有已索引的知识库来源时可以跳过，普通 Agent 配置不会强制生成 embedding 配置。
 
 配置完成后执行：
 
@@ -202,24 +202,13 @@ vos doctor                # 连同项目、Spec、工具链和 KB 配置一起�
 
 `--show` 不显示凭据值。配置缺少凭据时，向导仍会保存非秘密设置，但命令和 `vos doctor` 会明确返回失败，并指出应补充到 `.env` 的变量名。
 
-CI 或脚本中不能使用交互向导，应显式传入参数：
-
-```sh
-vos agent config \
-  --provider openai \
-  --model gpt-5 \
-  --auth-env OPENAI_API_KEY
-```
-
-需要 embedding 时添加 `--with-embedding`；若 Agent provider 不能推导出 embedding provider，还要指定 `--embedding-provider openai` 或 `openai-compatible`。`vos agent config --reset` 只删除 `.vos/config.toml` 中的 `[agent]` 和 `[kb.embedding]` 段，不删除 `.env`，也不改动其他 TOML 配置。
-
 现在再完成 DesignSpec。先不要手工猜字段，也不要让 Agent 直接写代码。运行：
 
 ```sh
-vos agent design
+vos agent design --interactive
 ```
 
-这条命令只生成结构化差异，不修改项目。逐项检查以下内容：
+Agent 会逐项询问系统目标、语言、ISA、QEMU、canonical board、内核组织和关键取舍。讨论结束并经你确认后，它只生成结构化差异，不修改项目。逐项检查以下内容：
 
 - `system` 中的名称、语言和 ISA 是否与自己的选择一致；
 - `machine.qemu` 是否写清机器型号、内存、固件和串口；
@@ -229,13 +218,13 @@ vos agent design
 - `composition_invariants` 是否为 1～3 条跨模块不变量；
 - `hardware_port` 是否说明启动、控制台和中断入口。
 
-如果差异没有准确表达你的决定，继续与 Agent 讨论并重新生成。确认无误后再原子应用：
+如果差异没有准确表达你的决定，重新运行交互式设计并继续讨论。确认无误后再原子应用：
 
 ```sh
 vos agent design --confirm
 ```
 
-VOS 会提交 DesignSpec。检查 `git log -1 --stat`，确认这次提交只包含预期的设计文件。
+VOS 会应用刚才保存的同一份提案，不会再次调用模型，然后提交 DesignSpec。检查 `git log -1 --stat`，确认这次提交只包含预期的设计文件。
 
 下面是字段形状示例，不是推荐答案：
 
@@ -284,29 +273,24 @@ hardware_port:
 vos agent ask "RISC-V 与 x86-64 的教学取舍是什么？"
 ```
 
-`kb` 只回答问题，不修改项目。`design` 和 `spec` 必须经过 `--confirm` 才写回；`debug`、`verify` 和 `review` 也都是只读角色。
+`ask` 只回答问题，不修改项目。`design` 和 `spec` 必须经过 `--confirm` 才写回；`debug`、`verify` 和 `review` 也都是只读角色。
 
 需要特别理解：Agent 的 linked worktree 只隔离 Git 变更，不隔离进程、网络、凭据或宿主文件。Agent 默认能以当前用户权限执行宿主命令。本地保存的完整参考源码也不是保密边界。
 
-### 步骤 5：锁定知识库来源（预计 20 分钟）
+### 步骤 5：建立项目知识库（预计 20 分钟）
 
-学生 CLI 不提供直接的 KB 管理命令。把课程资料、规范或参考仓库写进 `vos.yaml` 的 `knowledge.sources`：
+知识库由命令管理，不写入 `vos.yaml`。先加入本地课程资料或参考仓库，再检查索引：
 
-```yaml
-knowledge:
-  sources:
-    - id: riscv-privileged
-      url: https://github.com/riscv/riscv-isa-manual.git
-      revision: <完整提交号或不可变标签>
-      sha256: <内容哈希>
-    - id: project-notes
-      path: docs/reference
-      sha256: <内容哈希>
+```sh
+vos kb add docs/reference --recursive --source-kind course
+vos kb add https://github.com/riscv/riscv-isa-manual.git --tag <不可变标签> --source-kind external
+vos kb list
+vos kb search "RISC-V supervisor trap entry"
 ```
 
-Git URL 必须锁定 revision；本地来源必须是仓库相对路径。两者都必须提供内容哈希。VOS 同步后的资料位于 gitignored 的 `.vos/kb-sources`。查询日志只保存学生实际看到的片段及其 source、hash 和 range，不复制未展示的检索上下文。
+远程来源应使用不可变 tag 或明确 branch；VOS 会记录实际 Git revision 和内容寻址对象。索引、来源快照和 object manifest 都位于 gitignored 的 `.vos/kb/`，不会进入 Git。需要迁移或复核时使用 `vos kb export-manifest` 和 `vos kb import-manifest`；不再维护 `knowledge.sources` 声明。
 
-锁定来源后可以继续使用 `vos agent ask` 提问。若哈希不匹配，先核对来源内容，不要用新哈希掩盖来源漂移。
+建立索引后可以继续使用 `vos agent ask` 提问。查询日志只保存学生实际看到的片段及其 source、hash 和 range，不复制未展示的检索上下文。
 
 ### 步骤 6：检查基线（预计 10 分钟）
 
@@ -377,7 +361,7 @@ Agent 可以解释 ISA 差异、对比语言优劣和审查 DesignSpec 字段。
 
 ### `vos agent design` 没有写文件
 
-这是预期行为。先审查差异，再运行 `vos agent design --confirm`。
+这是预期行为。`vos agent design --interactive` 先完成设计访谈并保存提案；审查差异后，再运行 `vos agent design --confirm` 应用同一份提案。
 
 ### `vos spec check` 报未知字段
 

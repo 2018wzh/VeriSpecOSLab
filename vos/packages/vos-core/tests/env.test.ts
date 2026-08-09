@@ -62,6 +62,27 @@ describe(".env loading", () => {
     expect(result.env.OPENAI_API_KEY).toBeUndefined();
     expect(result.env.OPENAI_BASE_URL).toBeUndefined();
     expect(result.env.SMART_MODEL).toBe("deepseek-v4-pro");
+    expect(result.chat).toBeDefined();
+  });
+
+  test("builds the configured Anthropic bearer client from the same project config and .env", () => {
+    const projectRoot = makeProject();
+    mkdirSync(join(projectRoot, ".vos"), { recursive: true });
+    writeFileSync(join(projectRoot, ".vos", "config.toml"), [
+      "[agent]",
+      'provider = "anthropic"',
+      'model = "claude-sonnet-4-5"',
+      'base_url = "https://gateway.example/v1"',
+      "[agent.auth]",
+      'env = "ANTHROPIC_AUTH_TOKEN"',
+      "",
+    ].join("\n"));
+    writeFileSync(join(projectRoot, ".env"), "ANTHROPIC_AUTH_TOKEN=test-token\n");
+
+    const result = buildAgentEnv({ projectRoot, env: {} as NodeJS.ProcessEnv });
+
+    expect(result.model).toBe("anthropic:claude-sonnet-4-5");
+    expect(result.chat).toBeDefined();
   });
 
   test("merges OpenAI-compatible agent env without populating official OpenAI env", () => {

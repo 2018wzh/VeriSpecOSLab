@@ -310,19 +310,6 @@ export const projectManifestSchema = z.object({
     hardware: targetSchema.optional(),
   }).strict(),
   checks: z.record(checkTargetSchema).default({}),
-  knowledge: z.object({
-    sources: z.array(z.object({
-      id: z.string().min(1),
-      path: z.string().min(1).optional(),
-      url: z.string().url().optional(),
-      revision: z.string().min(1).optional(),
-      sha256: z.string().regex(/^[0-9a-f]{64}$/i),
-    }).strict().refine((source) => Boolean(source.path || source.url), {
-      message: "source requires either a repository-relative path or a Git URL",
-    }).refine((source) => !source.url || Boolean(source.revision), {
-      message: "Git KB sources require a pinned revision",
-    })).default([]),
-  }).strict().default({ sources: [] }),
 }).strict().superRefine((manifest, ctx) => {
   const checkTargetPaths = (target: { cwd?: string; artifacts?: string[] }, path: (string | number)[]) => {
     if (target.cwd) {
@@ -345,15 +332,5 @@ export const projectManifestSchema = z.object({
   const qemu = manifest.runners.qemu;
   if (qemu && /qemu-system/i.test(qemu.program) && !qemu.args.includes("-nographic")) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["runners", "qemu", "args"], message: "QEMU targets must include -nographic for serial-only evidence" });
-  }
-  for (const [index, source] of manifest.knowledge.sources.entries()) {
-    if (source.path && source.url) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["knowledge", "sources", index], message: "source must use either path or url, not both" });
-    }
-    if (!source.path) continue;
-    const normalized = source.path.replace(/\\/g, "/");
-    if (normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized) || normalized.split("/").some((segment) => segment === "..")) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["knowledge", "sources", index, "path"], message: "source path must be repository-relative and cannot traverse" });
-    }
   }
 });

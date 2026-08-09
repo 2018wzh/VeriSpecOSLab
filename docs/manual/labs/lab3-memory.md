@@ -106,11 +106,9 @@ free ∩ allocated = ∅
 物理分配器和虚拟内存通常分别建立 ModuleSpec。涉及锁、跨核 TLB 或中断上下文时使用 L3；否则至少使用 L2。
 
 ```sh
-vos agent spec memory
-vos agent spec vm
+vos agent spec kernel/memory
 vos spec check
-vos agent implement memory
-vos agent implement vm
+vos agent implement kernel/memory
 ```
 
 ModuleSpec 应覆盖：

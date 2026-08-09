@@ -81,13 +81,11 @@ buffer cache 通常为 L3 ModuleSpec。声明 free、loading、valid、dirty、w
 ## 4. Spec 与 Agent 工作流
 
 ```sh
-vos agent spec block
-vos agent spec buffer-cache
-vos agent spec filesystem
+vos agent spec kernel/virtio
+vos agent spec kernel/fs
 vos spec check
-vos agent implement block
-vos agent implement buffer-cache
-vos agent implement filesystem
+vos agent implement kernel/virtio
+vos agent implement kernel/fs
 ```
 
 块设备、buffer cache 和文件系统分别使用 ModuleSpec；`open/read/write/close` 等用户可见 ABI 延续 Lab 5 的 InterfaceSpec。跨模块锁顺序或事务语义变化先写 SpecPatch。测试 target 分别绑定模块与接口稳定 ID。

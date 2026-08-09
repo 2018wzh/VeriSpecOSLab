@@ -81,7 +81,7 @@ import {
   currentStageForProject,
 } from "./utils/project.ts";
 import { appendLogEntry, readLogEntries } from "./agent/helpers.ts";
-import { mkdir, readFile, readdir, writeFile, rm } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile, rm, rename } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
@@ -111,7 +111,6 @@ import {
 } from "./runtime/debug-trace.ts";
 import { resolveToolchainManifestPath } from "./runtime/toolchain-manifest.ts";
 import { HardwareRunner, HostRunner, ManifestRunner, QemuRunner, readStudentManifest } from "./runtime/student-runner.ts";
-import { syncStudentKbSources } from "./runtime/student-kb.ts";
 import { runCommand } from "./runtime/executor.ts";
 import { buildContextBundle, loadAgentAllowedPaths } from "./agent/context.ts";
 import {
@@ -124,6 +123,7 @@ import {
 } from "./agent/prompt.ts";
 import {
   runAgentWithPrompt,
+  runInteractiveAgentWithPrompt,
   runAgentInteractiveTask,
   startAgentReadonlyDisplay,
   startAgentServer,
@@ -347,13 +347,13 @@ function assertStudentCommandSurface(projectRoot: string, command: CliCommand): 
     "spec_check_consistency", "spec_patch_lint", "spec_patch_apply", "arch_lint", "arch_compose",
     "arch_derive_tests", "test", "trace_syscall", "debug_explain_log", "build_generate", "agent_serve",
     "agent_context", "agent_plan", "agent_generate", "agent_apply_patch", "agent_validate_generated",
-    "agent_log", "agent_review_spec", "kb_add", "kb_list", "kb_search", "kb_remove",
-    "kb_clear", "kb_export_manifest", "kb_import_manifest",
+    "agent_log", "agent_review_spec",
   ]);
   const studentCommands = new Set<CliCommand["kind"]>([
     "init", "doctor", "spec_check", "agent_config", "agent_design", "agent_spec", "agent_implement", "agent_debug",
     "agent_verify", "agent_ask", "agent_review", "build", "run_qemu", "run_hardware", "verify",
-    "report_generate", "submit_pack",
+    "report_generate", "submit_pack", "kb_add", "kb_list", "kb_search", "kb_remove", "kb_clear",
+    "kb_export_manifest", "kb_import_manifest",
   ]);
   const hasStudentManifest = existsSync(path.join(projectRoot, "vos.yaml"));
   if (removed.has(command.kind)) {
@@ -431,6 +431,7 @@ function startReadonlyDisplayForCommand(
 
 function usesReadonlyDisplay(command: CliCommand): boolean {
   if (!("display" in command) || command.display !== true) return false;
+  if (command.kind === "agent_design" || command.kind === "agent_spec") return false;
   if (command.kind === "agent_debug" && !command.logPath && !command.runId) return false;
   return true;
 }
@@ -1093,8 +1094,6 @@ async function ensureStudentProjectFiles(projectRoot: string): Promise<void> {
       "    env: []",
       "    timeout: 30000",
       "    verifies: [toolchain]",
-      "knowledge:",
-      "  sources: []",
       "",
     ].join("\n"),
   };
@@ -1321,10 +1320,10 @@ async function executeStudentDoctor(projectRoot: string): Promise<CommandOutcome
   }
   try {
     const manifest = await readStudentManifest(projectRoot);
-    requireEmbedding = manifest.manifest.knowledge.sources.length > 0;
     checks.push({ name: "manifest-schema", category: "project", required: true, ok: true, message: path.relative(projectRoot, manifest.path) });
-    const kbLock = await syncStudentKbSources(projectRoot, manifest.manifest);
-    checks.push({ name: "kb-sources", category: "knowledge", required: true, ok: true, message: `${kbLock.sources.length} source(s) locked` });
+    const kbSources = await listKbSources(projectRoot);
+    requireEmbedding = kbSources.length > 0;
+    checks.push({ name: "kb-sources", category: "knowledge", required: false, ok: true, message: `${kbSources.length} source(s) indexed` });
     for (const [id, target] of Object.entries(manifest.manifest.checks)) {
       checks.push({ name: `check:${id}`, category: "contract", required: true, ok: commandExists(target.program), command: target.program, hint: commandExists(target.program) ? undefined : `install ${target.program} or update vos.yaml` });
     }
@@ -2190,7 +2189,7 @@ async function promptBoolean(terminal: TerminalQuestions, label: string, current
 
 async function studentProjectRequiresEmbedding(projectRoot: string): Promise<boolean> {
   try {
-    return (await readStudentManifest(projectRoot)).manifest.knowledge.sources.length > 0;
+    return (await listKbSources(projectRoot)).length > 0;
   } catch {
     return false;
   }
@@ -2235,22 +2234,37 @@ export async function executeAgentDesign(
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
   const bundle = await buildNormalizedSpecBundle({ projectRoot });
+  if (command.confirm) {
+    return confirmPendingStudentProposal({
+      projectRoot,
+      evidence,
+      key: "design",
+      allowedPaths: ["spec/design.yaml"],
+      commitMessage: "[vos][design] Update DesignSpec",
+      description: "DesignSpec",
+    });
+  }
   const proposal = await runStudentProposalAgent({
     context,
     evidence,
     requestedScope: "design",
     taskKind: "design",
-    taskPrompt: "Design the OS from the student's stated goals. Propose only spec/design.yaml, preserve the strict DesignSpec schema, and explain tradeoffs. Keep every required DesignSpec field present (system, machine, kernel, required_mechanisms, composition_invariants, and hardware_port). Do not modify source code or any other file.",
+    taskPrompt: "Design the OS from the student's stated goals. Propose only spec/design.yaml and preserve the strict DesignSpec schema. Keep every required field present: system, machine, kernel, required_mechanisms, composition_invariants, and hardware_port. composition_invariants must contain 1 to 3 entries. Return conservative YAML: use block mappings, quote every scalar string, keep each list entry on one physical line, and do not emit wrapped continuation text or explanatory prose inside the YAML. Do not modify source code or any other file.",
     contextValue: studentSpecContext(bundle),
     allowedPaths: ["spec/design.yaml"],
     resultSchema: "student_design_proposal.v1",
     worktreeLabel: "design",
+    interactive: command.display === true,
+  });
+  await savePendingStudentProposal(projectRoot, "design", proposal, {
+    allowedPaths: ["spec/design.yaml"],
+    specHash: hashString(JSON.stringify(bundle.hashes)),
   });
   return finalizeStudentProposal({
     projectRoot,
     evidence,
     proposal,
-    confirm: command.confirm === true,
+    confirm: false,
     allowedPaths: ["spec/design.yaml"],
     commitMessage: "[vos][design] Update DesignSpec",
     specHash: hashString(JSON.stringify(bundle.hashes)),
@@ -2268,6 +2282,17 @@ export async function executeAgentSpec(
   const bundle = await buildNormalizedSpecBundle({ projectRoot });
   const module = bundle.normalized_modules.find((candidate) => candidate.module === command.module || candidate.id === command.module);
   const modulePath = module?.path ?? `spec/modules/${command.module.replace(/\\/g, "/")}.yaml`;
+  const pendingKey = `spec-${command.module.replace(/[^A-Za-z0-9._-]+/g, "-")}`;
+  if (command.confirm) {
+    return confirmPendingStudentProposal({
+      projectRoot,
+      evidence,
+      key: pendingKey,
+      allowedPaths: [modulePath],
+      commitMessage: `[vos][spec] Update ${command.module}`,
+      description: `ModuleSpec ${command.module}`,
+    });
+  }
   const proposal = await runStudentProposalAgent({
     context,
     evidence,
@@ -2278,12 +2303,17 @@ export async function executeAgentSpec(
     allowedPaths: [modulePath],
     resultSchema: "student_module_spec_proposal.v1",
     worktreeLabel: `spec-${command.module}`,
+    interactive: command.display === true,
+  });
+  await savePendingStudentProposal(projectRoot, pendingKey, proposal, {
+    allowedPaths: [modulePath],
+    specHash: hashString(JSON.stringify(bundle.hashes)),
   });
   return finalizeStudentProposal({
     projectRoot,
     evidence,
     proposal,
-    confirm: command.confirm === true,
+    confirm: false,
     allowedPaths: [modulePath],
     commitMessage: `[vos][spec] Update ${command.module}`,
     specHash: hashString(JSON.stringify(bundle.hashes)),
@@ -2421,6 +2451,77 @@ interface StudentProposal {
   baseHead: string | undefined;
 }
 
+interface PendingStudentProposal extends StudentProposal {
+  version: "vos.student-proposal.v1";
+  allowedPaths: string[];
+  specHash: string;
+}
+
+async function savePendingStudentProposal(
+  projectRoot: string,
+  key: string,
+  proposal: StudentProposal,
+  metadata: { allowedPaths: string[]; specHash: string },
+): Promise<void> {
+  const target = pendingStudentProposalPath(projectRoot, key);
+  const temporary = `${target}.tmp`;
+  await mkdir(path.dirname(target), { recursive: true });
+  const payload: PendingStudentProposal = {
+    version: "vos.student-proposal.v1",
+    ...proposal,
+    allowedPaths: metadata.allowedPaths,
+    specHash: metadata.specHash,
+  };
+  await writeFile(temporary, `${JSON.stringify(payload, null, 2)}\n`);
+  await rename(temporary, target);
+}
+
+async function confirmPendingStudentProposal(params: {
+  projectRoot: string;
+  evidence: EvidenceWriter;
+  key: string;
+  allowedPaths: string[];
+  commitMessage: string;
+  description: string;
+}): Promise<CommandOutcome> {
+  const pendingPath = pendingStudentProposalPath(params.projectRoot, params.key);
+  if (!existsSync(pendingPath)) {
+    throw new CliError(`no pending ${params.description} proposal; run the command without --confirm first`, "validation_failed", {
+      reason: "pending_proposal_missing",
+    });
+  }
+  const pending = JSON.parse(await readFile(pendingPath, "utf8")) as Partial<PendingStudentProposal>;
+  if (pending.version !== "vos.student-proposal.v1" || typeof pending.patch !== "string" ||
+      !Array.isArray(pending.files) || typeof pending.specHash !== "string" ||
+      !Array.isArray(pending.allowedPaths) || pending.allowedPaths.join("\0") !== params.allowedPaths.join("\0")) {
+    throw new CliError(`pending ${params.description} proposal is invalid or belongs to a different target`, "validation_failed", {
+      reason: "pending_proposal_invalid",
+    });
+  }
+  const outcome = await finalizeStudentProposal({
+    projectRoot: params.projectRoot,
+    evidence: params.evidence,
+    proposal: {
+      patch: pending.patch,
+      files: pending.files.filter((value): value is string => typeof value === "string"),
+      result: pending.result,
+      baseHead: typeof pending.baseHead === "string" ? pending.baseHead : undefined,
+    },
+    confirm: true,
+    allowedPaths: params.allowedPaths,
+    commitMessage: params.commitMessage,
+    specHash: pending.specHash,
+    description: params.description,
+  });
+  if (outcome.status === "passed") await rm(pendingPath, { force: true });
+  return outcome;
+}
+
+function pendingStudentProposalPath(projectRoot: string, key: string): string {
+  if (!/^[A-Za-z0-9._-]+$/.test(key)) throw new Error(`invalid pending proposal key: ${key}`);
+  return path.join(projectRoot, ".vos", "proposals", `${key}.json`);
+}
+
 function studentSpecContext(bundle: NormalizedSpecBundle, focus?: string): Record<string, unknown> {
   return {
     focus,
@@ -2444,6 +2545,7 @@ async function runStudentProposalAgent(params: {
   allowedPaths: string[];
   resultSchema: string;
   worktreeLabel: string;
+  interactive: boolean;
 }): Promise<StudentProposal> {
   const projectRoot = params.context.projectRoot;
   const state = await studentGitStatus(projectRoot);
@@ -2451,18 +2553,28 @@ async function runStudentProposalAgent(params: {
   const baseHead = currentHead(projectRoot);
   const worktree = await createStudentWorktree(projectRoot, `${params.evidence.run_id}-${params.worktreeLabel}`);
   try {
-    const result = await runAgentWithPrompt({
+    const common = {
       projectRoot: worktree,
-      taskPrompt: params.taskPrompt,
       taskKind: params.taskKind,
       requestedScope: params.requestedScope,
       context: params.contextValue,
       allowedPaths: params.allowedPaths,
       courseMode: true,
       resultSubmissionSchema: params.resultSchema,
-      taskRunner: params.context.agentRunner,
       onEvent: createAgentProgressParams(params.context, `agent ${params.taskKind}`).onEvent,
-    });
+    };
+    const result = params.interactive
+      ? await runInteractiveAgentWithPrompt({
+          ...common,
+          taskPrompt: `${params.taskPrompt} Interview the student before finalizing: ask one focused question at a time, resolve goals, constraints, ISA, language, QEMU, canonical board, kernel structure, and explicit tradeoffs. Do not submit a proposal until the student confirms that the collected decisions are complete. Then call submit_result exactly once with the complete proposal; tell the student to use /quit after it is accepted.`,
+          agentProfile: { outputSchema: params.resultSchema },
+          runner: params.context.interactiveAgentRunner,
+        })
+      : await runAgentWithPrompt({
+          ...common,
+          taskPrompt: params.taskPrompt,
+          taskRunner: params.context.agentRunner,
+        });
     const resultValue = result.parsedResult ?? safeJsonTryParse(result.resultText) ?? result.resultText;
     const files = extractStudentProposalFiles(resultValue);
     const declaredViolations: string[] = [];
@@ -3818,12 +3930,7 @@ export async function executeAgentAsk(
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
   const studentProject = existsSync(path.join(projectRoot, "vos.yaml")) && !isLegacyProject(projectRoot);
-  let studentHasKbSources = false;
-  if (studentProject) {
-    const manifest = await readStudentManifest(projectRoot);
-    await syncStudentKbSources(projectRoot, manifest.manifest);
-    studentHasKbSources = manifest.manifest.knowledge.sources.length > 0;
-  }
+  const studentHasKbSources = studentProject && (await listKbSources(projectRoot)).length > 0;
   const requestedScope = studentProject
     ? "student-kb"
     : command.scope ?? await currentStageForProject(projectRoot).catch(() => "agent.ask");
@@ -5880,6 +5987,7 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
     "  agent verify",
     "  agent ask [question]",
     "  agent review [module]",
+    "  kb add|list|search|remove|clear|export-manifest|import-manifest",
     "  build",
     "  run qemu",
     "  run hardware",
@@ -5895,13 +6003,21 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
   "spec check": helpBlock("spec check", ["No model, fuzz, trace, or hidden tests are run."], ["vos spec check"]),
   "agent": helpBlock("agent config|design|spec|implement|debug|verify|ask|review", ["config [--show|--check|--reset]", "design [--confirm]", "spec <module> [--confirm]", "implement <module>", "debug", "verify", "ask [question]", "review [module]"], ["vos agent config", "vos agent ask \"What is a syscall boundary?\"", "vos agent implement memory"]),
   "agent config": helpBlock("agent config [options]", ["No options: run the interactive setup wizard.", "--provider <anthropic|openai|openai-compatible|deepseek|ollama>", "--model <id>", "--base-url <url>", "--auth-env <name>", "--with-embedding | --without-embedding", "--embedding-provider <openai|openai-compatible>", "--embedding-model <id>", "--embedding-base-url <url>", "--embedding-auth-env <name>", "--show: show configuration without secret values", "--check: validate configuration and referenced credentials", "--reset: remove agent and embedding sections"], ["vos agent config", "vos agent config --check", "vos agent config --provider openai --model gpt-5 --auth-env OPENAI_API_KEY"]),
-  "agent design": helpBlock("agent design [--confirm]", ["--confirm applies and commits the proposal; without it only a diff is produced."], ["vos agent design", "vos agent design --confirm"]),
-  "agent spec": helpBlock("agent spec <module> [--confirm]", ["--confirm applies and commits the ModuleSpec proposal."], ["vos agent spec memory"]),
+  "agent design": helpBlock("agent design [--interactive|--confirm]", ["--interactive interviews the student before producing a proposal.", "Without --confirm, the exact validated proposal is saved under .vos and only its diff is shown.", "--confirm applies and commits that saved proposal without calling the model again."], ["vos agent design --interactive", "vos agent design --confirm"]),
+  "agent spec": helpBlock("agent spec <module> [--interactive|--confirm]", ["--interactive discusses the module before producing a proposal.", "--confirm applies the previously saved ModuleSpec proposal without calling the model again."], ["vos agent spec kernel/memory", "vos agent spec kernel/memory --confirm"]),
   "agent implement": helpBlock("agent implement <module>", ["Requires clean HEAD and a committed ModuleSpec; validates build, public checks, contract checks, and owns scope."], ["vos agent implement memory"]),
   "agent debug": helpBlock("agent debug", ["Read-only root-cause and evidence summary."], ["vos agent debug"]),
   "agent verify": helpBlock("agent verify", ["Read-only deterministic verification report."], ["vos agent verify"]),
   "agent ask": helpBlock("agent ask [question]", ["Question answering only; omit the question or pass --interactive for a continuing conversation. It does not modify project files."], ["vos agent ask \"What is a syscall boundary?\"", "vos agent ask"]),
   "agent review": helpBlock("agent review [module]", ["Read-only review of specs, code scope, tests, and diff."], ["vos agent review memory"]),
+  "kb": helpBlock("kb add|list|search|remove|clear|export-manifest|import-manifest", ["KB sources are managed by commands and indexed under .vos; vos.yaml contains no knowledge source declarations."], ["vos kb add docs/reference --recursive", "vos kb list", "vos kb search \"Sv39 page table\""]),
+  "kb add": helpBlock("kb add <path-or-url> [options]", ["--recursive", "--source-kind <project|course|external>", "--title <text>", "--stage <id>", "--branch <name> | --tag <name>", "--manifest <path>"], ["vos kb add docs/reference --recursive", "vos kb add https://example.invalid/reference.git --tag v1.0.0"]),
+  "kb list": helpBlock("kb list", ["Lists indexed sources and stable source IDs."], ["vos kb list"]),
+  "kb search": helpBlock("kb search <query>", ["Runs semantic search through the configured embedding provider."], ["vos kb search \"Sv39 page table\""]),
+  "kb remove": helpBlock("kb remove <source-id>", ["Removes one indexed source and its local objects."], ["vos kb remove <source-id>"]),
+  "kb clear": helpBlock("kb clear", ["Removes every indexed source from the current project."], ["vos kb clear"]),
+  "kb export-manifest": helpBlock("kb export-manifest [--out <path>]", ["Exports a content-addressed KB object manifest."], ["vos kb export-manifest"]),
+  "kb import-manifest": helpBlock("kb import-manifest <path>", ["Imports and verifies a previously exported object manifest."], ["vos kb import-manifest .vos/kb/manifests/object-manifest.json"]),
   "build": helpBlock("build", ["Runs the structured argv build target from vos.yaml."], ["vos build"]),
   "run": helpBlock("run qemu|hardware", ["qemu", "hardware (evidence remains pending_human_review)"], ["vos run qemu"]),
   "run qemu": helpBlock("run qemu", ["Captures non-graphical serial output from the manifest runner."], ["vos run qemu"]),

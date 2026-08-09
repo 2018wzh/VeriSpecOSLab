@@ -39,11 +39,9 @@ checks:
     env: [PATH]
     timeout: 30000
     verifies: [kernel/boot]
-knowledge:
-  sources: []
 ```
 
-`program`、`args`、`cwd`、环境变量 allowlist 和 timeout 组成唯一命令契约。`cwd`、artifact 和 KB 本地路径必须在仓库内；Git KB URL 必须固定 revision 与 content hash。若 program 是 QEMU，target 必须包含 `-nographic`。
+`program`、`args`、`cwd`、环境变量 allowlist 和 timeout 组成唯一命令契约。`cwd` 和 artifact 路径必须在仓库内。知识库不属于执行投影，由 `vos kb add/list/search/remove/clear` 管理；远程来源的实际 revision 和内容对象记录在 `.vos/kb/`。若 program 是 QEMU，target 必须包含 `-nographic`。
 
 ## Runner 契约
 

@@ -28,11 +28,11 @@ vos.yaml
 ## 日常循环
 
 ```text
-vos agent design
+vos agent design --interactive
   ↓ 确认 DesignSpec diff 并提交
-vos agent spec memory
+vos agent spec kernel/memory
   ↓ 确认 ModuleSpec diff 并提交
-vos agent implement memory
+vos agent implement kernel/memory
   ↓ Agent 在临时 linked worktree 中实现、build、公开测试和契约测试
 vos build
 vos verify

@@ -140,6 +140,7 @@ export interface InteractiveAgentTaskOptions {
   error?: NodeJS.WritableStream;
   debugLabels?: boolean;
   welcomeAnimation?: boolean;
+  onEvent?: (event: SessionEvent) => void | Promise<void>;
 }
 
 export interface ReadonlyAgentDisplayProgress {
@@ -191,6 +192,8 @@ export interface AgentHttpPackageServerResult {
 }
 
 export type { ChatClient, Config, SessionEvent, ToolPolicy };
+export type { RuntimeProviderConfig } from "./llm/providers.ts";
+export { createChatClientFromRuntimeProvider } from "./llm/providers.ts";
 export type { AgentTaskProfile, AgentTaskProfileInput };
 export type { McpServerConfig };
 export { outputSchemaForId, validateSchema };
@@ -420,7 +423,7 @@ export async function runInteractiveAgentTask(
   const workspaceRoot = resolve(options.projectRoot);
   const env = options.env ?? process.env;
   const settings = loadSettings({ workspaceRoot, env });
-  const config = loadConfig(env, settings);
+  const config = options.chat && options.model ? injectedChatConfig(options.model, options.mode) : loadConfig(env, settings);
   const chat = options.chat ?? createChatClientFromConfig(config);
   const profile = resolveInternalAgentTaskProfile({
     taskKind: options.taskKind,
@@ -471,6 +474,7 @@ export async function runInteractiveAgentTask(
       ...(options.extraMcpServers ?? []),
     ],
     allowedSlashCommands: ["help", "quit", "new", "thread-show", "thread-switch", "todos"],
+    onEvent: options.onEvent,
   });
 }
 

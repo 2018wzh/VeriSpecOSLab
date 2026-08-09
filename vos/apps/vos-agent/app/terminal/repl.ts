@@ -68,6 +68,7 @@ interface InteractiveSessionOptions {
   allowedVosCommands?: readonly string[];
   extraMcpServers?: readonly McpServerConfig[];
   allowedSlashCommands?: readonly AllowedSlashCommandKind[];
+  onEvent?: (event: SessionEvent) => void | Promise<void>;
 }
 
 export interface RunInteractiveOptions extends InteractiveSessionOptions {
@@ -112,14 +113,7 @@ export async function runInteractive(opts: RunInteractiveOptions): Promise<void>
 
   try {
     await runInteractiveController({
-      chat: opts.chat,
-      config: opts.config,
-      store: opts.store,
-      workspaceRoot: opts.workspaceRoot,
-      startDir: opts.startDir,
-      mode: opts.mode,
-      model: opts.model,
-      threadId: opts.threadId,
+      ...opts,
       input: {
         readLine: () => readLine(lines, rl),
       },
@@ -157,14 +151,7 @@ async function runInteractiveTui(
     }
     promptInput.start();
     await runInteractiveController({
-      chat: opts.chat,
-      config: opts.config,
-      store: opts.store,
-      workspaceRoot: opts.workspaceRoot,
-      startDir: opts.startDir,
-      mode: opts.mode,
-      model: opts.model,
-      threadId: opts.threadId,
+      ...opts,
       input: promptInput,
       view,
       streamAssistant: true,
@@ -401,6 +388,7 @@ export async function runInteractiveController(
       extraMcpServers: opts.extraMcpServers,
       onEvent: async (event) => {
         await render(() => view.onSessionEvent(event));
+        await opts.onEvent?.(event);
       },
     });
     return result;

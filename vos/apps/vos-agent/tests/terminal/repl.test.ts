@@ -121,6 +121,7 @@ describe("runInteractive", () => {
   test("controller runs with fake input/view without readline", async () => {
     const view = new RecordingInteractiveView();
     const chat = new CallbackChatClient(() => textResponse("controller answer"));
+    const forwardedEvents: SessionEvent[] = [];
 
     await runInteractiveController({
       chat,
@@ -129,6 +130,9 @@ describe("runInteractive", () => {
       workspaceRoot: tmp,
       input: new FakeInteractiveInput(["hello", "/new", "/quit"]),
       view,
+      onEvent: (event) => {
+        forwardedEvents.push(event);
+      },
     });
 
     expect(view.errors).toEqual([]);
@@ -156,6 +160,7 @@ describe("runInteractive", () => {
       type: "done",
       content: "controller answer",
     });
+    expect(forwardedEvents).toEqual(view.sessionEvents);
     expect(chat.requests).toHaveLength(1);
   });
 

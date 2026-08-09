@@ -68,7 +68,6 @@ describe("vos-spec semantic bundle", () => {
       "build: { program: bun, args: [--version], cwd: ., env: [], timeout: 1000, artifacts: [build/kernel.elf] }",
       "runners: { qemu: { program: bun, args: [--version], cwd: ., env: [], timeout: 1000, artifacts: [] } }",
       "checks: { public-memory: { program: bun, args: [--version], cwd: ., env: [], timeout: 1000, verifies: [kernel/memory] } }",
-      "knowledge: { sources: [] }",
       "",
     ].join("\n"));
     const bundle = await buildNormalizedSpecBundle({ projectRoot: root });
@@ -99,7 +98,7 @@ describe("vos-spec semantic bundle", () => {
     expect(bundle.normalized_modules).toEqual([]);
   });
 
-  test("rejects legacy manifest and KB path traversal", () => {
+  test("rejects legacy manifest, declarative KB sources, and unsafe target paths", () => {
     expect(() => parseProjectManifest({
       version: "legacy",
       build: { program: "bun", args: [] },
@@ -112,20 +111,18 @@ describe("vos-spec semantic bundle", () => {
       runners: {},
       checks: {},
       knowledge: { sources: [{ id: "bad", path: "../outside", sha256: "0".repeat(64) }] },
-    })).toThrow(/repository-relative|traverse/);
+    })).toThrow(/unrecognized|knowledge/i);
     expect(() => parseProjectManifest({
       version: "vos.project.v1",
       build: { program: "bun", args: [] },
       runners: { qemu: { program: "qemu-system-riscv64", args: [] } },
       checks: {},
-      knowledge: { sources: [{ id: "remote", url: "https://example.invalid/os.git", sha256: "0".repeat(64) }] },
-    })).toThrow(/-nographic|pinned revision/);
+    })).toThrow(/-nographic|knowledge/i);
     expect(() => parseProjectManifest({
       version: "vos.project.v1",
       build: { program: "bun", args: [], cwd: "../outside" },
       runners: {},
       checks: {},
-      knowledge: { sources: [] },
     })).toThrow(/cwd/);
   });
 

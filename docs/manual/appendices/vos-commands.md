@@ -52,26 +52,42 @@ vos agent config \
   --auth-env OPENAI_API_KEY
 ```
 
-可用 provider 为 `anthropic`、`openai`、`openai-compatible`、`deepseek` 和 `ollama`。OpenAI-compatible 还需要 `--base-url`。KB 有锁定来源时，使用 `--with-embedding`，并按需传入 `--embedding-provider`、`--embedding-model`、`--embedding-base-url` 和 `--embedding-auth-env`；embedding provider 只支持 `openai` 与 `openai-compatible`。
+可用 provider 为 `anthropic`、`openai`、`openai-compatible`、`deepseek` 和 `ollama`。OpenAI-compatible 还需要 `--base-url`。需要使用 `vos kb add/search` 时，使用 `--with-embedding`，并按需传入 `--embedding-provider`、`--embedding-model`、`--embedding-base-url` 和 `--embedding-auth-env`；embedding provider 只支持 `openai` 与 `openai-compatible`。
 
 `--show` 只显示非秘密字段与凭据是否存在；`--check` 严格验证配置和 `.env` 引用；`--reset` 只移除 `[agent]` 与 `[kb.embedding]`，不会删除 `.env`。格式错误和未知字段会直接失败，不会被静默忽略。
 
-### `vos agent design [--confirm]`
+## 知识库
 
-生成 DesignSpec 的结构化差异。默认不写项目；`--confirm` 才原子应用并单独提交。
+知识库来源不写入 `vos.yaml`，统一使用命令管理：
 
 ```sh
-vos agent design
+vos kb add docs/reference --recursive
+vos kb list
+vos kb search "Sv39 page table"
+vos kb remove <source-id>
+vos kb export-manifest
+```
+
+`clear` 删除当前项目的全部索引；`import-manifest <path>` 导入并校验内容寻址对象。索引与 manifest 保存在 gitignored 的 `.vos/kb/`。
+
+## Agent 角色
+
+### `vos agent design [--interactive|--confirm]`
+
+`--interactive` 先进行设计访谈，再生成 DesignSpec 的结构化差异。默认不写项目；`--confirm` 应用保存的同一份提案并单独提交，不会再次调用模型。
+
+```sh
+vos agent design --interactive
 vos agent design --confirm
 ```
 
-### `vos agent spec <module> [--confirm]`
+### `vos agent spec <module> [--interactive|--confirm]`
 
-生成指定 ModuleSpec 的结构化差异。确认后原子应用并单独提交。
+生成指定 ModuleSpec 的结构化差异。需要讨论模块边界时加 `--interactive`；确认后原子应用已保存的同一份提案并单独提交。
 
 ```sh
-vos agent spec memory
-vos agent spec memory --confirm
+vos agent spec kernel/memory
+vos agent spec kernel/memory --confirm
 ```
 
 ### `vos agent implement <module>`
@@ -79,7 +95,7 @@ vos agent spec memory --confirm
 要求 clean HEAD 和已提交 ModuleSpec。在 detached linked worktree 中实现、构建和验证；只有全部门禁通过、HEAD 未漂移且改动未越过允许的 `owns` 时才写回并提交。
 
 ```sh
-vos agent implement memory
+vos agent implement kernel/memory
 ```
 
 linked worktree 只是 Git 变更回滚机制，不是进程、网络、凭据或宿主文件安全边界。
@@ -90,7 +106,7 @@ linked worktree 只是 Git 变更回滚机制，不是进程、网络、凭据�
 vos agent debug
 vos agent verify
 vos agent ask "Sv39 的三级页表如何索引？"
-vos agent review memory
+vos agent review kernel/memory
 ```
 
 - `debug`：报告根因、证据和修复方向；

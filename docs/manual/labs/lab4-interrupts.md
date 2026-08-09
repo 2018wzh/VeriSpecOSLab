@@ -83,10 +83,10 @@ device pending → source enabled → target enabled → claim/ack
 trap/interrupt ModuleSpec 通常为 L3。trap frame、IRQ 注册接口或用户/内核可见的异常 ABI 使用 InterfaceSpec；设备内部寄存器操作仍留在模块中。
 
 ```sh
-vos agent spec interrupt
+vos agent spec kernel/trap
 vos spec check
-vos agent implement interrupt
-vos agent review interrupt
+vos agent implement kernel/trap
+vos agent review kernel/trap
 ```
 
 Spec 至少声明 trap 入口、timer tick、external dispatch、UART RX/TX 和 IPI 操作；写清中断状态、栈、锁顺序、可重入性、未知 IRQ 与缓冲区溢出错误。`owns` 只覆盖中断/驱动实现和相应测试。

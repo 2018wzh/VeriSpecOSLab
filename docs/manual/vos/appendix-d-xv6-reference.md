@@ -4,7 +4,7 @@
 
 子模块 `main` 从新的 orphan root 按 Lab 1–10 重建，共 28 个非空语义提交。`course/lab1-complete` 至 `course/lab8-complete` 是已通过累计验收的边界；`course/lab9-candidate` 与 `course/lab10-candidate` 只表示自动化候选验证通过。它们尚未取得 VisionFive 2 实板四核完整 `usertests` 和人工复核，不得写成硬件验收完成。重建前源码可由 `archive/pre-course-history-v3-20260809` 恢复，但不属于课程入口。
 
-新项目不要复制旧的架构碎片。先运行 `vos init`，再用 `vos agent design` 将你选择的语言、ISA、QEMU 和板卡写进 `spec/design.yaml`，随后按纵向模块建立 `spec/modules/*.yaml`。如果参考 xv6 的某个接口跨越用户/内核边界，则把它重新表达为 `spec/interfaces/*.yaml`；架构或跨模块语义变化写入 `spec/patches/*.yaml`。
+新项目不要复制旧的架构碎片。先运行 `vos init`，再用 `vos agent design --interactive` 讨论语言、ISA、QEMU 和板卡，审查提案后运行 `vos agent design --confirm` 写入 `spec/design.yaml`，随后按纵向模块建立 `spec/modules/*.yaml`。如果参考 xv6 的某个接口跨越用户/内核边界，则把它重新表达为 `spec/interfaces/*.yaml`；架构或跨模块语义变化写入 `spec/patches/*.yaml`。
 
 从仓库根目录可以按样例主链运行：
 

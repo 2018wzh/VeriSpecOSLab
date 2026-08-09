@@ -176,7 +176,7 @@ Lab 2 把前面的启动分析收敛到一个 L3 ModuleSpec、工具链 ModuleSp
 ### 步骤 1：生成启动模块草案
 
 ```sh
-vos agent spec boot
+vos agent spec kernel/boot
 ```
 
 不带 `--confirm` 时只显示结构化差异。启动模块通常需要 L3，因为它包含多核协作、内存序和中断状态。检查草案是否包含：
@@ -191,7 +191,7 @@ vos agent spec boot
 确认后运行：
 
 ```sh
-vos agent spec boot --confirm
+vos agent spec kernel/boot --confirm
 vos spec check
 ```
 
@@ -304,8 +304,6 @@ checks:
     timeout: 30000
     verifies:
       - kernel/boot
-knowledge:
-  sources: []
 ```
 
 示例中的程序名、镜像参数和产物路径必须按所选平台调整。所有 `cwd` 与 artifact 都是仓库相对路径；`env` 只是允许继承的变量名。QEMU 建议使用非图形串口，避免图形界面让日志采集失去确定性。
@@ -325,7 +323,7 @@ vos build
 
 ```sh
 git status --short
-vos agent implement boot
+vos agent implement kernel/boot
 ```
 
 `implement` 要求 clean HEAD 和已提交 Spec。Agent 在 detached linked worktree 中修改、构建和运行公开门禁。成功后，若原工作树 HEAD 未漂移且所有改动都落在允许的 `owns` 中，VOS 才会创建 `[vos][agent] Implement boot` 提交。
@@ -415,7 +413,7 @@ Agent 可以解释启动链、生成入口汇编草案和审查 Spec 字段。�
 
 当前 ModuleSpec 使用严格 schema。不要加入旧版阶段关联字段，也不要创建独立的操作或并发规格文件；把这些语义写入现有 ModuleSpec。
 
-### `vos agent implement boot` 拒绝启动
+### `vos agent implement kernel/boot` 拒绝启动
 
 先检查工作树是否干净，ModuleSpec 是否已提交，以及 `owns` 是否覆盖目标实现。不要使用跳过门禁的参数。
 

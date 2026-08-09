@@ -40,6 +40,7 @@ describe("student v2 workflow", () => {
       interactive: false,
     });
     expect(() => parseArgs(["bun", "vos", "agent", "kb", "What is Sv39?"])).toThrow("unknown agent subcommand: kb");
+    expect(parseArgs(["bun", "vos", "kb", "list"]).command).toEqual({ kind: "kb_list" });
     expect(parseArgs(["bun", "vos", "verify"]).command).toEqual({ kind: "verify", scope: "public", target: undefined, dryRun: false, staffPolicy: undefined });
   });
 
@@ -55,9 +56,11 @@ describe("student v2 workflow", () => {
       const configured = await invoke(root, "agent", "config", "--provider", "openai", "--model", "gpt-5", "--auth-env", "OPENAI_API_KEY");
       expect(configured.status).toBe("passed");
       expect((await invoke(root, "doctor")).status).toBe("passed");
+      expect((await invoke(root, "kb", "list")).status).toBe("passed");
     });
     expect(existsSync(join(root, "vos.yaml"))).toBe(true);
     expect(existsSync(join(root, "spec", "design.yaml"))).toBe(true);
+    expect(readFileSync(join(root, "vos.yaml"), "utf8")).not.toContain("knowledge:");
     expect(existsSync(join(root, "spec", "modules", "toolchain.yaml"))).toBe(true);
     expect(existsSync(join(root, ".vos", "project.yaml"))).toBe(false);
     expect(existsSync(join(root, ".vos", "policy.yaml"))).toBe(false);
@@ -139,7 +142,6 @@ describe("student v2 workflow", () => {
         "runners: {}",
         "checks:",
         "  public-toolchain: { program: bun, args: [--version], cwd: ., env: [], timeout: 30000, verifies: [toolchain] }",
-        "knowledge: { sources: [] }",
         "",
       ].join("\n"));
       writeFileSync(join(root, ".gitignore"), ".vos/\n.env\nbuild-output.txt\n");
@@ -168,7 +170,20 @@ describe("student v2 workflow", () => {
         "hardware_port: { board: virt-board, boot: serial, console: uart, interrupt: plic }",
         "",
       ].join("\n");
-      const result = await invokeWithAgent(root, ["agent", "design", "--confirm"], "student_design_proposal.v1", { files: [{ path: "spec/design.yaml", content: design }] });
+      const submitted = { files: [{ path: "spec/design.yaml", content: design }] };
+      const proposal = await executeCliInvocation([
+        "bun", "vos", "--project-root", root, "--json", "agent", "design", "--interactive",
+      ], {
+        print: false,
+        interactiveAgentRunner: async (options) => {
+          expect(options.initialTask).toContain("Interview the student");
+          for (const event of acceptedSubmitEvents("student_design_proposal.v1", submitted)) {
+            await options.onEvent?.(event as never);
+          }
+        },
+      });
+      expect(proposal.status).toBe("planned");
+      const result = await invoke(root, "agent", "design", "--confirm");
       expect(result.status).toBe("passed");
       expect(readFileSync(join(root, "spec", "design.yaml"), "utf8")).toContain("language: rust");
       expect(readFileSync(join(root, ".git", "HEAD"), "utf8")).toBeTruthy();
@@ -198,7 +213,6 @@ describe("student v2 workflow", () => {
         "checks:",
         "  public-memory: { program: bun, args: [--version], cwd: ., env: [], timeout: 30000, verifies: [memory] }",
         "  contract-memory: { program: bun, args: [--version], cwd: ., env: [], timeout: 30000, verifies: [memory] }",
-        "knowledge: { sources: [] }",
         "",
       ].join("\n"));
       git(root, ["add", "vos.yaml", "spec/modules/memory.yaml"]);
@@ -341,7 +355,6 @@ async function prepareModuleProject(root: string): Promise<void> {
     "checks:",
     "  public-memory: { program: bun, args: [--version], cwd: ., env: [], timeout: 30000, verifies: [memory] }",
     "  contract-memory: { program: bun, args: [--version], cwd: ., env: [], timeout: 30000, verifies: [memory] }",
-    "knowledge: { sources: [] }",
     "",
   ].join("\n"));
   git(root, ["add", "vos.yaml", "spec/modules/memory.yaml"]);

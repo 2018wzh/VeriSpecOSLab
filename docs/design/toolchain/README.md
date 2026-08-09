@@ -24,15 +24,17 @@ worktree 是 Git 变更回滚机制，不是安全沙箱。Agent 执行宿主命
 
 ## 证据和日志
 
-每次运行把 manifest、事件、stdout/stderr 和产物写入 gitignored 的 `.vos/runs/<run-id>/`，事件同时追加到 `.vos/audit/chain.jsonl` 连续哈希账本。KB 来源按 `vos.yaml` 锁定到 `.vos/kb-sources`。`vos report` 从 commit、Spec ID、测试、日志和 evidence 确定性生成 `.vos/report.json`，不调用模型、不创建 Git 提交。`vos submit` 重新生成报告、校验 clean HEAD 和审计链，再创建绑定 commit/spec/config hash 的归档；导出日志时遮蔽凭据并把本机绝对路径替换成稳定别名。
+每次运行把 manifest、事件、stdout/stderr 和产物写入 gitignored 的 `.vos/runs/<run-id>/`，事件同时追加到 `.vos/audit/chain.jsonl` 连续哈希账本。KB 来源通过 `vos kb` 命令加入，并以内容寻址对象保存在 `.vos/kb/`。`vos report` 从 commit、Spec ID、测试、日志和 evidence 确定性生成 `.vos/report.json`，不调用模型、不创建 Git 提交。`vos submit` 重新生成报告、校验 clean HEAD 和审计链，再创建绑定 commit/spec/config hash 的归档；导出日志时遮蔽凭据并把本机绝对路径替换成稳定别名。
 
 ## 命令
 
 ```text
 vos init / doctor / spec check
-vos agent design / spec <module> / implement <module>
-vos agent debug / verify / kb / review
+vos agent design --interactive / design --confirm
+vos agent spec <module> [--interactive|--confirm] / implement <module>
+vos agent debug / verify / ask / review
+vos kb add / list / search / remove / clear / export-manifest / import-manifest
 vos build / run qemu / run hardware / verify / report / submit
 ```
 
-命令实现只接受结构化 argv。CLI 保留 `--project-root`、`--json`、`--verbose` 和 `--progress`，旧 pipeline、stage、toolchain、arch、trace、ledger、旧 Agent 生成入口和直接 KB 管理不属于学生主链。
+命令实现只接受结构化 argv。CLI 保留 `--project-root`、`--json`、`--verbose` 和 `--progress`，旧 pipeline、stage、toolchain、arch、trace、ledger 和旧 Agent 生成入口不属于学生主链。知识库通过公开的 `vos kb` 命令管理，不写入 `vos.yaml`。

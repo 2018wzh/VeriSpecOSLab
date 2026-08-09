@@ -16,4 +16,4 @@
 
 ## `vos.yaml`
 
-`version: vos.project.v1`、`build`、`runners.qemu`、`runners.hardware`、`checks.<id>`、`knowledge.sources[]`。命令 target 使用 `program`、`args`、`cwd`、`env`、`timeout`；build/runner 可声明 `artifacts`，check 必须声明 `verifies` 稳定 Spec ID。KB source 使用相对 `path` 或 Git `url`、可选 `revision` 和 64 位 SHA-256。
+`version: vos.project.v1`、`build`、`runners.qemu`、`runners.hardware`、`checks.<id>`。命令 target 使用 `program`、`args`、`cwd`、`env`、`timeout`；build/runner 可声明 `artifacts`，check 必须声明 `verifies` 稳定 Spec ID。KB 来源不写进 `vos.yaml`，统一使用 `vos kb` 命令管理。

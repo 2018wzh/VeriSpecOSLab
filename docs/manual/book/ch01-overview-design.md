@@ -899,7 +899,7 @@ flag 只是一种确定性验收目标。源码不能硬编码期望值，公开
 
 **在 Lab 1，你只填写身份信息**：项目名、目标平台、编程语言、一句话摘要。goals、non_goals、reference_systems 等深层次字段在后续 Lab 中逐步填充，你一定在真正面对那些设计问题的时候才写，而不是在还没理解分页机制的时候"猜"。
 
-> 📋 **具体操作**：打开 [Lab 1 实验卡片](../labs/lab1-seed.md)，先运行 `vos agent design` 审查结构化差异，确认后运行 `vos agent design --confirm`，最后执行 `vos spec check` 并检查工作树状态。
+> 📋 **具体操作**：打开 [Lab 1 实验卡片](../labs/lab1-seed.md)，先运行 `vos agent design --interactive` 完成设计访谈并审查结构化差异，确认后运行 `vos agent design --confirm` 应用已保存的同一份提案，最后执行 `vos spec check` 并检查工作树状态。
 
 写完 DesignSpec 身份信息后，可以自问：
 

@@ -37,10 +37,10 @@
 ## 3. 当前契约映射
 
 ```sh
-vos agent spec resource
+vos agent spec kernel/pipe
 vos spec check
-vos agent implement resource
-vos agent review resource
+vos agent implement kernel/pipe
+vos agent review kernel/pipe
 vos verify
 ```
 

@@ -8,7 +8,7 @@
 
 ## 2. 设计与规格
 
-`vos agent design` 先展示 `spec/design.yaml` 的结构化差异；确认后才原子写入并单独提交。`vos agent spec <module>` 采用同样流程，操作、性质、错误和并发契约集中写在目标 ModuleSpec。L1/L2/L3 是学生声明的精度等级，等级不足只告警。
+`vos agent design --interactive` 先通过访谈明确设计取舍，再展示 `spec/design.yaml` 的结构化差异；`vos agent design --confirm` 只应用这份已保存的提案，不会再次调用模型。`vos agent spec <module> --interactive` 可采用同样流程，操作、性质、错误和并发契约集中写在目标 ModuleSpec。L1/L2/L3 是学生声明的精度等级，等级不足只告警。
 
 跨边界 syscall、IPC、驱动和 ABI 写入 `spec/interfaces/`。改变架构或跨模块语义时，先提交 `spec/patches/<patch>.yaml`；VOS 从 changes 推导影响模块和回归范围。
 

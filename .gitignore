@@ -6,5 +6,6 @@
 .vscode
 .reasonix
 .env
+.vos/
 dist
 vendor

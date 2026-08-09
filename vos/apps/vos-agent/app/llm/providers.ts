@@ -17,6 +17,7 @@ export interface RuntimeProviderConfig {
   kind: "openai" | "openai-compatible" | "anthropic" | "deepseek" | "ollama";
   base_url: string;
   secret?: string;
+  auth_kind?: "api-key" | "bearer";
   max_output_tokens: number;
 }
 
@@ -44,7 +45,7 @@ export function createChatClientFromRuntimeProvider(
       });
     case "anthropic":
       return createAnthropicChatClient({
-        apiKey: config.secret,
+        ...(config.auth_kind === "bearer" ? { authToken: config.secret } : { apiKey: config.secret }),
         baseURL: config.base_url,
         maxTokens: config.max_output_tokens,
         maxRetries: 0,

@@ -3,7 +3,7 @@
 学生主链只有一套 CLI：
 
 ```text
-vos init → vos agent config → vos doctor → vos agent design → vos agent spec <module>
+vos init → vos agent config → vos doctor → vos agent design --interactive → vos agent design --confirm → vos agent spec <module>
         → vos agent implement <module> → vos build → vos run qemu
         → vos verify → vos report → vos submit
 ```

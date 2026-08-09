@@ -14,6 +14,6 @@ spec/patches/<patch>.yaml
 
 ## 写作顺序
 
-先用 `vos agent design` 写清系统目标、语言、ISA、内核组织、QEMU 和 canonical board，再为每个可交付模块运行 `vos agent spec <module>`。模块从 L1 开始也可以；准备好状态、前后置条件和不变量后升到 L2，需要并发契约和算法意图时升到 L3。跨模块语义变化由手写 SpecPatch 声明，VOS 自动计算影响范围。
+先用 `vos agent design --interactive` 写清系统目标、语言、ISA、内核组织、QEMU 和 canonical board，审查提案后用 `--confirm` 应用；再为每个可交付模块运行 `vos agent spec <module>`，需要访谈时加 `--interactive`。模块从 L1 开始也可以；准备好状态、前后置条件和不变量后升到 L2，需要并发契约和算法意图时升到 L3。跨模块语义变化由手写 SpecPatch 声明，VOS 自动计算影响范围。
 
 每个接口、性质和测试目标都应能追溯到稳定 Spec ID。工具链作为 `toolchain` ModuleSpec，`vos.yaml` 中的 public/contract target 用 `verifies` 绑定这些 ID。

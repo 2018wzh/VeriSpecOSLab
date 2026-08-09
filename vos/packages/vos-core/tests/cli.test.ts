@@ -289,6 +289,7 @@ describe("vos-cli agent command parsing", () => {
     expect(output).toContain("run hardware");
     expect(output).toContain("verify");
     expect(output).toContain("submit");
+    expect(output).toContain("kb add|list|search|remove|clear|export-manifest|import-manifest");
     expect(output).not.toContain("verify public|patch|full|invariant|generated|fuzz");
     expect(output).not.toContain("agent serve");
   });
