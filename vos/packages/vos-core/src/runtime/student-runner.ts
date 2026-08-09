@@ -49,6 +49,28 @@ interface TargetCommand {
   workload?: string;
 }
 
+export interface StructuredStudentCommand {
+  program: string;
+  args: string[];
+  cwd?: string;
+  env: string[];
+  timeout?: number;
+}
+
+export async function runStructuredStudentCommand(
+  projectRoot: string,
+  raw: StructuredStudentCommand,
+  signal?: AbortSignal,
+): Promise<Omit<BuildEvidence, "target" | "artifacts" | "submittable">> {
+  const cwd = raw.cwd ?? ".";
+  const resolved = path.resolve(projectRoot, cwd);
+  const relative = path.relative(projectRoot, resolved);
+  if (path.isAbsolute(relative) || relative === ".." || relative.startsWith(`..${path.sep}`)) {
+    throw new Error(`structured command cwd escapes project root: ${cwd}`);
+  }
+  return runStructuredCommand({ ...raw, cwd: resolved, artifacts: [] }, projectRoot, signal);
+}
+
 export async function readStudentManifest(projectRoot: string): Promise<{ path: string; manifest: ProjectManifest }> {
   const manifestPath = path.join(projectRoot, "vos.yaml");
   if (!existsSync(manifestPath)) throw new Error("vos.yaml is missing; run `vos init` first");

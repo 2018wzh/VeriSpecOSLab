@@ -7,12 +7,9 @@ export {
   executeAgentApplyPatch,
   executeAgentValidateGenerated,
   executeAgentDebug,
-  executeAgentDesign,
-  executeAgentSpec,
   executeAgentImplement,
   executeAgentVerify,
   executeAgentReview,
   executeAgentLog,
-  executeAgentReviewSpec,
   executeAgentAsk,
 } from "../main.ts";

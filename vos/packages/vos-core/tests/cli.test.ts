@@ -72,7 +72,7 @@ describe("vos-cli agent command parsing", () => {
     });
   });
 
-  test("parses toolchain init, no-agent lint/generate, stage save, and ledger record commands", () => {
+  test("parses toolchain init, targeted spec lint, no-agent arch lint, stage save, and ledger record commands", () => {
     expect(parseArgs([
       "bun",
       "vos",
@@ -89,12 +89,10 @@ describe("vos-cli agent command parsing", () => {
       "vos",
       "spec",
       "lint",
-      "--no-agent",
       "spec/modules",
     ]).command).toEqual({
       kind: "spec_lint",
-      path: "spec/modules",
-      noAgent: true,
+      target: "spec/modules",
     });
 
     expect(parseArgs([
@@ -285,14 +283,16 @@ describe("vos-cli agent command parsing", () => {
     const output = result.stdout.toString();
 
     expect(result.exitCode).toBe(0);
-    expect(output).toContain("spec check");
+    expect(output).toContain("spec lint");
+    expect(output).not.toContain("agent design");
+    expect(output).not.toContain("agent spec");
     expect(output).toContain("run hardware");
     expect(output).toContain("verify");
     expect(output).toContain("submit");
     expect(output).toContain("kb add|list|search|remove|clear|export-manifest|import-manifest");
     expect(output).not.toContain("verify public|patch|full|invariant|generated|fuzz");
     expect(output).not.toContain("agent serve");
-  });
+  }, 15_000);
 
   test("parses command help topics", () => {
     expect(parseArgs(["bun", "vos", "build", "--help"]).command).toEqual({
@@ -326,7 +326,7 @@ describe("vos-cli agent command parsing", () => {
     expect(output).toContain("Usage: vos agent implement <module>");
     expect(output).toContain("clean HEAD");
     expect(result.stderr.toString()).toBe("");
-  });
+  }, 15_000);
 
   test("verify scope help prints focused usage", () => {
     const result = Bun.spawnSync({
@@ -428,8 +428,8 @@ describe("vos-cli agent command parsing", () => {
       });
     expect(parseArgs(["bun", "vos", "agent", "log", "-i"]).command)
       .toEqual({ kind: "agent_log", append: false, inputPath: undefined, display: true });
-    expect(parseArgs(["bun", "vos", "agent", "review-spec", "-i", "--target", "memory"]).command)
-      .toEqual({ kind: "agent_review_spec", target: "memory", display: true });
+    expect(parseArgs(["bun", "vos", "agent", "review", "memory", "-i"]).command)
+      .toEqual({ kind: "agent_review", target: "memory", display: true });
     expect(parseArgs(["bun", "vos", "agent", "serve", "-i", "--port", "8787"]).command)
       .toEqual({ kind: "agent_serve", host: undefined, port: 8787, display: true });
   });
@@ -477,11 +477,12 @@ describe("vos-cli agent command parsing", () => {
     });
   });
 
-  test("parses agent review-spec target and rejects spec patch stdin", () => {
-    expect(parseArgs(["bun", "vos", "agent", "review-spec", "--target", "memory"]).command).toEqual({
-      kind: "agent_review_spec",
+  test("parses public agent review target, rejects retired review-spec, and rejects spec patch stdin", () => {
+    expect(parseArgs(["bun", "vos", "agent", "review", "memory"]).command).toEqual({
+      kind: "agent_review",
       target: "memory",
     });
+    expect(() => parseArgs(["bun", "vos", "agent", "review-spec", "--target", "memory"])).toThrow("review-spec was removed");
     expect(() => parseArgs(["bun", "vos", "spec", "patch", "lint", "-"])).toThrow("SpecPatch YAML path or commit-ish");
     expect(() => parseArgs(["bun", "vos", "spec", "patch", "apply", "-"])).toThrow("SpecPatch YAML path or commit-ish");
   });

@@ -9,13 +9,10 @@ import type {
   AgentGenerateCommand,
   AgentLogCommand,
   AgentPlanCommand,
-  AgentReviewSpecCommand,
   AgentServeCommand,
   AgentValidateGeneratedCommand,
   AgentAskCommand,
   AgentConfigCommand,
-  AgentDesignCommand,
-  AgentSpecCommand,
   AgentImplementCommand,
   AgentVerifyCommand,
   AgentProviderName,
@@ -52,7 +49,6 @@ import type {
   StageSaveCommand,
   StageShowCommand,
   SpecCheckConsistencyCommand,
-  SpecCheckCommand,
   SpecLintCommand,
   SpecNormalizeCommand,
   SpecPatchApplyCommand,
@@ -86,6 +82,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import path from "node:path";
+import { stringify as stringifyYaml } from "yaml";
 import { isWindows } from "vos-platform";
 import { renderOutput } from "./output.ts";
 import { createCommandProgress } from "./progress/index.ts";
@@ -110,7 +107,7 @@ import {
   type DebugTraceInput,
 } from "./runtime/debug-trace.ts";
 import { resolveToolchainManifestPath } from "./runtime/toolchain-manifest.ts";
-import { HardwareRunner, HostRunner, ManifestRunner, QemuRunner, readStudentManifest } from "./runtime/student-runner.ts";
+import { HardwareRunner, HostRunner, ManifestRunner, QemuRunner, readStudentManifest, runStructuredStudentCommand } from "./runtime/student-runner.ts";
 import { runCommand } from "./runtime/executor.ts";
 import { buildContextBundle, loadAgentAllowedPaths } from "./agent/context.ts";
 import {
@@ -176,6 +173,7 @@ import {
   type PatchImpactReport,
   type SpecDiagnostic,
   type SpecPatchRecord,
+  parseProjectManifest,
 } from "vos-spec";
 import { moduleMatches } from "vos-spec";
 import {
@@ -343,14 +341,14 @@ export async function executeCliInvocation(
 function assertStudentCommandSurface(projectRoot: string, command: CliCommand): void {
   if (isLegacyProject(projectRoot)) return;
   const removed = new Set<CliCommand["kind"]>([
-    "stage_show", "stage_save", "toolchain_lint", "toolchain_init", "spec_lint", "spec_normalize",
+    "stage_show", "stage_save", "toolchain_lint", "toolchain_init", "spec_normalize",
     "spec_check_consistency", "spec_patch_lint", "spec_patch_apply", "arch_lint", "arch_compose",
     "arch_derive_tests", "test", "trace_syscall", "debug_explain_log", "build_generate", "agent_serve",
     "agent_context", "agent_plan", "agent_generate", "agent_apply_patch", "agent_validate_generated",
-    "agent_log", "agent_review_spec",
+    "agent_log",
   ]);
   const studentCommands = new Set<CliCommand["kind"]>([
-    "init", "doctor", "spec_check", "agent_config", "agent_design", "agent_spec", "agent_implement", "agent_debug",
+    "init", "doctor", "spec_lint", "agent_config", "agent_implement", "agent_debug",
     "agent_verify", "agent_ask", "agent_review", "build", "run_qemu", "run_hardware", "verify",
     "report_generate", "submit_pack", "kb_add", "kb_list", "kb_search", "kb_remove", "kb_clear",
     "kb_export_manifest", "kb_import_manifest",
@@ -359,7 +357,7 @@ function assertStudentCommandSurface(projectRoot: string, command: CliCommand): 
   if (removed.has(command.kind)) {
     throw new CliError(`command removed from the student v2 surface: ${commandToArray(command).join(" ")}; use the documented student workflow`, "validation_failed", {
       reason: "student_command_removed",
-      suggested_next_commands: ["vos agent config", "vos spec check", "vos agent design", "vos agent ask \"your question\""],
+      suggested_next_commands: ["vos agent config", "vos spec lint", "vos agent ask \"your question\"", "vos agent review"],
     });
   }
   if (!hasStudentManifest && !isLegacyProject(projectRoot) && studentCommands.has(command.kind) && command.kind !== "init" && command.kind !== "doctor") {
@@ -431,7 +429,6 @@ function startReadonlyDisplayForCommand(
 
 function usesReadonlyDisplay(command: CliCommand): boolean {
   if (!("display" in command) || command.display !== true) return false;
-  if (command.kind === "agent_design" || command.kind === "agent_spec") return false;
   if (command.kind === "agent_debug" && !command.logPath && !command.runId) return false;
   return true;
 }
@@ -978,7 +975,7 @@ export async function executeInit(
       ledger: true,
       git_initialized: gitInitialized,
       initial_commit_created: initialCommitCreated,
-      suggested_next_commands: ["vos agent config", "vos doctor", "vos agent design"],
+      suggested_next_commands: ["vos agent config", "vos doctor", "vos agent ask", "vos spec lint design"],
     },
   };
 }
@@ -1016,7 +1013,7 @@ async function ensureStudentProjectFiles(projectRoot: string): Promise<void> {
   await mkdir(path.join(projectRoot, "spec", "patches"), { recursive: true });
   const files: Record<string, string> = {
     "spec/design.yaml": [
-      "# VOS DesignSpec. Replace TODO values with `vos agent design`.",
+      "# VOS DesignSpec. Discuss choices with `vos agent ask`, then replace every TODO by hand.",
       "system:",
       "  name: student-os",
       "  language: TODO",
@@ -1191,13 +1188,15 @@ function gitInitMaybe(projectRoot: string, args: string[]): { ok: true; stdout: 
 
 export async function executeDoctor(
   _command: DoctorCommand,
-  projectRoot: string,
+  context: ExecContext,
+  evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
+  const projectRoot = context.projectRoot;
   if (!existsSync(path.join(projectRoot, "vos.yaml")) && !existsSync(path.join(projectRoot, "spec", "design.yaml")) && !isLegacyProject(projectRoot)) {
     return executeUninitializedStudentDoctor(projectRoot);
   }
   if (existsSync(path.join(projectRoot, "vos.yaml")) || existsSync(path.join(projectRoot, "spec", "design.yaml"))) {
-    return executeStudentDoctor(projectRoot);
+    return executeStudentDoctor(context, evidence);
   }
   const checks: DoctorCheck[] = [
     doctorCommandCheck("bun", "base", typeof Bun !== "undefined"),
@@ -1309,9 +1308,11 @@ function executeUninitializedStudentDoctor(projectRoot: string): CommandOutcome 
   };
 }
 
-async function executeStudentDoctor(projectRoot: string): Promise<CommandOutcome> {
+async function executeStudentDoctor(context: ExecContext, evidence: EvidenceWriter): Promise<CommandOutcome> {
+  const projectRoot = context.projectRoot;
   const checks: Array<Record<string, unknown>> = [];
   let requireEmbedding = false;
+  let manifestValue: unknown;
   for (const command of ["bun", "git"]) {
     checks.push({ name: command, category: "base", required: true, ok: commandExists(command), hint: commandExists(command) ? undefined : `install ${command} and rerun vos doctor` });
   }
@@ -1320,6 +1321,7 @@ async function executeStudentDoctor(projectRoot: string): Promise<CommandOutcome
   }
   try {
     const manifest = await readStudentManifest(projectRoot);
+    manifestValue = manifest.manifest;
     checks.push({ name: "manifest-schema", category: "project", required: true, ok: true, message: path.relative(projectRoot, manifest.path) });
     const kbSources = await listKbSources(projectRoot);
     requireEmbedding = kbSources.length > 0;
@@ -1334,21 +1336,163 @@ async function executeStudentDoctor(projectRoot: string): Promise<CommandOutcome
     checks.push({
       ...check,
       category: check.name === "kb-embedding" ? "knowledge" : "agent",
-      required: true,
+      required: false,
     });
   }
   const bundle = await buildNormalizedSpecBundle({ projectRoot });
-  checks.push({ name: "spec-contract", category: "spec", required: true, ok: !hasBlockingDiagnostics(bundle.diagnostics), message: `${bundle.diagnostics.length} diagnostic(s)`, hint: "run vos spec check for exact diagnostics" });
+  checks.push({ name: "spec-contract", category: "spec", required: true, ok: !hasBlockingDiagnostics(bundle.diagnostics), message: `${bundle.diagnostics.length} diagnostic(s)`, hint: "run vos spec lint for exact diagnostics" });
+
+  const before = await studentGitFingerprint(projectRoot);
+  let diagnosis: DoctorDiagnosis | undefined;
+  let diagnosisWarning: string | undefined;
+  try {
+    const agentProgress = createAgentProgressParams(context, "doctor debug agent");
+    const response = await runAgentWithPrompt({
+      projectRoot,
+      taskPrompt: agentProgress.taskPrompt([
+        "Act as the VOS Doctor Debug Agent. Read every Spec, vos.yaml, the project tree, and the deterministic diagnostics provided in context.",
+        "Infer the host command-line tools required by this concrete project and distinguish required from optional tools using explicit Spec references.",
+        "For every tool, use the Bash tool to run bounded version, target, compile, or runtime capability probes. Return each Bash tool-call id in probe_ids; a conclusion without matching Bash evidence is invalid.",
+        "Do not install or download anything, invoke a package manager, change system configuration, or modify project files. You may write temporary probe output only under .vos/doctor/.",
+        "Give platform-appropriate installation suggestions as advice only. Prompt policy, Git checks, and audit logs are not a host security boundary.",
+      ].join("\n")),
+      taskKind: "doctor",
+      requestedScope: "doctor:student-project",
+      context: {
+        specs: studentSpecContext(bundle),
+        manifest: manifestValue,
+        deterministic_checks: checks,
+        deterministic_diagnostics: bundle.diagnostics,
+        platform: { os: process.platform, arch: process.arch },
+        probe_directory: `.vos/doctor/${evidence.run_id}`,
+      },
+      courseMode: true,
+      toolPolicy: doctorToolPolicy(),
+      allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      resultSubmissionSchema: "doctor_diagnosis.v1",
+      extraMcpServers: agentProgress.extraMcpServers,
+      onEvent: agentProgress.onEvent,
+      taskRunner: context.agentRunner,
+    });
+    diagnosis = parseDoctorDiagnosis(agentStructuredOutput(response, "doctor"), response.rawEvents);
+  } catch (error) {
+    diagnosisWarning = `Debug Agent unavailable: ${errorMessage(error)}`;
+  }
+
+  const after = await studentGitFingerprint(projectRoot);
+  if (after.fingerprint !== before.fingerprint) {
+    checks.push({
+      name: "doctor-readonly",
+      category: "agent",
+      required: true,
+      ok: false,
+      message: "Debug Agent modified project files",
+      evidence: after.changed,
+    });
+  } else {
+    checks.push({ name: "doctor-readonly", category: "agent", required: true, ok: true });
+  }
+
+  if (diagnosis) {
+    for (const tool of diagnosis.tools) {
+      checks.push({
+        name: `agent-tool:${tool.program}`,
+        category: "agent-tool",
+        required: tool.required,
+        ok: tool.status === "installed",
+        message: tool.purpose,
+        spec_refs: tool.spec_refs,
+        probe_ids: tool.probe_ids,
+        suggestions: tool.suggestions,
+      });
+    }
+  } else {
+    checks.push({
+      name: "agent-tool-diagnosis",
+      category: "agent",
+      required: false,
+      ok: false,
+      message: diagnosisWarning ?? "Debug Agent diagnosis unavailable",
+      hint: "deterministic doctor results remain valid; configure the Agent provider and rerun vos doctor",
+    });
+  }
+
+  const doctorDirectory = path.join(projectRoot, ".vos", "doctor", evidence.run_id);
+  await mkdir(doctorDirectory, { recursive: true });
+  const diagnosisPath = path.join(doctorDirectory, "diagnosis.json");
+  await writeFile(diagnosisPath, `${JSON.stringify({ diagnosis: diagnosis ?? null, warning: diagnosisWarning ?? null, checks }, null, 2)}\n`);
+  evidence.addArtifactFromPath("doctor", diagnosisPath, "student doctor diagnosis");
+
   const missing = checks.filter((check) => check.required && check.ok !== true).map((check) => String(check.name));
-  const agentMissing = missing.some((name) => name === "agent" || name === "agent-config" || name === "kb-embedding");
   return {
     status: missing.length === 0 ? "passed" : "validation_failed",
     details: {
       checks,
       missing,
+      warnings: checks.filter((check) => !check.required && check.ok !== true).map((check) => String(check.name)),
+      diagnosis: diagnosis ?? { status: "unavailable", warning: diagnosisWarning },
+      evidence: studentRelativePath(projectRoot, diagnosisPath),
       suggested_next_commands: missing.length > 0
-        ? [...(agentMissing ? ["vos agent config", "vos agent config --check"] : []), "vos spec check", "vos agent design"]
+        ? ["vos spec lint", "vos agent review"]
         : ["vos build", "vos verify"],
+    },
+  };
+}
+
+interface DoctorDiagnosisTool {
+  program: string;
+  purpose: string;
+  required: boolean;
+  status: "installed" | "missing" | "failed";
+  spec_refs: string[];
+  probe_ids: string[];
+  suggestions: string[];
+}
+
+interface DoctorDiagnosis {
+  summary: string;
+  tools: DoctorDiagnosisTool[];
+  limitations: string[];
+}
+
+function parseDoctorDiagnosis(value: unknown, events: Array<Record<string, unknown>>): DoctorDiagnosis {
+  if (!isRecord(value) || typeof value.summary !== "string" || !Array.isArray(value.tools) || !Array.isArray(value.limitations) || !value.limitations.every((item) => typeof item === "string")) {
+    throw new AgentOutputError("doctor diagnosis does not match doctor_diagnosis.v1");
+  }
+  const bashResults = new Set(events.flatMap((event) => {
+    if (event.type !== "tool.result" || event.name !== "Bash" || typeof event.toolCallId !== "string") return [];
+    return [event.toolCallId];
+  }));
+  const tools = value.tools.map((raw, index): DoctorDiagnosisTool => {
+    if (!isRecord(raw) || typeof raw.program !== "string" || typeof raw.purpose !== "string" || typeof raw.required !== "boolean" ||
+      !["installed", "missing", "failed"].includes(String(raw.status)) || !Array.isArray(raw.spec_refs) || !raw.spec_refs.every((item) => typeof item === "string") ||
+      !Array.isArray(raw.probe_ids) || !raw.probe_ids.every((item) => typeof item === "string") || !Array.isArray(raw.suggestions) || !raw.suggestions.every((item) => typeof item === "string")) {
+      throw new AgentOutputError(`doctor diagnosis tool ${index} is invalid`);
+    }
+    if (raw.spec_refs.length === 0) throw new AgentOutputError(`doctor diagnosis tool ${raw.program} has no Spec basis`);
+    if (raw.probe_ids.length === 0 || raw.probe_ids.some((id) => !bashResults.has(id))) {
+      throw new AgentOutputError(`doctor diagnosis tool ${raw.program} is not bound to actual Bash evidence`);
+    }
+    return raw as unknown as DoctorDiagnosisTool;
+  });
+  return { summary: value.summary, tools, limitations: value.limitations as string[] };
+}
+
+function doctorToolPolicy() {
+  return {
+    canExecute(request: { name: string; argumentsJson: string }) {
+      if (request.name !== "Bash") return { allowed: true as const };
+      let command = request.argumentsJson;
+      try {
+        const parsed = JSON.parse(request.argumentsJson) as Record<string, unknown>;
+        if (typeof parsed.command === "string") command = parsed.command;
+      } catch {
+        return { allowed: false as const, reason: "doctor Bash arguments must be valid JSON" };
+      }
+      const mutating = /(?:^|[;&|]\s*)(?:sudo\s+)?(?:apt(?:-get)?|dnf|yum|pacman|zypper|apk|brew|winget|choco|scoop|pip\d*|npm|pnpm|yarn|bun)\s+(?:install|add|remove|uninstall|upgrade|update)\b|\b(?:curl|wget)\b|\bgit\s+clone\b/i;
+      return mutating.test(command)
+        ? { allowed: false as const, reason: "vos doctor may advise installation but may not install or download tools" }
+        : { allowed: true as const };
     },
   };
 }
@@ -1423,78 +1567,19 @@ export async function executeToolchainInit(
 export async function executeSpecLint(
   command: SpecLintCommand,
   projectRoot: string,
-  context: ExecContext,
-  evidence: EvidenceWriter,
-): Promise<CommandOutcome> {
-  const project = await loadProjectConfig(projectRoot);
-  const bundle = await buildNormalizedSpecBundle({
-    projectRoot,
-    specRoot: project.spec_root ?? "spec",
-    targetPath: command.path,
-  });
-  const bundlePath = await writeNormalizedBundle(projectRoot, bundle, evidence);
-  const agentReview = command.noAgent
-    ? deterministicOnlyAgentReview("spec lint")
-    : await runDefaultAgentSpecReview({
-      command: "spec lint",
-      target: command.path,
-      bundle,
-      context,
-      evidence,
-    });
-  return {
-    status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
-    details: {
-      diagnostics: bundle.diagnostics,
-      bundle_ref: path.relative(projectRoot, bundlePath),
-      agent_review: agentReview,
-      source_count: bundle.sources.length,
-      module_count: bundle.modules.length,
-      operation_count: bundle.operations.length,
-    },
-  };
-}
-
-export async function executeSpecCheck(
-  _command: SpecCheckCommand,
-  projectRoot: string,
   _context: ExecContext,
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
   const bundle = await buildNormalizedSpecBundle({ projectRoot });
-  const diagnostics = [...bundle.diagnostics];
-  if (!bundle.design) {
-    diagnostics.push({
-      severity: "error",
-      code: "design.missing",
-      message: "spec/design.yaml is required",
-      path: "spec/design.yaml",
-    });
-  }
-  if (bundle.normalized_modules.length === 0) {
-    diagnostics.push({
-      severity: "error",
-      code: "module.missing",
-      message: "at least one ModuleSpec is required under spec/modules/",
-      path: "spec/modules",
-    });
-  }
-  const toolchain = bundle.normalized_modules.find((module) => module.module === "toolchain" || module.id === "toolchain");
-  if (!toolchain) {
-    diagnostics.push({
-      severity: "error",
-      code: "toolchain.module_missing",
-      message: "toolchain must be represented as a ModuleSpec",
-      path: "spec/modules/toolchain.yaml",
-      ref: "toolchain",
-    });
-  }
-  const cachePath = await writeNormalizedBundle(projectRoot, { ...bundle, diagnostics }, evidence);
+  const target = resolveStudentSpecTarget(bundle, command.target);
+  const diagnostics = studentSpecDiagnostics(bundle, target);
+  const bundlePath = await writeNormalizedBundle(projectRoot, { ...bundle, diagnostics }, evidence);
   return {
     status: hasBlockingDiagnostics(diagnostics) ? "validation_failed" : "passed",
     details: {
+      target: target.label,
       diagnostics,
-      bundle_ref: studentRelativePath(projectRoot, cachePath),
+      bundle_ref: studentRelativePath(projectRoot, bundlePath),
       source_count: bundle.sources.length,
       design: bundle.design?.path,
       module_count: bundle.normalized_modules.length,
@@ -1502,8 +1587,77 @@ export async function executeSpecCheck(
       goal_count: bundle.goals.length,
       patch_count: bundle.patch_records.length,
       manifest: bundle.manifest?.path,
+      model_used: false,
     },
   };
+}
+
+interface ResolvedStudentSpecTarget {
+  label: string;
+  all: boolean;
+  paths: Set<string>;
+  refs: Set<string>;
+}
+
+function resolveStudentSpecTarget(bundle: NormalizedSpecBundle, rawTarget: string | undefined): ResolvedStudentSpecTarget {
+  const target = rawTarget?.trim();
+  if (!target || target === "all") return { label: "all", all: true, paths: new Set(), refs: new Set() };
+  const normalized = target.replace(/\\/g, "/").replace(/^\.\//, "");
+  const matches: Array<{ path: string; refs: string[] }> = [];
+  if (target === "design" && bundle.design) matches.push({ path: bundle.design.path, refs: ["design"] });
+  for (const module of bundle.normalized_modules) {
+    if ([module.id, module.module, module.path].includes(target) || module.path === normalized) {
+      matches.push({ path: module.path, refs: [module.id, module.module] });
+    }
+  }
+  for (const item of bundle.interfaces) {
+    if ([item.id, item.name, item.path].includes(target) || item.path === normalized) {
+      matches.push({ path: item.path, refs: [item.id, item.name] });
+    }
+  }
+  for (const item of bundle.goals) {
+    if ([item.goal_id, item.path].includes(target) || item.path === normalized) {
+      matches.push({ path: item.path, refs: [item.goal_id] });
+    }
+  }
+  for (const item of bundle.patch_records) {
+    if ([item.id, item.path].includes(target) || item.path === normalized) {
+      matches.push({ path: item.path ?? normalized, refs: [item.id] });
+    }
+  }
+  if (matches.length === 0) {
+    const source = bundle.sources.find((item) => item.path === normalized);
+    if (source) matches.push({ path: source.path, refs: [] });
+  }
+  if (matches.length === 0) {
+    throw new CliError(`unknown Spec target: ${target}`, "validation_failed", {
+      reason: "spec_target_unknown",
+      target,
+    });
+  }
+  return {
+    label: target,
+    all: false,
+    paths: new Set(matches.map((item) => item.path)),
+    refs: new Set(matches.flatMap((item) => item.refs)),
+  };
+}
+
+function studentSpecDiagnostics(bundle: NormalizedSpecBundle, target: ResolvedStudentSpecTarget) {
+  const diagnostics = [...bundle.diagnostics];
+  if (target.all) {
+    if (!bundle.design) diagnostics.push({ severity: "error" as const, code: "design.missing", message: "spec/design.yaml is required", path: "spec/design.yaml" });
+    if (bundle.normalized_modules.length === 0) diagnostics.push({ severity: "error" as const, code: "module.missing", message: "at least one ModuleSpec is required under spec/modules/", path: "spec/modules" });
+    if (!bundle.normalized_modules.some((module) => module.module === "toolchain" || module.id === "toolchain")) {
+      diagnostics.push({ severity: "error" as const, code: "toolchain.module_missing", message: "toolchain must be represented as a ModuleSpec", path: "spec/modules/toolchain.yaml", ref: "toolchain" });
+    }
+    return diagnostics;
+  }
+  return diagnostics.filter((diagnostic) =>
+    Boolean(diagnostic.path && target.paths.has(diagnostic.path.replace(/\\/g, "/"))) ||
+    Boolean(diagnostic.ref && target.refs.has(diagnostic.ref)) ||
+    [...target.refs].some((ref) => diagnostic.message.includes(ref))
+  );
 }
 
 export async function executeSpecNormalize(
@@ -2227,100 +2381,6 @@ function sanitizedProviderDetails(
   };
 }
 
-export async function executeAgentDesign(
-  command: AgentDesignCommand,
-  context: ExecContext,
-  evidence: EvidenceWriter,
-): Promise<CommandOutcome> {
-  const projectRoot = context.projectRoot;
-  const bundle = await buildNormalizedSpecBundle({ projectRoot });
-  if (command.confirm) {
-    return confirmPendingStudentProposal({
-      projectRoot,
-      evidence,
-      key: "design",
-      allowedPaths: ["spec/design.yaml"],
-      commitMessage: "[vos][design] Update DesignSpec",
-      description: "DesignSpec",
-    });
-  }
-  const proposal = await runStudentProposalAgent({
-    context,
-    evidence,
-    requestedScope: "design",
-    taskKind: "design",
-    taskPrompt: "Design the OS from the student's stated goals. Propose only spec/design.yaml and preserve the strict DesignSpec schema. Keep every required field present: system, machine, kernel, required_mechanisms, composition_invariants, and hardware_port. composition_invariants must contain 1 to 3 entries. Return conservative YAML: use block mappings, quote every scalar string, keep each list entry on one physical line, and do not emit wrapped continuation text or explanatory prose inside the YAML. Do not modify source code or any other file.",
-    contextValue: studentSpecContext(bundle),
-    allowedPaths: ["spec/design.yaml"],
-    resultSchema: "student_design_proposal.v1",
-    worktreeLabel: "design",
-    interactive: command.display === true,
-  });
-  await savePendingStudentProposal(projectRoot, "design", proposal, {
-    allowedPaths: ["spec/design.yaml"],
-    specHash: hashString(JSON.stringify(bundle.hashes)),
-  });
-  return finalizeStudentProposal({
-    projectRoot,
-    evidence,
-    proposal,
-    confirm: false,
-    allowedPaths: ["spec/design.yaml"],
-    commitMessage: "[vos][design] Update DesignSpec",
-    specHash: hashString(JSON.stringify(bundle.hashes)),
-    description: "DesignSpec",
-  });
-}
-
-export async function executeAgentSpec(
-  command: AgentSpecCommand,
-  context: ExecContext,
-  evidence: EvidenceWriter,
-): Promise<CommandOutcome> {
-  assertStudentModuleName(command.module);
-  const projectRoot = context.projectRoot;
-  const bundle = await buildNormalizedSpecBundle({ projectRoot });
-  const module = bundle.normalized_modules.find((candidate) => candidate.module === command.module || candidate.id === command.module);
-  const modulePath = module?.path ?? `spec/modules/${command.module.replace(/\\/g, "/")}.yaml`;
-  const pendingKey = `spec-${command.module.replace(/[^A-Za-z0-9._-]+/g, "-")}`;
-  if (command.confirm) {
-    return confirmPendingStudentProposal({
-      projectRoot,
-      evidence,
-      key: pendingKey,
-      allowedPaths: [modulePath],
-      commitMessage: `[vos][spec] Update ${command.module}`,
-      description: `ModuleSpec ${command.module}`,
-    });
-  }
-  const proposal = await runStudentProposalAgent({
-    context,
-    evidence,
-    requestedScope: `spec:${command.module}`,
-    taskKind: "spec",
-    taskPrompt: `Write a strict L${module?.level ?? 1} ModuleSpec for ${command.module}. Preserve the existing module identity, interface entries, and owns paths, and keep every required field in the complete YAML file: id, module, numeric level, purpose, interface, properties, errors, and owns. The schema has no top-level operations key. Preserve simple interface names as strings; if an interface entry is an object, it must include name plus pre, post, errors, and properties arrays. Keep state, pre/post conditions, invariants, dependencies, and concurrency obligations in this same file when they are present. If purpose contains TODO or properties/errors are empty, replace those placeholders with at least one concrete, short property or error so the proposal is not unchanged. Change only fields needed for the requested spec and use short scalar values; do not add explanatory prose containing ':' to YAML values. Return syntactically valid YAML: quote scalar strings containing ':', '#', brackets, or other YAML punctuation. Propose only ${modulePath}; do not modify implementation files.`,
-    contextValue: studentSpecContext(bundle, command.module),
-    allowedPaths: [modulePath],
-    resultSchema: "student_module_spec_proposal.v1",
-    worktreeLabel: `spec-${command.module}`,
-    interactive: command.display === true,
-  });
-  await savePendingStudentProposal(projectRoot, pendingKey, proposal, {
-    allowedPaths: [modulePath],
-    specHash: hashString(JSON.stringify(bundle.hashes)),
-  });
-  return finalizeStudentProposal({
-    projectRoot,
-    evidence,
-    proposal,
-    confirm: false,
-    allowedPaths: [modulePath],
-    commitMessage: `[vos][spec] Update ${command.module}`,
-    specHash: hashString(JSON.stringify(bundle.hashes)),
-    description: `ModuleSpec ${command.module}`,
-  });
-}
-
 export async function executeAgentImplement(
   command: AgentImplementCommand,
   context: ExecContext,
@@ -2341,31 +2401,39 @@ export async function executeAgentImplement(
   const baseHead = currentHead(projectRoot);
   if (!baseHead) throw new CliError("agent implement requires a committed Git HEAD", "policy_blocked", { reason: "head_missing" });
   const ownedPaths = await studentOwnedPaths(projectRoot, bundle, module);
+  const specHash = hashString(JSON.stringify(bundle.hashes));
   const worktree = await createStudentWorktree(projectRoot, evidence.run_id);
   let patch = "";
   let validation: Record<string, unknown> = {};
+  let implementation: StudentImplementationPayload | undefined;
+  let implementationEvents: Array<Record<string, unknown>> = [];
   try {
     const agentResult = await runAgentWithPrompt({
       projectRoot: worktree,
-      taskPrompt: `Implement ModuleSpec ${module.id}. Work only within these owned paths: ${ownedPaths.join(", ")}. Replace any TODO or placeholder implementation with the behavior required by the ModuleSpec and manifest checks; do not finish with no source changes when an owned implementation is a placeholder. Run the manifest build, public tests, and contract checks. Do not edit specs, .git, .vos/runs, or worktrees. Stop when evidence is complete or report the root cause.`,
+      taskPrompt: `Implement ModuleSpec ${module.id}. Work only within these owned paths: ${ownedPaths.join(", ")}. Generate the implementation plus concrete public, contract, fixed-seed bounded fuzz, bounded trace/oracle, and local hidden tests for this module. Test source paths must also be covered by owns. Do not edit vos.yaml: return structured test_targets and hidden_tests so VOS can validate and project them atomically. Every fuzz target needs seed, cases, timeout, and reproduction_artifact. Every trace target needs workload, oracle, timeout, artifacts, and verifies. Hidden test content is returned in the result and must not be written into Git. Run useful local checks, but VOS will independently run the build and every existing and proposed non-hidden target before applying anything. Do not edit specs, .git, .vos, or worktrees. Stop when evidence is complete or report the root cause.`,
       taskKind: "implementation",
       requestedScope: `implement:${module.id}`,
       context: studentSpecContext(bundle, module.id),
       allowedPaths: ownedPaths,
-      requiredValidations: ["build", "public tests", "contract checks"],
+      requiredValidations: ["build", "public tests", "contract tests", "fixed-seed fuzz tests", "bounded trace/oracle tests"],
       courseMode: false,
       resultSubmissionSchema: "student_implementation_result.v1",
       taskRunner: context.agentRunner,
       onEvent: createAgentProgressParams(context, "agent implement").onEvent,
     });
-    patch = await studentWorktreeDiff(worktree);
-    const changed = await studentChangedPaths(worktree);
-    const violations = changed.filter((target) => !isOwnedStudentPath(target, ownedPaths));
+    implementationEvents = agentResult.rawEvents;
+    implementation = parseStudentImplementationPayload(agentResult.parsedResult, module.id, bundle);
+    const agentChanged = await studentChangedPaths(worktree);
+    const violations = agentChanged.filter((target) => !isOwnedStudentPath(target, ownedPaths));
     if (violations.length > 0) {
-      validation = { status: "owns_violation", changed, violations };
-    } else if (!patch.trim()) {
-      validation = { status: "no_changes", agent_result: agentResult.parsedResult };
+      validation = { status: "owns_violation", changed: agentChanged, violations };
     } else {
+      await applyStudentTestTargetProposals(worktree, implementation.test_targets);
+      patch = await studentWorktreeDiff(worktree);
+      const changed = await studentChangedPaths(worktree);
+      if (!patch.trim() || agentChanged.length === 0) {
+        validation = { status: "no_changes", agent_result: agentResult.parsedResult };
+      } else {
       const proposedBundle = await buildNormalizedSpecBundle({ projectRoot: worktree });
       const specDiagnostics = proposedBundle.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
       if (specDiagnostics.length > 0) {
@@ -2376,13 +2444,16 @@ export async function executeAgentImplement(
         const manifest = await readStudentManifest(worktree);
         const checks = [] as unknown[];
         if (build.status === "passed") {
-          for (const [id, target] of Object.entries(manifest.manifest.checks)) {
-            if (target.verifies.some((ref) => ref === module.id || ref === module.module)) checks.push(await runner.check(id));
+          for (const id of Object.keys(manifest.manifest.checks)) {
+            checks.push(await runner.check(id));
           }
         }
         validation = { status: build.status === "passed" && checks.length > 0 && (checks as Array<{ status?: string }>).every((check) => check.status === "passed") ? "passed" : "validation_failed", build, checks, evidence: await runner.collectEvidence(), agent_result: agentResult.parsedResult };
       }
+      }
     }
+  } catch (error) {
+    validation = { status: "validation_failed", message: errorMessage(error) };
   } finally {
     await removeStudentWorktree(projectRoot, worktree);
   }
@@ -2396,14 +2467,198 @@ export async function executeAgentImplement(
   }
   await applyStudentPatch(projectRoot, patch);
   const changed = await studentChangedPaths(projectRoot);
-  if (changed.some((target) => !isOwnedStudentPath(target, ownedPaths))) {
+  if (changed.some((target) => target !== "vos.yaml" && !isOwnedStudentPath(target, ownedPaths))) {
     throw new CliError("agent implementation changed a path outside the ModuleSpec owns set", "policy_blocked", { reason: "owns_violation", changed_targets: changed });
   }
   await runStudentGit(projectRoot, ["add", "--", ...changed]);
-  const commitMessage = `[vos][agent] Implement ${module.module}\n\nRun-ID: ${evidence.run_id}\nSpec-Hash: ${hashString(JSON.stringify(bundle.hashes))}`;
+  const commitMessage = `[vos][agent] Implement ${module.module}\n\nRun-ID: ${evidence.run_id}\nSpec-Hash: ${specHash}`;
   const commit = await runStudentGit(projectRoot, ["commit", "-m", commitMessage]);
+  if (!implementation) throw new CliError("implementation result disappeared before hidden-test persistence", "failed");
+  const hidden = await persistStudentHiddenTests({ projectRoot, specHash, runId: evidence.run_id, moduleId: module.id, payload: implementation, events: implementationEvents });
   await ensureHeadLedgerEntry({ projectRoot, actor: "agent", intent: `implement ${module.module}`, specRefs: [module.path], changedTargets: changed, runId: evidence.run_id, evidenceRefs: [{ id: evidence.run_id, kind: "run", path: path.relative(projectRoot, evidence.manifest_path) }] });
-  return { status: "passed", details: { module: module.id, commit: commit.stdout.trim(), run_id: evidence.run_id, spec_hash: hashString(JSON.stringify(bundle.hashes)), validation } };
+  return { status: "passed", details: { module: module.id, commit: commit.stdout.trim(), run_id: evidence.run_id, spec_hash: specHash, hidden_tests: hidden, validation } };
+}
+
+type StudentTestKind = "public" | "contract" | "fuzz" | "trace";
+
+interface StudentTestTargetProposal {
+  id: string;
+  kind: StudentTestKind;
+  program: string;
+  args: string[];
+  cwd: string;
+  env: string[];
+  timeout: number;
+  verifies: string[];
+  artifacts: string[];
+  seed?: number;
+  cases?: number;
+  reproduction_artifact?: string;
+  workload?: string;
+  oracle?: string;
+}
+
+interface StudentHiddenTestProposal {
+  id: string;
+  path: string;
+  content: string;
+  program: string;
+  args: string[];
+  cwd: string;
+  env: string[];
+  timeout: number;
+  verifies: string[];
+  seed: number;
+}
+
+interface StudentImplementationPayload {
+  status: string;
+  test_targets: StudentTestTargetProposal[];
+  hidden_tests: StudentHiddenTestProposal[];
+}
+
+function parseStudentImplementationPayload(value: unknown, moduleId: string, bundle: NormalizedSpecBundle): StudentImplementationPayload {
+  if (!isRecord(value) || typeof value.status !== "string" || !Array.isArray(value.test_targets) || !Array.isArray(value.hidden_tests)) {
+    throw new AgentOutputError("student implementation result must include test_targets and hidden_tests");
+  }
+  if (value.status !== "passed") throw new AgentOutputError(`student implementation Agent reported ${value.status}`);
+  const stableRefs = new Set<string>([
+    "design",
+    ...bundle.normalized_modules.flatMap((item) => [item.id, item.module]),
+    ...bundle.interfaces.flatMap((item) => [item.id, item.name]),
+    ...bundle.goals.map((item) => item.goal_id),
+    ...bundle.patch_records.map((item) => item.id),
+  ]);
+  const testTargets = value.test_targets.map((raw, index) => parseStudentTestTarget(raw, index, moduleId, stableRefs));
+  const targetIds = new Set<string>();
+  for (const target of testTargets) {
+    if (targetIds.has(target.id)) throw new AgentOutputError(`duplicate proposed test target id: ${target.id}`);
+    targetIds.add(target.id);
+  }
+  for (const kind of ["public", "contract", "fuzz", "trace"] as const) {
+    if (!testTargets.some((target) => target.kind === kind)) throw new AgentOutputError(`implementation must propose at least one ${kind} target`);
+  }
+  const hiddenTests = value.hidden_tests.map((raw, index): StudentHiddenTestProposal => {
+    if (!isRecord(raw) || typeof raw.id !== "string" || typeof raw.path !== "string" || typeof raw.content !== "string" || typeof raw.program !== "string" ||
+      !isStringArray(raw.args) || typeof raw.cwd !== "string" || !isStringArray(raw.env) || !isPositiveInteger(raw.timeout) || !isStringArray(raw.verifies) || !isNonnegativeInteger(raw.seed)) {
+      throw new AgentOutputError(`hidden test proposal ${index} is invalid`);
+    }
+    assertStudentTargetId(raw.id);
+    assertSafeStudentRelativePath(raw.path, `hidden test ${raw.id} path`);
+    assertSafeStudentRelativePath(raw.cwd, `hidden test ${raw.id} cwd`, true);
+    if (!raw.verifies.includes(moduleId) || raw.verifies.some((ref) => !stableRefs.has(ref))) {
+      throw new AgentOutputError(`hidden test ${raw.id} must verify ${moduleId} using stable Spec IDs`);
+    }
+    if (raw.content.length === 0) throw new AgentOutputError(`hidden test ${raw.id} has empty content`);
+    return raw as unknown as StudentHiddenTestProposal;
+  });
+  if (hiddenTests.length === 0) throw new AgentOutputError("implementation must generate at least one local hidden test");
+  if (new Set(hiddenTests.map((item) => item.id)).size !== hiddenTests.length) throw new AgentOutputError("hidden test ids must be unique");
+  return { status: value.status, test_targets: testTargets, hidden_tests: hiddenTests };
+}
+
+function parseStudentTestTarget(raw: unknown, index: number, moduleId: string, stableRefs: Set<string>): StudentTestTargetProposal {
+  if (!isRecord(raw) || typeof raw.id !== "string" || !["public", "contract", "fuzz", "trace"].includes(String(raw.kind)) || typeof raw.program !== "string" ||
+    !isStringArray(raw.args) || typeof raw.cwd !== "string" || !isStringArray(raw.env) || !isPositiveInteger(raw.timeout) || !isStringArray(raw.verifies) || !isStringArray(raw.artifacts)) {
+    throw new AgentOutputError(`test target proposal ${index} is invalid`);
+  }
+  assertStudentTargetId(raw.id);
+  assertSafeStudentRelativePath(raw.cwd, `test target ${raw.id} cwd`, true);
+  for (const artifact of raw.artifacts) assertSafeStudentRelativePath(artifact, `test target ${raw.id} artifact`);
+  if (!raw.verifies.includes(moduleId) || raw.verifies.some((ref) => !stableRefs.has(ref))) {
+    throw new AgentOutputError(`test target ${raw.id} must verify ${moduleId} using stable Spec IDs`);
+  }
+  if (raw.kind === "fuzz") {
+    if (!isNonnegativeInteger(raw.seed) || !isPositiveInteger(raw.cases) || typeof raw.reproduction_artifact !== "string") {
+      throw new AgentOutputError(`fuzz target ${raw.id} requires fixed seed, bounded cases, timeout, and reproduction_artifact`);
+    }
+    assertSafeStudentRelativePath(raw.reproduction_artifact, `fuzz target ${raw.id} reproduction artifact`);
+  }
+  if (raw.kind === "trace") {
+    if (typeof raw.workload !== "string" || !raw.workload || typeof raw.oracle !== "string" || !raw.oracle || raw.artifacts.length === 0) {
+      throw new AgentOutputError(`trace target ${raw.id} requires workload, oracle, timeout, and artifacts`);
+    }
+  }
+  return raw as unknown as StudentTestTargetProposal;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function isNonnegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function assertStudentTargetId(value: string): void {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)) throw new AgentOutputError(`invalid test target id: ${value}`);
+}
+
+function assertSafeStudentRelativePath(value: string, label: string, allowDot = false): void {
+  const normalized = value.replace(/\\/g, "/");
+  if ((!allowDot || normalized !== ".") && (!normalized || normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized) || normalized.split("/").some((part) => part === ".."))) {
+    throw new AgentOutputError(`${label} must be a repository-relative path without traversal`);
+  }
+}
+
+async function applyStudentTestTargetProposals(projectRoot: string, targets: StudentTestTargetProposal[]): Promise<void> {
+  const manifestPath = path.join(projectRoot, "vos.yaml");
+  const raw = parseTopLevelYaml(await readFile(manifestPath, "utf8"));
+  const checks = isRecord(raw.checks) ? { ...raw.checks } : {};
+  for (const target of targets) {
+    if (checks[target.id] !== undefined) throw new AgentOutputError(`test target already exists: ${target.id}`);
+    const { id, ...projection } = target;
+    checks[id] = projection;
+  }
+  const projected = { ...raw, checks };
+  parseProjectManifest(projected);
+  const temporary = path.join(projectRoot, `.vos.yaml.${process.pid}.tmp`);
+  await writeFile(temporary, stringifyYaml(projected, { lineWidth: 0 }));
+  await rename(temporary, manifestPath);
+}
+
+async function persistStudentHiddenTests(params: {
+  projectRoot: string;
+  specHash: string;
+  runId: string;
+  moduleId: string;
+  payload: StudentImplementationPayload;
+  events: Array<Record<string, unknown>>;
+}): Promise<Record<string, unknown>> {
+  const root = path.join(params.projectRoot, ".vos", "hidden-tests", params.specHash);
+  await mkdir(root, { recursive: true });
+  const tests = [] as Array<Record<string, unknown>>;
+  for (const proposal of params.payload.hidden_tests) {
+    const relative = proposal.path.replace(/\\/g, "/");
+    const file = path.join(root, relative);
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, proposal.content);
+    const hiddenPath = studentRelativePath(params.projectRoot, file);
+    tests.push({
+      ...proposal,
+      path: hiddenPath,
+      args: proposal.args.map((value) => value.replaceAll("{hidden_test}", hiddenPath)),
+      content_hash: hashString(proposal.content),
+    });
+  }
+  const model = params.events.find((event) => event.type === "model.usage" && typeof event.model === "string")?.model ?? "unknown";
+  const manifest = {
+    version: "vos.hidden-tests.v1",
+    commit_sha: currentHead(params.projectRoot),
+    spec_hash: params.specHash,
+    config_hash: hashString(await readFile(path.join(params.projectRoot, "vos.yaml"), "utf8")),
+    module_id: params.moduleId,
+    model,
+    generation_run_id: params.runId,
+    tests,
+  };
+  const manifestPath = path.join(root, "manifest.json");
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  return { manifest: studentRelativePath(params.projectRoot, manifestPath), count: tests.length, model };
 }
 
 export async function executeAgentVerify(
@@ -2433,93 +2688,51 @@ export async function executeAgentReview(
   context: ExecContext,
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
-  const bundle = await buildNormalizedSpecBundle({ projectRoot: context.projectRoot });
-  const gitState = await studentGitStatus(context.projectRoot);
-  const module = command.module ? bundle.normalized_modules.find((candidate) => candidate.module === command.module || candidate.id === command.module) : undefined;
-  const findings = [...bundle.diagnostics];
-  if (command.module && !module) findings.push({ severity: "error", code: "module.missing", message: `ModuleSpec not found: ${command.module}`, ref: command.module });
-  const artifact = path.join(evidence.artifacts_root, "student-review.json");
-  await writeFile(artifact, `${JSON.stringify({ role: "review", diagnostics: findings, clean_head: gitState.clean, changed_targets: gitState.changed, module: module?.id }, null, 2)}\n`);
-  evidence.addArtifactFromPath("agent", artifact, "read-only student review");
-  return { status: hasBlockingDiagnostics(findings) ? "validation_failed" : "passed", details: { role: "review", diagnostics: findings, clean_head: gitState.clean, changed_targets: gitState.changed, model_used: false } };
-}
-
-interface StudentProposal {
-  patch: string;
-  files: string[];
-  result: unknown;
-  baseHead: string | undefined;
-}
-
-interface PendingStudentProposal extends StudentProposal {
-  version: "vos.student-proposal.v1";
-  allowedPaths: string[];
-  specHash: string;
-}
-
-async function savePendingStudentProposal(
-  projectRoot: string,
-  key: string,
-  proposal: StudentProposal,
-  metadata: { allowedPaths: string[]; specHash: string },
-): Promise<void> {
-  const target = pendingStudentProposalPath(projectRoot, key);
-  const temporary = `${target}.tmp`;
-  await mkdir(path.dirname(target), { recursive: true });
-  const payload: PendingStudentProposal = {
-    version: "vos.student-proposal.v1",
-    ...proposal,
-    allowedPaths: metadata.allowedPaths,
-    specHash: metadata.specHash,
+  const projectRoot = context.projectRoot;
+  const bundle = await buildNormalizedSpecBundle({ projectRoot });
+  const target = resolveStudentSpecTarget(bundle, command.target);
+  const diagnostics = studentSpecDiagnostics(bundle, target);
+  const before = await studentGitFingerprint(projectRoot);
+  const reviewContext = {
+    target: target.label,
+    target_paths: [...target.paths],
+    target_refs: [...target.refs],
+    lint_diagnostics: diagnostics,
+    manifest: bundle.manifest,
+    spec: studentSpecContext(bundle, target.label),
   };
-  await writeFile(temporary, `${JSON.stringify(payload, null, 2)}\n`);
-  await rename(temporary, target);
-}
-
-async function confirmPendingStudentProposal(params: {
-  projectRoot: string;
-  evidence: EvidenceWriter;
-  key: string;
-  allowedPaths: string[];
-  commitMessage: string;
-  description: string;
-}): Promise<CommandOutcome> {
-  const pendingPath = pendingStudentProposalPath(params.projectRoot, params.key);
-  if (!existsSync(pendingPath)) {
-    throw new CliError(`no pending ${params.description} proposal; run the command without --confirm first`, "validation_failed", {
-      reason: "pending_proposal_missing",
+  if (command.display) {
+    context.progress?.hide();
+    await runAgentInteractiveTask({
+      projectRoot,
+      taskKind: "spec_review",
+      requestedScope: `agent.review:${target.label}`,
+      initialTask: "Begin by presenting a complete, evidence-grounded review of the selected handwritten Spec and its vos.yaml mappings. Then answer follow-up questions. Do not write files, propose patches, install software, or alter project state.",
+      context: reviewContext,
+      courseMode: true,
+      allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      runner: context.interactiveAgentRunner,
     });
+    const after = await studentGitFingerprint(projectRoot);
+    assertStudentReadonlyFingerprint(before, after, "agent review");
+    return { status: "passed", details: { role: "review", target: target.label, interactive: true, diagnostics, model_used: true } };
   }
-  const pending = JSON.parse(await readFile(pendingPath, "utf8")) as Partial<PendingStudentProposal>;
-  if (pending.version !== "vos.student-proposal.v1" || typeof pending.patch !== "string" ||
-      !Array.isArray(pending.files) || typeof pending.specHash !== "string" ||
-      !Array.isArray(pending.allowedPaths) || pending.allowedPaths.join("\0") !== params.allowedPaths.join("\0")) {
-    throw new CliError(`pending ${params.description} proposal is invalid or belongs to a different target`, "validation_failed", {
-      reason: "pending_proposal_invalid",
-    });
-  }
-  const outcome = await finalizeStudentProposal({
-    projectRoot: params.projectRoot,
-    evidence: params.evidence,
-    proposal: {
-      patch: pending.patch,
-      files: pending.files.filter((value): value is string => typeof value === "string"),
-      result: pending.result,
-      baseHead: typeof pending.baseHead === "string" ? pending.baseHead : undefined,
-    },
-    confirm: true,
-    allowedPaths: params.allowedPaths,
-    commitMessage: params.commitMessage,
-    specHash: pending.specHash,
-    description: params.description,
+  const review = await runDefaultAgentSpecReview({
+    command: "agent review",
+    target: target.label,
+    targetPaths: [...target.paths],
+    targetRefs: [...target.refs],
+    bundle,
+    context,
+    evidence,
   });
-  if (outcome.status === "passed") await rm(pendingPath, { force: true });
-  return outcome;
-}
-
-function pendingStudentProposalPath(projectRoot: string, key: string): string {
-  if (!/^[A-Za-z0-9._-]+$/.test(key)) throw new Error(`invalid pending proposal key: ${key}`);
-  return path.join(projectRoot, ".vos", "proposals", `${key}.json`);
+  const after = await studentGitFingerprint(projectRoot);
+  assertStudentReadonlyFingerprint(before, after, "agent review");
+  const blocker = review.findings.some((finding) => finding.severity === "blocker");
+  return {
+    status: blocker ? "validation_failed" : "passed",
+    details: { role: "review", target: target.label, diagnostics, agent_review: review, model_used: review.status === "ok" },
+  };
 }
 
 function studentSpecContext(bundle: NormalizedSpecBundle, focus?: string): Record<string, unknown> {
@@ -2533,130 +2746,6 @@ function studentSpecContext(bundle: NormalizedSpecBundle, focus?: string): Recor
     manifest: bundle.manifest,
     diagnostics: bundle.diagnostics,
   };
-}
-
-async function runStudentProposalAgent(params: {
-  context: ExecContext;
-  evidence: EvidenceWriter;
-  requestedScope: string;
-  taskKind: string;
-  taskPrompt: string;
-  contextValue: unknown;
-  allowedPaths: string[];
-  resultSchema: string;
-  worktreeLabel: string;
-  interactive: boolean;
-}): Promise<StudentProposal> {
-  const projectRoot = params.context.projectRoot;
-  const state = await studentGitStatus(projectRoot);
-  if (!state.clean) throw new CliError("agent spec/design requires a clean HEAD", "policy_blocked", { reason: "dirty_worktree", changed_targets: state.changed });
-  const baseHead = currentHead(projectRoot);
-  const worktree = await createStudentWorktree(projectRoot, `${params.evidence.run_id}-${params.worktreeLabel}`);
-  try {
-    const common = {
-      projectRoot: worktree,
-      taskKind: params.taskKind,
-      requestedScope: params.requestedScope,
-      context: params.contextValue,
-      allowedPaths: params.allowedPaths,
-      courseMode: true,
-      resultSubmissionSchema: params.resultSchema,
-      onEvent: createAgentProgressParams(params.context, `agent ${params.taskKind}`).onEvent,
-    };
-    const result = params.interactive
-      ? await runInteractiveAgentWithPrompt({
-          ...common,
-          taskPrompt: `${params.taskPrompt} Interview the student before finalizing: ask one focused question at a time, resolve goals, constraints, ISA, language, QEMU, canonical board, kernel structure, and explicit tradeoffs. Do not submit a proposal until the student confirms that the collected decisions are complete. Then call submit_result exactly once with the complete proposal; tell the student to use /quit after it is accepted.`,
-          agentProfile: { outputSchema: params.resultSchema },
-          runner: params.context.interactiveAgentRunner,
-        })
-      : await runAgentWithPrompt({
-          ...common,
-          taskPrompt: params.taskPrompt,
-          taskRunner: params.context.agentRunner,
-        });
-    const resultValue = result.parsedResult ?? safeJsonTryParse(result.resultText) ?? result.resultText;
-    const files = extractStudentProposalFiles(resultValue);
-    const declaredViolations: string[] = [];
-    for (const file of files) {
-      if (!isOwnedStudentPath(file.path, params.allowedPaths, true)) {
-        declaredViolations.push(file.path);
-        continue;
-      }
-      const target = path.join(worktree, file.path);
-      await mkdir(path.dirname(target), { recursive: true });
-      await writeFile(target, file.content);
-    }
-    const changed = await studentChangedPaths(worktree);
-    const violations = [...new Set([
-      ...declaredViolations,
-      ...changed.filter((target) => !isOwnedStudentPath(target, params.allowedPaths, true)),
-    ])];
-    const patch = await studentWorktreeDiff(worktree);
-    await writeStudentAgentArtifact(projectRoot, params.evidence, params.taskKind, { scope: params.requestedScope, patch, result: resultValue });
-    if (violations.length > 0) throw new CliError("agent proposal changed paths outside its scope", "policy_blocked", { reason: "owns_violation", changed_targets: violations, patch_available: Boolean(patch) });
-    const proposedBundle = await buildNormalizedSpecBundle({ projectRoot: worktree });
-    const targetDiagnostics = proposedBundle.diagnostics.filter((diagnostic) =>
-      diagnostic.severity === "error" && diagnostic.path && params.allowedPaths.some((allowed) => {
-        const normalizedDiagnostic = diagnostic.path!.replace(/\\/g, "/");
-        const normalizedAllowed = allowed.replace(/\\/g, "/").replace(/\/$/, "");
-        return normalizedDiagnostic === normalizedAllowed || normalizedDiagnostic.startsWith(`${normalizedAllowed}/`);
-      }),
-    );
-    if (targetDiagnostics.length > 0) {
-      throw new CliError(`${params.taskKind} proposal failed strict schema validation`, "validation_failed", {
-        reason: "proposal_schema_invalid",
-        diagnostics: targetDiagnostics,
-        patch_available: Boolean(patch),
-      });
-    }
-    return { patch, files: changed, result: resultValue, baseHead };
-  } finally {
-    await removeStudentWorktree(projectRoot, worktree);
-  }
-}
-
-function extractStudentProposalFiles(value: unknown): Array<{ path: string; content: string }> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
-  const files = (value as Record<string, unknown>).files;
-  if (!Array.isArray(files)) return [];
-  return files.flatMap((entry) => {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
-    const record = entry as Record<string, unknown>;
-    return typeof record.path === "string" && typeof record.content === "string"
-      ? [{ path: record.path.replace(/\\/g, "/"), content: record.content }]
-      : [];
-  });
-}
-
-async function finalizeStudentProposal(params: {
-  projectRoot: string;
-  evidence: EvidenceWriter;
-  proposal: StudentProposal;
-  confirm: boolean;
-  allowedPaths: string[];
-  commitMessage: string;
-  specHash: string;
-  description: string;
-}): Promise<CommandOutcome> {
-  const patchPath = path.join(params.evidence.artifacts_root, "student-proposal.patch");
-  await writeFile(patchPath, params.proposal.patch);
-  params.evidence.addArtifactFromPath("agent", patchPath, "student proposal diff");
-  const baseHead = params.proposal.baseHead;
-  if (!params.confirm) {
-    return { status: "planned", details: { proposal: params.description, confirmation_required: true, patch: path.relative(params.projectRoot, patchPath), files: params.proposal.files, spec_hash: params.specHash } };
-  }
-  if (currentHead(params.projectRoot) !== baseHead) return { status: "policy_blocked", details: { reason: "head_drift", expected_head: baseHead, actual_head: currentHead(params.projectRoot) } };
-  if (!params.proposal.patch.trim()) return { status: "validation_failed", details: { message: `${params.description} proposal contains no file changes` } };
-  await applyStudentPatch(params.projectRoot, params.proposal.patch);
-  const changed = await studentChangedPaths(params.projectRoot);
-  if (changed.some((target) => !isOwnedStudentPath(target, params.allowedPaths, true))) {
-    throw new CliError(`${params.description} changed a path outside its scope`, "policy_blocked", { reason: "owns_violation", changed_targets: changed });
-  }
-  await runStudentGit(params.projectRoot, ["add", "--", ...changed]);
-  const commit = await runStudentGit(params.projectRoot, ["commit", "-m", `${params.commitMessage}\n\nSpec-Hash: ${params.specHash}`]);
-  await ensureHeadLedgerEntry({ projectRoot: params.projectRoot, actor: "agent", intent: params.description, specRefs: params.proposal.files, changedTargets: changed, runId: params.evidence.run_id });
-  return { status: "passed", details: { proposal: params.description, committed: true, commit: commit.stdout.trim(), files: changed, spec_hash: params.specHash } };
 }
 
 async function studentOwnedPaths(projectRoot: string, bundle: NormalizedSpecBundle, module: { id?: string; module: string; owns: string[] }): Promise<string[]> {
@@ -2722,6 +2811,34 @@ async function studentGitStatus(projectRoot: string): Promise<{ clean: boolean; 
     .filter(Boolean)
     .filter((target) => !target.replace(/\\/g, "/").startsWith(".vos/"));
   return { clean: changed.length === 0, changed };
+}
+
+async function studentGitFingerprint(projectRoot: string): Promise<{ fingerprint: string; changed: string[] }> {
+  const state = await studentGitStatus(projectRoot);
+  const entries: Array<{ path: string; content: string }> = [];
+  for (const target of [...state.changed].sort()) {
+    const resolved = path.resolve(projectRoot, target);
+    const relative = path.relative(projectRoot, resolved);
+    if (path.isAbsolute(relative) || relative === ".." || relative.startsWith(`..${path.sep}`)) {
+      entries.push({ path: target, content: "<outside-project>" });
+      continue;
+    }
+    try {
+      entries.push({ path: target, content: hashString(await readFile(resolved, "utf8")) });
+    } catch {
+      entries.push({ path: target, content: "<missing-or-non-file>" });
+    }
+  }
+  return { fingerprint: hashString(JSON.stringify(entries)), changed: state.changed };
+}
+
+function assertStudentReadonlyFingerprint(before: { fingerprint: string; changed: string[] }, after: { fingerprint: string; changed: string[] }, role: string): void {
+  if (before.fingerprint === after.fingerprint) return;
+  throw new CliError(`${role} changed project files despite its read-only contract`, "policy_blocked", {
+    reason: "readonly_agent_modified_project",
+    before: before.changed,
+    after: after.changed,
+  });
 }
 
 async function runStudentGit(projectRoot: string, args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
@@ -3679,13 +3796,69 @@ async function executeStudentVerify(
     }
   }
   const collected = await runner.collectEvidence();
+  const publicPassed = build.status === "passed" && checks.every((check) => check.status === "passed") && collected.cleanHead;
+  const hidden = command.hidden && publicPassed
+    ? await executeStudentHiddenVerification(projectRoot, bundle, context.signal)
+    : undefined;
   const artifact = path.join(evidence.artifacts_root, "student-verify.json");
-  await writeFile(artifact, `${JSON.stringify({ diagnostics, build, checks, evidence: collected }, null, 2)}\n`);
+  await writeFile(artifact, `${JSON.stringify({ diagnostics, build, checks, hidden, evidence: collected }, null, 2)}\n`);
   evidence.addArtifactFromPath("verify", artifact, "deterministic student verification evidence");
-  const passed = build.status === "passed" && checks.every((check) => check.status === "passed") && collected.cleanHead;
+  const passed = publicPassed && (!command.hidden || hidden?.status === "passed");
   return {
-    status: passed ? "passed" : build.status === "timed_out" || checks.some((check) => check.status === "timed_out") ? "timed_out" : "validation_failed",
-    details: { diagnostics, build, checks, evidence: collected, clean_head: collected.cleanHead, submittable: passed },
+    status: passed ? "passed" : build.status === "timed_out" || checks.some((check) => check.status === "timed_out") || hidden?.results.some((result) => result.status === "timed_out") ? "timed_out" : "validation_failed",
+    details: { diagnostics, build, checks, hidden, evidence: collected, clean_head: collected.cleanHead, submittable: passed },
+  };
+}
+
+interface StudentHiddenVerification {
+  status: "passed" | "validation_failed";
+  commit_sha: string;
+  spec_hash: string;
+  config_hash: string;
+  manifest_path: string;
+  results: Array<Record<string, unknown> & { status: "passed" | "failed" | "timed_out" }>;
+  verification_path: string;
+}
+
+async function executeStudentHiddenVerification(projectRoot: string, bundle: NormalizedSpecBundle, signal?: AbortSignal): Promise<StudentHiddenVerification> {
+  const commitSha = currentHead(projectRoot);
+  if (!commitSha) throw new CliError("hidden verification requires a committed HEAD", "policy_blocked", { reason: "head_missing" });
+  const specHash = hashString(JSON.stringify(bundle.hashes));
+  const configHash = hashString(await readFile(path.join(projectRoot, "vos.yaml"), "utf8"));
+  const root = path.join(projectRoot, ".vos", "hidden-tests", specHash);
+  const manifestPath = path.join(root, "manifest.json");
+  if (!existsSync(manifestPath)) {
+    throw new CliError("no hidden tests are bound to the current Spec hash; rerun vos agent implement", "validation_failed", { spec_hash: specHash });
+  }
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as unknown;
+  if (!isRecord(manifest) || manifest.version !== "vos.hidden-tests.v1" || manifest.commit_sha !== commitSha || manifest.spec_hash !== specHash || manifest.config_hash !== configHash || !Array.isArray(manifest.tests)) {
+    throw new CliError("hidden tests are not bound to the current clean HEAD, Spec, and vos.yaml", "validation_failed", { reason: "hidden_binding_mismatch" });
+  }
+  const results = [] as StudentHiddenVerification["results"];
+  for (const raw of manifest.tests) {
+    if (!isRecord(raw) || typeof raw.id !== "string" || typeof raw.program !== "string" || !isStringArray(raw.args) || typeof raw.cwd !== "string" || !isStringArray(raw.env) || !isPositiveInteger(raw.timeout)) {
+      throw new CliError("hidden test manifest contains an invalid command", "validation_failed");
+    }
+    const result = await runStructuredStudentCommand(projectRoot, {
+      program: raw.program,
+      args: raw.args,
+      cwd: raw.cwd,
+      env: raw.env,
+      timeout: raw.timeout,
+    }, signal);
+    results.push({ id: raw.id, ...result });
+  }
+  const status = results.length > 0 && results.every((result) => result.status === "passed") ? "passed" : "validation_failed";
+  const verificationPath = path.join(root, "last-verification.json");
+  await writeFile(verificationPath, `${JSON.stringify({ version: "vos.hidden-verification.v1", status, commit_sha: commitSha, spec_hash: specHash, config_hash: configHash, manifest_hash: hashString(await readFile(manifestPath, "utf8")), results }, null, 2)}\n`);
+  return {
+    status,
+    commit_sha: commitSha,
+    spec_hash: specHash,
+    config_hash: configHash,
+    manifest_path: studentRelativePath(projectRoot, manifestPath),
+    results,
+    verification_path: studentRelativePath(projectRoot, verificationPath),
   };
 }
 
@@ -3895,34 +4068,6 @@ export async function executeAgentApplyPatch(
   };
 }
 
-export async function executeAgentReviewSpec(
-  command: AgentReviewSpecCommand,
-  context: ExecContext,
-  evidence: EvidenceWriter,
-): Promise<CommandOutcome> {
-  const project = await loadProjectConfig(context.projectRoot);
-  const bundle = await buildNormalizedSpecBundle({
-    projectRoot: context.projectRoot,
-    specRoot: project.spec_root ?? "spec",
-    targetPath: command.target,
-  });
-  const review = await runDefaultAgentSpecReview({
-    command: "agent review-spec",
-    target: command.target,
-    bundle,
-    context,
-    evidence,
-  });
-  return {
-    status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
-    details: {
-      target: command.target,
-      diagnostics: bundle.diagnostics,
-      agent_review: review,
-    },
-  };
-}
-
 export async function executeAgentAsk(
   command: AgentAskCommand,
   context: ExecContext,
@@ -3930,6 +4075,7 @@ export async function executeAgentAsk(
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
   const studentProject = existsSync(path.join(projectRoot, "vos.yaml")) && !isLegacyProject(projectRoot);
+  const readonlyBefore = studentProject ? await studentGitFingerprint(projectRoot) : undefined;
   const studentHasKbSources = studentProject && (await listKbSources(projectRoot)).length > 0;
   const requestedScope = studentProject
     ? "student-kb"
@@ -3977,6 +4123,7 @@ export async function executeAgentAsk(
       extraMcpServers: kbMcpServer ? [kbMcpServer] : [],
       runner: context.interactiveAgentRunner,
     });
+    if (readonlyBefore) assertStudentReadonlyFingerprint(readonlyBefore, await studentGitFingerprint(projectRoot), "agent ask");
     return {
       status: "passed",
       details: {
@@ -4039,6 +4186,7 @@ export async function executeAgentAsk(
     },
   });
   evidence.addArtifact("agent", path.relative(projectRoot, logPath), "agent ask log");
+  if (readonlyBefore) assertStudentReadonlyFingerprint(readonlyBefore, await studentGitFingerprint(projectRoot), "agent ask");
   return {
     status: "passed",
     details: {
@@ -4222,6 +4370,7 @@ export async function executeAgentDebug(
     return { status: "failed", details: { message: "log path required" } };
   }
   const text = await readFile(logPath, "utf8");
+  const readonlyBefore = existsSync(path.join(projectRoot, "vos.yaml")) ? await studentGitFingerprint(projectRoot) : undefined;
   updateProgress(context, { stage: "agent debug", status: "running", message: "waiting for agent" });
   const agentProgress = createAgentProgressParams(context, "agent debug");
   let response: Awaited<ReturnType<typeof runAgentWithPrompt>>;
@@ -4252,6 +4401,7 @@ export async function executeAgentDebug(
       taskRunner: context.agentRunner,
     });
   } catch (error) {
+    if (readonlyBefore) assertStudentReadonlyFingerprint(readonlyBefore, await studentGitFingerprint(projectRoot), "agent debug");
     if (!command.runId) throw error;
     const failurePath = await writeGdbFailureArtifact(projectRoot, evidence, debugRoot, error, adapterContractPath);
     return {
@@ -4264,6 +4414,7 @@ export async function executeAgentDebug(
       },
     };
   }
+  if (readonlyBefore) assertStudentReadonlyFingerprint(readonlyBefore, await studentGitFingerprint(projectRoot), "agent debug");
   let debugOutput: ReturnType<typeof parseDebugOutput>;
   try {
     debugOutput = parseDebugOutput(agentStructuredOutput(response, "agent_debug"));
@@ -4806,6 +4957,8 @@ function safeCacheSegment(value: string): string {
 async function runDefaultAgentSpecReview(params: {
   command: string;
   target?: string;
+  targetPaths?: string[];
+  targetRefs?: string[];
   bundle: NormalizedSpecBundle;
   impact?: unknown;
   context: ExecContext;
@@ -4814,6 +4967,8 @@ async function runDefaultAgentSpecReview(params: {
   const reviewInput = {
     command: params.command,
     target: params.target,
+    target_paths: params.targetPaths ?? [],
+    target_refs: params.targetRefs ?? [],
     diagnostics: params.bundle.diagnostics,
     counts: {
       sources: params.bundle.sources.length,
@@ -4842,7 +4997,7 @@ async function runDefaultAgentSpecReview(params: {
       projectRoot: params.context.projectRoot,
       taskPrompt: agentProgress.taskPrompt(prompt),
       taskKind: "design_review",
-      requestedScope: "agent.review-spec",
+      requestedScope: `agent.review:${params.target ?? "all"}`,
       context: reviewInput,
       courseMode: true,
       allowedVosCommands: await loadAgentAllowedCommands(params.context.projectRoot, params.context.effectivePolicy),
@@ -4851,7 +5006,7 @@ async function runDefaultAgentSpecReview(params: {
       onEvent: agentProgress.onEvent,
       taskRunner: params.context.agentRunner,
     });
-    const review = parseAgentSpecReview(agentStructuredOutput(response, "agent_review_spec"), response.resultText);
+    const review = parseAgentSpecReview(agentStructuredOutput(response, "agent_review"), response.resultText);
     await writeAgentReviewArtifact(params.context.projectRoot, params.evidence, review);
     return review;
   } catch (error) {
@@ -4861,7 +5016,7 @@ async function runDefaultAgentSpecReview(params: {
         severity: "warning",
         message: `agent review unavailable: ${error instanceof Error ? error.message : String(error)}`,
         related_specs: [],
-        suggested_actions: ["configure vos-agent model credentials or rerun `vos agent review-spec`"],
+        suggested_actions: ["configure vos-agent model credentials or rerun `vos agent review`"],
       }],
       summary: "agent review unavailable; deterministic spec checks still ran",
     };
@@ -5021,9 +5176,7 @@ export function commandToArray(command: CliCommand): string[] {
     case "run_hardware":
       return ["run", "hardware", ...(command.dryRun ? ["--dry-run"] : []), ...(command.timeoutMs !== undefined ? ["--timeout", String(command.timeoutMs)] : [])];
     case "spec_lint":
-      return ["spec", "lint", ...(command.noAgent ? ["--no-agent"] : []), ...(command.path ? [command.path] : [])];
-    case "spec_check":
-      return ["spec", "check"];
+      return ["spec", "lint", ...(command.target ? [command.target] : [])];
     case "spec_check_consistency":
       return ["spec", "check-consistency"];
     case "spec_patch_lint":
@@ -5053,6 +5206,7 @@ export function commandToArray(command: CliCommand): string[] {
       return [
         "verify",
         command.scope,
+        ...(command.hidden ? ["--hidden"] : []),
         ...(command.dryRun ? ["--dry-run"] : []),
         ...(command.target ? ["--target", command.target] : []),
         ...(command.staffPolicy ? ["--staff-policy", command.staffPolicy] : []),
@@ -5148,16 +5302,12 @@ export function commandToArray(command: CliCommand): string[] {
         ...(command.runId ? ["--run", command.runId] : []),
         ...(command.keepWorktree ? ["--keep-worktree"] : []),
       ];
-    case "agent_design":
-      return ["agent", "design", ...(command.confirm ? ["--confirm"] : []), ...(command.display ? ["--interactive"] : [])];
-    case "agent_spec":
-      return ["agent", "spec", command.module, ...(command.confirm ? ["--confirm"] : []), ...(command.display ? ["--interactive"] : [])];
     case "agent_implement":
       return ["agent", "implement", command.module, ...(command.display ? ["--interactive"] : [])];
     case "agent_verify":
       return ["agent", "verify", ...(command.display ? ["--interactive"] : [])];
     case "agent_review":
-      return ["agent", "review", ...(command.module ? [command.module] : []), ...(command.display ? ["--interactive"] : [])];
+      return ["agent", "review", ...(command.target ? [command.target] : []), ...(command.display ? ["--interactive"] : [])];
     case "agent_log":
       return [
         "agent",
@@ -5165,13 +5315,6 @@ export function commandToArray(command: CliCommand): string[] {
         ...(command.display ? ["-i"] : []),
         ...(command.append ? ["--append"] : []),
         ...(command.inputPath ? [command.inputPath] : []),
-      ];
-    case "agent_review_spec":
-      return [
-        "agent",
-        "review-spec",
-        ...(command.display ? ["-i"] : []),
-        ...(command.target ? ["--target", command.target] : []),
       ];
     case "agent_ask":
       return [
@@ -5978,15 +6121,13 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
     "Student workflow:",
     "  init",
     "  doctor",
-    "  spec check",
+    "  spec lint [<Spec ID|path|design|all>]",
     "  agent config [--show|--check|--reset]",
-    "  agent design [--confirm]",
-    "  agent spec <module> [--confirm]",
     "  agent implement <module>",
     "  agent debug",
     "  agent verify",
     "  agent ask [question]",
-    "  agent review [module]",
+    "  agent review [<Spec ID|path|design|all>] [-i]",
     "  kb add|list|search|remove|clear|export-manifest|import-manifest",
     "  build",
     "  run qemu",
@@ -5998,18 +6139,16 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
     "Agent implementation runs in a disposable detached Git worktree. This is a rollback boundary, not a process, network, credential, or host-file security sandbox; commands inherit the current user's privileges.",
   ],
   "init": helpBlock("init", ["Creates an empty DesignSpec, toolchain ModuleSpec, vos.yaml, .gitignore, and an initial Git commit."], ["vos init"]),
-  "doctor": helpBlock("doctor", ["Checks the student manifest, strict specs, and required command entrypoints."], ["vos doctor"]),
-  "spec": helpBlock("spec check", ["Deterministic schema, stable-ID, reference, path, owns, and level checks."], ["vos spec check"]),
-  "spec check": helpBlock("spec check", ["No model, fuzz, trace, or hidden tests are run."], ["vos spec check"]),
-  "agent": helpBlock("agent config|design|spec|implement|debug|verify|ask|review", ["config [--show|--check|--reset]", "design [--confirm]", "spec <module> [--confirm]", "implement <module>", "debug", "verify", "ask [question]", "review [module]"], ["vos agent config", "vos agent ask \"What is a syscall boundary?\"", "vos agent implement memory"]),
+  "doctor": helpBlock("doctor", ["Runs deterministic project checks, then asks the read-only Debug Agent to derive and probe required and optional host tools from the Specs."], ["vos doctor"]),
+  "spec": helpBlock("spec lint [<Spec ID|path|design|all>]", ["Deterministic schema, stable-ID, reference, path, owns, level, and vos.yaml mapping checks. Omit the target for all Specs."], ["vos spec lint", "vos spec lint design", "vos spec lint kernel.memory"]),
+  "spec lint": helpBlock("spec lint [<Spec ID|path|design|all>]", ["Loads the complete project so cross-Spec references remain valid, then reports diagnostics relevant to the selected target. It never calls a model."], ["vos spec lint", "vos spec lint spec/modules/memory.yaml"]),
+  "agent": helpBlock("agent config|implement|debug|verify|ask|review", ["config [--show|--check|--reset]", "implement <module>", "debug", "verify", "ask [question]", "review [<Spec ID|path|design|all>] [-i]"], ["vos agent config", "vos agent ask \"What is a syscall boundary?\"", "vos agent review design", "vos agent implement memory"]),
   "agent config": helpBlock("agent config [options]", ["No options: run the interactive setup wizard.", "--provider <anthropic|openai|openai-compatible|deepseek|ollama>", "--model <id>", "--base-url <url>", "--auth-env <name>", "--with-embedding | --without-embedding", "--embedding-provider <openai|openai-compatible>", "--embedding-model <id>", "--embedding-base-url <url>", "--embedding-auth-env <name>", "--show: show configuration without secret values", "--check: validate configuration and referenced credentials", "--reset: remove agent and embedding sections"], ["vos agent config", "vos agent config --check", "vos agent config --provider openai --model gpt-5 --auth-env OPENAI_API_KEY"]),
-  "agent design": helpBlock("agent design [--interactive|--confirm]", ["--interactive interviews the student before producing a proposal.", "Without --confirm, the exact validated proposal is saved under .vos and only its diff is shown.", "--confirm applies and commits that saved proposal without calling the model again."], ["vos agent design --interactive", "vos agent design --confirm"]),
-  "agent spec": helpBlock("agent spec <module> [--interactive|--confirm]", ["--interactive discusses the module before producing a proposal.", "--confirm applies the previously saved ModuleSpec proposal without calling the model again."], ["vos agent spec kernel/memory", "vos agent spec kernel/memory --confirm"]),
-  "agent implement": helpBlock("agent implement <module>", ["Requires clean HEAD and a committed ModuleSpec; validates build, public checks, contract checks, and owns scope."], ["vos agent implement memory"]),
+  "agent implement": helpBlock("agent implement <module>", ["Requires clean HEAD and a committed ModuleSpec whose owns covers implementation and test paths. Generates implementation plus public, contract, fixed-seed fuzz, trace/oracle, and local hidden tests. VOS validates and atomically projects test targets into vos.yaml."], ["vos agent implement memory"]),
   "agent debug": helpBlock("agent debug", ["Read-only root-cause and evidence summary."], ["vos agent debug"]),
   "agent verify": helpBlock("agent verify", ["Read-only deterministic verification report."], ["vos agent verify"]),
   "agent ask": helpBlock("agent ask [question]", ["Question answering only; omit the question or pass --interactive for a continuing conversation. It does not modify project files."], ["vos agent ask \"What is a syscall boundary?\"", "vos agent ask"]),
-  "agent review": helpBlock("agent review [module]", ["Read-only review of specs, code scope, tests, and diff."], ["vos agent review memory"]),
+  "agent review": helpBlock("agent review [<Spec ID|path|design|all>] [-i]", ["Runs deterministic lint first, then reviews the selected handwritten Spec, related Specs, and verifies mappings without modifying files. Non-interactive blocker findings fail validation; -i begins with a full review and continues as advisory Q&A."], ["vos agent review memory", "vos agent review design -i"]),
   "kb": helpBlock("kb add|list|search|remove|clear|export-manifest|import-manifest", ["KB sources are managed by commands and indexed under .vos; vos.yaml contains no knowledge source declarations."], ["vos kb add docs/reference --recursive", "vos kb list", "vos kb search \"Sv39 page table\""]),
   "kb add": helpBlock("kb add <path-or-url> [options]", ["--recursive", "--source-kind <project|course|external>", "--title <text>", "--stage <id>", "--branch <name> | --tag <name>", "--manifest <path>"], ["vos kb add docs/reference --recursive", "vos kb add https://example.invalid/reference.git --tag v1.0.0"]),
   "kb list": helpBlock("kb list", ["Lists indexed sources and stable source IDs."], ["vos kb list"]),
@@ -6022,9 +6161,9 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
   "run": helpBlock("run qemu|hardware", ["qemu", "hardware (evidence remains pending_human_review)"], ["vos run qemu"]),
   "run qemu": helpBlock("run qemu", ["Captures non-graphical serial output from the manifest runner."], ["vos run qemu"]),
   "run hardware": helpBlock("run hardware", ["Records board/build/serial evidence and never self-approves human review."], ["vos run hardware"]),
-  "verify": helpBlock("verify", ["Requires clean HEAD; runs spec check, build, all public checks, and contract checks deterministically."], ["vos verify"]),
+  "verify": helpBlock("verify [--hidden]", ["Requires clean HEAD; runs spec lint, build, and every public, contract, fixed-seed fuzz, and trace target deterministically. --hidden also runs tests bound to the current commit, Spec hash, and config hash."], ["vos verify", "vos verify --hidden"]),
   "report": helpBlock("report", ["Generates deterministic .vos/report.json without invoking a model or committing."], ["vos report"]),
-  "submit": helpBlock("submit", ["Refreshes report and creates a reproducible archive bound to commit/spec/config hashes."], ["vos submit"]),
+  "submit": helpBlock("submit", ["Requires a current successful vos verify --hidden, refreshes the report, and creates a private reproducible archive bound to commit/spec/config/test hashes."], ["vos submit"]),
 };
 
 const HELP_TOPICS: Record<string, string[]> = {
@@ -6055,7 +6194,7 @@ const HELP_TOPICS: Record<string, string[]> = {
     "  doctor",
     "  stage show|save --intent <text> [--actor human|agent]",
     "  toolchain lint|init [--force]",
-    "  spec lint [--no-agent] [path]",
+    "  spec lint [<Spec ID|path|design|all>]",
     "  spec normalize",
     "  spec check-consistency",
     "  spec patch lint <patch-yaml|commit-ish>",
@@ -6087,7 +6226,7 @@ const HELP_TOPICS: Record<string, string[]> = {
     "  agent generate [-i] [target] [--target <target>] [--apply] [--build] [--run]",
     "  agent apply-patch [-i] [--patch-file <file>] [--run-validation] [--no-require-spec]",
     "  agent validate-generated [-i] --target <value> [--patch-file <file>] [--keep-worktree]",
-    "  agent review-spec [-i] [--target <path|stage|patch>]",
+    "  agent review [<Spec ID|path|design|all>] [-i]",
     "  agent debug [-i] [--run <run-id>] [--log <path>] [--keep-worktree]  # no args starts fixed debug REPL",
     "  agent log [-i] [--append] [entry-path]",
     "",
@@ -6121,10 +6260,10 @@ const HELP_TOPICS: Record<string, string[]> = {
   "toolchain init": helpBlock("toolchain init [--force]", ["--force"], ["vos toolchain init --force"]),
   "spec": helpBlock(
     "spec lint|normalize|check-consistency|patch ...",
-    ["lint [--no-agent] [path]", "normalize", "check-consistency", "patch lint|apply <patch-yaml|commit-ish>"],
-    ["vos spec lint --no-agent spec/modules"],
+    ["lint [<Spec ID|path|design|all>]", "normalize", "check-consistency", "patch lint|apply <patch-yaml|commit-ish>"],
+    ["vos spec lint spec/modules/memory.yaml"],
   ),
-  "spec lint": helpBlock("spec lint [--no-agent] [path]", ["--no-agent", "path"], ["vos spec lint --no-agent spec/modules"]),
+  "spec lint": helpBlock("spec lint [<Spec ID|path|design|all>]", ["target is optional and defaults to all"], ["vos spec lint design", "vos spec lint kernel/memory"]),
   "spec normalize": helpBlock("spec normalize", ["No command-specific options."], ["vos spec normalize"]),
   "spec check-consistency": helpBlock("spec check-consistency", ["No command-specific options."], ["vos spec check-consistency"]),
   "spec patch": helpBlock(
@@ -6209,8 +6348,8 @@ const HELP_TOPICS: Record<string, string[]> = {
   "kb export-manifest": helpBlock("kb export-manifest [--out <path>]", ["--out <path>"], ["vos kb export-manifest --out kb-manifest.json"]),
   "kb import-manifest": helpBlock("kb import-manifest <path>", ["<path>"], ["vos kb import-manifest kb-manifest.json"]),
   "agent": helpBlock(
-    "agent serve|context|plan|ask|generate|apply-patch|validate-generated|review-spec|debug|log ...",
-    ["serve", "context", "plan", "ask", "generate", "apply-patch", "validate-generated", "review-spec", "debug", "log"],
+    "agent serve|context|plan|ask|review|generate|apply-patch|validate-generated|debug|log ...",
+    ["serve", "context", "plan", "ask", "review", "generate", "apply-patch", "validate-generated", "debug", "log"],
     ["vos agent plan --stage memory \"check allocator design\""],
   ),
   "agent serve": helpBlock("agent serve [-i] [--host <host>] [--port <port>]", ["-i, --interactive", "--host <host>", "--port <port>"], ["vos agent serve --port 8787"]),
@@ -6232,7 +6371,7 @@ const HELP_TOPICS: Record<string, string[]> = {
     ["-i, --interactive", "--target <value>", "--patch-file <file>", "--keep-worktree"],
     ["vos agent validate-generated --target full-syscall --patch-file candidate.patch"],
   ),
-  "agent review-spec": helpBlock("agent review-spec [-i] [--target <path|stage|patch>]", ["-i, --interactive", "--target <path|stage|patch>"], ["vos agent review-spec --target memory"]),
+  "agent review": helpBlock("agent review [<Spec ID|path|design|all>] [-i]", ["-i, --interactive"], ["vos agent review kernel/memory"]),
   "agent debug": helpBlock(
     "agent debug [-i] [--run <run-id>] [--log <path>] [--keep-worktree]",
     ["-i, --interactive", "--run <run-id>", "--log <path>", "--keep-worktree"],

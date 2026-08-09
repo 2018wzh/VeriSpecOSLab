@@ -88,17 +88,23 @@ Tests inject `ScriptedChatClient`/`CallbackChatClient` stubs and
 never touch the network. The OpenAI message shape is the canonical
 internal format; the Anthropic client translates at its boundary.
 
-## Student v2 task profiles
+## Student task profiles
 
-The in-process student loop routes `design`, `spec`, and `implementation`
-to dedicated profiles. Design and spec return
-`student_design_proposal.v1` and `student_module_spec_proposal.v1` file
-proposals through the progress MCP tool. Implementation returns
-`student_implementation_result.v1` and may use Read/Write/Edit/Bash/Vos only
-inside the detached worktree and caller-provided `owns` paths. The worktree
-is a Git rollback boundary, not a process, network, credential, or host
-filesystem security sandbox; host commands inherit the current user and
-network permissions.
+Students handwrite and manually commit Specs. `ask` discusses concepts, and
+`spec_review`/`design_review` inspect the selected Spec, related Specs, lint
+diagnostics, and manifest mappings without generating or modifying files.
+`implementation` returns `student_implementation_result.v1`, including
+validated public/contract/fuzz/trace target proposals and hidden-test
+content. It may use Read/Write/Edit/Bash/Vos only inside the detached
+worktree and caller-provided `owns` paths; VOS, not the model, projects
+accepted targets into `vos.yaml`. Doctor uses the read-only Debug profile to
+derive host tools and run bounded Bash probes. Read-only and code-generation
+profiles may use Bash under their prompt and runtime policy boundaries.
+
+The worktree, prompt, Git status checks, and audit log are not process,
+network, credential, or host-filesystem security sandboxes. Host commands
+inherit the current user and network permissions, and repository-external
+side effects cannot be fully prevented by VOS.
 
 Full architecture details: [docs/architecture.md](docs/architecture.md).
 

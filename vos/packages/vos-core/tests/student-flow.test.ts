@@ -15,9 +15,13 @@ afterEach(() => {
 
 describe("student v2 workflow", () => {
   test("exposes the reduced command grammar and structured runner argv", () => {
-    expect(parseArgs(["bun", "vos", "spec", "check"]).command).toEqual({ kind: "spec_check" });
+    expect(parseArgs(["bun", "vos", "spec", "lint", "design"]).command).toEqual({ kind: "spec_lint", target: "design" });
+    expect(() => parseArgs(["bun", "vos", "spec", "check"])).toThrow("spec check was removed");
     expect(parseArgs(["bun", "vos", "run", "hardware", "--timeout", "42"]).command).toEqual({ kind: "run_hardware", dryRun: false, timeoutMs: 42 });
-    expect(parseArgs(["bun", "vos", "agent", "spec", "memory", "--confirm"]).command).toEqual({ kind: "agent_spec", module: "memory", confirm: true });
+    expect(() => parseArgs(["bun", "vos", "agent", "spec", "memory"])).toThrow("agent spec was removed");
+    expect(() => parseArgs(["bun", "vos", "agent", "design"])).toThrow("agent design was removed");
+    expect(() => parseArgs(["bun", "vos", "agent", "review-spec"])).toThrow("review-spec was removed");
+    expect(parseArgs(["bun", "vos", "agent", "review", "memory", "-i"]).command).toEqual({ kind: "agent_review", target: "memory", display: true });
     expect(parseArgs(["bun", "vos", "agent", "config", "--provider", "openai", "--model", "gpt-5", "--auth-env", "OPENAI_API_KEY"]).command).toEqual({
       kind: "agent_config",
       provider: "openai",
@@ -41,7 +45,7 @@ describe("student v2 workflow", () => {
     });
     expect(() => parseArgs(["bun", "vos", "agent", "kb", "What is Sv39?"])).toThrow("unknown agent subcommand: kb");
     expect(parseArgs(["bun", "vos", "kb", "list"]).command).toEqual({ kind: "kb_list" });
-    expect(parseArgs(["bun", "vos", "verify"]).command).toEqual({ kind: "verify", scope: "public", target: undefined, dryRun: false, staffPolicy: undefined });
+    expect(parseArgs(["bun", "vos", "verify", "--hidden"]).command).toEqual({ kind: "verify", scope: "public", target: undefined, dryRun: false, staffPolicy: undefined, hidden: true });
   });
 
   test("initializes an empty student project without legacy project or policy files", async () => {
@@ -50,8 +54,8 @@ describe("student v2 workflow", () => {
       const result = await invoke(root, "init");
       expect(result.status).toBe("passed");
       const unconfigured = await invoke(root, "doctor");
-      expect(unconfigured.status).toBe("validation_failed");
-      expect(unconfigured.details?.missing).toContain("agent");
+      expect(unconfigured.status).toBe("passed");
+      expect(unconfigured.details?.warnings).toContain("agent-tool-diagnosis");
       writeFileSync(join(root, ".env"), "OPENAI_API_KEY=test-only\n");
       const configured = await invoke(root, "agent", "config", "--provider", "openai", "--model", "gpt-5", "--auth-env", "OPENAI_API_KEY");
       expect(configured.status).toBe("passed");
@@ -126,8 +130,7 @@ describe("student v2 workflow", () => {
       expect(report.status).toBe("passed");
       expect(report.details?.submittable).toBe(true);
       const submit = await invoke(root, "submit");
-      expect(submit.status).toBe("passed");
-      expect(String(submit.details?.pack_path)).toContain(".vos/submit/");
+      expect(submit.status).toBe("policy_blocked");
       expect(verifyAuditChain(root).ok).toBe(true);
     });
   }, 30_000);
@@ -157,7 +160,7 @@ describe("student v2 workflow", () => {
     });
   }, 30_000);
 
-  test("applies a confirmed DesignSpec proposal atomically and leaves a commit", async () => {
+  test("lints and reviews a handwritten DesignSpec without modifying it", async () => {
     const root = makeRoot();
     await withGitIdentity(async () => {
       expect((await invoke(root, "init")).status).toBe("passed");
@@ -170,23 +173,18 @@ describe("student v2 workflow", () => {
         "hardware_port: { board: virt-board, boot: serial, console: uart, interrupt: plic }",
         "",
       ].join("\n");
-      const submitted = { files: [{ path: "spec/design.yaml", content: design }] };
-      const proposal = await executeCliInvocation([
-        "bun", "vos", "--project-root", root, "--json", "agent", "design", "--interactive",
+      writeFileSync(join(root, "spec", "design.yaml"), design);
+      const lint = await invoke(root, "spec", "lint", "design");
+      expect(lint.status).toBe("passed");
+      const before = readFileSync(join(root, "spec", "design.yaml"), "utf8");
+      const result = await executeCliInvocation([
+        "bun", "vos", "--project-root", root, "--json", "agent", "review", "design",
       ], {
         print: false,
-        interactiveAgentRunner: async (options) => {
-          expect(options.initialTask).toContain("Interview the student");
-          for (const event of acceptedSubmitEvents("student_design_proposal.v1", submitted)) {
-            await options.onEvent?.(event as never);
-          }
-        },
+        agentRunner: async () => ({ content: "reviewed", events: acceptedSubmitEvents("spec_review.v1", { findings: [], summary: "ready" }) }),
       });
-      expect(proposal.status).toBe("planned");
-      const result = await invoke(root, "agent", "design", "--confirm");
       expect(result.status).toBe("passed");
-      expect(readFileSync(join(root, "spec", "design.yaml"), "utf8")).toContain("language: rust");
-      expect(readFileSync(join(root, ".git", "HEAD"), "utf8")).toBeTruthy();
+      expect(readFileSync(join(root, "spec", "design.yaml"), "utf8")).toBe(before);
     });
   }, 30_000);
 
@@ -200,7 +198,7 @@ describe("student v2 workflow", () => {
         "module: memory",
         "level: 1",
         "purpose: Own the memory allocator implementation.",
-        "owns: [src/memory.ts]",
+        "owns: [src/memory.ts, tests/memory]",
         "interface: [allocate]",
         "properties: [allocated blocks are aligned]",
         "errors: [out_of_memory]",
@@ -226,11 +224,7 @@ describe("student v2 workflow", () => {
           writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 0;\n");
           return {
             content: "implemented",
-            events: acceptedSubmitEvents("student_implementation_result.v1", {
-              status: "passed",
-              changed_paths: ["src/memory.ts"],
-              validations: ["build", "public-memory", "contract-memory"],
-            }),
+            events: acceptedSubmitEvents("student_implementation_result.v1", implementationResult()),
           };
         },
       });
@@ -239,6 +233,13 @@ describe("student v2 workflow", () => {
       expect(readFileSync(join(root, "src", "memory.ts"), "utf8")).toContain("allocate");
       expect(git(root, ["log", "-1", "--pretty=%s"]).trim()).toBe("[vos][agent] Implement memory");
       expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
+      expect((await invoke(root, "verify", "--hidden")).status).toBe("passed");
+      expect((await invoke(root, "submit")).status).toBe("passed");
+      writeFileSync(join(root, "student-note.md"), "new committed state\n");
+      git(root, ["add", "student-note.md"]);
+      git(root, ["commit", "-m", "change commit after hidden verification"]);
+      await ensureHeadLedgerEntry({ projectRoot: root, actor: "human", intent: "change commit after hidden verification", changedTargets: ["student-note.md"] });
+      expect((await invoke(root, "submit")).status).toBe("policy_blocked");
     });
   }, 30_000);
 
@@ -251,13 +252,63 @@ describe("student v2 workflow", () => {
         print: false,
         agentRunner: async (options) => {
           writeFileSync(join(options.projectRoot, "outside.txt"), "must not land\n");
-          return { content: "bad", events: acceptedSubmitEvents("student_implementation_result.v1", { status: "passed" }) };
+          return { content: "bad", events: acceptedSubmitEvents("student_implementation_result.v1", implementationResult()) };
         },
       });
 
       expect(result.status).toBe("policy_blocked");
       expect(git(root, ["rev-parse", "HEAD"]).trim()).toBe(before);
       expect(existsSync(join(root, "outside.txt"))).toBe(false);
+    });
+  }, 30_000);
+
+  test("does not project invalid test targets or land code when structured validation fails", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      const beforeHead = git(root, ["rev-parse", "HEAD"]).trim();
+      const beforeManifest = readFileSync(join(root, "vos.yaml"), "utf8");
+      const proposal = implementationResult();
+      delete (proposal.test_targets.find((target) => target.kind === "fuzz") as { seed?: number }).seed;
+
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+          writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 0;\n");
+          return { content: "invalid fuzz target", events: acceptedSubmitEvents("student_implementation_result.v1", proposal) };
+        },
+      });
+
+      expect(result.status).toBe("validation_failed");
+      expect(git(root, ["rev-parse", "HEAD"]).trim()).toBe(beforeHead);
+      expect(readFileSync(join(root, "vos.yaml"), "utf8")).toBe(beforeManifest);
+      expect(existsSync(join(root, "src", "memory.ts"))).toBe(false);
+    });
+  }, 30_000);
+
+  test("does not land code, tests, or manifest targets when a proposed regression fails", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      const beforeHead = git(root, ["rev-parse", "HEAD"]).trim();
+      const beforeManifest = readFileSync(join(root, "vos.yaml"), "utf8");
+      const proposal = implementationResult();
+      proposal.test_targets[0]!.args = ["-e", "process.exit(1)"];
+
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+          writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 0;\n");
+          return { content: "failing regression", events: acceptedSubmitEvents("student_implementation_result.v1", proposal) };
+        },
+      });
+
+      expect(result.status).toBe("validation_failed");
+      expect(git(root, ["rev-parse", "HEAD"]).trim()).toBe(beforeHead);
+      expect(readFileSync(join(root, "vos.yaml"), "utf8")).toBe(beforeManifest);
+      expect(existsSync(join(root, "src", "memory.ts"))).toBe(false);
     });
   }, 30_000);
 
@@ -272,7 +323,7 @@ describe("student v2 workflow", () => {
         "module: shared",
         "level: 1",
         "purpose: Own shared implementation files.",
-        "owns: [src/shared.ts]",
+        "owns: [src/shared.ts, tests/generated/shared]",
         "interface: [shared_value]",
         "properties: [shared state is deterministic]",
         "errors: []",
@@ -296,11 +347,7 @@ describe("student v2 workflow", () => {
           writeFileSync(join(options.projectRoot, "src", "shared.ts"), "export const sharedValue = 1;\n");
           return {
             content: "implemented shared ownership",
-            events: acceptedSubmitEvents("student_implementation_result.v1", {
-              status: "passed",
-              changed_paths: ["src/shared.ts"],
-              validations: ["build", "public-memory", "contract-memory"],
-            }),
+            events: acceptedSubmitEvents("student_implementation_result.v1", implementationResult()),
           };
         },
       });
@@ -342,7 +389,7 @@ async function prepareModuleProject(root: string): Promise<void> {
     "module: memory",
     "level: 1",
     "purpose: Own the memory allocator implementation.",
-    "owns: [src/memory.ts]",
+    "owns: [src/memory.ts, tests/memory]",
     "interface: [allocate]",
     "properties: [allocated blocks are aligned]",
     "errors: [out_of_memory]",
@@ -373,6 +420,41 @@ function acceptedSubmitEvents(schemaId: string, result: unknown): Array<Record<s
     { type: "tool.call", name: "mcp__vos-progress__submit_result", id: "submit", arguments: JSON.stringify({ schema_id: schemaId, result }) },
     { type: "tool.result", name: "mcp__vos-progress__submit_result", id: "submit", content: JSON.stringify({ type: "vos-result-submission", schema_id: schemaId, accepted: true }) },
   ];
+}
+
+function implementationResult() {
+  const base = {
+    program: "bun",
+    args: ["--version"],
+    cwd: ".",
+    env: [] as string[],
+    timeout: 30_000,
+    verifies: ["memory"],
+    artifacts: [] as string[],
+  };
+  return {
+    status: "passed",
+    changed_paths: ["src/memory.ts"],
+    validations: ["build"],
+    test_targets: [
+      { ...base, id: "generated-public-memory", kind: "public" },
+      { ...base, id: "generated-contract-memory", kind: "contract" },
+      { ...base, id: "generated-fuzz-memory", kind: "fuzz", seed: 7, cases: 32, reproduction_artifact: ".vos/fuzz/memory-min.txt" },
+      { ...base, id: "generated-trace-memory", kind: "trace", workload: "allocator-smoke", oracle: "all allocations remain aligned", artifacts: [".vos/trace/memory.json"] },
+    ],
+    hidden_tests: [{
+      id: "hidden-memory",
+      path: "memory.hidden.ts",
+      content: "if (1 + 1 !== 2) process.exit(1);\n",
+      program: "bun",
+      args: ["{hidden_test}"],
+      cwd: ".",
+      env: [] as string[],
+      timeout: 30_000,
+      verifies: ["memory"],
+      seed: 11,
+    }],
+  };
 }
 
 async function withGitIdentity<T>(fn: () => Promise<T>): Promise<T> {

@@ -989,6 +989,14 @@ function validateV2Documents(args: {
       diagnostics.push(errorDiagnostic("spec.duplicate_id", `duplicate stable Spec ID ${module.id}`, module.path, module.id));
     }
     specIds.add(module.id);
+    const testOwns = module.owns.filter((owned) => /(^|\/)(?:tests?|testdata)(\/|$)|(?:^|\.)test\.[^/]+$/i.test(normalizePath(owned)));
+    const implementationOwns = module.owns.filter((owned) => !testOwns.includes(owned));
+    if (testOwns.length === 0) {
+      diagnostics.push(errorDiagnostic("module.test_owns_missing", `module ${module.id} owns must include at least one module test path`, module.path, module.id));
+    }
+    if (implementationOwns.length === 0) {
+      diagnostics.push(errorDiagnostic("module.implementation_owns_missing", `module ${module.id} owns must include at least one implementation path`, module.path, module.id));
+    }
     for (const owned of module.owns) {
       const normalized = normalizePath(owned);
       const isAbsolute = path.posix.isAbsolute(normalized) || /^[A-Za-z]:\//.test(normalized);

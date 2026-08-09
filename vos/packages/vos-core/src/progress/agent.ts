@@ -42,11 +42,8 @@ export function appendAgentProgressInstructions(prompt: string, resultSchemaId?:
 }
 
 function resultSubmissionContract(schemaId: string): string {
-  if (schemaId === "student_design_proposal.v1" || schemaId === "student_module_spec_proposal.v1") {
-    return `- The result object must contain files: [{path: "<allowed relative path>", content: "<complete file contents>"}]. Do not use a legacy kind field or submit a unified diff; submit the complete YAML file content.`;
-  }
   if (schemaId === "student_implementation_result.v1") {
-    return "- The result object must contain status (passed, failed, blocked, or partial). Include changed_paths and validations when known; keep all paths relative to the worktree.";
+    return "- The result object must contain status plus test_targets and hidden_tests. Propose at least one public, contract, fixed-seed fuzz, and bounded trace target. Keep paths relative; use {hidden_test} in hidden-test args for the generated private file path.";
   }
   return "";
 }

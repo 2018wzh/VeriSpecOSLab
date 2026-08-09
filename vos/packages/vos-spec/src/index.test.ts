@@ -126,6 +126,49 @@ describe("vos-spec semantic bundle", () => {
     })).toThrow(/cwd/);
   });
 
+  test("requires reproducible fuzz metadata and bounded trace/oracle metadata", () => {
+    const base = {
+      version: "vos.project.v1" as const,
+      build: { program: "bun", args: [] },
+      runners: {},
+    };
+    expect(() => parseProjectManifest({
+      ...base,
+      checks: { fuzz_memory: { kind: "fuzz", program: "bun", args: [], verifies: ["kernel/memory"] } },
+    })).toThrow(/fixed seed|bounded case count|timeout|reproduction artifact/i);
+    expect(() => parseProjectManifest({
+      ...base,
+      checks: { trace_memory: { kind: "trace", program: "bun", args: [], verifies: ["kernel/memory"], timeout: 1000 } },
+    })).toThrow(/workload|oracle|artifacts/i);
+    const parsed = parseProjectManifest({
+      ...base,
+      checks: {
+        fuzz_memory: {
+          kind: "fuzz",
+          program: "bun",
+          args: ["test", "tests/memory.fuzz.ts"],
+          timeout: 1000,
+          verifies: ["kernel/memory"],
+          seed: 7,
+          cases: 32,
+          reproduction_artifact: ".vos/fuzz/memory-min.json",
+        },
+        trace_memory: {
+          kind: "trace",
+          program: "bun",
+          args: ["test", "tests/memory.trace.ts"],
+          timeout: 1000,
+          verifies: ["kernel/memory"],
+          workload: "allocator-smoke",
+          oracle: "allocated pages remain uniquely owned",
+          artifacts: [".vos/trace/memory.json"],
+        },
+      },
+    });
+    expect(parsed.checks.fuzz_memory.seed).toBe(7);
+    expect(parsed.checks.trace_memory.oracle).toContain("uniquely owned");
+  });
+
   test("normalizes modules, operations, architecture, and derived tests", async () => {
     const root = await fixtureProject();
     const bundle = await buildNormalizedSpecBundle({ projectRoot: root });

@@ -51,6 +51,19 @@ export async function createStudentSubmitPack(params: { projectRoot: string; rep
   }
   const specHash = createHash("sha256").update(JSON.stringify(bundle.hashes)).digest("hex");
   const configHash = await hashFile(path.join(projectRoot, "vos.yaml"));
+  const hiddenRoot = path.join(projectRoot, ".vos", "hidden-tests", specHash);
+  const hiddenManifestPath = path.join(hiddenRoot, "manifest.json");
+  const hiddenVerificationPath = path.join(hiddenRoot, "last-verification.json");
+  if (!existsSync(hiddenManifestPath) || !existsSync(hiddenVerificationPath)) {
+    throw new CliError("submit requires vos verify --hidden for the current Spec hash", "policy_blocked", { reason: "hidden_verification_missing", spec_hash: specHash });
+  }
+  const hiddenManifestText = await readFile(hiddenManifestPath, "utf8");
+  const hiddenVerification = JSON.parse(await readFile(hiddenVerificationPath, "utf8")) as Record<string, unknown>;
+  if (hiddenVerification.status !== "passed" || hiddenVerification.commit_sha !== commitSha || hiddenVerification.spec_hash !== specHash || hiddenVerification.config_hash !== configHash ||
+    hiddenVerification.manifest_hash !== createHash("sha256").update(hiddenManifestText).digest("hex")) {
+    throw new CliError("hidden verification is stale or not bound to the current clean HEAD", "policy_blocked", { reason: "hidden_verification_binding_mismatch" });
+  }
+  await copyRedactedTree(hiddenRoot, path.join(staging, "hidden-tests"));
   const manifest: Record<string, unknown> = {
     version: "vos.submit.v2",
     kind: "student-submission",
@@ -61,6 +74,9 @@ export async function createStudentSubmitPack(params: { projectRoot: string; rep
     config_hash: configHash,
     report_path: "report/report.json",
     audit_path: "audit",
+    hidden_tests_path: "hidden-tests",
+    hidden_manifest_hash: hiddenVerification.manifest_hash,
+    hidden_verification_hash: await hashFile(hiddenVerificationPath),
     reproducible: true,
     hardware_status: "pending_human_review",
     audit_chain: auditChain,
@@ -69,7 +85,7 @@ export async function createStudentSubmitPack(params: { projectRoot: string; rep
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   const archivePath = path.join(submitRoot, `student-submit-${shortSha}.tar.gz`);
   await mkdir(submitRoot, { recursive: true });
-  await tar.c({ gzip: true, cwd: staging, file: archivePath }, ["repo", "audit", "report", "submit-manifest.json"]);
+  await tar.c({ gzip: true, cwd: staging, file: archivePath }, ["repo", "audit", "report", "hidden-tests", "submit-manifest.json"]);
   await rm(staging, { recursive: true, force: true });
   const packedManifest = { ...manifest, pack_path: path.relative(projectRoot, archivePath).replace(/\\/g, "/"), pack_sha256: await hashFile(archivePath), pack_size: (await stat(archivePath)).size };
   const packedPath = path.join(submitRoot, `student-submit-${shortSha}.json`);

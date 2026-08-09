@@ -6,11 +6,8 @@ import type {
   AgentGenerateCommand,
   AgentLogCommand,
   AgentPlanCommand,
-  AgentReviewSpecCommand,
   AgentServeCommand,
   AgentValidateGeneratedCommand,
-  AgentDesignCommand,
-  AgentSpecCommand,
   AgentImplementCommand,
   AgentVerifyCommand,
   AgentReviewCommand,
@@ -46,7 +43,6 @@ import type {
   StageSaveCommand,
   SeedStatusCommand,
   SpecCheckConsistencyCommand,
-  SpecCheckCommand,
   SpecLintCommand,
   SpecNormalizeCommand,
   SpecPatchApplyCommand,
@@ -413,21 +409,16 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
   if (command === "spec") {
     const second = rest[0];
     if (second === "check") {
-      if (rest.length > 1) throw new Error("spec check does not accept positional arguments");
-      return { kind: "spec_check" } satisfies SpecCheckCommand;
+      throw new Error("spec check was removed; use `vos spec lint [target]`");
     }
     if (second === "lint") {
-      let noAgent = false;
       let target: string | undefined;
       for (const arg of rest.slice(1)) {
-        if (arg === "--no-agent") {
-          noAgent = true;
-          continue;
-        }
         if (arg.startsWith("-")) throw new Error(`unknown flag for spec lint: ${arg}`);
+        if (target) throw new Error("spec lint accepts at most one target");
         target = arg;
       }
-      return { kind: "spec_lint", path: target, noAgent } satisfies SpecLintCommand;
+      return { kind: "spec_lint", target } satisfies SpecLintCommand;
     }
     if (second === "normalize") {
       return { kind: "spec_normalize" } satisfies SpecNormalizeCommand;
@@ -733,15 +724,21 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
   }
 
   if (command === "verify") {
-    const scope = (rest[0] ?? "public") as VerifyScope;
+    const hasScope = Boolean(rest[0] && !rest[0]!.startsWith("-"));
+    const scope = (hasScope ? rest[0] : "public") as VerifyScope;
     if (!isVerifyScope(scope)) {
       throw new Error(`unsupported verify mode: ${rest[0]}`);
     }
     let dryRun = false;
     let target: string | undefined;
     let staffPolicy: string | undefined;
-    for (let i = 1; i < rest.length; i++) {
+    let hidden = false;
+    for (let i = hasScope ? 1 : 0; i < rest.length; i++) {
       const arg = rest[i];
+      if (arg === "--hidden") {
+        hidden = true;
+        continue;
+      }
       if (arg === "--dry-run") {
         dryRun = true;
         continue;
@@ -770,7 +767,7 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       }
       throw new Error(`unknown flag for verify: ${arg}`);
     }
-    return { kind: "verify", scope, target, dryRun, staffPolicy } satisfies VerifyCommand;
+    return { kind: "verify", scope, target, dryRun, staffPolicy, ...(hidden ? { hidden: true } : {}) } satisfies VerifyCommand;
   }
 
   if (command === "trace") {
@@ -1045,20 +1042,10 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       } satisfies AgentConfigCommand;
     }
     if (second === "design") {
-      const display = rest.slice(1).some(isInteractiveDisplayFlag);
-      const confirm = rest.slice(1).some((arg) => arg === "--confirm" || arg === "--yes");
-      if (rest.slice(1).some((arg) => !isInteractiveDisplayFlag(arg) && arg !== "--confirm" && arg !== "--yes")) {
-        throw new Error("agent design accepts --confirm and --interactive");
-      }
-      return { kind: "agent_design", ...(confirm ? { confirm: true } : {}), ...(display ? { display: true } : {}) } satisfies AgentDesignCommand;
+      throw new Error("agent design was removed; discuss choices with `vos agent ask`, then handwrite and review the DesignSpec");
     }
     if (second === "spec") {
-      const module = rest[1];
-      if (!module || module.startsWith("-")) throw new Error("agent spec requires <module>");
-      const tail = rest.slice(2);
-      const confirm = tail.some((arg) => arg === "--confirm" || arg === "--yes");
-      if (tail.some((arg) => !isInteractiveDisplayFlag(arg) && arg !== "--confirm" && arg !== "--yes")) throw new Error("agent spec accepts one module, --confirm, and --interactive");
-      return { kind: "agent_spec", module, ...(confirm ? { confirm: true } : {}), ...(tail.some(isInteractiveDisplayFlag) ? { display: true } : {}) } satisfies AgentSpecCommand;
+      throw new Error("agent spec was removed; handwrite the Spec, run `vos spec lint`, then use `vos agent review`");
     }
     if (second === "implement") {
       const module = rest[1];
@@ -1082,8 +1069,9 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
     }
     if (second === "review") {
       const positional = rest.slice(1).filter((arg) => !isInteractiveDisplayFlag(arg));
-      if (positional.length > 1) throw new Error("agent review accepts at most one module");
-      return { kind: "agent_review", module: positional[0], ...(rest.some(isInteractiveDisplayFlag) ? { display: true } : {}) } satisfies AgentReviewCommand;
+      if (positional.length > 1) throw new Error("agent review accepts at most one Spec ID, path, design, or all target");
+      if (positional[0]?.startsWith("-")) throw new Error(`unknown flag for agent review: ${positional[0]}`);
+      return { kind: "agent_review", target: positional[0], ...(rest.some(isInteractiveDisplayFlag) ? { display: true } : {}) } satisfies AgentReviewCommand;
     }
     if (second === "serve") {
       let host: string | undefined;
@@ -1425,33 +1413,7 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       return { kind: "agent_log", append, inputPath, ...displayFlag(display) } satisfies AgentLogCommand;
     }
     if (second === "review-spec") {
-      let target: string | undefined;
-      let display = false;
-      for (let i = 1; i < rest.length; i++) {
-        const arg = rest[i];
-        if (isInteractiveDisplayFlag(arg)) {
-          display = true;
-          continue;
-        }
-        if (arg === "--target") {
-          target = resolveRequiredValue(rest, i, arg);
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--target=")) {
-          target = arg.slice("--target=".length);
-          continue;
-        }
-        if (!arg.startsWith("-") && target === undefined) {
-          target = arg;
-          continue;
-        }
-        if (arg.startsWith("-")) {
-          throw new Error(`unknown flag for agent review-spec: ${arg}`);
-        }
-        throw new Error(`unexpected positional value for agent review-spec: ${arg}`);
-      }
-      return { kind: "agent_review_spec", target, ...displayFlag(display) } satisfies AgentReviewSpecCommand;
+      throw new Error("agent review-spec was removed; use `vos agent review [target] [-i]`");
     }
     throw new Error(`unknown agent subcommand: ${second}`);
   }

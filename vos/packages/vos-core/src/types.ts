@@ -121,12 +121,7 @@ export interface ToolchainInitCommand extends BaseCommand {
 
 export interface SpecLintCommand extends BaseCommand {
   kind: "spec_lint";
-  path?: string;
-  noAgent?: boolean;
-}
-
-export interface SpecCheckCommand extends BaseCommand {
-  kind: "spec_check";
+  target?: string;
 }
 
 export interface SpecNormalizeCommand extends BaseCommand {
@@ -206,6 +201,7 @@ export interface VerifyCommand extends BaseCommand {
   target?: string;
   dryRun: boolean;
   staffPolicy?: string;
+  hidden?: boolean;
 }
 
 export interface TraceSyscallCommand extends BaseCommand {
@@ -291,19 +287,6 @@ export interface AgentDebugCommand extends BaseCommand {
   display?: boolean;
 }
 
-export interface AgentDesignCommand extends BaseCommand {
-  kind: "agent_design";
-  confirm?: boolean;
-  display?: boolean;
-}
-
-export interface AgentSpecCommand extends BaseCommand {
-  kind: "agent_spec";
-  module: string;
-  confirm?: boolean;
-  display?: boolean;
-}
-
 export interface AgentImplementCommand extends BaseCommand {
   kind: "agent_implement";
   module: string;
@@ -317,7 +300,7 @@ export interface AgentVerifyCommand extends BaseCommand {
 
 export interface AgentReviewCommand extends BaseCommand {
   kind: "agent_review";
-  module?: string;
+  target?: string;
   display?: boolean;
 }
 
@@ -344,12 +327,6 @@ export interface AgentLogCommand extends BaseCommand {
   kind: "agent_log";
   append: boolean;
   inputPath?: string;
-  display?: boolean;
-}
-
-export interface AgentReviewSpecCommand extends BaseCommand {
-  kind: "agent_review_spec";
-  target?: string;
   display?: boolean;
 }
 
@@ -418,7 +395,6 @@ export type CliCommand =
   | ToolchainLintCommand
   | ToolchainInitCommand
   | SpecLintCommand
-  | SpecCheckCommand
   | SpecNormalizeCommand
   | SpecCheckConsistencyCommand
   | SpecPatchLintCommand
@@ -444,14 +420,11 @@ export type CliCommand =
   | AgentApplyPatchCommand
   | AgentValidateGeneratedCommand
   | AgentDebugCommand
-  | AgentDesignCommand
-  | AgentSpecCommand
   | AgentImplementCommand
   | AgentVerifyCommand
   | AgentReviewCommand
   | AgentConfigCommand
   | AgentLogCommand
-  | AgentReviewSpecCommand
   | AgentAskCommand
   | KbAddCommand
   | KbListCommand

@@ -19,6 +19,7 @@ type ToolProfile =
   | "readonly-codegen"
   | "readonly-validation"
   | "readonly-debug"
+  | "readonly-doctor"
   | "readonly-reference"
   | "student-implementation";
 
@@ -31,11 +32,10 @@ type OutputSchemaId =
   | "toolchain_generation_draft.v1"
   | "validator_feedback.v1"
   | "debug_output.v1"
+  | "doctor_diagnosis.v1"
   | "debug_trace_plan.v1"
   | "report_narrative.v1"
   | "reference_payload.v1"
-  | "student_design_proposal.v1"
-  | "student_module_spec_proposal.v1"
   | "student_implementation_result.v1"
   | "knowledgebase_answer.v1";
 
@@ -103,29 +103,10 @@ const DEFAULT_SYSTEM_PROMPT = [
   "Keep role boundaries stable: do not reveal hidden tests, staff-only policy, or agent-only text verbatim to student-facing users.",
   "Read and follow applicable AGENTS.md; update it only when explicitly asked or when a durable public project convention changes.",
   "In course mode, proposal and review tasks must not directly write files; return patches or structured recommendations through the declared output schema. An explicitly labeled implementation task may write only the caller-provided allowed paths in its disposable worktree.",
+  "When Bash is available to a read-only task, use it only for inspection and bounded diagnostics. Do not install packages, download executables, change system configuration, or modify project files. This prompt is an audit contract, not a host security boundary.",
 ].join("\n");
 
 const PROFILE_CONFIGS: AgentTaskProfileConfig[] = [
-  {
-    promptId: "student-design.v2",
-    mode: "smart",
-    taskKinds: ["design"],
-    toolProfile: "readonly-spec",
-    skills: ["os-spec-authoring"],
-    mcpServers: ["spec-index"],
-    outputSchema: "student_design_proposal.v1",
-    visibilityScope: "student-public",
-  },
-  {
-    promptId: "student-spec.v2",
-    mode: "smart",
-    taskKinds: ["spec"],
-    toolProfile: "readonly-spec",
-    skills: ["os-spec-authoring"],
-    mcpServers: ["spec-index"],
-    outputSchema: "student_module_spec_proposal.v1",
-    visibilityScope: "student-public",
-  },
   {
     promptId: "student-implementation.v2",
     mode: "smart",
@@ -207,6 +188,16 @@ const PROFILE_CONFIGS: AgentTaskProfileConfig[] = [
     visibilityScope: "agent-public",
   },
   {
+    promptId: "doctor-debug-agent.v1",
+    mode: "smart",
+    taskKinds: ["doctor"],
+    toolProfile: "readonly-doctor",
+    skills: ["verification-diagnosis"],
+    mcpServers: ["evidence-store", "spec-index"],
+    outputSchema: "doctor_diagnosis.v1",
+    visibilityScope: "agent-public",
+  },
+  {
     promptId: "debug-agent.v1",
     mode: "smart",
     taskKinds: ["debug", "explain_log", "failure_triage"],
@@ -249,13 +240,14 @@ const PROFILE_CONFIGS: AgentTaskProfileConfig[] = [
 ];
 
 const TOOL_PROFILE_TOOLS: Record<ToolProfile, readonly string[]> = {
-  "readonly-routing": ["Read", "Glob", "Grep", "Vos", "TodoRead"],
-  "readonly-spec": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
-  "readonly-codegen": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
-  "readonly-validation": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
+  "readonly-routing": ["Read", "Glob", "Grep", "Bash", "Vos", "TodoRead"],
+  "readonly-spec": ["Read", "Glob", "Grep", "Bash", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
+  "readonly-codegen": ["Read", "Glob", "Grep", "Bash", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
+  "readonly-validation": ["Read", "Glob", "Grep", "Bash", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
   "student-implementation": ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
-  "readonly-debug": ["Read", "Glob", "Grep", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS, "mcp__gdb__gdb_start", "mcp__gdb__gdb_load", "mcp__gdb__gdb_load_core", "mcp__gdb__gdb_command", "mcp__gdb__gdb_set_breakpoint", "mcp__gdb__gdb_continue", "mcp__gdb__gdb_step", "mcp__gdb__gdb_next", "mcp__gdb__gdb_finish", "mcp__gdb__gdb_print", "mcp__gdb__gdb_examine", "mcp__gdb__gdb_backtrace", "mcp__gdb__gdb_info_registers", "mcp__gdb__gdb_list_source", "mcp__gdb__gdb_list_sessions", "mcp__gdb__gdb_attach", "mcp__gdb__gdb_terminate", "mcp__qemu-monitor__qmp_query", "mcp__qemu-monitor__hmp_info", ...VISUALIZATION_TOOL_NAMES],
-  "readonly-reference": ["Read", "Glob", "Grep", "TodoRead", "Task", "WebSearch", "WebFetch", ...PROJECT_CONTEXT_TOOLS, "mcp__vos-kb__kb_search", "mcp__vos-kb__kb_lookup", "mcp__vos-kb__kb_list_sources", ...VISUALIZATION_TOOL_NAMES],
+  "readonly-debug": ["Read", "Glob", "Grep", "Bash", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS, "mcp__gdb__gdb_start", "mcp__gdb__gdb_load", "mcp__gdb__gdb_load_core", "mcp__gdb__gdb_command", "mcp__gdb__gdb_set_breakpoint", "mcp__gdb__gdb_continue", "mcp__gdb__gdb_step", "mcp__gdb__gdb_next", "mcp__gdb__gdb_finish", "mcp__gdb__gdb_print", "mcp__gdb__gdb_examine", "mcp__gdb__gdb_backtrace", "mcp__gdb__gdb_info_registers", "mcp__gdb__gdb_list_source", "mcp__gdb__gdb_list_sessions", "mcp__gdb__gdb_attach", "mcp__gdb__gdb_terminate", "mcp__qemu-monitor__qmp_query", "mcp__qemu-monitor__hmp_info", ...VISUALIZATION_TOOL_NAMES],
+  "readonly-doctor": ["Read", "Glob", "Grep", "Bash", "Vos", "TodoRead", "Task", ...PROJECT_CONTEXT_TOOLS],
+  "readonly-reference": ["Read", "Glob", "Grep", "Bash", "TodoRead", "Task", "WebSearch", "WebFetch", ...PROJECT_CONTEXT_TOOLS, "mcp__vos-kb__kb_search", "mcp__vos-kb__kb_lookup", "mcp__vos-kb__kb_list_sources", ...VISUALIZATION_TOOL_NAMES],
 };
 
 const TOOL_PROFILE_VOS_COMMANDS: Record<ToolProfile, readonly string[]> = {
@@ -265,6 +257,7 @@ const TOOL_PROFILE_VOS_COMMANDS: Record<ToolProfile, readonly string[]> = {
   "readonly-validation": ["spec lint", "arch lint", "build", "verify public", "run qemu"],
   "student-implementation": ["spec lint", "arch lint", "build", "verify public", "run qemu"],
   "readonly-debug": ["build", "verify public", "run qemu"],
+  "readonly-doctor": ["spec lint", "build"],
   "readonly-reference": [],
 };
 

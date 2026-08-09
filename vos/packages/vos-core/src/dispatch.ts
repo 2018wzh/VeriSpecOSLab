@@ -25,7 +25,7 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
       return handlers.executeInit(command, context);
 
     case "doctor":
-      return handlers.executeDoctor(command, projectRoot);
+      return handlers.executeDoctor(command, context, evidence);
 
     case "stage_show":
       return handlers.executeStageShow(command, projectRoot);
@@ -41,9 +41,6 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
 
     case "spec_lint":
       return handlers.executeSpecLint(command, projectRoot, context, evidence);
-
-    case "spec_check":
-      return handlers.executeSpecCheck(command, projectRoot, context, evidence);
 
     case "spec_normalize":
       return handlers.executeSpecNormalize(command, projectRoot, context, evidence);
@@ -147,12 +144,6 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
     case "agent_debug":
       return handlers.executeAgentDebug(command, context, evidence);
 
-    case "agent_design":
-      return handlers.executeAgentDesign(command, context, evidence);
-
-    case "agent_spec":
-      return handlers.executeAgentSpec(command, context, evidence);
-
     case "agent_implement":
       return handlers.executeAgentImplement(command, context, evidence);
 
@@ -164,9 +155,6 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
 
     case "agent_log":
       return handlers.executeAgentLog(command, projectRoot, evidence);
-
-    case "agent_review_spec":
-      return handlers.executeAgentReviewSpec(command, context, evidence);
 
     case "agent_ask":
       return handlers.executeAgentAsk(command, context, evidence);

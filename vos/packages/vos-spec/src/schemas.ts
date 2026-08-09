@@ -298,7 +298,14 @@ const checkTargetSchema = z.preprocess(
     return record;
   },
   commandSchema.extend({
+    kind: z.enum(["public", "contract", "fuzz", "trace"]).default("public"),
     verifies: z.array(z.string().min(1)).default([]),
+    artifacts: z.array(z.string().min(1)).default([]),
+    seed: z.number().int().nonnegative().optional(),
+    cases: z.number().int().positive().optional(),
+    reproduction_artifact: z.string().min(1).optional(),
+    workload: z.string().min(1).optional(),
+    oracle: z.string().min(1).optional(),
   }).strict(),
 );
 
@@ -311,7 +318,7 @@ export const projectManifestSchema = z.object({
   }).strict(),
   checks: z.record(checkTargetSchema).default({}),
 }).strict().superRefine((manifest, ctx) => {
-  const checkTargetPaths = (target: { cwd?: string; artifacts?: string[] }, path: (string | number)[]) => {
+  const checkTargetPaths = (target: { cwd?: string; artifacts?: string[]; reproduction_artifact?: string }, path: (string | number)[]) => {
     if (target.cwd) {
       const normalized = target.cwd.replace(/\\/g, "/");
       if (normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized) || normalized === ".." || normalized.startsWith("../") || normalized.includes("/../")) {
@@ -324,11 +331,37 @@ export const projectManifestSchema = z.object({
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...path, "artifacts", index], message: "artifact path must be repository-relative and cannot traverse" });
       }
     }
+    if (target.reproduction_artifact) {
+      const normalized = target.reproduction_artifact.replace(/\\/g, "/");
+      if (normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized) || normalized === ".." || normalized.startsWith("../") || normalized.includes("/../")) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...path, "reproduction_artifact"], message: "reproduction artifact path must be repository-relative and cannot traverse" });
+      }
+    }
   };
   checkTargetPaths(manifest.build, ["build"]);
   if (manifest.runners.qemu) checkTargetPaths(manifest.runners.qemu, ["runners", "qemu"]);
   if (manifest.runners.hardware) checkTargetPaths(manifest.runners.hardware, ["runners", "hardware"]);
-  for (const [id, target] of Object.entries(manifest.checks)) checkTargetPaths(target, ["checks", id]);
+  for (const [id, target] of Object.entries(manifest.checks)) {
+    checkTargetPaths(target, ["checks", id]);
+    if (target.kind === "fuzz") {
+      if (target.seed === undefined) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["checks", id, "seed"], message: "fuzz targets require a fixed seed" });
+      if (target.cases === undefined) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["checks", id, "cases"], message: "fuzz targets require a bounded case count" });
+      if (!target.timeout) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["checks", id, "timeout"], message: "fuzz targets require a timeout" });
+      if (!target.reproduction_artifact) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["checks", id, "reproduction_artifact"], message: "fuzz targets require a minimal reproduction artifact path" });
+    }
+    if (target.kind === "trace") {
+      if (!target.workload) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["checks", id, "workload"], message: "trace targets require a workload" });
+      if (!target.oracle) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["checks", id, "oracle"], message: "trace targets require an oracle" });
+      if (!target.timeout) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["checks", id, "timeout"], message: "trace targets require a timeout" });
+      if (target.artifacts.length === 0) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["checks", id, "artifacts"], message: "trace targets require evidence artifacts" });
+    }
+    if (target.kind !== "fuzz" && (target.seed !== undefined || target.cases !== undefined || target.reproduction_artifact !== undefined)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["checks", id], message: "seed, cases, and reproduction_artifact are only valid for fuzz targets" });
+    }
+    if (target.kind !== "trace" && (target.workload !== undefined || target.oracle !== undefined)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["checks", id], message: "workload and oracle are only valid for trace targets" });
+    }
+  }
   const qemu = manifest.runners.qemu;
   if (qemu && /qemu-system/i.test(qemu.program) && !qemu.args.includes("-nographic")) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["runners", "qemu", "args"], message: "QEMU targets must include -nographic for serial-only evidence" });

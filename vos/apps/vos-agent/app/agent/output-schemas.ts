@@ -24,6 +24,26 @@ const stringObject = { type: "object", additionalProperties: true } as const;
 const anyValue = { type: "any" } as const;
 
 const schemas: Record<string, OutputSchemaDefinition> = {
+  "doctor_diagnosis.v1": {
+    id: "doctor_diagnosis.v1",
+    description: "Spec-derived host tool diagnosis backed by executed Bash probe evidence.",
+    schema: strictObjectSchema({
+      summary: { type: "string" },
+      tools: {
+        type: "array",
+        items: strictObjectSchema({
+          program: { type: "string" },
+          purpose: { type: "string" },
+          required: { type: "boolean" },
+          status: { type: "string", enum: ["installed", "missing", "failed"] },
+          spec_refs: stringArray,
+          probe_ids: stringArray,
+          suggestions: stringArray,
+        }, ["program", "purpose", "required", "status", "spec_refs", "probe_ids", "suggestions"]),
+      },
+      limitations: stringArray,
+    }, ["summary", "tools", "limitations"]),
+  },
   "gateway_decision.v1": {
     id: "gateway_decision.v1",
     description: "Routing or policy decision for a VOS task.",
@@ -211,36 +231,6 @@ const schemas: Record<string, OutputSchemaDefinition> = {
       references: { type: "array", items: stringObject },
     }, ["summary", "references"]),
   },
-  "student_design_proposal.v1": {
-    id: "student_design_proposal.v1",
-    description: "Confirmed student DesignSpec proposal represented as owned file contents.",
-    schema: objectSchema({
-      files: {
-        type: "array",
-        items: objectSchema({
-          path: { type: "string" },
-          content: { type: "string" },
-        }, ["path", "content"]),
-      },
-      summary: { type: "string" },
-      rationale: stringArray,
-    }, ["files"]),
-  },
-  "student_module_spec_proposal.v1": {
-    id: "student_module_spec_proposal.v1",
-    description: "Confirmed student ModuleSpec proposal represented as owned file contents.",
-    schema: objectSchema({
-      files: {
-        type: "array",
-        items: objectSchema({
-          path: { type: "string" },
-          content: { type: "string" },
-        }, ["path", "content"]),
-      },
-      summary: { type: "string" },
-      rationale: stringArray,
-    }, ["files"]),
-  },
   "student_implementation_result.v1": {
     id: "student_implementation_result.v1",
     description: "Student implementation validation result returned after worktree checks.",
@@ -250,7 +240,41 @@ const schemas: Record<string, OutputSchemaDefinition> = {
       validations: stringArray,
       summary: { type: "string" },
       diagnostics: stringArray,
-    }, ["status"]),
+      test_targets: {
+        type: "array",
+        items: objectSchema({
+          id: { type: "string" },
+          kind: { type: "string", enum: ["public", "contract", "fuzz", "trace"] },
+          program: { type: "string" },
+          args: stringArray,
+          cwd: { type: "string" },
+          env: stringArray,
+          timeout: { type: "integer" },
+          verifies: stringArray,
+          artifacts: stringArray,
+          seed: { type: "integer" },
+          cases: { type: "integer" },
+          reproduction_artifact: { type: "string" },
+          workload: { type: "string" },
+          oracle: { type: "string" },
+        }, ["id", "kind", "program", "args", "cwd", "env", "timeout", "verifies", "artifacts"]),
+      },
+      hidden_tests: {
+        type: "array",
+        items: objectSchema({
+          id: { type: "string" },
+          path: { type: "string" },
+          content: { type: "string" },
+          program: { type: "string" },
+          args: stringArray,
+          cwd: { type: "string" },
+          env: stringArray,
+          timeout: { type: "integer" },
+          verifies: stringArray,
+          seed: { type: "integer" },
+        }, ["id", "path", "content", "program", "args", "cwd", "env", "timeout", "verifies", "seed"]),
+      },
+    }, ["status", "test_targets", "hidden_tests"]),
   },
 };
 
@@ -275,5 +299,17 @@ function objectSchema(
     properties,
     required,
     additionalProperties: true,
+  };
+}
+
+function strictObjectSchema(
+  properties: Record<string, JsonSchema>,
+  required: string[],
+): JsonObjectSchema {
+  return {
+    type: "object",
+    properties,
+    required,
+    additionalProperties: false,
   };
 }

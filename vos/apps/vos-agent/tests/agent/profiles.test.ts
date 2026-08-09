@@ -6,6 +6,7 @@ import {
   publicAgentTaskProfile,
   resolveAgentTaskProfile,
 } from "../../app/agent/profiles.ts";
+import { outputSchemaForId } from "../../app/agent/output-schemas.ts";
 import { resolveBuiltInSkills } from "../../app/skills/index.ts";
 import type { Tool } from "../../app/tools/types.ts";
 
@@ -25,9 +26,13 @@ function tool(name: string): Tool {
 }
 
 describe("agent task profiles", () => {
+  test("doctor diagnosis uses a strict top-level and per-tool result schema", () => {
+    const schema = outputSchemaForId("doctor_diagnosis.v1").schema;
+    expect(schema.additionalProperties).toBe(false);
+    const tools = schema.properties.tools as { items: { additionalProperties?: boolean } };
+    expect(tools.items.additionalProperties).toBe(false);
+  });
   const cliTaskKinds = [
-    "design",
-    "spec",
     "implementation",
     "plan",
     "design_review",
@@ -37,6 +42,7 @@ describe("agent task profiles", () => {
     "validate",
     "review_patch",
     "debug",
+    "doctor",
     "debug_trace",
     "failure_triage",
     "knowledgebase_qa",
@@ -49,8 +55,6 @@ describe("agent task profiles", () => {
 
   test("routes every VOS CLI agent task kind to an explicit profile", () => {
     const expected: Record<string, string> = {
-      design: "student_design_proposal.v1",
-      spec: "student_module_spec_proposal.v1",
       implementation: "student_implementation_result.v1",
       plan: "plan_draft.v1",
       design_review: "spec_review.v1",
@@ -60,6 +64,7 @@ describe("agent task profiles", () => {
       validate: "validator_feedback.v1",
       review_patch: "validator_feedback.v1",
       debug: "debug_output.v1",
+      doctor: "doctor_diagnosis.v1",
       debug_trace: "debug_trace_plan.v1",
       failure_triage: "debug_output.v1",
       knowledgebase_qa: "knowledgebase_answer.v1",
@@ -145,6 +150,17 @@ describe("agent task profiles", () => {
     expect(await allowed(policy, "Bash")).toBe(true);
     expect(await allowed(policy, "Vos", { command: "build" })).toBe(true);
     expect(await allowed(policy, "Vos", { command: "run qemu" })).toBe(true);
+  });
+
+  test("every read-only and code-generation profile exposes Bash with an explicit read-only boundary", async () => {
+    for (const taskKind of ["plan", "design_review", "spec_revision", "codegen", "validate", "debug", "doctor", "knowledgebase_qa", "spec_review"]) {
+      const profile = resolveAgentTaskProfile({ taskKind });
+      const policy = createProfileToolPolicy(profile);
+      expect(await allowed(policy, "Bash")).toBe(true);
+      const prompt = buildAgentTaskSystemPrompt(profile);
+      expect(prompt).toContain("bounded diagnostics");
+      expect(prompt).toContain("not a host security boundary");
+    }
   });
 
   test("only debug profile can use GDB MCP tools", async () => {
