@@ -1,16 +1,16 @@
 # 第 8 章：个性 OS 的多维剖面 — 方向组合与自主进化
 
-> **对应实验**：[Lab 8: 个性 OS 多维剖面](../labs/lab8-personal-goal.md)
+> **对应实验**：[Lab 8：个性化目标——从兴趣方向到可验证结果](../labs/lab8-personal-goal.md)
 
 ## 8.1 你的 OS 不必只有一种个性
 
-你的 OS 已经是一个完整的系统——它能启动、管理内存、响应中断、运行用户程序、持久化数据、通过资源模型暴露系统能力。现在，它需要回答最后一个问题：**它为什么而存在？**
+你的 OS 已经是一个完整的系统。它能启动、管理内存、响应中断、运行用户程序、持久化数据，并通过资源模型暴露系统能力。现在，它需要回答最后一个问题：**它为什么而存在？**
 
-传统 OS 实验到这里就结束了。但 VeriSpecOSLab 的设计哲学是：**一个 OS 的价值不在于它"跑通了"，而在于它做出了什么设计判断、在什么维度上展示了独特性。**
+传统 OS 实验到这里就结束了。VeriSpecOSLab 的设计哲学不同：**一个 OS 的价值，取决于它做出了什么设计判断、在什么维度上展示了独特性。"跑通了"只是它的底线，不是它的价值来源。**
 
-Linux 不是单一个性的 OS。它是宏内核（架构方向），兼容 POSIX（兼容方向），有 CFS/EEVDF 调度器（性能方向），有 SELinux（安全方向），有 eBPF（可扩展方向）。这些方向不是互斥的——它们叠加在一起，定义了 Linux 的多维剖面。
+Linux 不是单一个性的 OS。它是宏内核（架构方向），兼容 POSIX（兼容方向），有 CFS/EEVDF 调度器（性能方向），有 SELinux（安全方向），有 eBPF（可扩展方向）。这些方向互不排斥，叠加在一起，定义了 Linux 的多维剖面。
 
-你的 OS 同样可以同时在多个维度上进化。本章不提供"N 选 1"的菜单——它提供的是方向簇和探索维度，以及帮你定义自己剖面的指南。
+你的 OS 同样可以同时在多个维度上进化。本章不提供"N 选 1"的菜单，给的是方向簇和探索维度，以及帮你定义自己剖面的指南。
 
 本章保留了大量方向分析和目标设计工作表，用来比较 baseline、target、正确性底线、验证判据和不可接受的回归。这些工作表不是可直接提交的 YAML schema。当前 GoalSpec 只使用以下严格字段：
 
@@ -28,17 +28,17 @@ correctness:
 
 ### 从"路线"到"方向"
 
-旧的 OS 实验会给你一条预设的路线：做网络栈，或者做文件系统优化。你沿着路线走，走到终点。
+以前的 OS 实验会给你一条预设的路线：做网络栈，或者做文件系统优化。你沿着路线走，走到终点。
 
-本章的哲学不同：**方向是你选择的探索维度，路线是你自己走出来的。** 我们提供方向（探索什么维度）、建议步骤（可以从哪里起步）、验证标准（怎么证明你做到了），但你决定：
+本章换了一个思路：**方向是你选择的探索维度，路线是你自己走出来的。** 我们给出方向（探索什么维度）、建议步骤（可以从哪里起步）、验证标准（怎么证明你做到了），但决定权在你：
 
-- 选择哪些方向（数量不限：1 个、3 个、5 个——都可以）
+- 选择哪些方向（数量不限：1 个、3 个、5 个都行）
 - 每个方向做多深（浅尝辄止地了解？深入掌握？尝试突破已知边界？）
 - 方向之间如何叠加（独立推进？深度交织？）
 
 ### 历史上的"个性 OS"——当设计者拒绝主流
 
-这些 OS 在商业上都失败了，但它们各自在一个维度上走得比主流 OS 更远。你的个性化目标不一定要"正确"——需要的是清晰的设计判断、诚实的代价说明和可验证的证据。
+这些 OS 在商业上都失败了，但它们各自在一个维度上走得比主流 OS 更远。你的个性化目标不一定要"正确"，它需要的是清晰的设计判断、诚实的代价说明和可验证的证据。
 
 **Plan 9（Bell Labs, 1992）**：Unix 创造者们重新思考分布式时代的 OS。一切资源通过网络文件共享。商业失败，但"一切皆网络文件"思想影响了后来的云计算架构。
 
@@ -46,7 +46,7 @@ correctness:
 
 **Exokernel（MIT, 1998）**：内核不做抽象，只做资源隔离。应用自选文件系统库。商业失败，但思路在 AWS Nitro 中复活。
 
-**WSL（Microsoft, 2016）**：Windows 内核旁边跑一个 Linux 兼容层。它的剖面是"NT 内核 + Linux ABI 兼容"。这不是"选一条路"——这是两个方向的深度交织。
+**WSL（Microsoft, 2016）**：Windows 内核旁边跑一个 Linux 兼容层。它的剖面是"NT 内核 + Linux ABI 兼容"。它把两个方向深度交织在一起，远不止"选一条路"那么简单。
 
 启示：**一个 OS 的独特价值，往往来自多个方向的交叉处。**
 
@@ -54,9 +54,9 @@ correctness:
 
 ## 8.2 六大方向簇
 
-方向按探索维度分为六个簇。每个方向提供建议步骤——这不是你必须照做的清单，而是帮你判断"这个方向大概涉及什么"的参考。你可以跳过某些步骤、深入某些步骤、或在建议步骤之外增加自己的探索。
+方向按探索维度分为六个簇。每个方向都附有建议步骤，作用是帮你判断"这个方向大概涉及什么"，不必照单全收。你可以跳过某些步骤、深入某些步骤，或在建议步骤之外增加自己的探索。
 
-六个方向簇——功能扩展(F)、兼容实现(C)、专项优化(O)、硬件驱动(H)、前沿探索(X) 和架构设计(A)。A 簇关注"内核代码如何组织和抽象"，与其他簇正交：你可以在做 F/C/O/X 方向的任何阶段引入 A1 的设计方法论。
+六个方向簇分别是功能扩展(F)、兼容实现(C)、专项优化(O)、硬件驱动(H)、前沿探索(X) 和架构设计(A)。A 簇关注"内核代码如何组织和抽象"，与其他簇正交：你可以在做 F/C/O/X 方向的任何阶段引入 A1 的设计方法论。
 
 方向编号方便你在 多个 GoalSpec 和 DesignSpec 组合不变量 中引用。
 
@@ -101,11 +101,11 @@ correctness:
 | **A3**  | 异步运行时 (Async Runtime) | A | ★★★★ extreme |       7（完整内核）       |  3-5 周  | 状态机爆炸、取消语义、唤醒丢失               |
 | **A4**  | 机制与策略分离             | A |   ★★★ hard   |       7（完整内核）       |  2-4 周  | 过度抽象导致性能退化、边界模糊导致职责混乱   |
 
-> **使用建议：** 先按"前置阶段"筛掉你还不能做的方向；再按"难度"和"工期"评估你的时间预算；最后读你感兴趣的方向详情。**1 个方向做到 mastery 比 3 个方向全是 explore 更有教学价值。**
+> **使用建议：** 先按"前置阶段"筛掉现在还做不了的方向，再按"难度"和"工期"估算时间预算，最后读感兴趣的方向详情。**1 个方向做到 mastery 比 3 个方向全是 explore 更有教学价值。**
 
 > **关于 USB/PCI 编号：** USB 和 PCI 设备驱动已从功能扩展簇迁移到硬件驱动簇，统一使用 H1/H2。
 >
-> **关于多核支持：** 多核是横切关注点，贯穿整个教程——阶段 2 启动多 HART、阶段 3 per-CPU 页分配器、阶段 4 per-HART trap handler 与 IPI、阶段 5 per-CPU 调度队列与内核锁、阶段 6 buffer cache 并发、阶段 7 fd 表与 pipe 并发访问。每个阶段的教学内容已包含对应的多核设计考量。
+> **关于多核支持：** 多核是横切关注点，贯穿整个教程：阶段 2 启动多 HART、阶段 3 per-CPU 页分配器、阶段 4 per-HART trap handler 与 IPI、阶段 5 per-CPU 调度队列与内核锁、阶段 6 buffer cache 并发、阶段 7 fd 表与 pipe 并发访问。每个阶段的教学内容都包含对应的多核设计考量。
 >
 > **关于架构设计簇 (A)：** A 簇关注"你的内核代码如何组织和抽象"，与其他簇正交。A1 以 C 函数指针实现 OOP；A2 探索 Plan 9 的一切皆文件资源模型；A3 引入异步运行时模式管理并发 I/O；A4 落实"机制在内核、策略在用户态"的经典 OS 设计原则。
 
@@ -119,7 +119,7 @@ correctness:
 
 问题：内核里有大量指针、生命周期和并发状态，C 代码把这些责任交给程序员，Rust 则尝试把一部分责任交给类型系统。Rust for Linux 把 Rust 引入 Linux 内核开发；Tock 面向低功耗微控制器，支持多个互不信任的应用；Theseus 用 Rust 探索更细粒度的内核组件边界。
 
-教学目标：不要把目标写成"用 Rust 重写内核"。更合适的目标是选择一个驱动或资源对象，标出所有 `unsafe` 边界，把 MMIO、DMA、引用计数和回调生命周期分别说明白。
+教学目标：目标不要写成"用 Rust 重写内核"，更合适的是挑一个驱动或资源对象，标出所有 `unsafe` 边界，把 MMIO、DMA、引用计数和回调生命周期分别说明白。
 
 最小任务：用 Rust 或伪 Rust 接口包一层 UART/virtio 驱动，要求安全接口外部不能构造悬空指针。
 
@@ -127,9 +127,9 @@ correctness:
 
 **CHERI / CheriBSD：指针也可以带权限。**
 
-问题：CHERI 的核心问题不是"怎样让 C 自动安全"，而是把指针变成带边界、权限和不可伪造属性的 capability。CheriBSD 展示了一个 Unix-like OS 如何利用 capability 硬件做内存保护和隔离。
+问题：CHERI 的难题是把指针变成带边界、权限和不可伪造属性的 capability，让 C 自动安全从来不是它的目标。CheriBSD 展示了一个 Unix-like OS 如何利用 capability 硬件做内存保护和隔离。
 
-教学目标：把它映射到 F10 权限系统、C3 多 ISA 移植或 O4 安全加固。学生要看见的是"权限跟着引用走"，而不是额外写一个全局权限表。
+教学目标：把它映射到 F10 权限系统、C3 多 ISA 移植或 O4 安全加固。学生要看见"权限跟着引用走"，无需额外写一个全局权限表。
 
 最小任务：在你的内核里实现一个软件 capability 指针模型，给每个用户 buffer 记录 base、length、permissions，所有 `copyin`/`copyout` 必须通过这个模型。
 
@@ -149,7 +149,7 @@ correctness:
 
 问题：CFS 强调虚拟运行时间，EEVDF 进一步引入 eligible 和 virtual deadline，用来处理公平性和延迟之间的张力。
 
-教学目标：把它映射到 O1 实时性与确定性，或阶段 5 的调度挑战。学生要比较的是长期公平和短期唤醒延迟，而不是复刻 Linux。
+教学目标：把它映射到 O1 实时性与确定性，或阶段 5 的调度挑战。学生比较长期公平和短期唤醒延迟，不需要复刻 Linux。
 
 最小任务：在 Round-Robin 之外实现一个玩具版虚拟 deadline 调度器，给交互进程更短的 slice，记录每个进程的 lag 和 deadline。
 
@@ -157,7 +157,7 @@ correctness:
 
 **eBPF verifier：先证明不会出事，再谈快。**
 
-问题：eBPF 的教学价值不在 JIT，而在 verifier。一段用户提交的字节码为什么能在内核态运行而不直接写坏内存，这才是核心。
+问题：eBPF 的教学价值在 verifier，不在 JIT。一段用户提交的字节码为什么能在内核态运行而不直接写坏内存，这才是核心。
 
 教学目标：X5 的最小目标应该先做解释执行和静态检查，JIT 只作为进阶。
 
@@ -173,7 +173,7 @@ correctness:
 
 最小任务：把一个固定 hello 或 echo 应用和最小 UART/内存初始化链接成单一镜像，同时保留传统 syscall 版本作对照。
 
-验证证据：镜像大小、启动时间、syscall/function-call 延迟对比，以及一段明确说明：少掉用户态隔离后的隔离代价。
+验证证据：镜像大小、启动时间、syscall/function-call 延迟对比，以及一段文字明确说明少掉用户态隔离后的隔离代价。
 
 **参考资料：** Rust for Linux 文档，Tock OS 文档，Theseus OSDI 2020 论文，CheriBSD 项目页，Verus 项目列表，Linux EEVDF 文档，Linux eBPF verifier 文档，MirageOS 文档，Unikraft 项目页。
 
@@ -183,7 +183,7 @@ correctness:
 
 这些方向为你的 OS 增加一项它现在没有的能力。
 
-> **注意：** USB 设备驱动和 PCI 总线枚举已迁移到硬件驱动簇 (H1/H2)。原因是它们与硬件交互的深度远超"增加新能力"的范畴——理解 USB 协议栈和 PCI 枚举需要硬件级的思维方式，与网络栈 (F1) 或 COW Fork (F6) 的设计关注点本质不同。
+> **注意：** USB 设备驱动和 PCI 总线枚举已迁移到硬件驱动簇 (H1/H2)。原因是它们与硬件交互的深度远超"增加新能力"的范畴。理解 USB 协议栈和 PCI 枚举需要硬件级的思维方式，与网络栈 (F1) 或 COW Fork (F6) 的设计关注点本质不同。
 
 ---
 
@@ -220,7 +220,7 @@ correctness:
 
 **正确性底线：**
 
-- "网络包缓冲区溢出不破坏内核堆——所有包解析有边界检查"
+- "网络包缓冲区溢出不破坏内核堆，所有包解析有边界检查"
 - "ARP 缓存项数量有上限，不会因恶意 ARP 洪泛导致内存耗尽"
 - "无效/恶意的 IP 分片不导致内核 panic"
 - "TCP 连接关闭后所有资源（缓冲区、fd、端口号）被正确回收"
@@ -234,7 +234,7 @@ correctness:
 **常见陷阱：**
 
 1. **virtio 描述符环并发问题。** 设备读和生产者的指针更新之间可能存在竞态，确保使用适当的内存屏障。
-2. **checksum 计算遗漏。** IP checksum 只覆盖 IP 头、TCP checksum 覆盖伪头部+载荷——两者的覆盖范围不同，容易混淆。
+2. **checksum 计算遗漏。** IP checksum 只覆盖 IP 头，TCP checksum 覆盖伪头部+载荷，两者的覆盖范围不同，容易混淆。
 3. **TCP 状态机不完整。** 即使"简化版"TCP，也必须正确处理 SYN → SYN-ACK → ACK 三次握手和 FIN → FIN-ACK 四次挥手。状态遗漏会导致连接泄漏。
 4. **ARP 缓存过期。** 不实现缓存过期会导致 stale 条目永久占用，实现不当的过期会导致 use-after-free。
 
@@ -304,14 +304,14 @@ negative_tradeoff_checks:
 
 **正确性底线：**
 
-- "framebuffer 写入绝不越界——所有像素坐标在绘制前检查边界"
-- "GUI 进程崩溃不拖垮内核——绘制操作在内核态有指针验证"
+- "framebuffer 写入绝不越界，所有像素坐标在绘制前检查边界"
+- "GUI 进程崩溃不拖垮内核，绘制操作在内核态有指针验证"
 - "用户输入不被非焦点窗口截获（如实现窗口管理器）"
 
 **验证指标与判据：**
 
 - 帧率：单矩形区域更新 > 30 FPS（QEMU virtio-gpu）
-- 视觉验证：截图或人工确认（这是少数无法完全自动化的验证——允许人工确认 + 截图证据）
+- 视觉验证：截图或人工确认（这类验证几乎无法自动化，允许人工确认 + 截图证据）
 
 **常见陷阱：**
 
@@ -355,7 +355,7 @@ negative_tradeoff_checks:
 
 #### F3：写时复制 (COW) Fork
 
-`fork()` 时父进程的物理页不立即复制——父子共享只读映射，直到某一方写入时才触发 page fault 进行复制。
+`fork()` 时父进程的物理页不立即复制，父子共享只读映射，直到某一方写入时才触发 page fault 进行复制。
 
 | 属性               | 值                      |
 | ------------------ | ----------------------- |
@@ -382,7 +382,7 @@ negative_tradeoff_checks:
 
 **正确性底线：**
 
-- "COW fork 后父子进程隔离性与 eager copy 一致——任何一方的写入不泄漏到对方"
+- "COW fork 后父子进程隔离性与 eager copy 一致，任何一方的写入不泄漏到对方"
 - "引用计数不泄漏：持续 fork/exit 后空闲页数与初始一致"
 - "refcount 加减操作原子（或持锁），不会因竞态导致 refcount 错乱"
 
@@ -390,7 +390,7 @@ negative_tradeoff_checks:
 
 1. **refcount 竞态。** 多个 CPU 同时 fork 同一个父进程的不同子进程时，同一物理页的 refcount 变化需要原子操作或锁保护。
 2. **TLB 遗漏。** COW 页变为独立页后，旧 PTE 可能仍缓存在其他 CPU 的 TLB 中。忘记 `sfence.vma` 导致读到旧内容。
-3. **内核页不参与 COW。** 内核栈、页表本身等内核映射不应被 COW——只有用户空间映射参与。错误标记内核页为 COW 导致内核数据被意外修改。
+3. **内核页不参与 COW。** 内核栈、页表本身等内核映射不应被 COW，只有用户空间映射参与。错误标记内核页为 COW 会导致内核数据被意外修改。
 
 **参考资料：** xv6 COW lab, Linux `copy_page_range()` / `do_wp_page()`, 《Operating Systems: Three Easy Pieces》第 22 章
 
@@ -398,7 +398,7 @@ negative_tradeoff_checks:
 
 #### F4：按需分页 (Demand Paging)
 
-程序加载时不全部加载到内存——exec 时只映射页表，实际页面在首次访问时通过 page fault 按需加载或分配。
+程序加载时不把内容全部读进内存，exec 时只映射页表，实际页面在首次访问时通过 page fault 按需加载或分配。
 
 | 属性               | 值                                           |
 | ------------------ | -------------------------------------------- |
@@ -425,7 +425,7 @@ negative_tradeoff_checks:
 
 **正确性底线：**
 
-- "page fault 处理可与 `usertrap` 路径正交——不破坏已有 trap 逻辑"
+- "page fault 处理可与 `usertrap` 路径正交，不破坏已有 trap 逻辑"
 - "换出页面的数据完整性：换出 → 换入后内容与原始一致"
 - "VMA 查找时不能遍历已释放的 VMA 结构（use-after-free）"
 
@@ -452,7 +452,7 @@ negative_tradeoff_checks:
 **建议步骤：**
 
 1. PID namespace：每个 namespace 有独立的 PID 分配器。进程在不同 namespace 中有不同的 PID。`getpid()` 返回当前 namespace 中的 PID。父 namespace 可以看到子 namespace 中的进程（映射为不同的 PID）
-2. mount namespace：每个 namespace 有独立的挂载表。`chroot` 风格的根目录切换——进程在 namespace 中看不到 namespace 外的文件
+2. mount namespace：每个 namespace 有独立的挂载表，`chroot` 风格的根目录切换让进程在 namespace 中看不到 namespace 外的文件
 3. network namespace：每个 namespace 有独立的网络接口和路由表。通过 veth pair 连接不同 namespace
 4. cgroup 风格资源限制：CPU 时间配额、内存上限、I/O 带宽限制
 
@@ -466,15 +466,15 @@ negative_tradeoff_checks:
 
 **正确性底线：**
 
-- "namespace 隔离不可被用户态进程绕过——所有 syscall 的 PID/路径解析都经过 namespace 上下文"
+- "namespace 隔离不可被用户态进程绕过，所有 syscall 的 PID/路径解析都经过 namespace 上下文"
 - "父 namespace 中的 root 进程可以管理子 namespace（不创建不可管理的孤儿环境）"
 - "资源统计（内存使用、打开文件数）按 namespace 准确计数"
 
 **常见陷阱：**
 
-1. **隔离泄漏。** `/proc` 风格的信息接口可能暴露其他 namespace 的进程信息——确保所有信息查询 syscall 都经过 namespace 过滤。
+1. **隔离泄漏。** `/proc` 风格的信息接口可能暴露其他 namespace 的进程信息，要确保所有信息查询 syscall 都经过 namespace 过滤。
 2. **init 进程问题。** 每个 PID namespace 需要自己的 init 进程（PID 1）来收养孤儿进程。子 namespace 的 init 退出时需要向父 namespace 发送信号。
-3. **资源统计偏差。** 共享内核数据结构（如 buffer cache）的统计可能无法按 namespace 精确拆分——明确规定哪些资源是共享的（不计入 namespace 配额）。
+3. **资源统计偏差。** 共享内核数据结构（如 buffer cache）的统计可能无法按 namespace 精确拆分，要明确规定哪些资源是共享的（不计入 namespace 配额）。
 
 **参考资料：** Linux namespaces(7) man page, Linux cgroups(7) man page, Docker/containerd 源码（简化版）, 《Understanding the Linux Kernel》第 3 章
 
@@ -482,7 +482,7 @@ negative_tradeoff_checks:
 
 #### F6：可加载内核模块 (Loadable Kernel Modules)
 
-让内核在运行时动态加载和卸载代码——设备驱动、文件系统、或任何内核子系统都可以编译为独立模块，按需插入内核。
+让内核在运行时动态加载和卸载代码。设备驱动、文件系统或任何内核子系统都可以编译为独立模块，按需插入内核。
 
 | 属性               | 值                              |
 | ------------------ | ------------------------------- |
@@ -515,7 +515,7 @@ negative_tradeoff_checks:
    - 维护模块依赖图（有向无环图）→ 卸载 B 前必须已卸载所有依赖于 B 的模块
    - 检测循环依赖（加载时拒绝）
 6. 模块签名验证：使用公钥密码（如 Ed25519）验证模块签名，拒绝加载未签名或签名不匹配的模块
-7. 模块崩溃隔离：模块的代码运行在内核态——如果模块 panic，整个内核崩溃。进阶方向：研究如何用页表隔离（如将模块放在独立地址空间）或软件 fault isolation 限制模块崩溃的影响范围
+7. 模块崩溃隔离：模块的代码运行在内核态，如果模块 panic，整个内核崩溃。进阶方向：研究如何用页表隔离（如将模块放在独立地址空间）或软件 fault isolation 限制模块崩溃的影响范围
 
 **验证里程碑：**
 
@@ -529,10 +529,10 @@ negative_tradeoff_checks:
 
 **正确性底线：**
 
-- "模块加载失败不破坏内核状态——所有已分配的内存在加载失败路径上被释放"
-- "模块卸载后其所有注册的资源（设备、文件系统、syscall hook）被注销——不遗留悬空指针"
-- "重定位写入不越界——每个重定位条目的目标地址在模块的各段范围内"
-- "符号查找失败明确报错——不静默使用 NULL 或任意地址"
+- "模块加载失败不破坏内核状态，所有已分配的内存在加载失败路径上被释放"
+- "模块卸载后其所有注册的资源（设备、文件系统、syscall hook）被注销，不遗留悬空指针"
+- "重定位写入不越界，每个重定位条目的目标地址在模块的各段范围内"
+- "符号查找失败明确报错，不静默使用 NULL 或任意地址"
 
 **验证指标与判据：**
 
@@ -542,11 +542,11 @@ negative_tradeoff_checks:
 
 **常见陷阱：**
 
-1. **重定位类型遗漏。** RISC-V ELF 有多种重定位类型，只用 `R_RISCV_CALL_PLT` 处理函数调用是不够的——全局变量访问需要 `R_RISCV_PCREL_HI20` + `R_RISCV_LO12_I` 对。遗漏某些类型导致模块静默使用错误地址。
-2. **符号版本不匹配。** 内核中的 `struct task_struct` 可能在编译模块时和编译内核时的布局不同——如果模块访问了内核数据结构，ABI 兼容性检查是必需的。
-3. **模块间依赖的死锁式卸载。** 如果模块 A 依赖 B、B 的 `module_exit()` 又尝试使用 A 的服务——卸载 B 时发生死锁。依赖图必须严格无环。
+1. **重定位类型遗漏。** RISC-V ELF 有多种重定位类型，只用 `R_RISCV_CALL_PLT` 处理函数调用不够，全局变量访问还需要 `R_RISCV_PCREL_HI20` + `R_RISCV_LO12_I` 这对重定位。遗漏某些类型会导致模块静默使用错误地址。
+2. **符号版本不匹配。** 内核中的 `struct task_struct` 在编译模块时和编译内核时的布局可能不同，如果模块访问了内核数据结构，就必须做 ABI 兼容性检查。
+3. **模块间依赖的死锁式卸载。** 如果模块 A 依赖 B，B 的 `module_exit()` 又尝试使用 A 的服务，卸载 B 时就会死锁。依赖图必须严格无环。
 4. **引用计数竞态。** 检查"模块是否在使用中"和"标记模块为正在卸载"之间存在竞态窗口。需要原子 CAS 操作或锁保护卸载路径。
-5. **"复制粘贴式"重定位。** 直接从 xv6 或其他教学 OS 的网络栈复制重定位代码，但不理解 RISC-V 指令编码——`LUI` 的立即数是高 20 位、`ADDI` 的低 12 位是有符号数——符号扩展错误是最常见的重定位 bug。
+5. **"复制粘贴式"重定位。** 直接从 xv6 或其他教学 OS 的网络栈复制重定位代码，却不理解 RISC-V 指令编码。`LUI` 的立即数是高 20 位，`ADDI` 的低 12 位是有符号数，符号扩展错误是最常见的重定位 bug。
 
 **目标设计工作表（不可直接作为 Spec 提交）：**
 
@@ -586,7 +586,7 @@ negative_tradeoff_checks:
 
 #### F7：权限系统 (Permission System)
 
-为你的 OS 实现一套超越"owner/group/other + rwx"的权限模型——访问控制列表(ACL)、基于角色的访问控制(RBAC)、或 capability 权限位。这是安全方向 (O4) 在"谁可以做什么"维度的补充——O4 关注内存安全（防溢出、防注入），F10 关注访问控制（防越权）。
+为你的 OS 实现一套超越"owner/group/other + rwx"的权限模型，例如访问控制列表(ACL)、基于角色的访问控制(RBAC) 或 capability 权限位。这是安全方向 (O4) 在"谁可以做什么"维度上的补充。O4 关注内存安全（防溢出、防注入），F10 关注访问控制（防越权）。
 
 | 属性               | 值                                                          |
 | ------------------ | ----------------------------------------------------------- |
@@ -596,7 +596,7 @@ negative_tradeoff_checks:
 
 **建议步骤：**
 
-1. 基线权限模型审计：记录你的 OS 当前的权限检查点——哪些操作需要权限？权限检查在哪里做？是否一致？
+1. 基线权限模型审计：记录你的 OS 当前的权限检查点，弄清楚哪些操作需要权限、权限检查在哪里做、是否一致。
    - 常见检查点：文件 open/read/write/exec、进程 kill/ptrace、设备访问、syscall 调用
    - 验证：列出所有需要权限的操作及其当前检查逻辑
 2. 选择权限模型并实现核心数据结构：
@@ -611,7 +611,7 @@ negative_tradeoff_checks:
 4. 权限检查集成到资源模型：
    - fd-based 模型：在 `open()` 时检查权限，通过后 fd 持有打开时的权限（后续 `read`/`write` 不再检查）
    - capability-based 模型：capability 本身就编码了权限（如 cap 携带 `CAP_READ` 位）
-   - 验证：`open()` 返回的 fd 权限正确——以只读方式打开的文件，通过该 fd 无法写入
+   - 验证：`open()` 返回的 fd 权限正确，以只读方式打开的文件，通过该 fd 无法写入
 5. 角色与组：实现用户组（一组用户共享权限）和角色（一个用户可以拥有多个角色，角色可动态切换）
 6. 审计日志：记录所有权限检查失败的操作（谁、在什么时候、尝试做什么、被什么规则拒绝）
 
@@ -627,10 +627,10 @@ negative_tradeoff_checks:
 
 **正确性底线：**
 
-- "权限检查不能被绕过——所有资源访问路径经过同一个权限门（不可有后门 syscall）"
-- "权限修改（chmod/setfacl）是原子操作——不会出现'改了一半被另一个进程看到中间状态'"
-- "进程退出时其权限集被销毁——不泄漏到下个复用 PID 的进程"
-- "SUID 程序的权限提升是临时的——程序退出后恢复原权限（不能永久提升）"
+- "权限检查不能被绕过，所有资源访问路径经过同一个权限门（不可有后门 syscall）"
+- "权限修改（chmod/setfacl）是原子操作，不会出现'改了一半被另一个进程看到中间状态'"
+- "进程退出时其权限集被销毁，不泄漏到下个复用 PID 的进程"
+- "SUID 程序的权限提升是临时的，程序退出后恢复原权限（不能永久提升）"
 
 **验证指标与判据：**
 
@@ -640,9 +640,9 @@ negative_tradeoff_checks:
 **常见陷阱：**
 
 1. **TOCTOU（Time-of-Check-to-Time-of-Use）。** 在 `open()` 时检查了权限，但 `open()` 返回后文件可能被替换（符号链接攻击）。防御：`open()` 使用 `O_NOFOLLOW` 或在内核中原子地完成"检查+打开"。
-2. **权限检查遗漏。** 新增 syscall 时忘记加权限检查——这是最常见的权限漏洞。防御：在 syscall 分发表中标记每个 syscall 所需的最小权限，在分派入口统一检查。
-3. **SUID 的复杂性。** SUID 程序中调用 `exec()` 执行另一个程序——新程序的权限是什么？（应该是原用户的权限，不是 SUID 的权限）。`system()` 调用中的 shell 转义也是经典攻击面。
-4. **ACL 继承混乱。** 在目录下创建新文件时，新文件的 ACL 是从目录继承还是从进程的默认 ACL 继承？两种策略都有道理——关键是选择一种并文档化。
+2. **权限检查遗漏。** 新增 syscall 时忘记加权限检查，这是最常见的权限漏洞。防御：在 syscall 分发表中标记每个 syscall 所需的最小权限，在分派入口统一检查。
+3. **SUID 的复杂性。** SUID 程序调用 `exec()` 执行另一个程序时，新程序该有什么权限？应该是原用户的权限，而不是 SUID 的权限。`system()` 调用中的 shell 转义也是经典攻击面。
+4. **ACL 继承混乱。** 在目录下创建新文件时，新文件的 ACL 从目录继承，还是从进程的默认 ACL 继承？两种策略都有道理，关键是选一种并文档化。
 
 **目标设计工作表（不可直接作为 Spec 提交）：**
 
@@ -683,7 +683,7 @@ negative_tradeoff_checks:
 
 #### F8：内核线程 (Kernel Threads)
 
-让内核自身能够创建和管理独立于用户进程的执行上下文——内核线程运行在内核态，不关联用户地址空间，用于异步任务（writeback、page reclaim）、工作队列（workqueue）、和内核服务（kworker、kswapd）。
+让内核自身能够创建和管理独立于用户进程的执行上下文。内核线程运行在内核态，不关联用户地址空间，用于异步任务（writeback、page reclaim）、工作队列（workqueue）和内核服务（kworker、kswapd）。
 
 | 属性               | 值                               |
 | ------------------ | -------------------------------- |
@@ -693,11 +693,11 @@ negative_tradeoff_checks:
 
 **建议步骤：**
 
-1. **内核线程创建：** 实现 `kthread_create(entry_func, arg)`——分配内核栈（不同于用户进程，内核线程不需要用户栈和页表），设置陷阱帧使线程在 `entry_func` 中启动，加入调度器。验证：创建内核线程，打印 "kthread running" 并退出
-2. **内核线程调度：** 内核线程不与任何用户进程绑定——它只在内核态运行。`swtch()` 可以切换到内核线程（就像切换用户进程的内核线程）。内核线程永不返回用户态（`sret` 不会出现在其路径中）。验证：内核线程可以被抢占和重新调度
-3. **工作队列 (Workqueue)：** 实现一个延迟执行框架——`schedule_work(work_fn)` 将工作项加入 per-CPU 工作队列，内核工作线程（kworker）异步执行。验证：提交 3 个工作项，它们在后台按序执行完成
+1. **内核线程创建：** 实现 `kthread_create(entry_func, arg)`，分配内核栈（不同于用户进程，内核线程不需要用户栈和页表），设置陷阱帧使线程在 `entry_func` 中启动，加入调度器。验证：创建内核线程，打印 "kthread running" 并退出
+2. **内核线程调度：** 内核线程不与任何用户进程绑定，只在内核态运行。`swtch()` 可以切换到内核线程（就像切换用户进程的内核线程）。内核线程永不返回用户态（`sret` 不会出现在其路径中）。验证：内核线程可以被抢占和重新调度
+3. **工作队列 (Workqueue)：** 实现一个延迟执行框架，`schedule_work(work_fn)` 将工作项加入 per-CPU 工作队列，内核工作线程（kworker）异步执行。验证：提交 3 个工作项，它们在后台按序执行完成
 4. **内核线程退出：** `kthread_exit()` 正确回收内核栈和调度资源。内核线程不能调用 `exit()`（那是用户态退出路径）。验证：创建→执行→退出 100 次，无内存泄漏
-5. 内核线程与用户进程的同步：内核线程通过 `wake_up`/`sleep_on` 或 `completion`（类似 semaphore）与用户进程协调——如 writeback 线程等待脏页积累到阈值后唤醒
+5. 内核线程与用户进程的同步：内核线程通过 `wake_up`/`sleep_on` 或 `completion`（类似 semaphore）与用户进程协调，比如 writeback 线程等待脏页积累到阈值后唤醒
 
 **验证里程碑：**
 
@@ -715,7 +715,7 @@ negative_tradeoff_checks:
 
 1. **内核栈溢出。** 内核线程的栈通常只有 2-4 页（8-16 KB），注意函数调用深度和局部变量大小
 2. **调度死锁。** 内核线程持有锁时被抢占，抢占它的另一个内核线程需要同一把锁→死锁。规则：内核线程持锁时不睡眠（除非使用 sleeplock 或 mutex）
-3. **与用户线程的同步语义。** 内核线程调用 `copyin`/`copyout` 访问用户内存——但内核线程没有"当前用户进程"。需要显式传递目标进程的页表
+3. **与用户线程的同步语义。** 内核线程调用 `copyin`/`copyout` 访问用户内存，但内核线程没有"当前用户进程"，需要显式传递目标进程的页表
 
 **目标设计工作表（不可直接作为 Spec 提交）：**
 
@@ -750,7 +750,7 @@ negative_tradeoff_checks:
 
 #### F9：硬件虚拟化 / Hypervisor
 
-让你的 OS 能够在硬件虚拟化支持下运行一个极小 guest。这里的目标不是实现 KVM，也不是直接启动 Linux，而是理解 hypervisor 需要控制哪些边界：guest 物理地址、特权指令、虚拟中断和设备访问。
+让你的 OS 能够在硬件虚拟化支持下运行一个极小 guest。重点在于理解 hypervisor 需要控制哪些边界：guest 物理地址、特权指令、虚拟中断和设备访问。实现 KVM 或直接启动 Linux 都不在范围内。
 
 | 属性               | 值                                                              |
 | ------------------ | --------------------------------------------------------------- |
@@ -833,13 +833,13 @@ negative_tradeoff_checks:
 
 ### 8.2.2 兼容实现簇 (C)：运行另一个软件世界
 
-这些方向让你的 OS 能够运行为其他系统编写的程序。兼容的本质是**在 ABI 层面做翻译**——你的内核学习"说别人的语言"。
+这些方向让你的 OS 能够运行为其他系统编写的程序。兼容的本质是**在 ABI 层面做翻译**，你的内核要学习"说别人的语言"。
 
 ---
 
 #### C1：Linux ELF 兼容 — 从真实磁盘镜像启动 Shell
 
-让你的 OS 从一块真实的磁盘镜像上加载 Linux 根文件系统，并启动其中的 Shell。这是对 Linux ABI 兼容性的终极考验——你要跨越的不止是 syscall 兼容性，还要处理真实磁盘文件系统格式、块设备协议和两者之间的整合。
+让你的 OS 从一块真实的磁盘镜像上加载 Linux 根文件系统，并启动其中的 Shell。这是对 Linux ABI 兼容性的终极考验，你要跨越的不止是 syscall 兼容性，还要处理真实磁盘文件系统格式、块设备协议和两者之间的整合。
 
 | 属性               | 值                             |
 | ------------------ | ------------------------------ |
@@ -862,7 +862,7 @@ negative_tradeoff_checks:
    - 路径解析：`/bin/sh` → 根目录 inode(2) → 查找 "bin" → 查找 "sh" → 获得文件 inode
 4. 实现基础 Linux syscall 子集（按依赖顺序）：
    - 第一组（进程生命周期）：`exit(93)`, `exit_group(94)`, `getpid(172)`
-   - 第二组（文件 I/O — ext2 路径）：`read(63)`, `write(64)`, `openat(56)`, `close(57)`, `newfstatat(79)`, `getdents64(61)`
+   - 第二组（文件 I/O：ext2 路径）：`read(63)`, `write(64)`, `openat(56)`, `close(57)`, `newfstatat(79)`, `getdents64(61)`
    - 第三组（内存与进程）：`brk(214)`, `mmap(222)`, `mprotect(226)`, `clone(220)`, `wait4(260)`, `execve(221)`
    - 第四组（终端与杂项）：`ioctl(29)`, `fcntl(25)`, `getcwd(17)`, `chdir(49)`, `times(153)`, `uname(160)`
 5. Linux ELF 加载器：解析 PT_LOAD、PT_INTERP、处理 aux vector (AT_PHDR/AT_ENTRY/AT_PAGESZ/AT_RANDOM/AT_UID/AT_EUID)
@@ -904,9 +904,9 @@ negative_tradeoff_checks:
 
 **正确性底线：**
 
-- "ext2 驱动不能因恶意/畸形磁盘镜像而崩溃——所有 inode 和目录项解析有边界检查和完整性校验"
-- "Linux syscall 内用户指针验证与本机 syscall 同等严格——不绕开 copyin/copyout"
-- "ext2 驱动的 buffer cache 使用不泄漏 buffer——brelse() 与 bread() 一一对应"
+- "ext2 驱动不能因恶意/畸形磁盘镜像而崩溃。所有 inode 和目录项解析有边界检查和完整性校验"
+- "Linux syscall 内用户指针验证与本机 syscall 同等严格，不绕开 copyin/copyout"
+- "ext2 驱动的 buffer cache 使用不泄漏 buffer，brelse() 与 bread() 一一对应"
 
 **验证指标与判据：**
 
@@ -917,9 +917,9 @@ negative_tradeoff_checks:
 **常见陷阱：**
 
 1. **ext2 块大小理解错误。** ext2 的块大小在 superblock 中以 `log₂(block_size / 1024)` 编码，1024 字节块对应的 `s_log_block_size` = 0。直接用 4096 硬编码读到错误数据。
-2. **间接块读取。** 双重间接块的偏移计算容易出错——仔细跟踪 `block_no = offset / block_size` 和块内偏移。
-3. **目录项的变长特性。** `rec_len` 是目录项的总长度（含填充），不是 name_len。跳过 `rec_len` 找下一个目录项——不要假设 name_len 决定步长。
-4. **struct stat 结构布局差异。** Linux 的 `struct stat`（`newfstatat` 返回的结构）与 xv6 的可能不同——`st_dev`/`st_ino`/`st_mode`/`st_size` 的偏移和大小需要与 RISC-V Linux ABI 对齐，不是 xv6 的 stat 结构。
+2. **间接块读取。** 双重间接块的偏移计算容易出错，要仔细跟踪 `block_no = offset / block_size` 和块内偏移。
+3. **目录项的变长特性。** `rec_len` 是目录项的总长度（含填充），不是 name_len。跳过 `rec_len` 找下一个目录项，不要假设 name_len 决定步长。
+4. **struct stat 结构布局差异。** Linux 的 `struct stat`（`newfstatat` 返回的结构）与 xv6 的可能不同，`st_dev`/`st_ino`/`st_mode`/`st_size` 的偏移和大小需要与 RISC-V Linux ABI 对齐，不是 xv6 的 stat 结构。
 
 **参考资料：** Linux syscall 表 (`include/uapi/asm-generic/unistd.h`), ELF64 规范, ext2 数据结构文档 (`/usr/include/ext2fs/ext2_fs.h`), virtio 1.0 规范（块设备章节）, busybox 编译指南, buildroot 使用手册
 
@@ -927,7 +927,7 @@ negative_tradeoff_checks:
 
 #### C2：POSIX 源码兼容
 
-不追求二进制兼容（不需要加载 Linux ELF），而是在源码层面提供 POSIX 接口。用你的 OS 的编译器重新编译 POSIX 程序。
+二进制兼容不做要求（不需要加载 Linux ELF）。在源码层面提供 POSIX 接口，用你的 OS 的编译器重新编译 POSIX 程序。
 
 | 属性               | 值                          |
 | ------------------ | --------------------------- |
@@ -1018,12 +1018,12 @@ void arch_fence_before_atomic(void);         // 原子操作前的屏障
 void arch_fence_after_store(void);           // store 后的屏障
 ```
 
-3. 实现目标 ISA 版本的 HAL 层（建议先从 ARMv8 AArch64 起步——它与 RISC-V 更接近）：
+3. 实现目标 ISA 版本的 HAL 层（建议先从 ARMv8 AArch64 起步，它与 RISC-V 更接近）：
    - ARMv8: `msr`/`mrs` 系统寄存器操作、`eret` 返回用户态、4-level 页表（VA 空间 48-bit）
    - x86-64: `lidt`/`lgdt` 加载 IDT/GDT、`syscall`/`sysret` 快速系统调用、4-level 页表（PML4）
 4. 用 QEMU 的目标机器型号测试：`qemu-system-aarch64 -M virt` 或 `qemu-system-x86_64 -M q35`
 5. 验证：同一用户程序源码在两个 ISA 上编译后运行，行为一致
-6. 跨 ISA syscall 兼容——在 ARM 上运行为 RISC-V 编译的静态程序（需要 syscall 编号翻译 + 参数寄存器映射）
+6. 跨 ISA syscall 兼容：在 ARM 上运行为 RISC-V 编译的静态程序（需要 syscall 编号翻译 + 参数寄存器映射）
 
 **验证里程碑：**
 
@@ -1036,15 +1036,15 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 **正确性底线：**
 
-- "HAL 接口语义与原有 ISA 直接实现一致——换 ISA 后所有 correctness_guard 仍成立"
-- "不同 ISA 的页表权限位映射正确——W^X 等安全属性在移植后不丢失"
-- "内存序差异被正确封装在 HAL 中——移植后的代码不在 ISA 无关模块中放错 fence 位置"
+- "HAL 接口语义与原有 ISA 直接实现一致，换 ISA 后所有 correctness_guard 仍成立"
+- "不同 ISA 的页表权限位映射正确，W^X 等安全属性在移植后不丢失"
+- "内存序差异被正确封装在 HAL 中，移植后的代码不在 ISA 无关模块中放错 fence 位置"
 
 **常见陷阱：**
 
 1. **页表格式差异。** RISC-V Sv39 是 3 级、AArch64 的 4KB 粒度是 4 级。PTE 的权限位位置和语义不同（如 RISC-V 的 Dirty 位由硬件管理、ARM 的 Access Flag 需要软件设置）。
-2. **trap frame 布局。** RISC-V 的 `sscratch`/`sepc`/`stval` 在 ARM 上对应 `SP_EL0`/`ELR_EL1`/`FAR_EL1`——名字和语义不完全对应。需要仔细映射。
-3. **内存序模型差异。** RISC-V 的 RVWMO 比 ARM 的弱、比 x86 的弱得多。在 RISC-V 上需要显式 `fence` 的地方，移植到 x86 时可能不需要——但保留 fence 是安全的（性能略差）；省略了需要的 fence 是灾难。
+2. **trap frame 布局。** RISC-V 的 `sscratch`/`sepc`/`stval` 在 ARM 上对应 `SP_EL0`/`ELR_EL1`/`FAR_EL1`，名字和语义不完全对应，需要仔细映射。
+3. **内存序模型差异。** RISC-V 的 RVWMO 比 ARM 的弱、比 x86 的弱得多。在 RISC-V 上需要显式 `fence` 的地方，移植到 x86 时可能不需要，但保留 fence 是安全的（性能略差）；省略需要的 fence 是灾难。
 4. **QEMU 机器差异。** UART 基址、PLIC 布局、设备树格式都随 QEMU 机器型号变化。不要假设新 ISA 的 QEMU 机器有相同的设备布局。
 
 **参考资料：** ARMv8-A 体系结构参考手册, x86-64 AMD/Intel 手册（卷 3：系统编程）, QEMU `qemu-system-aarch64 -M virt` 文档, RISC-V privileged spec (交叉参考 HAL 设计)
@@ -1079,7 +1079,7 @@ void arch_fence_after_store(void);           // store 后的屏障
 | `NtAllocateVirtualMemory` | 0x18 | 分配虚拟内存  |
 | `NtFreeVirtualMemory`     | 0x1E | 释放虚拟内存  |
 
-3. 资源模型适配：NT 是 handle-based——`NtOpenFile` 返回 HANDLE，不是 fd。在你的内核中实现 handle↔内核对象的映射表
+3. 资源模型适配：NT 采用 handle-based 模型，`NtOpenFile` 返回 HANDLE 而不是 fd。在你的内核中实现 handle↔内核对象的映射表
 4. 用 MinGW-w64 交叉编译简单程序：`x86_64-w64-mingw32-gcc -static -nostdlib hello.c -o hello.exe`
 5. 验证：`hello.exe` 在你的 OS 上启动、输出 "Hello"、退出
 6. PEB/TEB 基本结构：为每个 NT 进程分配 PEB（Process Environment Block），设置 `gs:[0x60]` 指向 PEB
@@ -1094,13 +1094,13 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 **正确性底线：**
 
-- "PE loader 对 section 的虚拟大小和原始数据大小做边界检查——不因恶意 PE 导致越界读"
+- "PE loader 对 section 的虚拟大小和原始数据大小做边界检查，不因恶意 PE 导致越界读"
 - "NT handle 表有大小上限，handle 关闭后不可重用（防止 use-after-free）"
-- "PE 重定位项的数量有上限——防止无限循环处理重定位表"
+- "PE 重定位项的数量有上限，防止无限循环处理重定位表"
 
 **常见陷阱：**
 
-1. **NT syscall 编号不稳定。** Microsoft 不保证跨版本兼容——Windows 10 不同 build 的 syscall 编号不同。锁定一个版本（如 21H2 build 19044）并文档化。
+1. **NT syscall 编号不稳定。** Microsoft 不保证跨版本兼容，Windows 10 不同 build 的 syscall 编号都不同。锁定一个版本（如 21H2 build 19044）并文档化。
 2. **`NtOpenFile` 的 OBJECT_ATTRIBUTES 结构。** 这个结构包含 `RootDirectory`（句柄）、`ObjectName`（UNICODE_STRING）、`Attributes` 等多个嵌套结构。解析复杂度远超 Linux 的 `openat`。
 3. **PE 重定位与 RISC-V。** 如果你的目标是在 RISC-V 上运行 PE（Windows on RISC-V 仍非常规），需要处理 PE 中 x86-64 特定的重定位类型（如 `IMAGE_REL_BASED_DIR64`）→ 映射到 RISC-V 等效操作。这是本方向最深刻的技术挑战之一。
 
@@ -1124,7 +1124,7 @@ void arch_fence_after_store(void);           // store 后的屏障
    - Mach header（`mach_header_64`）：magic `0xFEEDFACF`(64-bit)、CPU type、file type
    - Load Commands：遍历 `ncmds` 个命令，关注 `LC_SEGMENT_64`、`LC_MAIN`、`LC_UNIXTHREAD`、`LC_DYLD_INFO`
    - `LC_SEGMENT_64`：加载 `__TEXT`（代码）、`__DATA`（数据）、`__LINKEDIT`（符号表等）
-   - 处理 `__PAGEZERO` 段（Mach-O 要求虚拟地址 0 开始的区域不可访问——在你的页表中留一个 hole）
+   - 处理 `__PAGEZERO` 段（Mach-O 要求虚拟地址 0 开始的区域不可访问，在你的页表中留一个 hole）
 2. XNU syscall 实现（只做 Unix 子集，不碰 Mach IPC）：
 
 | syscall      | 编号 | 注                 |
@@ -1156,15 +1156,15 @@ void arch_fence_after_store(void);           // store 后的屏障
 **正确性底线：**
 
 - "Mach-O loader 对 `LC_SEGMENT_64` 的文件偏移 + 文件大小的加和做溢出检查"
-- "`__PAGEZERO` 段确保地址 0 的页不可访问——防御 NULL 指针解引用"
-- "Load Command 数量有上限——防止恶意 Mach-O 的 `ncmds` 极大导致无限循环"
+- "`__PAGEZERO` 段确保地址 0 的页不可访问，防御 NULL 指针解引用"
+- "Load Command 数量有上限，防止恶意 Mach-O 的 `ncmds` 极大导致无限循环"
 
 **常见陷阱：**
 
 1. **fat binary（Universal Binary）。** macOS 程序常包含多个架构的代码（`FAT_CIGAM` magic）。需要先提取目标架构的 slice 再解析 Mach-O。最简单的处理：用 `lipo -extract` 预处理。
-2. **`__PAGEZERO` 的处理。** 不是简单地"忽略这个段"——必须确保虚拟地址 0 开始的页面不可映射。这在你的页表中是一个特殊的 hole，不是无操作。
-3. **dyld shared cache。** macOS 的系统库（`libSystem.dylib`）不在磁盘上以单独文件存在——它们在 dyld shared cache 中。静态链接是最可行的绕开方式。
-4. **commpage 依赖。** macOS 用 commpage（特殊的内核映射页）提供 gettimeofday 等高频操作。你的实现可以简单跳过——大部分 syscall 不依赖它。
+2. **`__PAGEZERO` 的处理。** 处理它不能靠"忽略这个段"了事，必须确保虚拟地址 0 开始的页面不可映射。这在你的页表中是一个特殊的 hole，不是无操作。
+3. **dyld shared cache。** macOS 的系统库（`libSystem.dylib`）不单独存在于磁盘，它们放在 dyld shared cache 里。静态链接是最可行的绕开方式。
+4. **commpage 依赖。** macOS 用 commpage（特殊的内核映射页）提供 gettimeofday 等高频操作。你的实现可以简单跳过，大部分 syscall 不依赖它。
 
 **参考资料：** Apple 开源 XNU 内核 (`xnu` on GitHub)、Mach-O 格式规范（Apple 开发者文档）、osxcross 交叉编译工具链、dyld 源码（Apple 开源）
 
@@ -1172,13 +1172,13 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 ### 8.2.3 专项优化簇 (O)：在特定场景下建立优势
 
-这些方向不增加新功能——它们让现有功能在某个维度上做到极致。
+这些方向不增加新功能，它们让现有功能在某个维度上做到极致。
 
 ---
 
 #### O1：实时性与确定性
 
-硬实时调度——中断响应延迟有上界，优先级反转被防护。
+硬实时调度：中断响应延迟有上界，优先级反转被防护。
 
 | 属性               | 值               |
 | ------------------ | ---------------- |
@@ -1208,9 +1208,9 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 **正确性底线：**
 
-- "实时优化不破坏非实时进程的正确性——非实时进程不会永久饥饿"
-- "优先级继承不导致死锁——继承链不会形成环"
-- "中断禁用区间在代码审计中全部被显式标记——不存在隐式的长时间中断禁用"
+- "实时优化不破坏非实时进程的正确性，非实时进程不会永久饥饿"
+- "优先级继承不导致死锁，继承链不会形成环"
+- "中断禁用区间在代码审计中全部被显式标记，不存在隐式的长时间中断禁用"
 
 **验证指标与判据：**
 
@@ -1221,9 +1221,9 @@ void arch_fence_after_store(void);           // store 后的屏障
 **常见陷阱：**
 
 1. **优先级反转的隐蔽形式。** 不只是显式的锁，自旋锁、延迟的中断禁用、以及某些执行时间偏长的函数都可能触发优先级反转。系统性地测量所有 `push_off` 区间，能更准确定位问题。
-2. **"无锁"代码中的隐含禁用。** 有些代码为"无锁"而禁用了中断（用 `push_off`/`pop_off`）——这实际上比持锁更严重，因为中断禁用的区间可能更长。
+2. **"无锁"代码中的隐含禁用。** 有些代码为"无锁"而禁用了中断（用 `push_off`/`pop_off`），这实际上比持锁更严重，因为中断禁用的区间可能更长。
 3. **测量工具本身延迟。** 在 ISR 中插 `printk` 会严重增加测量延迟。用 `mtime` 计数器 + 内存记录（ISR 后批量打印）是更准确的测量方法。
-4. **优先级继承链的复杂性。** 多个进程嵌套等锁时，优先级继承会形成一个链——如果 A 等 B 的锁、B 等 C 的锁，C 需要继承 A 的优先级。实现递归继承是优先级继承最复杂的部分。
+4. **优先级继承链的复杂性。** 多个进程嵌套等锁时，优先级继承会形成一个链。如果 A 等 B 的锁、B 等 C 的锁，C 需要继承 A 的优先级。实现递归继承是优先级继承最复杂的部分。
 
 **参考资料：** LITMUS^RT 项目论文, Linux RT_PREEMPT patch 文档, Liu & Layland "Scheduling Algorithms for Multiprogramming in a Hard-Real-Time Environment"
 
@@ -1265,15 +1265,15 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 **正确性底线：**
 
-- "缩小不改变语义——所有已有 correctness_guard 在优化后仍成立"
+- "缩小不改变语义，所有已有 correctness_guard 在优化后仍成立"
 - "数据结构大小缩减不导致溢出（如 `NPROC=8` 时 fork 第 9 次应正确返回 -1，而不是 index out of bound）"
-- "`--gc-sections` 不误删关键函数（检查是否有函数通过函数指针调用——链接器无法追踪此类引用）"
+- "`--gc-sections` 不误删关键函数（检查是否有函数通过函数指针调用，链接器无法追踪此类引用）"
 
 **常见陷阱：**
 
 1. **过度内联反而增大。** `-Os` 已经倾向于不内联，但如果手动标记了 `inline`，可能抵消尺寸优化效果。审计 `__attribute__((always_inline))` 的使用。
-2. **"删功能"与"优化"界限混淆。** 把 `NPROC` 从 64 降为 8 是删容量，不是优化。如果你的目标是通用 OS，这不可接受。O2 的适用场景是嵌入式/微控制器——你需要明确声明你的 OS 的目标场景。
-3. **bitmap 的扫描开销。** 物理内存大时，bitmap 扫描找空闲页的 O(n) 开销不可忽略。在"极小 RAM"的场景下（< 64 MB RAM），bitmap 也是 2048 字节以下——扫描成本可接受。
+2. **"删功能"与"优化"界限混淆。** 把 `NPROC` 从 64 降为 8 是删容量，不是优化。如果你的目标是通用 OS，这不可接受。O2 的适用场景是嵌入式/微控制器，你需要明确声明你的 OS 的目标场景。
+3. **bitmap 的扫描开销。** 物理内存大时，bitmap 扫描找空闲页的 O(n) 开销不可忽略。在"极小 RAM"的场景下（< 64 MB RAM），bitmap 也是 2048 字节以下，扫描成本可接受。
 
 **参考资料：** GCC `-Os`/`-flto` 文档, linker `--gc-sections` 文档, Embedded Linux 内核裁剪文档 (`make tinyconfig`)
 
@@ -1300,7 +1300,7 @@ void arch_fence_after_store(void);           // store 后的屏障
 3. 批量 syscall：一次 `ecall` 提交多个 I/O 操作（如 `io_submit(nr, iocb_array)`）
    - 减少用户态↔内核态切换的开销
 4. I/O 请求合并与重排：
-   - 电梯调度器：按扇区号排序请求，减少磁盘寻道（对 virtio-blk 也有意义——批量+顺序访问减少 MMIO 次数）
+   - 电梯调度器：按扇区号排序请求，减少磁盘寻道（对 virtio-blk 也有意义，批量+顺序访问减少 MMIO 次数）
    - Deadline 调度器：为每个请求设超时，防止饿死
 5. Benchmark：`dd` 风格测试吞吐量（`dd if=/largefile of=/dev/null bs=1M count=100`），对比阻塞 I/O 基线
 
@@ -1314,16 +1314,16 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 **正确性底线：**
 
-- "异步 I/O 的完成通知不可丢失——任何提交但未通知的 I/O 最终被超时机制捕获"
-- "零拷贝路径不能泄漏内核页映射——用户 buffer unpin 后内核不可再访问"
-- "I/O 请求合并不改变语义——合并后的请求失败时，所有原始请求都应收到错误通知"
+- "异步 I/O 的完成通知不可丢失，任何提交但未通知的 I/O 最终被超时机制捕获"
+- "零拷贝路径不能泄漏内核页映射，用户 buffer unpin 后内核不可再访问"
+- "I/O 请求合并不改变语义，合并后的请求失败时，所有原始请求都应收到错误通知"
 
 **常见陷阱：**
 
-1. **零拷贝时用户 buffer 生命周期。** 用户 buffer 可能被 `munmap` 或 `sbrk` 回收——在内核正在 DMA 写入时。必须实现 page pinning（引用计数或锁）防止 buffer 在使用期间被释放。
+1. **零拷贝时用户 buffer 生命周期。** 用户 buffer 可能被 `munmap` 或 `sbrk` 回收，内核可能正在 DMA 写入它。必须实现 page pinning（引用计数或锁）防止 buffer 在使用期间被释放。
 2. **DMA 一致性。** virtio 设备访问的是物理地址，但 CPU 看到的是虚拟地址。确保在 DMA 开始前和结束后正确处理缓存一致性（RISC-V 上通常通过 `fence` 指令或在页表属性中标记 non-cacheable）。
 3. **电梯调度饿死。** 纯电梯算法（最短寻道优先）可能使某些扇区范围的请求永远得不到服务。Deadline 调度器在电梯排序 + 超时保证之间取得平衡。
-4. **异步 I/O 的错误处理。** 同步 I/O 的错误通过返回值传递——异步 I/O 的错误需要一个额外通道（event 携带 errno）。遗漏错误传递导致静默数据损坏。
+4. **异步 I/O 的错误处理。** 同步 I/O 的错误通过返回值传递，异步 I/O 的错误则需要一个额外通道（event 携带 errno）。遗漏错误传递导致静默数据损坏。
 
 **参考资料：** Linux AIO / io_uring 文档, virtio 1.0 规范（描述符链和完成通知）, Linux block layer 文档（电梯/deadline/noop 调度器）
 
@@ -1373,15 +1373,15 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 **正确性底线：**
 
-- "安全加固不引入新的侧信道——W^X 不改变合法程序的执行时间模式"
+- "安全加固不引入新的侧信道，W^X 不改变合法程序的执行时间模式"
 - "W^X 不阻止合法的 JIT 场景（如果你的 OS 支持 JIT，需提供受控的 W→X 转换接口，如 `mprotect` 的严格使用）"
 - "KASLR 的随机化有足够的熵（至少 8 位有效随机位），不依赖可预测的种子"
 
 **常见陷阱：**
 
-1. **canary 被信息泄漏绕过。** 如果攻击者能读到栈上的 canary 值（通过 `read()` 溢出或 `%p` 格式字符串泄漏），就可以在溢出时写回原值——canary 形同虚设。防御：确保 canary 值的最低字节为 `0x00`（阻止字符串溢出读 canary）。
-2. **KASLR 熵不足。** 2MB 对齐的随机化只提供了少量位的随机性（如 48-bit 地址空间中 2MB 对齐 = 39 个可能位置 ≈ 5 位熵）。页级对齐（4KB）提供约 20 位熵——差距巨大。
-3. **"安全加固"变"安全幻觉"。** 只做栈 canary 不做 W^X，攻击者直接注入 shellcode 到 data 段再跳过去——你的 canary 白做了。安全是纵深防御——多层机制互补才有意义。
+1. **canary 被信息泄漏绕过。** 如果攻击者能读到栈上的 canary 值（通过 `read()` 溢出或 `%p` 格式字符串泄漏），就可以在溢出时写回原值，canary 形同虚设。防御：确保 canary 值的最低字节为 `0x00`（阻止字符串溢出读 canary）。
+2. **KASLR 熵不足。** 2MB 对齐的随机化只提供了少量位的随机性（如 48-bit 地址空间中 2MB 对齐 = 39 个可能位置 ≈ 5 位熵）。页级对齐（4KB）提供约 20 位熵，差距巨大。
+3. **"安全加固"变"安全幻觉"。** 只做栈 canary 不做 W^X，攻击者直接注入 shellcode 到 data 段再跳过去，你的 canary 就白做了。安全需要纵深防御，多层机制互补才有意义。
 
 **参考资料：** PaX/Grsecurity 论文, Linux KASLR 文档, RISC-V Zicfiss (Shadow Stack) 规范, syzkaller 文档, 《The Shellcoder's Handbook》
 
@@ -1412,11 +1412,11 @@ void arch_fence_after_store(void);           // store 后的屏障
 2. 延迟初始化：非关键设备（如额外的 virtio 设备、网络栈、辅助文件系统）延后到 Shell 就绪后初始化
 3. 预构建用户进程镜像：
    - 将 `/bin/init` 或 `/bin/sh` 的 ELF 文件预加载到内核镜像中（`objcopy` 嵌入二进制 blob）
-   - exec 时省去磁盘读取——直接从内存镜像加载
+   - exec 时省去磁盘读取，直接从内存镜像加载
 4. 优化关键路径：
    - BSS 清零：用 `memset` 的优化实现（对齐到 word/双字，一次清零多字节）
    - 页表批量映射：一次映射多个页（如连续的 2MB 大页）而非逐个 4KB 页映射
-   - 减少不必要的 `printk`（串口输出是启动耗时的隐形杀手——每个字符等待 UART TX ready）
+   - 减少不必要的 `printk`（串口输出是启动耗时的隐形杀手，每个字符等待 UART TX ready）
 5. Benchmark：精确到毫秒的启动时间线，对比优化前后
 
 **验证里程碑：**
@@ -1429,15 +1429,15 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 **正确性底线：**
 
-- "延迟初始化的设备在被首次访问时必须已完成初始化——访问未初始化设备不 panic、不返回垃圾数据"
-- "预构建的内存镜像不影响程序正确性——镜像内容的哈希与正常加载的 ELF 加载结果一致"
+- "延迟初始化的设备在被首次访问时必须已完成初始化，访问未初始化设备不 panic、不返回垃圾数据"
+- "预构建的内存镜像不影响程序正确性，镜像内容的哈希与正常加载的 ELF 加载结果一致"
 - "启动优化不跳过关键安全初始化（如页表隔离、见 O4 的 W^X）"
 
 **常见陷阱：**
 
 1. **延迟初始化导致竞态。** 将设备初始化延迟到 init 进程之后，但 init 进程可能立即尝试访问该设备（如 `open("/dev/ttyS1")`）。必须实现按需初始化或就绪状态查询。
-2. **"优化"变"跳过"。** 为了加速启动跳过 BSS 清零——未初始化的全局变量包含随机值，导致随机 bug。这不是优化，是灾难。零成本的优化方法：链接器脚本中对齐 BSS 边界，用 `memset` 的 word-at-a-time 实现。
-3. **`printk` 开销被低估。** 115200 波特率的 UART 输出每个字符约 87μs。10 行 boot log ≈ 500 字符 ≈ 43ms——在 100ms 的启动目标中占了一半。优化手段：启动阶段减少日志、用更高波特率、或将日志写入 ring buffer 后异步输出。
+2. **"优化"变"跳过"。** 为了加速启动跳过 BSS 清零，未初始化的全局变量包含随机值，导致随机 bug。这不是优化，是灾难。零成本的优化方法：链接器脚本中对齐 BSS 边界，用 `memset` 的 word-at-a-time 实现。
+3. **`printk` 开销被低估。** 115200 波特率的 UART 输出每个字符约 87μs。10 行 boot log ≈ 500 字符 ≈ 43ms，在 100ms 的启动目标中占了一半。优化手段：启动阶段减少日志、用更高波特率、或将日志写入 ring buffer 后异步输出。
 
 **参考资料：** Linux `initcall_debug` 启动分析, fastboot/instantboot 论文, QEMU `-semihosting` 输出替代 UART
 
@@ -1533,7 +1533,7 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 **H2 深度检查点（用于 breakthrough 深度）：**
 
-- 解释 Type 0 和 Type 1 Configuration Request 的区别——为什么 PCI-to-PCI Bridge 对这两种请求的处理不同？
+- 解释 Type 0 和 Type 1 Configuration Request 的区别，以及为什么 PCI-to-PCI Bridge 对这两种请求的处理不同？
 - 画出 MSI/MSI-X 中断的传递路径：从设备到 CPU 中断引脚的完整链路
 - 分析一个真实的 PCIe Capability 链表（如 QEMU virtio-blk 设备的能力链表），解释每个 Capability 的用途
 - 讨论：如果两个 PCI 设备的 BAR 地址范围重叠，系统会发生什么？你的枚举器如何防御？
@@ -1542,15 +1542,15 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 #### H3：GPIO 驱动（通用输入输出）
 
-**内容概述**：GPIO (General Purpose Input/Output) 是最简单的硬件接口——每个引脚可以独立配置为输入或输出，通过寄存器读写电平状态。
+**内容概述**：GPIO (General Purpose Input/Output) 是最简单的硬件接口。每个引脚可以独立配置为输入或输出，通过寄存器读写电平状态。
 
 **H3 特有的深度检查点（用于 breakthrough 深度）：**
 
-- 解释 GPIO 控制器的寄存器模型：数据寄存器（读当前电平/写输出电平）、方向寄存器（配置输入/输出）、中断使能寄存器的设计——为什么这些寄存器需要分开？
+- 解释 GPIO 控制器的寄存器模型：数据寄存器（读当前电平/写输出电平）、方向寄存器（配置输入/输出）、中断使能寄存器为什么要分开设计？
 - 画出 GPIO 中断的触发路径：引脚电平变化 → GPIO 控制器检测边沿（上升/下降/双沿）→ 中断状态寄存器置位 → 中断控制器（PLIC/APIC）→ CPU trap handler。标注每个环节的延迟。
 - 描述 pin multiplexing（引脚复用）：为什么一个物理引脚可以同时是 GPIO、UART TX、SPI CLK？如何在启动时配置 pinmux 以选择功能？
-- 分析"去抖动"(debounce)的实现：机械开关在闭合时电平可能抖动 10-50ms——硬件 debounce（RC 滤波器）vs 软件 debounce（定时器 + 状态机）各有什么优缺点？
-- 讨论：如果 GPIO 引脚配置为输出，但同时有外部设备在驱动该引脚——硬件短路风险如何避免？（上拉/下拉电阻、开漏输出、推挽输出的区别）
+- 分析"去抖动"(debounce)的实现：机械开关在闭合时电平可能抖动 10-50ms，硬件 debounce（RC 滤波器）和软件 debounce（定时器 + 状态机）各有什么优缺点？
+- 讨论：如果 GPIO 引脚配置为输出，但同时有外部设备在驱动该引脚，硬件短路风险如何避免？（上拉/下拉电阻、开漏输出、推挽输出的区别）
 
 **参考资料：** 树莓派 GPIO 文档（BCM2835/BCM2711）, Linux GPIO 子系统 (`drivers/gpio/`), RISC-V GPIO 设备树 binding
 
@@ -1558,13 +1558,13 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 #### H4：I2C 总线驱动
 
-**内容概述**：I2C (Inter-Integrated Circuit) 是一种双线制串行总线——SCL（时钟）和 SDA（数据）。广泛用于连接传感器、EEPROM、PMIC 等低速外设。
+**内容概述**：I2C (Inter-Integrated Circuit) 是一种双线制串行总线，由 SCL（时钟）和 SDA（数据）组成。广泛用于连接传感器、EEPROM、PMIC 等低速外设。
 
 **H4 特有的深度检查点（用于 breakthrough 深度）：**
 
-- 画出 I2C 的 START / STOP 条件在 SCL/SDA 信号线上的波形——解释为什么 START 是"SDA 下降时 SCL 为高"而 STOP 是"SDA 上升时 SCL 为高"的巧妙设计（在非 START/STOP 时，SDA 只在 SCL 为低时变化）。
-- 解释 7 位地址 vs 10 位地址的编码方式——10 位地址如何在不增加 START 条件的前提下保持与 7 位设备的兼容？
-- 描述时钟拉伸 (Clock Stretching)：从设备可以拉低 SCL 来告诉主设备"我还没准备好"——主设备驱动如何检测和处理时钟拉伸？（超时处理？无限等待？）
+- 画出 I2C 的 START / STOP 条件在 SCL/SDA 信号线上的波形，解释为什么 START 是"SDA 下降时 SCL 为高"而 STOP 是"SDA 上升时 SCL 为高"的巧妙设计（在非 START/STOP 时，SDA 只在 SCL 为低时变化）。
+- 解释 7 位地址 vs 10 位地址的编码方式，10 位地址如何在不增加 START 条件的前提下保持与 7 位设备的兼容？
+- 描述时钟拉伸 (Clock Stretching)：从设备可以拉低 SCL 来告诉主设备"我还没准备好"，主设备驱动如何检测和处理时钟拉伸？（超时处理？无限等待？）
 - 画出 I2C 写事务和读事务的完整波形：START → 地址+R/W → ACK → 数据字节 → ACK → ... → STOP。标注每个 ACK/NACK 的含义。
 - 分析多主设备场景下的仲裁机制：两个主设备同时发起 START 时，如何通过 SDA 线的"线与"特性检测冲突并仲裁？
 - 讨论：I2C 的"重复 START"(Repeated START) vs 独立的 STOP+START 在原子性上有什么区别？（repeated START 防止其他主设备在 STOP 后插入事务）
@@ -1575,15 +1575,15 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 #### H5：SPI 总线驱动
 
-**内容概述**：SPI (Serial Peripheral Interface) 是一种四线制全双工串行总线——SCLK（时钟）、MOSI（主出从入）、MISO（主入从出）、SS/CS（片选）。速度远超 I2C（MHz 级别），广泛用于 flash 存储器、显示屏、传感器。
+**内容概述**：SPI (Serial Peripheral Interface) 是一种四线制全双工串行总线，由 SCLK（时钟）、MOSI（主出从入）、MISO（主入从出）、SS/CS（片选）组成。速度远超 I2C（MHz 级别），广泛用于 flash 存储器、显示屏、传感器。
 
 **H5 特有的深度检查点（用于 breakthrough 深度）：**
 
-- 解释 SPI 的四种模式 (Mode 0/1/2/3)：CPOL（时钟极性——空闲时 SCLK 为高还是低）和 CPHA（时钟相位——在第一个边沿还是第二个边沿采样数据）的组合。画出每种模式下 SCLK、MOSI、MISO 的时序图。
+- 解释 SPI 的四种模式 (Mode 0/1/2/3)：CPOL（时钟极性，即空闲时 SCLK 为高还是低）和 CPHA（时钟相位，即在第一个边沿还是第二个边沿采样数据）的组合。画出每种模式下 SCLK、MOSI、MISO 的时序图。
 - 描述片选 (Chip Select) 管理策略：GPIO 手动控制 vs 硬件 CS 自动管理 vs 菊花链 (Daisy Chain) 连接。在多从设备场景下，CS 的切换顺序如何影响总线利用率？
-- 分析全双工传输：SPI 的"发送一个字节同时接收一个字节"的特性——如何利用这一特性实现高效的数据交换？（如 flash 的"读命令"发送地址时同时接收 dummy byte，然后连续接收数据。）
+- 分析全双工传输：SPI 的"发送一个字节同时接收一个字节"的特性，如何利用这一特性实现高效的数据交换？（如 flash 的"读命令"发送地址时同时接收 dummy byte，然后连续接收数据。）
 - 解释 SPI Flash 的命令集：READ (0x03) vs FAST_READ (0x0B)、WRITE ENABLE (0x06)、SECTOR ERASE (0x20)、READ STATUS (0x05) 等。如何通过状态寄存器的 BUSY 位实现轮询等待？
-- 讨论：SPI 的"无应答"特性——与 I2C 不同，SPI 没有 ACK/NACK。如果从设备不响应（如 flash 正在擦除），主设备如何检测故障？（读回全 0xFF 或全 0x00 通常表示异常——但需要与合法数据区分。）
+- 讨论：SPI 的"无应答"特性。与 I2C 不同，SPI 没有 ACK/NACK。如果从设备不响应（如 flash 正在擦除），主设备如何检测故障？（读回全 0xFF 或全 0x00 通常表示异常，但需要与合法数据区分。）
 
 **参考资料：** SPI 规范 (Motorola/Freescale), Linux SPI 子系统 (`drivers/spi/`), JEDEC SFDP 规范（SPI Flash）, osdev.org SPI 页面, QEMU `-device ssi-sd` (SPI SD 卡模拟)
 
@@ -1630,8 +1630,8 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 **常见陷阱：**
 
-1. **"用 unikernel 之名行单体内核之实"。** 如果你的"unikernel"只是把用户程序作为内核线程跑——你并没有取消内核/用户边界，你只是换了个说法。真正的 unikernel 是"没有内核，只有库"。
-2. **混淆 unikernel 与无 OS。** Unikernel 不是 bare-metal 编程——它仍然提供了抽象（如 TCP 栈、文件系统），只是这些抽象以库而非独立服务的形式存在。
+1. **"用 unikernel 之名行单体内核之实"。** 如果你的"unikernel"只是把用户程序作为内核线程跑，你并没有取消内核/用户边界，只是换了个说法。真正的 unikernel 是"没有内核，只有库"。
+2. **混淆 unikernel 与无 OS。** Unikernel 不是 bare-metal 编程，它仍然提供抽象（如 TCP 栈、文件系统），只是这些抽象以库的形式而非独立服务的形式存在。
 
 **参考资料：** MirageOS 论文 (ASPLOS 2013), MirageOS 文档, Unikraft 项目, IncludeOS 架构文档, 《Unikernels: The Next Stage of Linux's Dominance》(2019)
 
@@ -1649,7 +1649,7 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 **建议探索路径：**
 
-1. 选模块：推荐从**页分配器**开始——状态空间小（freelist + 分配位图）、不变量清晰（"空闲页总数 + 已分配页总数 = 总物理页数"、"同一页不在 freelist 中出现两次"）
+1. 选模块：推荐从**页分配器**开始。它的状态空间小（freelist + 分配位图）、不变量清晰（"空闲页总数 + 已分配页总数 = 总物理页数"、"同一页不在 freelist 中出现两次"）
 2. 写形式化规格（不变量定义）：
    - 用 TLA+（模型检查）或 Coq/Lean（交互式证明）
    - 例：TLA+ 中定义 `FreePages \cap AllocatedPages = {}` 和 `FreePages \cup AllocatedPages = AllPhysicalPages`
@@ -1662,7 +1662,7 @@ void arch_fence_after_store(void);           // store 后的屏障
 - 什么性质适合形式化验证？（状态空间小、不变量清晰、边界明确的性质）
 - 什么性质不适合？（涉及时间、涉及并发 fairness、外部环境假设过多的性质）
 - 验证的假设（编译器正确、硬件符合 ISA 规范）在多大程度上是合理的？如果编译器有 bug，你的验证还成立吗？
-- seL4 的验证涵盖了从 Haskell 原型到 C 到二进制的全链条——研究了 seL4 的验证方法后，你认为在你的内核上验证一个模块的可行间距有多大？
+- seL4 的验证涵盖了从 Haskell 原型到 C 到二进制的全链条。研究了 seL4 的验证方法后，你认为在你的内核上验证一个模块的可行间距有多大？
 
 **验证里程碑：**
 
@@ -1674,7 +1674,7 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 **常见陷阱：**
 
-1. **验证了错误的性质。** "页分配器从不返回 NULL"——这不是不变量，这是性能属性，且只在物理内存充足时成立。好的不变量是：从同一 freelist 分配的页从不重叠。
+1. **验证了错误的性质。** "页分配器从不返回 NULL"算不上不变量，它更像性能属性，且只在物理内存充足时成立。好的不变量是：从同一 freelist 分配的页从不重叠。
 2. **验证的模型与代码不一致。** TLA+ 规格中 `alloc()` 是原子的，但 C 代码中 `alloc()` 包含多步操作（取 freelist 头、更新 freelist、清零页）。如果验证没有建模中间步骤，代码中的并发 bug 不会被发现。
 3. **追求"完全验证"而止步于"部分验证"。** 证明一个模块的所有性质在理论上可能不可行（甚至不可判定）。seL4 的经验：先从最重要的 safety 性质开始，criticality 优先于 completeness。
 
@@ -1684,7 +1684,7 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 #### X3：多内核（Multikernel）
 
-每个 CPU 有自己独立的内核实例，通过消息传递协调，而不是共享内存。
+每个 CPU 有自己独立的内核实例，通过消息传递协调，不依赖共享内存。
 
 | 属性               | 值                                                                           |
 | ------------------ | ---------------------------------------------------------------------------- |
@@ -1694,7 +1694,7 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 **建议探索路径：**
 
-1. 研究阶段：阅读 Barrelfish 论文 + Multikernel 论文 (Baumann et al., 2009)，理解核心主张——"共享内存在大规模多核下是性能瓶颈，消息传递更可扩展"
+1. 研究阶段：阅读 Barrelfish 论文 + Multikernel 论文 (Baumann et al., 2009)，理解核心主张："共享内存在大规模多核下是性能瓶颈，消息传递更可扩展"
 2. 设计消息协议：最小消息格式 `(src_cpu, dst_cpu, type, payload[])`，通过共享内存 ring buffer（过渡方案）或 IPI 实现 CPU 间通信
 3. 实现 2-CPU 最小原型：每个 CPU 有独立的进程表、独立的调度器、独立的空闲页池。进程不跨 CPU 迁移。CPU 间通过消息协调（如 "请释放这个页，我需要它"）
 4. 测量对比（2/4/8 CPU）：
@@ -1717,8 +1717,8 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 **常见陷阱：**
 
-1. **"消息传递变成另一种共享内存"。** 如果消息通过共享内存页传递（ring buffer 在共享内存中），你实际上是在共享内存上做消息传递——而非真正的 multikernel。真正的 multikernel 的消息通道至少在概念上是 point-to-point 的。
-2. **性能退化。** 你的 multikernel 原型很可能比共享内存内核慢——这是正常的。教学价值在于理解"为什么慢"和"大规模下的拐点在哪里"，而不是"让 2 核更快"。
+1. **"消息传递变成另一种共享内存"。** 如果消息通过共享内存页传递（ring buffer 在共享内存中），你实际上是在共享内存上做消息传递，而非真正的 multikernel。真正的 multikernel 的消息通道至少在概念上是 point-to-point 的。
+2. **性能退化。** 你的 multikernel 原型很可能比共享内存内核慢，这是正常的。教学价值在于理解"为什么慢"和"大规模下的拐点在哪里"，而不是"让 2 核更快"。
 3. **过度设计消息协议。** 从最小可用消息格式（CPU ID + type + payload）开始。可以逐步增加功能（请求/响应匹配、超时、流控），但不要一开始就设计"完美的自描述消息格式"。
 
 **参考资料：** Barrelfish 论文 (SOSP 2009), "The Multikernel: A new OS architecture for scalable multicore systems" (Baumann et al., HotOS 2009), Helios 项目论文
@@ -1738,7 +1738,7 @@ void arch_fence_after_store(void);           // store 后的屏障
 **建议探索路径：**
 
 1. 设计 IPC 快速路径：定义消息格式（`(sender, reply_port, opcode, payload)`），实现同步 IPC（send → block → reply → unblock）和异步 IPC（send → continue → notify）
-2. 提取第一个用户态服务（建议从设备驱动开始——驱动有清晰的 MMIO 接口，容易隔离）：
+2. 提取第一个用户态服务（建议从设备驱动开始，驱动有清晰的 MMIO 接口，容易隔离）：
    - 将 virtio-blk 驱动移到独立用户态进程
    - 内核提供 `map_mmio(va, pa, size)` 调用让驱动访问设备 MMIO
    - 文件系统通过 IPC 向驱动服务发送读写请求
@@ -1755,14 +1755,14 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 **正确性底线：**
 
-- "用户态服务崩溃不拖垮内核——内核检测到服务崩溃后重启服务，不影响其他服务"
-- "IPC 的消息缓冲区不泄漏——所有消息在接收方读取后正确释放"
+- "用户态服务崩溃不拖垮内核，内核检测到服务崩溃后重启服务，不影响其他服务"
+- "IPC 的消息缓冲区不泄漏，所有消息在接收方读取后正确释放"
 
 **常见陷阱：**
 
-1. **IPC 性能陷阱。** 微内核的 IPC 路径是性能命脉——如果每次 IPC 都需要多次 `ecall` + 上下文切换 + 地址空间切换，你的微内核会比宏内核慢 10-100 倍。优化：共享内存通道、批量消息传递、内核中缓存连接状态。
+1. **IPC 性能陷阱。** 微内核的 IPC 路径是性能命脉。如果每次 IPC 都需要多次 `ecall` + 上下文切换 + 地址空间切换，你的微内核会比宏内核慢 10-100 倍。优化：共享内存通道、批量消息传递、内核中缓存连接状态。
 2. **服务依赖循环。** FS 服务需要磁盘驱动 → 磁盘驱动需要一个配置文件 → 配置文件在 FS 上。启动阶段需要特殊处理（如内核内嵌的最小启动 FS）。
-3. **微内核≠"把所有东西移到用户态"。** 调度器和内存管理器仍在内核中——微内核的核心是"最小化内核"，不是"空洞化内核"。
+3. **微内核≠"把所有东西移到用户态"。** 调度器和内存管理器仍在内核中。微内核的核心是"最小化内核"，不是"空洞化内核"。
 
 **参考资料：** seL4 论文, MINIX 3 论文, L4 微内核家族论文, GNU Hurd 设计文档
 
@@ -1806,15 +1806,15 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 **正确性底线：**
 
-- "BPF 程序绝不能导致内核崩溃——verifier 的拒绝（false positive）可以接受，但错误放行（false negative）不可接受"
-- "BPF 程序有最大指令数限制——防止 verifier 分析超时或 JIT 生成无限代码"
-- "内核内存不通过 BPF 程序泄漏——所有 `PTR_TO_STACK` 类型的读操作不超出栈帧范围"
+- "BPF 程序绝不能导致内核崩溃。verifier 的拒绝（false positive）可以接受，但错误放行（false negative）不可接受"
+- "BPF 程序有最大指令数限制，防止 verifier 分析超时或 JIT 生成无限代码"
+- "内核内存不通过 BPF 程序泄漏，所有 `PTR_TO_STACK` 类型的读操作不超出栈帧范围"
 
 **常见陷阱：**
 
-1. **verifier 不完整。** 一个字节码程序中看似无害的 `ld [r0 + offset]`，在运行时 `r0` 可能指向任意内核地址。verifier 必须跟踪每个寄存器的值范围和类型——这不是可选的优化，是安全性的基础。
-2. **JIT 的隔离性。** JIT 编译的代码运行在内核态——一个越界的 store 指令会直接写坏内核内存。JIT 生成代码前必须在编译时插入边界检查（或在 JIT 时验证所有访问在合法范围）。
-3. **Spectre 风格侧信道。** BPF verifier 可以阻止直接的内存越界访问，但无法阻止推测执行中的越界访问。这是 eBPF 社区仍在积极研究的问题——在你的原型中可以忽略，但在 设计理由 中记录这个已知局限。
+1. **verifier 不完整。** 一个字节码程序中看似无害的 `ld [r0 + offset]`，在运行时 `r0` 可能指向任意内核地址。verifier 必须跟踪每个寄存器的值范围和类型，这正是安全性的基础。
+2. **JIT 的隔离性。** JIT 编译的代码运行在内核态，一条越界的 store 指令会直接写坏内核内存。JIT 生成代码前必须在编译时插入边界检查（或在 JIT 时验证所有访问在合法范围）。
+3. **Spectre 风格侧信道。** BPF verifier 可以阻止直接的内存越界访问，但无法阻止推测执行中的越界访问。这是 eBPF 社区仍在积极研究的问题，在你的原型中可以忽略，但要在 设计理由 中记录这个已知局限。
 
 **参考资料：** Linux eBPF verifier 源码 (`kernel/bpf/verifier.c`), eBPF 指令集规范 (IETF draft), "A Thorough Introduction to eBPF" (LWN), "BPF and Spectre: Mitigating Transient Execution Attacks" (LWN)
 
@@ -1835,7 +1835,7 @@ void arch_fence_after_store(void);           // store 后的屏障
 1. 模拟 PMEM 设备：QEMU 支持 `-object memory-backend-file,id=mem0,share=on,mem-path=pmem.img,size=64M -device nvdimm,id=nvdimm0,memdev=mem0` 创建 NVDIMM 设备
 2. 识别 PMEM 区域：通过 ACPI NFIT 表（或 device tree 中的 `pmem` 节点）发现持久内存的物理地址范围和大小
 3. 实现 DAX（Direct Access）映射：
-   - `mmap()` 文件时，不通过 buffer cache——直接将文件所在的 PMEM 物理页映射到用户地址空间
+   - `mmap()` 文件时，不通过 buffer cache，直接将文件所在的 PMEM 物理页映射到用户地址空间
    - 用户的 store 指令直接变成 PMEM 上的持久写入
 4. 崩溃一致性保证：
    - `msync()` / `fsync()` 的实现：在关键写入点后执行 `fence` + cache flush（RISC-V `CBO.clean`/`CBO.flush` 指令或 SBI 调用）
@@ -1851,15 +1851,15 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 **正确性底线：**
 
-- "PMEM 上的文件系统元数据在崩溃后一致——至少满足 fsck 可修复的条件"
-- "DAX 映射不绕过文件权限检查——`mmap` PMEM 文件仍受 `open()` 时的权限控制"
-- "cache flush 在关键点后必定执行——flush 遗漏是不可接受的正确性 bug"
+- "PMEM 上的文件系统元数据在崩溃后一致，至少满足 fsck 可修复的条件"
+- "DAX 映射不绕过文件权限检查，`mmap` PMEM 文件仍受 `open()` 时的权限控制"
+- "cache flush 在关键点后必定执行，flush 遗漏是不可接受的正确性 bug"
 
 **常见陷阱：**
 
-1. **cache flush 遗漏。** 对于 PMEM，CPU cache 是 volatile 的——store 到 PMEM 地址会先进 CPU cache，需要显式 flush 才能到达持久介质。遗漏 flush → 崩溃后数据丢失。最隐晦的 bug：看起来"立即读回"是正确的（因为 cache hit），但持久化失败了。
+1. **cache flush 遗漏。** 在 PMEM 上，CPU cache 是 volatile 的，store 到 PMEM 地址会先进 CPU cache，需要显式 flush 才能到达持久介质。遗漏 flush 会导致崩溃后数据丢失。最隐晦的 bug：看起来"立即读回"是正确的（因为 cache hit），但持久化失败了。
 2. **原子性边界误判。** 一个 8 字节的 store 在 x86 上是原子的（对齐时），但在 RISC-V 上不保证。如果崩溃发生在 store 中间，PMEM 上可能有 torn write。解决方案：使用 8 字节的原子操作或实现 redo log。
-3. **混淆 fsync vs cache flush。** PMEM 模式下的 `fsync` 语义不同于传统磁盘——传统 `fsync` 保证数据已写到磁盘，PMEM 的 `fsync` 只需要 flush CPU cache。实现不对可能永远不 flush（数据在 cache 中不出去）或过度 flush（每条 store 都 flush，性能极差）。
+3. **混淆 fsync vs cache flush。** PMEM 模式下的 `fsync` 语义不同于传统磁盘。传统 `fsync` 保证数据已写到磁盘，PMEM 的 `fsync` 只需要 flush CPU cache。实现不对时可能永远不 flush（数据在 cache 中不出去）或过度 flush（每条 store 都 flush，性能极差）。
 
 **参考资料：** Linux DAX/PMEM 子系统 (`fs/dax.c`, `drivers/nvdimm/`), SNIA NVM Programming Model 规范, PMDK (Persistent Memory Development Kit), QEMU NVDIMM 文档
 
@@ -1867,15 +1867,15 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 ### 8.2.6 架构设计簇 (A)：内核代码的组织与抽象
 
-这些方向不增加新功能、不优化性能、不兼容外部生态——它们关注一个更根本的问题：**当内核的复杂度增长时，你用什么设计方法论来管理它？**
+这些方向不增加新功能、不优化性能、不兼容外部生态，它们关注一个更根本的问题：**当内核的复杂度增长时，你用什么设计方法论来管理它？**
 
-架构设计簇是**横切关注点**——你可以在做 F/C/O/X 方向的任何阶段引入 A 簇的设计思想。Linux 内核中大量使用函数指针表（`struct file_operations`、`struct device_driver`、`struct sched_class`）来模拟面向对象的多态——这不是偶然的，是管理复杂度的必然。Windows NT 更进一步，把一个完整的对象管理器做进了内核。A1 方向让你探索：**如果你的内核从一开始就用面向对象的方法组织，它会是什么样子？**
+架构设计簇是**横切关注点**，你可以在做 F/C/O/X 方向的任何阶段引入 A 簇的设计思想。Linux 内核中大量使用函数指针表（`struct file_operations`、`struct device_driver`、`struct sched_class`）来模拟面向对象的多态，这并非偶然，而是管理复杂度的必然。Windows NT 更进一步，把一个完整的对象管理器做进了内核。A1 方向让你探索：**如果你的内核从一开始就用面向对象的方法组织，它会是什么样子？**
 
 ---
 
 #### A1：内核面向对象设计 (Kernel Object-Oriented Design)
 
-为内核设计一个统一的类型系统、对象生命周期管理、和多态操作接口——不是用 C++ 写内核（那会引入异常、RTTI 等不适用于内核的运行时），而是用 C 的结构体和函数指针，系统地实现面向对象的三个核心原则：封装、继承、多态。
+为内核设计一个统一的类型系统、对象生命周期管理、和多态操作接口。实现语言不用 C++（那会引入异常、RTTI 等不适用于内核的运行时），而是用 C 的结构体和函数指针，系统地实现面向对象的三个核心原则：封装、继承、多态。
 
 | 属性               | 值                                                                  |
 | ------------------ | ------------------------------------------------------------------- |
@@ -1897,13 +1897,13 @@ void arch_fence_after_store(void);           // store 后的屏障
          const struct kobj_ops *ops; // 操作表
      };
      ```
-   - 每个内核对象在分配时关联一个 `kobj_type`——运行时可通过 `kobj_type` 判断对象类型（Runtime Type Identification）
+   - 每个内核对象在分配时关联一个 `kobj_type`，运行时可通过 `kobj_type` 判断对象类型（Runtime Type Identification）
    - 验证：创建不同类型的对象，通过类型描述符区分它们
 2. **统一对象生命周期管理：**
 
    - 引用计数基类：每个内核对象的前 N 个字节包含一个 `struct kref`（atomic refcount +  destructor callback）
-   - `kobj_get(obj)` / `kobj_put(obj)`：增加/减少引用计数——count 归零时自动调用 `dtor` 释放
-   - 所有资源共享同一套引用计数机制（进程、文件、管道、socket、页表——不再各自维护自己的 refcount）
+   - `kobj_get(obj)` / `kobj_put(obj)`：增加/减少引用计数，count 归零时自动调用 `dtor` 释放
+   - 所有资源共享同一套引用计数机制（进程、文件、管道、socket、页表），不再各自维护自己的 refcount
    - 验证：100 次 fork+exit 后，所有通过 `kobj` 分配的对象无泄漏
 3. **多态操作接口 (Virtual Function Table)：**
 
@@ -1954,10 +1954,10 @@ void arch_fence_after_store(void);           // store 后的屏障
 
 **正确性底线：**
 
-- "对象引用计数归零后其内存被释放——不出现 use-after-free"
-- "类型转换安全检查：`kobj_cast(obj, KOBJ_TYPE_FILE)` 在类型不匹配时返回 NULL——不静默地将 pipe 当作 file 操作"
-- "对象目录与对象生命周期一致——对象销毁时其目录项自动移除，不产生悬空目录项"
-- "多态操作表的函数指针在对象生命周期内不变——不出现 vtable 被篡改的情况"
+- "对象引用计数归零后其内存被释放，不出现 use-after-free"
+- "类型转换安全检查：`kobj_cast(obj, KOBJ_TYPE_FILE)` 在类型不匹配时返回 NULL，不静默地将 pipe 当作 file 操作"
+- "对象目录与对象生命周期一致，对象销毁时其目录项自动移除，不产生悬空目录项"
+- "多态操作表的函数指针在对象生命周期内不变，不出现 vtable 被篡改的情况"
 
 **验证指标与判据：**
 
@@ -1965,7 +1965,7 @@ void arch_fence_after_store(void);           // store 后的屏障
 - 对象创建/销毁：`kobj_alloc()` + `kobj_put()` 的开销 < 100ns（对比原始 `kmalloc`/`kfree`）
 - 对象目录查找：`kobj_lookup()` < 1μs（1000 个对象的目录树）
 
-**案例分析：Linux VFS 的 `struct file_operations` —— OOP 的成功先例**
+**案例分析：Linux VFS 的 `struct file_operations`：OOP 的成功先例**
 
 Linux 没有在内核中完整实现 OOP，但它的 VFS 层是一个经典的面向对象设计：
 
@@ -1981,9 +1981,9 @@ struct file_operations {
 };
 ```
 
-每个文件系统（ext2、tmpfs、procfs）提供自己的 `file_operations` 实现——上层的 `sys_read()` 只需要调用 `file->f_op->read()`，不需要知道文件系统类型。这是一个 vtable 的经典用例。
+每个文件系统（ext2、tmpfs、procfs）提供自己的 `file_operations` 实现，上层的 `sys_read()` 只需要调用 `file->f_op->read()`，不需要知道文件系统类型。这是一个 vtable 的经典用例。
 
-**案例分析：Windows NT Object Manager —— OOP 的完整实现**
+**案例分析：Windows NT Object Manager：OOP 的完整实现**
 
 Windows NT 的内核对象管理器是一个完整的 OOP 框架：
 
@@ -1993,15 +1993,15 @@ Windows NT 的内核对象管理器是一个完整的 OOP 框架：
 - 统一的安全模型（每个对象关联安全描述符，由安全引用监视器检查）
 - 统一的引用计数和句柄管理
 
-Windows NT 的对象管理器代码量远超你的 OS 可能承受的范围——但它的设计哲学是 A1 方向最重要的参考。
+Windows NT 的对象管理器代码量远超你的 OS 可能承受的范围，但它的设计哲学是 A1 方向最重要的参考。
 
 **常见陷阱：**
 
-1. **过度设计。** 不是所有内核数据结构都需要成为一个 `kobj`。页表条目、freelist 节点、中断向量条目——这些是内部实现细节，不应该暴露到对象系统中。规则：如果多个子系统需要通过统一接口访问它 → 是对象；如果只有一个子系统使用 → 可能不需要。
+1. **过度设计。** 不是所有内核数据结构都需要成为一个 `kobj`。页表条目、freelist 节点、中断向量条目都是内部实现细节，不应该暴露到对象系统中。规则：如果多个子系统需要通过统一接口访问它 → 是对象；如果只有一个子系统使用 → 可能不需要。
 2. **vtable 开销被夸大。** 一次额外的指针解引用（`obj->ops->read`）在现代 CPU 上的开销约为 1-2 个 cycle（L1 cache hit 时）。相比之下，syscall 本身的上下文切换开销（cache miss + TLB flush）是数千个 cycle。不要把性能优化的精力放在 vtable 上。
-3. **类型系统与 C 语言的张力。** C 没有继承和 RTTI。你需要在结构体的第一个字段放置 `kobj` 基类（"继承"），并手动维护类型 ID。用宏生成样板代码可以减轻痛苦，但不要发明一套完整的预处理器 DSL —— 保持 C 的简洁。
-4. **引用计数循环。** 如果对象 A 引用对象 B、B 又引用 A，纯引用计数无法释放。解决方案：要么在设计中避免循环（父引用子、子不引用父——只通过路径查找父），要么引入弱引用（不阻止对象释放的引用）。
-5. **把 OOP 当目的而非工具。** "我是面向对象的操作系统"不是设计目标。"我的文件、管道、socket 通过同一套接口操作，代码量减少 30%，bug 率降低 50%"——这才是 A1 方向要达成的目标。
+3. **类型系统与 C 语言的张力。** C 没有继承和 RTTI。你需要在结构体的第一个字段放置 `kobj` 基类（"继承"），并手动维护类型 ID。用宏生成样板代码可以减轻痛苦，但不要发明一套完整的预处理器 DSL，保持 C 的简洁。
+4. **引用计数循环。** 如果对象 A 引用对象 B、B 又引用 A，纯引用计数无法释放。解决方案：要么在设计中避免循环（父引用子、子不引用父，只通过路径查找父），要么引入弱引用（不阻止对象释放的引用）。
+5. **把 OOP 当目的而非工具。** "我是面向对象的操作系统"不是设计目标。"我的文件、管道、socket 通过同一套接口操作，代码量减少 30%，bug 率降低 50%" 才是 A1 方向要达成的目标。
 
 **目标设计工作表（不可直接作为 Spec 提交）：**
 
@@ -2037,23 +2037,23 @@ negative_tradeoff_checks:
   - { name: "code_complexity", max_allowed: "核心路径（syscall 分发）的代码行数不增加" }
 ```
 
-**参考资料：** Windows NT Object Manager（《Windows Internals》第 7 版第 3 章），Linux `struct file_operations` / `kobject` / `kref` 源码，seL4 capability 类型系统，《Design Patterns》（Gamma et al.）——特别是 Composite、Visitor、Observer 模式在内核中的适用性
+**参考资料：** Windows NT Object Manager（《Windows Internals》第 7 版第 3 章），Linux `struct file_operations` / `kobject` / `kref` 源码，seL4 capability 类型系统，《Design Patterns》（Gamma et al.），特别是 Composite、Visitor、Observer 模式在内核中的适用性
 
-**案例分析：macOS IOKit —— C++ 内核框架的生产级实践**
+**案例分析：macOS IOKit：C++ 内核框架的生产级实践**
 
-macOS 和 iOS 的 IOKit 是内核中大规模使用 C++ 的最著名案例。IOKit 不是"用 C 模拟 OOP"——它直接使用 C++ 实现了驱动框架：
+macOS 和 iOS 的 IOKit 是内核中大规模使用 C++ 的最著名案例。IOKit 没有用 C 模拟 OOP，它直接使用 C++ 实现了驱动框架：
 
 - **受限 C++ 子集**：IOKit 使用 C++ 但禁止异常（`-fno-exceptions`）、禁止 RTTI（`-fno-rtti`）、使用 IOKit 自己的运行时类型系统（`OSMetaClass`）替代 `dynamic_cast`
-- **引用计数基类**：`OSObject` 是所有 IOKit 对象的基类，内置 `retain()`/`release()` 引用计数——与 A1 的 `kobj` + `kref` 概念完全一致
+- **引用计数基类**：`OSObject` 是所有 IOKit 对象的基类，内置 `retain()`/`release()` 引用计数，与 A1 的 `kobj` + `kref` 概念完全一致
 - **多态驱动模型**：每个驱动是一个 `IOService` 子类，通过 `probe()`/`start()`/`stop()` 虚函数实现生命周期管理。驱动间通过 `IOService::waitForService()` 自动匹配依赖
-- **I/O Kit Registry**：内核对象树（类似 A1 的对象目录）——`ioreg` 命令行工具可以浏览整个内核对象图
+- **I/O Kit Registry**：内核对象树（类似 A1 的对象目录），`ioreg` 命令行工具可以浏览整个内核对象图
 
 **C++ 在内核中的正确用法：** 如果你选择在 A1 中使用 C++（而非 C + 函数指针），需要准备好受限的运行时：
 
 - 全局 `operator new`/`operator delete` 映射到内核内存分配器（`kmalloc`/`kfree`）
-- 禁止全局构造函数（或实现 `.init_array` 遍历）——内核启动早期 C 运行时未就绪
-- 虚函数表（vtable）就是 A1 的 `kobj_ops`——但 C++ 编译器自动生成，减少手写样板
-- 模板（template）谨慎使用——每个实例化增加代码量（与 O2 极小足迹冲突）
+- 禁止全局构造函数（或实现 `.init_array` 遍历），内核启动早期 C 运行时未就绪
+- 虚函数表（vtable）就是 A1 的 `kobj_ops`，由 C++ 编译器自动生成，减少手写样板
+- 模板（template）谨慎使用，每个实例化都会增加代码量（与 O2 极小足迹冲突）
 
 IOKit 的教训：C++ 可以写出比 C 更清晰的内核代码（虚函数替代函数指针表、RAII 管理锁/内存），但代价是工具链依赖和调试难度（内核 panic 时的 C++ 栈展开几乎不可行）。
 
@@ -2061,7 +2061,7 @@ IOKit 的教训：C++ 可以写出比 C 更清晰的内核代码（虚函数替�
 
 #### A2：Plan 9 一切皆文件模型 (Plan 9 Everything-is-a-File)
 
-将你的 OS 的资源模型从"fd-based + 特殊 API（socket/ioctl）"彻底改造为 Plan 9 风格——每个进程拥有独立的命名空间，所有资源（文件、网络连接、设备、UI）通过统一的文件操作（open/read/write/close）访问。这是对"一切皆文件"哲学的最彻底实践，也是架构设计簇的核心方向——它改变了你思考"资源是什么"的方式。
+将你的 OS 的资源模型从"fd-based + 特殊 API（socket/ioctl）"彻底改造为 Plan 9 风格。每个进程拥有独立的命名空间，所有资源（文件、网络连接、设备、UI）通过统一的文件操作（open/read/write/close）访问。这是对"一切皆文件"哲学的最彻底实践，也是架构设计簇的核心方向，它改变了你思考"资源是什么"的方式。
 
 | 属性               | 值                                                   |
 | ------------------ | ---------------------------------------------------- |
@@ -2073,7 +2073,7 @@ IOKit 的教训：C++ 可以写出比 C 更清晰的内核代码（虚函数替�
 
 1. **per-process namespace：** 每个进程维护私有挂载表，`bind(path1, path2, flags)` 支持 REPLACE/BEFORE/AFTER 挂载模式。验证：两个进程分别 bind 不同目录到 `/tmp`，互不可见
 2. **合成文件系统：** 实现最小 9P 服务器框架（Tversion/Tattach/Twalk/Topen/Tread/Twrite/Tclunk），将内核信息暴露为实时文件而非文本转储。示例：`/net/tcp/clone` 创建连接
-3. **网络栈文件化：** TCP 连接 = `/net/tcp/<id>/ctl` + `/net/tcp/<id>/data`——通过 `cat`/`echo` 完成 HTTP 请求
+3. **网络栈文件化：** TCP 连接 = `/net/tcp/<id>/ctl` + `/net/tcp/<id>/data`，通过 `cat`/`echo` 完成 HTTP 请求
 4. **设备文件化：** 串口→`/dev/uart/0/data`，framebuffer→`/dev/fb/data`
 5. Union Directory、远程 9P import
 
@@ -2089,7 +2089,7 @@ IOKit 的教训：C++ 可以写出比 C 更清晰的内核代码（虚函数替�
 
 #### A3：异步运行时 (Async Runtime)
 
-为内核实现一个异步 I/O 运行时——不是简单的"发起 I/O→回调"，而是一个完整的 async/await 风格并发框架，包括任务调度器、唤醒机制、和取消语义。Linux 的 io_uring 证明了异步模式在内核中的价值；A3 探索的是**如果你的内核从 syscall 层开始就原生支持异步，它会是什么样子**。
+为内核实现一个异步 I/O 运行时。它比简单的"发起 I/O→回调"更进一步，是一个完整的 async/await 风格并发框架，包括任务调度器、唤醒机制和取消语义。Linux 的 io_uring 证明了异步模式在内核中的价值；A3 探索的是**如果你的内核从 syscall 层开始就原生支持异步，它会是什么样子**。
 
 | 属性               | 值                 |
 | ------------------ | ------------------ |
@@ -2099,10 +2099,10 @@ IOKit 的教训：C++ 可以写出比 C 更清晰的内核代码（虚函数替�
 
 **建议步骤：**
 
-1. **Future/Task 抽象：** 定义 `struct future`（表示一个尚未完成的异步操作）和 `struct task`（一个可暂停/恢复的执行上下文）。future 有 `poll()` 方法——返回 `Ready(result)` 或 `Pending`（注册 waker 后返回）
-2. **Waker 机制：** 当 future 返回 Pending 时，它向内核注册一个 waker——I/O 完成时调用 waker 唤醒等待的任务。确保唤醒不丢失（edge-triggered vs level-triggered 的选择）
-3. **内核执行器：** 实现一个内核态的任务调度器——维护就绪任务队列，循环 poll→Pending→等待 I/O→唤醒→重新入队。支持多核 work-stealing
-4. **Syscall 异步化：** 将关键 syscall（`read`、`write`、`accept`）改为异步版本——`async_read(fd, buf, n)` 返回 future，用户态可 await
+1. **Future/Task 抽象：** 定义 `struct future`（表示一个尚未完成的异步操作）和 `struct task`（一个可暂停/恢复的执行上下文）。future 有 `poll()` 方法，返回 `Ready(result)` 或 `Pending`（注册 waker 后返回）
+2. **Waker 机制：** 当 future 返回 Pending 时，它向内核注册一个 waker，I/O 完成时调用 waker 唤醒等待的任务。确保唤醒不丢失（edge-triggered vs level-triggered 的选择）
+3. **内核执行器：** 实现一个内核态的任务调度器，维护就绪任务队列，循环执行 poll→Pending→等待 I/O→唤醒→重新入队。支持多核 work-stealing
+4. **Syscall 异步化：** 将关键 syscall（`read`、`write`、`accept`）改为异步版本，`async_read(fd, buf, n)` 返回 future，用户态可 await
 5. 取消语义：如果异步操作被取消（如进程被 kill），如何通知 I/O 子系统？如何处理已部分完成的操作？
 
 **验证里程碑：**
@@ -2119,8 +2119,8 @@ IOKit 的教训：C++ 可以写出比 C 更清晰的内核代码（虚函数替�
 **常见陷阱：**
 
 1. **状态机爆炸。** 手动管理异步状态机（当前执行到哪一步、哪些资源已分配）极易出错。结构化并发（structured concurrency）是防御手段
-2. **唤醒丢失（lost wakeup）。** 经典的竞态：I/O 完成发生在 future 注册 waker 之前——完成中断触发时 waker 尚未注册，导致任务永久悬挂。解决方案：在注册 waker 后再次检查 I/O 是否已完成
-3. **取消的级联效应。** 取消一个 future 可能影响其他依赖它的 future——需要明确定义取消传播语义（cancellation token 或类似机制）
+2. **唤醒丢失（lost wakeup）。** 经典的竞态：I/O 完成发生在 future 注册 waker 之前，完成中断触发时 waker 尚未注册，导致任务永久悬挂。解决方案：在注册 waker 后再次检查 I/O 是否已完成
+3. **取消的级联效应。** 取消一个 future 可能影响其他依赖它的 future，需要明确定义取消传播语义（cancellation token 或类似机制）
 
 **参考资料：** Rust `std::future` / `async`/`await` 设计文档, Linux io_uring 的 SQPOLL 模式和 IORING_OP_ASYNC_CANCEL, seL4 异步 IPC (Notification), 《Structured Concurrency》 (Lewis Baker)
 
@@ -2128,7 +2128,7 @@ IOKit 的教训：C++ 可以写出比 C 更清晰的内核代码（虚函数替�
 
 #### A4：机制与策略分离 (Mechanism-Policy Separation)
 
-经典 OS 设计原则："机制提供**怎么做**的能力，策略决定**做什么**的选择"。将这一原则系统地应用到你的内核的每个子系统中——调度器、内存管理、文件系统、设备驱动。
+经典 OS 设计原则："机制提供**怎么做**的能力，策略决定**做什么**的选择"。把这一原则系统地应用到内核的每个子系统，包括调度器、内存管理、文件系统、设备驱动。
 
 | 属性               | 值                                                       |
 | ------------------ | -------------------------------------------------------- |
@@ -2156,10 +2156,10 @@ IOKit 的教训：C++ 可以写出比 C 更清晰的内核代码（虚函数替�
 
 **常见陷阱：**
 
-1. **过度抽象。** 为"可能切换的策略"设计复杂的插件接口，但实际上只有一种策略实现——YAGNI。只在确定存在多种策略时才分离
-2. **边界模糊。** "内存不足时 kill 哪个进程"——这是策略还是机制？Linux 的 OOM killer 把策略做进了内核——A4 的理念是把它暴露给用户态决策
-3. **性能退化。** 每次策略决策都需要用户态往返（如 page fault 时问用户态"换出哪页"）——延迟不可接受。缓解：机制提供"默认策略"，用户态可覆盖但默认走快速路径
-4. **机制不够强大。** 如果机制没有暴露足够的控制点（如调度器只提供"nice 值"而没有"deadline"参数），策略无法表达复杂需求——机制设计需要预见到策略的多样性
+1. **过度抽象。** 为"可能切换的策略"设计复杂的插件接口，但实际上只有一种策略实现，这就是 YAGNI。只在确定存在多种策略时才分离
+2. **边界模糊。** "内存不足时 kill 哪个进程"，这是策略还是机制？Linux 的 OOM killer 把策略做进了内核，A4 的理念是把它暴露给用户态决策
+3. **性能退化。** 每次策略决策都需要用户态往返（如 page fault 时问用户态"换出哪页"），延迟不可接受。缓解：机制提供"默认策略"，用户态可覆盖但默认走快速路径
+4. **机制不够强大。** 如果机制没有暴露足够的控制点（如调度器只提供"nice 值"而没有"deadline"参数），策略无法表达复杂需求，机制设计需要预见到策略的多样性
 
 **参考资料：** 《The Design and Implementation of the 4.4BSD Operating System》（McKusick）, exokernel 论文 (MIT, 1998), Linux VFS 的 `struct file_operations`（文件系统作为策略）, Linux `sched_class`（调度器作为策略）
 
@@ -2173,25 +2173,25 @@ IOKit 的教训：C++ 可以写出比 C 更清晰的内核代码（虚函数替�
 
 **correctness_guard 虚设。** "不破坏已有功能"太笼统。映射到具体的测试套件。
 
-**专项优化牺牲基本正确性。** 为了极速启动跳过 BSS 清零——这不叫优化，叫 bug。
+**专项优化牺牲基本正确性。** 为了极速启动跳过 BSS 清零，这不叫优化，叫 bug。
 
 ### 多方向陷阱
 
 **方向太多，全是 explore。** 5 个方向各做 20% = 0 个方向学到东西。选择 1-2 个方向做到 mastery 深度，远好于"撒胡椒面"。
 
-**方向冲突未声明。** 同时选 O2（极小足迹）和 F3（GUI），但不在 设计理由 中说明这个矛盾。这不是"我都要"——这是"我没想清楚"。
+**方向冲突未声明。** 同时选 O2（极小足迹）和 F3（GUI），却不在 设计理由 中说明这个矛盾。与其说"我都要"，不如说是"我没想清楚"。
 
-**虚假融合。** 在 多个 GoalSpec 和 DesignSpec 组合不变量 中声明了"交织"关系，但实际上两个方向的代码互不感知。融合关系需要体现在设计上——共享的数据结构、联合的不变量、交叉的测试用例。
+**虚假融合。** 在 多个 GoalSpec 和 DesignSpec 组合不变量 中声明了"交织"关系，但实际上两个方向的代码互不感知。融合关系需要体现在设计上，比如共享的数据结构、联合的不变量、交叉的测试用例。
 
-**跨方向不变量遗漏。** C1（Linux ELF）+ O4（安全加固）——如果 C1 的 ELF 加载器没有继承 O4 的 W^X 保护，那么一个恶意 ELF 就能绕过所有安全加固。"兼容"和"安全"在你声明交织的那一刻，就不再是独立的方向。
+**跨方向不变量遗漏。** C1（Linux ELF）+ O4（安全加固）组合里，如果 C1 的 ELF 加载器没有继承 O4 的 W^X 保护，那么一个恶意 ELF 就能绕过所有安全加固。"兼容"和"安全"在你声明交织的那一刻，就不再是独立的方向。
 
-**忽略依赖顺序。** H2（PCI）→ H1（USB）→ F1（网络）这条链，如果先做 F1 再做 H1，你会发现你的网卡驱动建立在"QEMU 帮你预设好的 virtio-net 地址"上——没有经过 PCI 枚举，移植性为零。先做基础设施方向，再做依赖它的上层方向。
+**忽略依赖顺序。** H2（PCI）→ H1（USB）→ F1（网络）这条链，如果先做 F1 再做 H1，你会发现你的网卡驱动建立在"QEMU 帮你预设好的 virtio-net 地址"上，没有经过 PCI 枚举，移植性为零。先做基础设施方向，再做依赖它的上层方向。
 
 ---
 
 ## 8.5 本章小结
 
-阶段 8 不是"做一个附加项目"。它是**你 OS 的设计宣言**——通过方向选择、深度承诺、融合关系和不变量定义，你说清楚了"我的 OS 为什么而存在"。
+阶段 8 不是"做一个附加项目"，它是**你 OS 的设计宣言**。通过方向选择、深度承诺、融合关系和不变量定义，你说清楚了"我的 OS 为什么而存在"。
 
 从阶段 1 的 DesignSpec 到这里，你完成了从"我打算做一个 OS"到"我做了一个什么样的 OS"的完整闭环。方向速查表帮你 30 秒初筛，详细的方向指南帮你理解每个维度的深度挑战，多个 GoalSpec 和 DesignSpec 组合不变量 模板和示例帮你将设计判断落实为可验证的承诺。
 
