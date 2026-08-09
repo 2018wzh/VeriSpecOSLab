@@ -173,13 +173,13 @@ kernel_main(core_id):
 
 Lab 2 把前面的启动分析收敛到一个 L3 ModuleSpec、工具链 ModuleSpec 和结构化 `vos.yaml`。技术细节仍由学生决定，文件形状由严格 schema 约束。
 
-### 步骤 1：生成启动模块草案
+### 步骤 1：讨论并手写启动模块
 
 ```sh
-vos agent spec kernel/boot
+vos agent ask "启动模块的状态、并发假设和可观察错误应如何区分？"
 ```
 
-不带 `--confirm` 时只显示结构化差异。启动模块通常需要 L3，因为它包含多核协作、内存序和中断状态。检查草案是否包含：
+启动模块通常需要 L3，因为它包含多核协作、内存序和中断状态。Ask Agent 只用于澄清概念，下面的内容要由学生写入 `spec/modules/boot.yaml`：
 
 - 稳定 `id`、`module`、`level: 3` 和明确 `purpose`；
 - 只覆盖启动实现与相应测试的 `owns`；
@@ -188,83 +188,63 @@ vos agent spec kernel/boot
 - state、preconditions、postconditions 和 dependencies；
 - concurrency、rely、guarantee 和 algorithm_intent。
 
-确认后运行：
-
-```sh
-vos agent spec kernel/boot --confirm
-vos spec check
-```
-
-VOS 会原子写入并单独提交 `spec/modules/boot.yaml`。
-
-### 步骤 2：细化 ModuleSpec
-
-下面是字段形状示例。路径、接口和性质必须按你的项目修改：
+先按最小字段骨架填写，不要复制现成答案：
 
 ```yaml
 id: kernel/boot
 module: kernel/boot
 level: 3
-purpose: Establish the first safe high-level-language execution environment.
+purpose: TODO
 owns:
-  - kernel/entry.S
-  - kernel/start.c
-  - kernel/console.c
-  - tests/public/boot
+  - TODO_IMPLEMENTATION_PATH
+  - TODO_TEST_PATH
 interface:
-  - name: entry
-    input:
-      hart_id: platform hart identifier
-      firmware_info: platform boot information
-    output: does not return
+  - name: TODO_OPERATION
     pre:
-      - firmware entry state matches DesignSpec
+      - TODO
     post:
-      - stack is valid before calling high-level code
-      - BSS is zero before global state is read
+      - TODO
     errors:
-      - unsupported firmware entry state
+      - TODO
     properties:
-      - id: entry-orders-initialization
-        text: BSS initialization happens before mutable global access.
-  - name: boot_banner
-    pre:
-      - console is initialized
-    post:
-      - one complete banner is emitted
-    errors:
-      - console unavailable
+      - TODO
 properties:
-  - id: serial-banner
-    text: QEMU serial output contains the configured boot banner.
+  - TODO
 errors:
-  - unsupported firmware entry state
-  - console unavailable
+  - TODO
 state:
-  boot_hart: initialized once
-  console_lock: serializes complete messages
+  TODO_STATE: TODO
 preconditions:
-  - linker symbols match the selected memory layout
+  - TODO
 postconditions:
-  - control reaches the kernel initialization entry
+  - TODO
 invariants:
-  - id: bss-before-globals
-    text: Mutable global state is not read before BSS initialization.
+  - TODO
 dependencies:
   - toolchain
 concurrency:
-  startup: secondary harts wait until shared initialization completes
-  lock_order:
-    - console_lock
+  TODO_CONCURRENCY_FIELD: TODO
 rely:
-  - firmware supplies the documented hart identifier and boot information
+  - TODO
 guarantee:
-  - each hart uses a distinct aligned stack
-  - console messages do not interleave at character granularity
-algorithm_intent: Set the per-hart stack, initialize shared state once, publish readiness with the required memory ordering, then enter kernel initialization.
+  - TODO
+algorithm_intent: TODO
 ```
 
 `owns` 是 Agent 的硬边界，只能使用仓库相对路径，不能包含 `..`、绝对路径、Spec 文件、`.git` 或 `.vos`。操作契约直接写在 `interface` 中，不再创建独立操作文件；并发契约也直接写在模块文件中。
+
+### 步骤 2：lint、评审与手动提交
+
+```sh
+vos spec lint kernel/boot
+vos agent review kernel/boot -i
+# 学生按建议修改 spec/modules/boot.yaml
+vos spec lint kernel/boot
+git add spec/modules/boot.yaml
+git commit -m "[spec][boot] Define Lab 2 boot contract"
+```
+
+非交互评审中只有 blocker 会让命令返回 `validation_failed`。交互评审始终是建议，不替学生改文件或提交。
 
 ### 步骤 3：描述工具链与运行投影
 
@@ -297,6 +277,7 @@ runners:
     workload: boot-smoke
 checks:
   boot_banner:
+    kind: public
     program: sh
     args: [tests/public/boot.sh]
     cwd: .
@@ -311,11 +292,11 @@ checks:
 ### 步骤 4：先验证 Spec 和构建投影
 
 ```sh
-vos spec check
+vos spec lint kernel/boot
 vos build
 ```
 
-`vos spec check` 检查未知字段、重复 ID、引用、等级和路径。`vos build` 执行 `vos.yaml` 的结构化 argv。构建失败时保留原始 stdout、stderr、退出码和 target；不要用兜底命令掩盖真实错误。
+`vos spec lint` 检查未知字段、重复 ID、引用、等级、路径、`owns` 和 `vos.yaml` 映射。`vos build` 执行 `vos.yaml` 的结构化 argv。构建失败时保留原始 stdout、stderr、退出码和 target；不要用兜底命令掩盖真实错误。
 
 脏树允许开发态 build，但 evidence 会标记为不可提交。在调用 Agent 实现前，把 Spec 和工具链投影提交干净。
 
@@ -326,7 +307,7 @@ git status --short
 vos agent implement kernel/boot
 ```
 
-`implement` 要求 clean HEAD 和已提交 Spec。Agent 在 detached linked worktree 中修改、构建和运行公开门禁。成功后，若原工作树 HEAD 未漂移且所有改动都落在允许的 `owns` 中，VOS 才会创建 `[vos][agent] Implement boot` 提交。
+`implement` 要求 clean HEAD 和已提交 Spec。Agent 在 detached linked worktree 中生成实现与 public/contract/fuzz/trace/hidden tests，VOS 校验 target 提案后更新 `vos.yaml`，再运行 build 与全部非隐藏门禁。成功后，若原工作树 HEAD 未漂移且所有实现和测试改动都落在允许的 `owns` 中，VOS 才会创建 `[vos][agent] Implement boot` 提交。
 
 以下情况不会修改原工作树：
 
@@ -360,7 +341,7 @@ vos run qemu
 vos verify
 ```
 
-`verify` 要求 clean HEAD，并依次执行 spec check、build、全部 public tests 和 contract checks。它不调用模型，也不运行 fuzz、trace 或 hidden tests。每个 `checks` target 都应通过 `verifies` 绑定稳定 Spec ID；启动阶段至少覆盖 `kernel/boot`。
+`verify` 要求 clean HEAD，并依次执行 spec lint、build、全部 public、contract、固定种子 fuzz 和有界 trace targets。它不调用模型；本地 hidden tests 只在显式运行 `vos verify --hidden` 时执行。每个 `checks` target 都应通过 `verifies` 绑定稳定 Spec ID；启动阶段至少覆盖 `kernel/boot`。
 
 ## 3. 设计审查问题
 
@@ -409,7 +390,7 @@ Agent 可以解释启动链、生成入口汇编草案和审查 Spec 字段。�
 
 ## 8. 常见问题与排查
 
-### `vos spec check` 报未知字段
+### `vos spec lint` 报未知字段
 
 当前 ModuleSpec 使用严格 schema。不要加入旧版阶段关联字段，也不要创建独立的操作或并发规格文件；把这些语义写入现有 ModuleSpec。
 

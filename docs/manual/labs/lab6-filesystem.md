@@ -80,12 +80,44 @@ buffer cache 通常为 L3 ModuleSpec。声明 free、loading、valid、dirty、w
 
 ## 4. Spec 与 Agent 工作流
 
+virtio 与 fs 分别填写下面的骨架。不要把两个模块的实现路径放进同一个 `owns`，跨模块锁顺序或事务变化用 SpecPatch 表达。
+
+```yaml
+id: TODO_MODULE_ID
+module: TODO_MODULE_ID
+level: 3
+purpose: TODO
+owns: [TODO_IMPLEMENTATION_PATH, TODO_TEST_PATH]
+interface: [TODO_OPERATION]
+properties: [TODO]
+errors: [TODO]
+state: { TODO_STATE: TODO }
+preconditions: [TODO]
+postconditions: [TODO]
+invariants: [TODO]
+dependencies: [TODO]
+concurrency: { TODO_CONCURRENCY_FIELD: TODO }
+rely: [TODO]
+guarantee: [TODO]
+algorithm_intent: TODO
+```
+
 ```sh
-vos agent spec kernel/virtio
-vos agent spec kernel/fs
-vos spec check
+vos agent ask "块设备、缓存与文件系统事务的模块边界和锁顺序应如何表达？"
+# 学生手写 virtio/fs ModuleSpec，并更新必要的 ABI InterfaceSpec
+vos spec lint kernel/virtio
+vos agent review kernel/virtio
+vos spec lint kernel/fs
+vos agent review kernel/fs -i
+# 学生修改、再次 lint，并手动提交
+vos spec lint all
+git add spec/modules spec/interfaces spec/patches
+git commit -m "[spec][fs] Define Lab 6 filesystem contracts"
 vos agent implement kernel/virtio
 vos agent implement kernel/fs
+vos build
+vos run qemu
+vos verify
 ```
 
 块设备、buffer cache 和文件系统分别使用 ModuleSpec；`open/read/write/close` 等用户可见 ABI 延续 Lab 5 的 InterfaceSpec。跨模块锁顺序或事务语义变化先写 SpecPatch。测试 target 分别绑定模块与接口稳定 ID。

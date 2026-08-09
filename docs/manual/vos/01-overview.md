@@ -5,10 +5,10 @@
 ```text
 vos init
 vos doctor
-vos spec check
+vos agent ask
+vos spec lint design
+vos agent review design
 vos kb add|list|search|remove|clear|export-manifest|import-manifest
-vos agent design --interactive
-vos agent spec <module>
 vos agent implement <module>
 vos agent debug
 vos agent verify

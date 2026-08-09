@@ -320,7 +320,7 @@ VeriSpecOSLab 的做法是反过来的。
 
 **Appendices** 是工具参考。vos 命令怎么用、QEMU 怎么调、GDB 怎么设断点、RISC-V 的 CSR 寄存器速查表。
 
-日常节奏大概是：打开 Book 理解设计空间（30-60 分钟），打开 Lab 编写并确认 Spec（1-3 小时），运行 `vos spec check`，再由 `vos agent implement <module>` 生成候选实现并自动验证。你需要审查差异、证据和提交，而不是跳过 Spec 直接让 Agent 改代码。
+日常节奏大概是：打开 Book 理解设计空间（30-60 分钟），用 `vos agent ask` 讨论尚未想清的取舍，打开 Lab 根据字段骨架手写 Spec（1-3 小时），运行 `vos spec lint` 和 `vos agent review`，修改并手动提交后，再由 `vos agent implement <module>` 生成候选实现与测试并自动验证。你需要审查建议、差异、证据和提交，不能跳过 Spec 直接让 Agent 改代码。
 
 ### AI Agent 的角色
 
@@ -899,7 +899,7 @@ flag 只是一种确定性验收目标。源码不能硬编码期望值，公开
 
 **在 Lab 1，你只填写身份信息**：项目名、目标平台、编程语言、一句话摘要。goals、non_goals、reference_systems 等深层次字段在后续 Lab 中逐步填充，你一定在真正面对那些设计问题的时候才写，而不是在还没理解分页机制的时候"猜"。
 
-> 📋 **具体操作**：打开 [Lab 1 实验卡片](../labs/lab1-seed.md)，先运行 `vos agent design --interactive` 完成设计访谈并审查结构化差异，确认后运行 `vos agent design --confirm` 应用已保存的同一份提案，最后执行 `vos spec check` 并检查工作树状态。
+> 📋 **具体操作**：打开 [Lab 1 实验卡片](../labs/lab1-seed.md)，先运行 `vos agent ask -i` 讨论语言、ISA 与平台取舍，再根据无答案字段骨架手写 DesignSpec。随后执行 `vos spec lint design` 和 `vos agent review design -i`，按建议修改、再次 lint，并由学生手动提交。
 
 写完 DesignSpec 身份信息后，可以自问：
 

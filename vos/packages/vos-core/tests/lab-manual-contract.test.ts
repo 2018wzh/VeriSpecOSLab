@@ -15,13 +15,16 @@ const expectedModuleCommands: Record<string, string[]> = {
 };
 
 describe("Lab 1-10 manual command contract", () => {
-  test("preserves the Lab 1 CTF warm-up and uses the interactive design interview", () => {
+  test("preserves the Lab 1 CTF warm-up and teaches handwritten Spec review", () => {
     const lab = readLab("lab1-seed.md");
     expect(lab).toContain("# Lab 1：CTF 热身与项目初始化");
     expect(lab).toContain("## 1. CTF 双环境热身");
     expect(lab).toContain("Linux flag reader、裸机 flag reader");
-    expect(lab).toContain("vos agent design --interactive");
-    expect(lab).toContain("vos agent design --confirm");
+    expect(lab).toContain("vos agent ask -i");
+    expect(lab).toContain("vos spec lint design");
+    expect(lab).toContain("vos agent review design");
+    expect(lab).toContain("git commit -m \"[spec][design]");
+    expect(lab).toContain("vos agent implement lab/ctf-warmup");
   });
 
   test("binds Lab 2-7 agent commands to the cumulative course ModuleSpec IDs", () => {
@@ -45,6 +48,26 @@ describe("Lab 1-10 manual command contract", () => {
     expect(lab10).toContain("vos report");
     expect(lab10).toContain("vos submit");
   });
+
+  test("uses the handwritten Spec loop in every Lab and rejects generative Spec commands", () => {
+    for (const file of [
+      "lab1-seed.md", "lab2-boot.md", "lab3-memory.md", "lab4-interrupts.md", "lab5-user-space.md",
+      "lab6-filesystem.md", "lab7-resource-abi.md", "lab8-personal-goal.md", "lab9-hardware-port.md", "lab10-verification.md",
+    ]) {
+      const lab = readLab(file);
+      expect(lab).toContain("vos agent ask");
+      expect(lab).toContain("vos spec lint");
+      expect(lab).toContain("vos agent review");
+      expect(lab).toContain("git commit -m");
+      expect(lab).toContain("vos agent implement");
+      expect(lab).toContain("vos build");
+      expect(lab).toContain("vos run qemu");
+      expect(lab).toContain("vos verify");
+      expect(lab).not.toContain("vos agent design");
+      expect(lab).not.toContain("vos agent spec");
+      expect(lab).not.toContain("vos spec check");
+    }
+  });
 });
 
 function readLab(file: string): string {
@@ -53,7 +76,7 @@ function readLab(file: string): string {
 
 function moduleTargets(markdown: string): string[] {
   const targets = new Set<string>();
-  for (const match of markdown.matchAll(/^vos agent (?:spec|implement|review) (\S+)/gm)) {
+  for (const match of markdown.matchAll(/^vos agent (?:implement|review) (\S+)/gm)) {
     const target = match[1];
     if (target && target !== "<module>") targets.add(target);
   }

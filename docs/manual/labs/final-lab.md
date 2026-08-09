@@ -59,7 +59,7 @@ Final Lab 不是重复执行一遍命令。它审查从设计、实现、验证�
 
 ```sh
 vos doctor
-vos spec check
+vos spec lint all
 vos verify
 vos report
 vos submit

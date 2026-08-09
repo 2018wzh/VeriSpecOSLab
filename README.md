@@ -5,12 +5,13 @@ VeriSpecOSLab 是一个面向操作系统课程的 spec-first 实验工具链。
 ## 学生主链
 
 ```text
-空目录 → vos init → vos agent config → vos agent design --interactive → vos agent spec <module>
+空目录 → vos init → vos agent config → vos agent ask → 学生手写 Spec
+       → vos spec lint → vos agent review → 学生修改并手动提交
        → vos agent implement <module> → vos build → vos verify
        → vos run qemu / vos run hardware → vos report → vos submit
 ```
 
-初始化不会询问问题，也不会生成内核骨架。它只创建空的 DesignSpec、工具链 ModuleSpec、`vos.yaml`、`.gitignore` 和初始 Git 提交。语言、ISA、板卡和内核组织由学生随后通过 `vos agent design --interactive` 的设计访谈决定。
+初始化不会询问问题，也不会生成内核骨架。它只创建 DesignSpec 字段骨架、工具链 ModuleSpec、`vos.yaml`、`.gitignore` 和初始 Git 提交。学生可以先用 `vos agent ask` 讨论语言、ISA、板卡和内核组织，再亲手填写 Spec。
 
 ```sh
 cd vos
@@ -22,7 +23,9 @@ mkdir my-os && cd my-os
 vos init
 vos agent config
 vos doctor
-vos spec check
+vos agent ask "我应该如何比较 RISC-V 与 x86-64？"
+vos spec lint design
+vos agent review design
 ```
 
 `vos` 使用 Bun 的 argv 子进程接口执行 `vos.yaml` 中的结构化命令，不拼接 shell 字符串。`build` 和开发态运行可以在脏树上执行，但 evidence 会标记为不可提交；`verify`、Agent 自动提交、权威硬件 evidence 和 `submit` 要求 clean HEAD。
@@ -36,25 +39,25 @@ vos spec check
 - `spec/patches/<patch>.yaml`：架构或跨模块语义变化的手写影响声明。
 - `vos.yaml`：工具链 ModuleSpec 的执行投影，只允许结构化 `program + args + cwd + env allowlist + timeout`、runner、测试 target、产物和稳定 Spec ID。知识库来源由 `vos kb` 命令管理。
 
-ModuleSpec 的 `level` 为 L1/L2/L3。缺少高等级字段只产生警告；`vos spec check` 只做确定性的 schema、引用、路径和等级检查。`owns` 必须是仓库相对路径，Agent 实现只能触及目标模块与已提交 SpecPatch 影响模块的 owns 并集。
+ModuleSpec 的 `level` 为 L1/L2/L3。缺少高等级字段只产生警告；`vos spec lint` 确定性检查 schema、引用、路径、等级、`owns` 和 `vos.yaml` 映射。`owns` 必须是仓库相对路径，并覆盖模块实现与测试。Agent 实现只能触及目标模块与已提交 SpecPatch 影响模块的 owns 并集。
 
 ## 公开命令
 
 ```text
 vos init                         vos doctor
-vos spec check                  vos agent config
-vos agent design [--interactive|--confirm]
-vos agent spec <module> [--interactive|--confirm]
+vos spec lint [<ID|path|design|all>]
+vos agent config
 vos agent implement <module>    vos agent debug
 vos agent verify                vos agent ask [question]
-vos agent review [module]       vos build
+vos agent review [<ID|path|design|all>] [-i]
+vos build
 vos run qemu                    vos run hardware
-vos verify                      vos report
+vos verify [--hidden]           vos report
 vos submit                      vos kb add|list|search|remove|clear
 vos kb export-manifest         vos kb import-manifest <path>
 ```
 
-`--project-root`、`--json`、`--verbose` 和 `--progress` 是通用参数。`agent debug`、`agent verify`、`agent review` 和 `agent ask` 是只读或问答角色；`design`/`spec` 先保存并展示确定的 diff，`--confirm` 应用同一份提案，不会重新调用模型；`implement` 在 detached linked worktree 中修改、构建和验证，成功后才把 patch 应用回原工作树并创建带 Run-ID 和 Spec-Hash trailer 的提交。
+`--project-root`、`--json`、`--verbose` 和 `--progress` 是通用参数。`agent ask` 用于写 Spec 前的概念讨论，`agent review` 评审学生已经写好的 Spec；二者都不修改文件。`agent debug` 和 `agent verify` 也保持只读。`implement` 在 detached linked worktree 中生成实现和测试；VOS 校验 Agent 返回的 target 提案后更新 `vos.yaml`，跑完 build、public、contract、固定种子 fuzz 和有界 trace 门禁，成功后才写回原工作树并创建带 Run-ID 和 Spec-Hash trailer 的提交。
 
 宿主命令默认直接继承当前用户权限、网络和凭据。linked worktree 只提供 Git 变更回滚和隔离，不是进程、网络、凭据或宿主文件安全边界。学生必须把本机参考资料可读性和 Agent 任意宿主命令风险视为已知的策略约束。
 

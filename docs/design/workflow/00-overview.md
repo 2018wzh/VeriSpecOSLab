@@ -10,10 +10,10 @@ vos init → design/spec → implement → build → verify
 ## State transitions
 
 1. `vos init` 在空目录写入空 DesignSpec、工具链 ModuleSpec、`vos.yaml`、`.gitignore` 并创建初始 Git commit。
-2. `vos agent design --interactive` 通过设计访谈生成结构化 diff，`vos agent spec <module> --interactive` 可用同样方式讨论模块契约；学生确认后，`--confirm` 应用已保存的同一份提案并单独提交。
+2. 学生先用 `vos agent ask` 讨论概念和取舍，再根据实验问题与无答案字段骨架手写 Spec；`vos spec lint` 做确定性校验，`vos agent review` 给出只读建议，学生修改后用普通 Git 命令提交。
 3. `vos agent implement <module>` 要求 clean HEAD 和已提交 Spec；跨模块变化还必须引用已提交 SpecPatch。Agent 只能修改目标模块与 SpecPatch 影响模块 owns 并集。
 4. `vos build`、开发态 `vos run qemu` 和 `vos run hardware` 可以在脏树执行，但 evidence 明确标记为不可提交。
-5. `vos verify` 确定性执行 spec check、build、所有 public tests 和 contract checks，不调用模型，不执行 fuzz、trace 或 hidden tests。
+5. `vos verify` 确定性执行 spec lint、build、所有 public、contract、固定种子 fuzz 和有界 trace targets，不调用模型；`--hidden` 显式执行绑定当前状态的本地 hidden tests。
 6. `vos report` 从 commits、Spec IDs、测试、日志和 evidence 生成 `.vos/report.json`；`vos submit` 在 clean HEAD 上刷新报告并生成绑定 commit/spec/config hashes 的归档。
 
 ## Read-only roles

@@ -47,9 +47,43 @@ ENTRY → STACK → BSS → UART → MEMORY → TIMER → IRQ
 
 DesignSpec 的 `hardware_port` 固定 canonical board、启动、串口和中断约定。板级实现归相应平台 ModuleSpec；公开的驱动边界使用 InterfaceSpec。`vos.yaml` hardware runner 使用结构化 `program + args + cwd + env + timeout`，记录 board、serial、workload、build target 和 artifacts。
 
+平台模块先从无答案骨架开始：
+
+```yaml
+id: TODO_PLATFORM_MODULE_ID
+module: TODO_PLATFORM_MODULE_ID
+level: 3
+purpose: TODO
+owns: [TODO_PLATFORM_PATH, TODO_PLATFORM_TEST_PATH]
+interface: [TODO_PLATFORM_OPERATION]
+properties: [TODO]
+errors: [TODO]
+state: { TODO_STATE: TODO }
+preconditions: [TODO]
+postconditions: [TODO]
+invariants: [TODO]
+dependencies: [TODO]
+concurrency: { TODO_CONCURRENCY_FIELD: TODO }
+rely: [TODO]
+guarantee: [TODO]
+algorithm_intent: TODO
+```
+
 ```sh
+vos agent ask "canonical board、平台模块、驱动 ABI 与 QEMU 复用边界应如何表达？"
+# 学生手写 DesignSpec 更新、平台 ModuleSpec/InterfaceSpec 和必要 SpecPatch
+vos spec lint design
+vos agent review design
+vos spec lint <platform-module-id>
+vos agent review <platform-module-id> -i
+# 学生修改、再次 lint，并手动提交
+vos spec lint all
+git add spec vos.yaml
+git commit -m "[spec][hardware] Define Lab 9 hardware port"
+vos agent implement <platform-module-id>
 vos build
 vos run qemu
+vos verify
 vos run hardware
 ```
 

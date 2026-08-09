@@ -8,7 +8,9 @@
 vos init
 vos agent config
 vos doctor
-vos spec check
+vos agent ask "我该如何确定 DesignSpec 的语言与 ISA？"
+vos spec lint design
+vos agent review design
 ```
 
 `vos init` 不提问、不创建内核 skeleton，只建立：
@@ -28,12 +30,13 @@ vos.yaml
 ## 日常循环
 
 ```text
-vos agent design --interactive
-  ↓ 确认 DesignSpec diff 并提交
-vos agent spec kernel/memory
-  ↓ 确认 ModuleSpec diff 并提交
+vos agent ask
+  ↓ 讨论概念与取舍，学生按字段骨架手写 Spec
+vos spec lint <target>
+vos agent review <target> [-i]
+  ↓ 学生按建议修改，再次 lint，并手动 git add/commit
 vos agent implement kernel/memory
-  ↓ Agent 在临时 linked worktree 中实现、build、公开测试和契约测试
+  ↓ Agent 在临时 linked worktree 中实现并生成 public/contract/fuzz/trace/hidden tests
 vos build
 vos verify
 vos run qemu
@@ -42,7 +45,7 @@ vos report
 vos submit
 ```
 
-`design`、`spec` 只先给出结构化 diff；不带 `--confirm` 不会写回项目。`implement` 需要 clean HEAD 和已提交 Spec；成功后自动创建 `[vos][agent] Implement <module>` 提交。失败、越界或 HEAD 漂移只保留诊断和 patch，不修改原工作树。
+Spec 由学生亲手编写和提交。`spec lint` 不调用模型；`agent review` 先运行 lint，再结合相关 Spec 与 `vos.yaml` 的 `verifies` 映射给出建议，不写文件。`implement` 需要 clean HEAD 和已提交 Spec；成功后自动创建 `[vos][agent] Implement <module>` 提交。失败、越界、全量回归失败或 HEAD 漂移只保留诊断和 patch，不修改原工作树。
 
 ## 教材与实验索引
 
@@ -72,17 +75,17 @@ vos submit
 - `spec/goals/<goal>.yaml`：性能、兼容性和形式化等可选目标。
 - `spec/patches/<patch>.yaml`：跨模块语义变化和影响模块。VOS 根据 changes 推导回归范围。
 
-`owns` 只能写仓库相对路径，不能包含 `..` 或绝对路径。L1 缺少 L2/L3 字段只警告，`vos spec check` 不调用模型。工具链也是 ModuleSpec；`vos.yaml` 只保存结构化 argv、环境变量白名单、超时、runner、测试验证的稳定 Spec ID、产物和 KB source lock。
+`owns` 只能写仓库相对路径，不能包含 `..` 或绝对路径，并且要覆盖模块实现和模块测试。L1 缺少 L2/L3 字段只警告，`vos spec lint` 不调用模型。工具链也是 ModuleSpec；`vos.yaml` 只保存结构化 argv、环境变量白名单、超时、runner、测试验证的稳定 Spec ID 和产物。
 
 ## 运行与证据
 
-build 可以在脏树上运行，但 evidence 标记为不可提交。`vos verify` 要求 clean HEAD，并确定性执行 spec check、build、全部 public tests 和 contract checks；不运行模型、fuzz、trace 或 hidden tests。QEMU 使用串口输出，通常配合 `-nographic`。Hardware Runner 记录板卡、构建身份、串口日志和 workload，并始终显示 `pending_human_review`。
+build 可以在脏树上运行，但 evidence 标记为不可提交。`vos verify` 要求 clean HEAD，并确定性执行 spec lint、build、全部 public、contract、固定种子 fuzz 和有界 trace targets；`vos verify --hidden` 还会运行绑定当前 commit、Spec hash 与配置 hash 的本地 hidden tests。QEMU 使用串口输出，通常配合 `-nographic`。Hardware Runner 记录板卡、构建身份、串口日志和 workload，并始终显示 `pending_human_review`。
 
 每次命令的 manifest、事件和产物在 `.vos/runs/`，审计事件在 `.vos/audit/chain.jsonl` 连续哈希保存。`.vos/` 不进 Git。`vos report` 确定性生成 `.vos/report.json`，`vos submit` 在 clean HEAD 上重新生成报告并归档。归档会遮蔽凭据和本机绝对路径；原始日志不进 Git。
 
 ## Agent 和本机信任边界
 
-Agent 只有一个运行时，角色决定读写边界。`debug`、`verify`、`review` 是只读，`kb` 只回答问题。临时 linked worktree 只提供 Git 变更回滚，不隔离进程、网络、凭据或宿主文件。Agent 默认可以执行任意宿主命令；本机完整参考源码也可能被学生读取。这两点是已接受的策略风险，不是安全承诺。
+Agent 只有一个运行时，角色决定读写边界。`debug`、`verify`、`review`、`ask` 是只读角色。Doctor 的 Debug Agent 会从 Spec 推导宿主工具并运行能力探针，但只能给出安装建议，不能调用包管理器。临时 linked worktree、prompt、Git 前后检查和审计记录都不隔离进程、网络、凭据或宿主文件；仓库外副作用也无法被 VOS 完整阻止。本机 hidden tests 与完整参考源码同样可被学生读取，不构成保密边界。
 
 ## 开发者命令
 

@@ -4,11 +4,11 @@
 | --- | --- |
 | `vos init` | 创建空 v2 项目并提交初始文件 |
 | `vos doctor` | 检查 Bun、Git、manifest、Spec、Agent 和 KB 配置 |
-| `vos spec check` | 确定性 schema、引用、路径和等级校验 |
+| `vos spec lint [target]` | 确定性 schema、引用、路径、等级、owns 和 manifest 校验 |
 | `vos agent config` | 配置并检查 provider、模型和凭据引用 |
 | `vos kb add/list/search/remove/clear` | 管理当前项目的本地知识库 |
-| `vos agent design --interactive` | 设计访谈、提案并确认 DesignSpec |
-| `vos agent spec <module>` | 提案并确认 ModuleSpec |
+| `vos agent ask` | 写 Spec 前讨论概念和取舍，不修改文件 |
+| `vos agent review [target] [-i]` | 评审学生手写 Spec，不修改文件 |
 | `vos agent implement <module>` | 在临时 linked worktree 中实现并验证 |
 | `vos agent debug` | 只读根因和证据摘要 |
 | `vos agent verify` | 只读公开验证摘要 |

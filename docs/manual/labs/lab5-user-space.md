@@ -71,14 +71,42 @@ trap frame 是跨边界 ABI，应写入 `spec/interfaces/trap-frame.yaml`。明�
 
 ## 5. Spec 与 Agent 工作流
 
+trap、process 和 syscall 各自使用同样的严格字段骨架。先替换模块 ID，再按职责填写；跨用户/内核边界的 ABI 另写 InterfaceSpec。
+
+```yaml
+id: TODO_MODULE_ID
+module: TODO_MODULE_ID
+level: TODO_LEVEL
+purpose: TODO
+owns: [TODO_IMPLEMENTATION_PATH, TODO_TEST_PATH]
+interface: [TODO_OPERATION]
+properties: [TODO]
+errors: [TODO]
+state: { TODO_STATE: TODO }
+preconditions: [TODO]
+postconditions: [TODO]
+invariants: [TODO]
+dependencies: [TODO]
+```
+
 ```sh
-vos agent spec kernel/trap
-vos agent spec kernel/process
-vos agent spec kernel/syscall
-vos spec check
+vos agent ask "用户态、进程与 syscall ABI 应如何分配到 ModuleSpec 和 InterfaceSpec？"
+# 学生手写三个 ModuleSpec 与跨用户/内核边界的 InterfaceSpec
+vos spec lint kernel/trap
+vos agent review kernel/trap
+vos spec lint kernel/process
+vos agent review kernel/process
+vos spec lint kernel/syscall
+vos agent review kernel/syscall -i
+# 学生修改、再次 lint，并手动提交本 Lab 的 Spec
+vos spec lint all
+git add spec/modules spec/interfaces
+git commit -m "[spec][user] Define Lab 5 user-space contracts"
 vos agent implement kernel/trap
 vos agent implement kernel/process
 vos agent implement kernel/syscall
+vos build
+vos run qemu
 vos verify
 ```
 

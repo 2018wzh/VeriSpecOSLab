@@ -53,16 +53,41 @@
 
 ## 3. 确定性验证工作流
 
+如果本 Lab 新增专门的验证模块，使用下面的最小骨架；若只补现有模块的测试性质，就修改对应 ModuleSpec，不要为了套流程虚构模块。
+
+```yaml
+id: TODO_VERIFICATION_MODULE_ID
+module: TODO_VERIFICATION_MODULE_ID
+level: TODO_LEVEL
+purpose: TODO
+owns: [TODO_TEST_IMPLEMENTATION_PATH, TODO_TEST_PATH]
+interface: [TODO_OPERATION]
+properties: [TODO_PROPERTY_WITH_ORACLE]
+errors: [TODO]
+```
+
 ```sh
+vos agent ask "哪些 Spec 性质仍缺少独立 oracle，哪些 target 只是重复 smoke test？"
+# 学生手写或修订验证相关 ModuleSpec、GoalSpec、SpecPatch 与 vos.yaml 映射
+vos spec lint all
+vos agent review all -i
+# 学生修改、再次 lint，并手动提交
+vos spec lint all
+git add spec vos.yaml tests
+git commit -m "[spec][verify] Complete Lab 10 verification contracts"
+vos agent implement <verification-module>
+vos build
+vos run qemu
 git status --short
 vos verify
+vos verify --hidden
 vos report
 vos submit
 ```
 
-`vos verify` 在 clean HEAD 上依次执行 spec check、build、全部 public tests 和 contract checks；不调用模型，也不运行 fuzz、trace 或 hidden tests。`vos report` 从 commits、Spec IDs、测试、日志和 evidence 生成 `.vos` 内报告。`vos submit` 刷新报告并创建绑定 commit/spec/config hashes 的归档。
+`vos verify` 在 clean HEAD 上依次执行 spec lint、build、全部 public、contract、固定种子 fuzz 和有界 trace targets，不调用模型。`vos verify --hidden` 显式执行绑定当前 commit/spec/config hashes 的本地 hidden tests；这些测试可由学生读取，不是保密边界。`vos report` 从 commits、Spec IDs、测试、日志和 evidence 生成 `.vos` 内报告。`vos submit` 要求当前 hidden 验证已通过，并创建绑定 commit/spec/config/test hashes 的私有归档。
 
-> **参考项目**：参考项目在干净 clone 中按 `spec check → build → ledger record → verify → report → submit` 执行。`.vos/` 只保存本地证据，不进入 Git。只要 Lab 9 的实体板 evidence 仍为 `pending_human_review`，Lab 10 也只能发布 `course/lab10-candidate`；candidate 标签不得通过代码、QEMU 或模拟串口结果升级为 complete。
+> **参考项目**：参考项目在干净 clone 中按 `spec lint → build → verify → verify --hidden → report → submit` 执行。`.vos/` 只保存本地证据，不进入 Git。只要 Lab 9 的实体板 evidence 仍为 `pending_human_review`，Lab 10 也只能发布 `course/lab10-candidate`；candidate 标签不得通过代码、QEMU 或模拟串口结果升级为 complete。
 
 ## 4. 证据质量
 
@@ -74,7 +99,8 @@ vos submit
 
 ## 5. 质量门禁
 
-- [ ] `vos spec check`、build、全部 public/contract targets 通过。
+- [ ] `vos spec lint`、build、全部 public/contract/fuzz/trace targets 通过。
+- [ ] 当前 clean HEAD 的 `vos verify --hidden` 通过，绑定信息与归档一致。
 - [ ] 必须验证的稳定 Spec ID 没有覆盖缺口。
 - [ ] 每个核心模块至少有一条可运行不变量检查。
 - [ ] 至少一条组合不变量跨越三个模块或边界。

@@ -105,10 +105,37 @@ free ∩ allocated = ∅
 
 物理分配器和虚拟内存通常分别建立 ModuleSpec。涉及锁、跨核 TLB 或中断上下文时使用 L3；否则至少使用 L2。
 
+最小字段骨架如下，`TODO` 必须换成你从前文设计问题推导出的契约：
+
+```yaml
+id: kernel/memory
+module: kernel/memory
+level: TODO_LEVEL
+purpose: TODO
+owns: [TODO_IMPLEMENTATION_PATH, TODO_TEST_PATH]
+interface: [TODO_OPERATION]
+properties: [TODO]
+errors: [TODO]
+state: { TODO_STATE: TODO }
+preconditions: [TODO]
+postconditions: [TODO]
+invariants: [TODO]
+dependencies: [toolchain]
+```
+
 ```sh
-vos agent spec kernel/memory
-vos spec check
+vos agent ask "物理页分配、地址空间与 TLB 约束应如何写进同一个分级 ModuleSpec？"
+# 学生根据本节设计问题和字段骨架手写 spec/modules/memory.yaml
+vos spec lint kernel/memory
+vos agent review kernel/memory -i
+# 学生修改后再次 lint，并手动提交
+vos spec lint kernel/memory
+git add spec/modules/memory.yaml
+git commit -m "[spec][memory] Define Lab 3 memory contract"
 vos agent implement kernel/memory
+vos build
+vos run qemu
+vos verify
 ```
 
 ModuleSpec 应覆盖：

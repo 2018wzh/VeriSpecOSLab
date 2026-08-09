@@ -14,7 +14,7 @@ interface Runner {
 
 实现包括 Host、QEMU 和 Hardware Runner。QEMU 目标使用非图形串口输出（通常在 manifest 参数中包含 `-nographic`）；超时、panic、非零退出和 stderr 都进入 evidence。Hardware Runner 记录 board id、构建身份、串口日志和 workload 结果，但状态固定为 `pending_human_review`，本地启动不能变成人工验收。
 
-脏树允许 `build` 与开发态运行，结果的 `submittable` 为 false。`verify`、Agent 自动提交、权威硬件 evidence 和 `submit` 必须从 clean HEAD 开始，并绑定当前 commit、Spec hash、配置 hash 和 ledger entry。`vos verify` 固定执行 spec check、build、全部 public tests 与 contract checks，不调用模型，不运行 fuzz、trace 或 hidden tests。
+脏树允许 `build` 与开发态运行，结果的 `submittable` 为 false。`verify`、Agent 自动提交、权威硬件 evidence 和 `submit` 必须从 clean HEAD 开始，并绑定当前 commit、Spec hash、配置 hash 和 ledger entry。`vos verify` 固定执行 spec lint、build、全部 public、contract、固定种子 fuzz 与有界 trace targets，不调用模型；`--hidden` 显式执行本地 hidden tests。
 
 ## Agent worktree
 
@@ -29,9 +29,9 @@ worktree 是 Git 变更回滚机制，不是安全沙箱。Agent 执行宿主命
 ## 命令
 
 ```text
-vos init / doctor / spec check
-vos agent design --interactive / design --confirm
-vos agent spec <module> [--interactive|--confirm] / implement <module>
+vos init / doctor / spec lint
+vos agent ask / 学生手写 Spec / vos spec lint <target>
+vos agent review <target> [-i] / 学生手动提交 / implement <module>
 vos agent debug / verify / ask / review
 vos kb add / list / search / remove / clear / export-manifest / import-manifest
 vos build / run qemu / run hardware / verify / report / submit

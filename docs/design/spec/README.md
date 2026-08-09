@@ -12,7 +12,7 @@ spec/patches/<patch>.yaml            手写语义变化影响
 
 ## DesignSpec
 
-`design.yaml` 必须包含 `system`（name/language/isa）、`machine`（qemu/hardware）、`kernel`（organization/execution/protection/communication/resource_model）、`hardware_port`（board/boot/console/interrupt）以及 `composition_invariants`。组合不变量最多三个。学生通过 `vos agent design --interactive` 讨论取舍；运行时保存经过校验的提案，随后由 `vos agent design --confirm` 原子写入并单独提交。
+`design.yaml` 必须包含 `system`（name/language/isa）、`machine`（qemu/hardware）、`kernel`（organization/execution/protection/communication/resource_model）、`hardware_port`（board/boot/console/interrupt）以及 `composition_invariants`。组合不变量最多三个。学生可以通过 `vos agent ask` 讨论取舍，但必须亲手填写完整结构；当前 Lab 尚未覆盖的字段写成 `not in current lab scope`。完成后运行 lint 和只读 review，由学生修改并手动提交。
 
 DesignSpec 是随课程推进演进的单一事实来源，不是 Lab 1 一次填满的答案。每个课程标签的整棵树只能出现当期及以前的机制、稳定 Spec ID、check ID 和文档术语；实现、测试名或空占位文件同样算未来内容泄露。参考项目通过 `course/lab1-complete` 至 `course/lab10-candidate` 展示这一边界，旧完整源码只保存在 archive 标签中，不是新课程 `main` 的祖先。
 
@@ -44,7 +44,7 @@ guarantee: [allocation is atomic]         # L3
 algorithm_intent: bitmap                   # L3
 ```
 
-L1 适合先描述目标，缺少 L2/L3 字段只产生警告。`vos spec check` 只确定性地检查 schema、稳定 ID、重复操作、模块依赖、接口引用、`owns` 路径和 `vos.yaml` 测试的 `verifies` 引用；它不调用模型，不运行 fuzz、trace 或 hidden tests。`owns` 必须是仓库相对路径，不能为绝对路径或包含 `..`。
+L1 适合先描述目标，缺少 L2/L3 字段只产生警告。`vos spec lint` 只确定性地检查 schema、稳定 ID、重复操作、模块依赖、接口引用、`owns` 路径和 `vos.yaml` 测试的 `verifies` 引用；它不调用模型。`owns` 必须同时覆盖模块实现与测试，只能写仓库相对路径，不能为绝对路径或包含 `..`。
 
 工具链也是一个特殊的 ModuleSpec。它拥有 `vos.yaml`、Makefile/xtask 和相关测试文件，但执行语义只写在 `vos.yaml` 的结构化投影中。
 

@@ -8,7 +8,7 @@
 
 ## 2. 设计与规格
 
-`vos agent design --interactive` 先通过访谈明确设计取舍，再展示 `spec/design.yaml` 的结构化差异；`vos agent design --confirm` 只应用这份已保存的提案，不会再次调用模型。`vos agent spec <module> --interactive` 可采用同样流程，操作、性质、错误和并发契约集中写在目标 ModuleSpec。L1/L2/L3 是学生声明的精度等级，等级不足只告警。
+`vos agent ask` 用于写 Spec 前的概念讨论，不生成文件。学生根据教材的设计问题和无答案字段骨架，亲手填写 DesignSpec 或 ModuleSpec；操作、性质、错误和并发契约集中写在目标 ModuleSpec。随后运行 `vos spec lint <target>` 和 `vos agent review <target> [-i]`，学生按自己的判断修改、再次 lint，并用普通 Git 命令提交。L1/L2/L3 是学生声明的精度等级，等级不足只告警。
 
 跨边界 syscall、IPC、驱动和 ABI 写入 `spec/interfaces/`。改变架构或跨模块语义时，先提交 `spec/patches/<patch>.yaml`；VOS 从 changes 推导影响模块和回归范围。
 
@@ -20,6 +20,6 @@
 
 ## 4. 运行、验证和提交
 
-脏树可以 `vos build` 和开发态 `vos run qemu`/`vos run hardware`，但 evidence 不可提交。`vos verify` 必须在 clean HEAD 上确定性执行 spec check、build、所有 public checks 和 contract checks。硬件 evidence 仍是 `pending_human_review`。
+脏树可以 `vos build` 和开发态 `vos run qemu`/`vos run hardware`，但 evidence 不可提交。`vos verify` 必须在 clean HEAD 上确定性执行 spec lint、build、所有 public、contract、固定种子 fuzz 和有界 trace checks；本地 hidden tests 由 `--hidden` 显式执行。硬件 evidence 仍是 `pending_human_review`。
 
 `vos report` 从 commit、Spec IDs、测试、日志和 evidence 写出 `.vos/report.json`，不调用模型、不提交 Git。`vos submit` 刷新报告、校验 clean HEAD/审计链并创建绑定 commit/spec/config hashes 的归档；导出日志时遮蔽凭据和本机绝对路径。

@@ -82,11 +82,39 @@ device pending → source enabled → target enabled → claim/ack
 
 trap/interrupt ModuleSpec 通常为 L3。trap frame、IRQ 注册接口或用户/内核可见的异常 ABI 使用 InterfaceSpec；设备内部寄存器操作仍留在模块中。
 
+```yaml
+id: kernel/trap
+module: kernel/trap
+level: 3
+purpose: TODO
+owns: [TODO_IMPLEMENTATION_PATH, TODO_TEST_PATH]
+interface: [TODO_TRAP_OPERATION]
+properties: [TODO]
+errors: [TODO]
+state: { TODO_STATE: TODO }
+preconditions: [TODO]
+postconditions: [TODO]
+invariants: [TODO]
+dependencies: [TODO]
+concurrency: { TODO_CONCURRENCY_FIELD: TODO }
+rely: [TODO]
+guarantee: [TODO]
+algorithm_intent: TODO
+```
+
 ```sh
-vos agent spec kernel/trap
-vos spec check
-vos agent implement kernel/trap
+vos agent ask "trap、interrupt、exception 与设备 IRQ 的边界应如何进入 ModuleSpec？"
+# 学生手写 spec/modules/trap.yaml 以及需要的跨边界 InterfaceSpec
+vos spec lint kernel/trap
 vos agent review kernel/trap
+# 学生修改后再次 lint，并手动提交
+vos spec lint kernel/trap
+git add spec/modules/trap.yaml spec/interfaces
+git commit -m "[spec][trap] Define Lab 4 trap contract"
+vos agent implement kernel/trap
+vos build
+vos run qemu
+vos verify
 ```
 
 Spec 至少声明 trap 入口、timer tick、external dispatch、UART RX/TX 和 IPI 操作；写清中断状态、栈、锁顺序、可重入性、未知 IRQ 与缓冲区溢出错误。`owns` 只覆盖中断/驱动实现和相应测试。

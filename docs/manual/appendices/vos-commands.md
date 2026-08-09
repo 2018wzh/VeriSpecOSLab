@@ -14,7 +14,7 @@ vos init
 
 ### `vos doctor`
 
-检查 Git、项目文件、工具链和 Agent 配置。失败项应说明缺少的命令、文件或字段以及修复方向。
+未初始化目录只检查 Bun/Git 并提示 `vos init`。已初始化项目先做确定性检查，再调用只读 Debug Agent 阅读 Spec、`vos.yaml` 与现有诊断，推导 required/optional 工具并用 Bash 运行版本、target、编译或运行能力探针。每条工具结论都绑定实际探针证据；Agent 只能给出安装建议。
 
 ```sh
 vos doctor
@@ -22,12 +22,15 @@ vos doctor
 
 ## Spec
 
-### `vos spec check`
+### `vos spec lint [<Spec ID|path|design|all>]`
 
-确定性检查五类 Spec 的结构、未知字段、引用、稳定 ID、路径和等级。它不调用模型，也不判断架构选择是否合理。
+确定性检查五类 Spec 的结构、未知字段、引用、稳定 ID、路径、等级、`owns` 和 `vos.yaml` 映射。省略目标等同 `all`；指定目标时仍加载完整项目解析引用，只报告目标及其相关诊断。`design` 是 DesignSpec 的保留目标名。它不调用模型，也不判断架构选择是否合理。
 
 ```sh
-vos spec check
+vos spec lint
+vos spec lint design
+vos spec lint kernel/memory
+vos spec lint spec/interfaces/syscall.yaml
 ```
 
 ## Agent
@@ -72,27 +75,28 @@ vos kb export-manifest
 
 ## Agent 角色
 
-### `vos agent design [--interactive|--confirm]`
+### `vos agent ask [question]`
 
-`--interactive` 先进行设计访谈，再生成 DesignSpec 的结构化差异。默认不写项目；`--confirm` 应用保存的同一份提案并单独提交，不会再次调用模型。
+写 Spec 前用它讨论概念、设计空间和取舍。省略问题或使用 `-i` 会进入连续问答。它不生成、修改或提交 Spec。
 
 ```sh
-vos agent design --interactive
-vos agent design --confirm
+vos agent ask "Sv39 页表应由哪个模块拥有？"
+vos agent ask -i
 ```
 
-### `vos agent spec <module> [--interactive|--confirm]`
+### `vos agent review [<Spec ID|path|design|all>] [-i]`
 
-生成指定 ModuleSpec 的结构化差异。需要讨论模块边界时加 `--interactive`；确认后原子应用已保存的同一份提案并单独提交。
+这是唯一公开的 Spec Agent。它先运行确定性 lint，再读取目标、相关 Spec 和 `vos.yaml` 的 `verifies` 映射。非交互模式输出结构化 findings，只有 `blocker` 导致 `validation_failed`；`-i` 首轮先给完整评审，随后进入连续问答，结果只作为建议。两种模式都不写文件。
 
 ```sh
-vos agent spec kernel/memory
-vos agent spec kernel/memory --confirm
+vos agent review design
+vos agent review kernel/memory
+vos agent review spec/modules/memory.yaml -i
 ```
 
 ### `vos agent implement <module>`
 
-要求 clean HEAD 和已提交 ModuleSpec。在 detached linked worktree 中实现、构建和验证；只有全部门禁通过、HEAD 未漂移且改动未越过允许的 `owns` 时才写回并提交。
+要求 clean HEAD 和已提交 ModuleSpec。`owns` 必须同时覆盖实现和测试路径。Agent 在 detached linked worktree 中生成实现以及 public、contract、固定种子 fuzz、有界 trace/oracle 和本地 hidden tests；它返回 test target 提案，由 VOS 校验并原子更新 `vos.yaml`。只有 build 与全部已有/新增非隐藏门禁通过、HEAD 未漂移且改动未越过 `owns` 时才写回并提交。
 
 ```sh
 vos agent implement kernel/memory
@@ -105,14 +109,11 @@ linked worktree 只是 Git 变更回滚机制，不是进程、网络、凭据�
 ```sh
 vos agent debug
 vos agent verify
-vos agent ask "Sv39 的三级页表如何索引？"
-vos agent review kernel/memory
 ```
 
 - `debug`：报告根因、证据和修复方向；
 - `verify`：报告公开测试、契约和 Spec ID 覆盖缺口；
-- `ask`：基于锁定知识来源回答问题；
-- `review`：审查 Spec、代码、测试和 diff。
+- `ask` 与 `review` 的 Spec 教学用途见上文；
 
 这些角色不得修改项目文件。
 
@@ -146,10 +147,11 @@ vos run hardware
 
 ### `vos verify`
 
-要求 clean HEAD，确定性运行 spec check、build、全部 public tests 和 contract checks。不调用模型，不运行 fuzz、trace 或 hidden tests。
+要求 clean HEAD，确定性运行 spec lint、build、全部 public、contract、固定种子 fuzz 和有界 trace targets，不调用模型。加 `--hidden` 后，还会运行绑定当前 commit、Spec hash、content hash、模型、seed 和生成 run 的本地 hidden tests。
 
 ```sh
 vos verify
+vos verify --hidden
 ```
 
 ### `vos report`
@@ -162,7 +164,7 @@ vos report
 
 ### `vos submit`
 
-要求 clean HEAD，刷新报告并生成绑定 commit、spec 与 config hashes 的可复现归档。导出时遮蔽凭据并把本机绝对路径替换为稳定别名。
+要求 clean HEAD，并要求当前 HEAD 对应的 `vos verify --hidden` 已通过。命令刷新报告，生成绑定 commit、Spec、config、hidden test 与验证哈希的可复现私有归档。导出时遮蔽凭据并把本机绝对路径替换为稳定别名。
 
 ```sh
 vos submit
@@ -171,6 +173,6 @@ vos submit
 ## 常见门禁
 
 - `verify`、`agent implement`、权威硬件 evidence 和 `submit` 都要求 clean HEAD。
-- `design`、`spec` 只有在确认后才写回，并各自形成提交。
+- Spec 由学生修改，并用普通 `git add/commit` 手动提交；`agent review` 不代替提交。
 - 跨模块实现先手写并提交 SpecPatch，允许范围是目标模块与受影响模块 `owns` 的并集。
 - 达到 Agent `maxIterations`、验证失败、HEAD 漂移或越界时，原工作树保持不变，只保留诊断、diff 和 evidence。

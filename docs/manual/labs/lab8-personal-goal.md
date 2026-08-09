@@ -49,12 +49,12 @@
 GoalSpec 使用严格字段：稳定 `id`、`objective`、`metric`、`oracle` 和 `correctness`。详细的 baseline、target、实验变量和结果表保存在实验报告或测试数据中，不伪装成 schema 字段。
 
 ```yaml
-id: goal/syscall-latency
-objective: Reduce steady-state syscall latency without weakening ABI checks.
-metric: Median and p99 cycles for a fixed null-syscall workload.
-oracle: Repeated measurements on the canonical QEMU configuration.
+id: TODO_STABLE_GOAL_ID
+objective: TODO
+metric: TODO
+oracle: TODO
 correctness:
-  - All syscall ABI contract checks continue to pass.
+  - TODO
 ```
 
 GoalSpec 不授予代码所有权。实际修改仍由 ModuleSpec 的 `owns` 控制；跨模块优化先提交 SpecPatch。
@@ -70,14 +70,22 @@ GoalSpec 不授予代码所有权。实际修改仍由 ModuleSpec 的 `owns` 控
 
 结果表至少包含 commit、配置 hash、样本数、聚合值、离散程度和正确性门禁。若环境噪声大，先增加重复或改进测量方法，不要只把阈值调宽。
 
-`vos verify` 保持确定性，不自动运行 fuzz、trace、hidden tests 或未来 Judge oracle。目标所需的普通公开测试和 contract check 可以加入 `vos.yaml` 并绑定 GoalSpec/ModuleSpec ID；探索性数据另存于报告输入，不冒充公共门禁。
+`vos verify` 保持确定性，运行 public、contract、固定种子 fuzz 和有界 trace targets，但不自动运行本地 hidden tests 或未来 Judge oracle。目标所需的 target 加入 `vos.yaml` 并绑定 GoalSpec/ModuleSpec ID；探索性数据另存于报告输入，不冒充公共门禁。
 
 ## 5. 工作流与门禁
 
 ```sh
-vos agent review
-vos spec check
+vos agent ask "这个目标的主指标、护栏、oracle 与停止条件是否能在看到结果前确定？"
+# 学生手写 GoalSpec，并按需修改 ModuleSpec 或手写 SpecPatch
+vos spec lint <goal-id>
+vos agent review <goal-id> -i
+# 学生修改后再次 lint，并手动提交
+vos spec lint <goal-id>
+git add spec/goals spec/modules spec/patches
+git commit -m "[spec][goal] Define Lab 8 personal goal"
 vos agent implement <module>
+vos build
+vos run qemu
 vos verify
 vos report
 ```

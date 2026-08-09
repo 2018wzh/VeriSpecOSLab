@@ -7,7 +7,7 @@
 > - **学完能做什么**：在 Linux 和裸机两种环境读取同一份 flag 镜像，建立"操作系统替程序做了什么"的直觉；随后初始化 VOS 项目，完成 DesignSpec 与 Agent、知识库配置，为后续十个 Lab 打地基。
 > - **预计耗时**：8–12 小时，建议安排 1 周。CTF 双环境热身约占一半，项目初始化与 DesignSpec 占另一半。
 > - **前置依赖**：无需前置 Lab。第一次接触 OS 开发也没关系，Book 第 1 章会先解释操作系统、语言、ISA 与设计先行的理由。
-> - **产出物**：双环境 flag 读取程序与证据、`spec/design.yaml`、初始化版 `toolchain.yaml` 与 `vos.yaml`、一次通过的 `vos spec check` evidence、干净且可追溯的 Git HEAD。
+> - **产出物**：双环境 flag 读取程序与证据、学生手写的 `spec/design.yaml`、初始化版 `toolchain.yaml` 与 `vos.yaml`、lint/review evidence、干净且可追溯的 Git HEAD。
 
 > **参考项目**：参考项目的 `course/lab1-complete` 是独立课程历史的起点：先提交 `vos init` 生成的空项目，再单独提交当期 DesignSpec。Lab 1 只确定项目身份、RISC-V/C、启动目标和开发边界，不包含后续 Lab 的源码、测试名、占位文件或预告性规格。后续设计决策在对应 Lab 以新的 DesignSpec 提交逐步加入。
 
@@ -200,15 +200,15 @@ vos agent config --check  # 严格检查字段、URL、变量名和凭据引用
 vos doctor                # 连同项目、Spec、工具链和 KB 配置一起检查
 ```
 
-`--show` 不显示凭据值。配置缺少凭据时，向导仍会保存非秘密设置，但命令和 `vos doctor` 会明确返回失败，并指出应补充到 `.env` 的变量名。
+`--show` 不显示凭据值。配置缺少凭据时，向导仍会保存非秘密设置，Agent 命令会指出应补充到 `.env` 的变量名。`vos doctor` 保留确定性检查结果，把无法调用 Debug Agent 记为 warning；provider 不可用本身不会让 doctor 失败。
 
-现在再完成 DesignSpec。先不要手工猜字段，也不要让 Agent 直接写代码。运行：
+现在完成 DesignSpec。先用 Ask Agent 讨论问题和取舍：
 
 ```sh
-vos agent design --interactive
+vos agent ask -i
 ```
 
-Agent 会逐项询问系统目标、语言、ISA、QEMU、canonical board、内核组织和关键取舍。讨论结束并经你确认后，它只生成结构化差异，不修改项目。逐项检查以下内容：
+Ask Agent 不生成文件。你可以围绕系统目标、语言、ISA、QEMU、canonical board、内核组织和关键取舍连续追问，然后亲手填写 `spec/design.yaml`。逐项检查以下内容：
 
 - `system` 中的名称、语言和 ISA 是否与自己的选择一致；
 - `machine.qemu` 是否写清机器型号、内存、固件和串口；
@@ -218,50 +218,52 @@ Agent 会逐项询问系统目标、语言、ISA、QEMU、canonical board、内�
 - `composition_invariants` 是否为 1～3 条跨模块不变量；
 - `hardware_port` 是否说明启动、控制台和中断入口。
 
-如果差异没有准确表达你的决定，重新运行交互式设计并继续讨论。确认无误后再原子应用：
-
-```sh
-vos agent design --confirm
-```
-
-VOS 会应用刚才保存的同一份提案，不会再次调用模型，然后提交 DesignSpec。检查 `git log -1 --stat`，确认这次提交只包含预期的设计文件。
-
-下面是字段形状示例，不是推荐答案：
+尚未进入本 Lab 范围的字段也必须保留，值写成 `not in current lab scope`，不要删字段或另造阶段 schema。下面只给字段骨架，不给可直接提交的答案：
 
 ```yaml
 system:
-  name: my-os
-  language: c
-  isa: riscv64
+  name: TODO
+  language: TODO
+  isa: TODO
 machine:
   qemu:
-    machine: virt
-    memory: 128M
-    firmware: default
-    console: serial
+    machine: TODO
+    memory: TODO
+    firmware: TODO
+    console: TODO
   hardware:
-    board: qemu-virt
-    status: canonical
+    board: not in current lab scope
+    status: not in current lab scope
 kernel:
-  organization: monolithic
-  execution: preemptive supervisor mode
-  protection: Sv39 paging with user/kernel separation
-  communication: system calls and interrupt-driven devices
-  resource_model: owned physical pages and file descriptors
+  organization: TODO
+  execution: TODO
+  protection: not in current lab scope
+  communication: not in current lab scope
+  resource_model: not in current lab scope
 required_mechanisms:
-  - firmware boot and serial banner
+  - TODO
 composition_invariants:
-  - User pointers are validated before kernel access.
+  - TODO
 non_goals:
-  - networking
+  - TODO
 hardware_port:
-  board: qemu-virt
-  boot: OpenSBI
-  console: 16550A UART
-  interrupt: PLIC and supervisor timer
+  board: not in current lab scope
+  boot: not in current lab scope
+  console: not in current lab scope
+  interrupt: not in current lab scope
 ```
 
-严格 schema 会拒绝未知字段。不要把旧版的种子、切片、时间线或独立决策记录字段塞进 DesignSpec；需要跨模块变更时，后续单独提交 SpecPatch。
+完成后先 lint，再让 Review Agent 给建议：
+
+```sh
+vos spec lint design
+vos agent review design -i
+vos spec lint design
+git add spec/design.yaml
+git commit -m "[spec][design] Record Lab 1 system choices"
+```
+
+你需要自己判断哪些建议应当采纳。Review Agent 不修改文件，Git 提交也必须由学生手动完成。严格 schema 会拒绝未知字段；不要把旧版的种子、切片、时间线或独立决策记录字段塞进 DesignSpec。需要跨模块变更时，后续单独提交 SpecPatch。
 
 ### 步骤 4：检查 Agent 的使用边界（预计 5 分钟）
 
@@ -273,7 +275,7 @@ hardware_port:
 vos agent ask "RISC-V 与 x86-64 的教学取舍是什么？"
 ```
 
-`ask` 只回答问题，不修改项目。`design` 和 `spec` 必须经过 `--confirm` 才写回；`debug`、`verify` 和 `review` 也都是只读角色。
+`ask` 只回答问题，不修改项目。`review` 评审学生已经写好的 Spec，也不生成补丁或提交。`debug` 和 `verify` 同样只读。
 
 需要特别理解：Agent 的 linked worktree 只隔离 Git 变更，不隔离进程、网络、凭据或宿主文件。Agent 默认能以当前用户权限执行宿主命令。本地保存的完整参考源码也不是保密边界。
 
@@ -294,14 +296,46 @@ vos kb search "RISC-V supervisor trap entry"
 
 ### 步骤 6：检查基线（预计 10 分钟）
 
+把前面完成的 CTF 双环境路径也写成学生自己的 ModuleSpec。这个 Spec 不能包含 flag 答案，只描述输入、错误、性质、实现路径和测试路径：
+
+```yaml
+id: lab/ctf-warmup
+module: lab/ctf-warmup
+level: 2
+purpose: TODO
+owns: [TODO_LINUX_READER_PATH, TODO_BARE_METAL_READER_PATH, TODO_TEST_PATH]
+interface: [TODO_READ_OPERATION]
+properties: [TODO]
+errors: [TODO]
+state: { TODO_STATE: TODO }
+preconditions: [TODO]
+postconditions: [TODO]
+invariants: [TODO]
+dependencies: [toolchain]
+```
+
+按统一教学链完成评审、提交和实现验证：
+
 ```sh
+vos agent ask "怎样验证 flag 确实来自镜像，而不是源码常量？"
+vos spec lint lab/ctf-warmup
+vos agent review lab/ctf-warmup -i
+# 学生修改后再次 lint，并手动提交
+vos spec lint lab/ctf-warmup
+git add spec/modules/ctf-warmup.yaml
+git commit -m "[spec][ctf] Define Lab 1 warm-up contract"
+vos agent implement lab/ctf-warmup
+vos build
+vos run qemu
+vos verify
 vos doctor
-vos spec check
+vos spec lint design
+vos agent review design
 git status --short
 git log -2 --oneline
 ```
 
-`vos spec check` 只检查结构、引用、路径、稳定 ID 和等级字段，不评价技术选择，也不调用模型。Lab 1 结束时，工作树应当干净，DesignSpec 应已有独立提交。
+`vos spec lint` 只检查结构、引用、路径、稳定 ID、等级字段和 manifest 映射，不评价技术选择，也不调用模型。`vos agent review` 给出设计建议，但不替你修改。Lab 1 结束时，工作树应当干净，DesignSpec 应已有独立的学生提交。
 
 ## 6. 背景阅读
 
@@ -320,7 +354,7 @@ git log -2 --oneline
 - [ ] 裸机程序在 QEMU 中从文件系统镜像读取两个 flag，串口日志可追溯到构建身份。
 - [ ] 源码中没有硬编码 flag，Git 中没有提交真实 flag、`.env` 或原始私密日志。
 - [ ] `vos doctor` 通过，或每个失败项都有明确的可执行修复说明。
-- [ ] `vos spec check` 通过。
+- [ ] `vos spec lint design` 通过，并保存 Review Agent 的评审 run ID。
 - [ ] `.env` 和 `.vos/` 未被 Git 跟踪。
 - [ ] DesignSpec 已提交，工作树干净。
 - [ ] `composition_invariants` 不超过三条，并且能够跨模块检查。
@@ -341,13 +375,13 @@ git log -2 --oneline
 - [ ] Agent 协作记录，包含采纳与拒绝理由；
 - [ ] `spec/design.yaml`；
 - [ ] `spec/modules/toolchain.yaml` 和 `vos.yaml` 的初始化版本；
-- [ ] 一次通过的 `vos spec check` evidence；
+- [ ] lint 与 review evidence；
 - [ ] 一段不采用备选 ISA 或语言的理由；
 - [ ] 干净且可追溯的 Git HEAD。
 
 ## 9. AI 使用边界
 
-Agent 可以解释 ISA 差异、对比语言优劣和审查 DesignSpec 字段。学生必须亲自决定项目身份、技术路线和知识库策略，并审查 Agent 给出的每一处建议。`design`、`spec` 必须经 `--confirm` 才写回；`debug`、`verify`、`review` 只读，不修改项目。
+Agent 可以解释 ISA 差异、对比语言优劣和审查 DesignSpec 字段。学生必须亲自决定项目身份、技术路线和知识库策略，手写 Spec，并逐项判断是否采纳 Review Agent 的建议。`ask`、`review`、`debug` 和 `verify` 都不修改项目。
 
 ## 10. 常见问题
 
@@ -359,11 +393,11 @@ Agent 可以解释 ISA 差异、对比语言优劣和审查 DesignSpec 字段。
 
 这通常说明你依赖了 Linux 的挂载或文件接口，却没有实现裸机侧对应的块读取与格式解析。把路径拆成“块可读、超级块正确、inode 可定位、目录项可匹配、文件内容可读取”五个检查点。
 
-### `vos agent design` 没有写文件
+### `vos agent review` 没有写文件
 
-这是预期行为。`vos agent design --interactive` 先完成设计访谈并保存提案；审查差异后，再运行 `vos agent design --confirm` 应用同一份提案。
+这是预期行为。Review Agent 只评审学生手写的 Spec。修改后重新运行 lint，并用普通 Git 命令提交。
 
-### `vos spec check` 报未知字段
+### `vos spec lint` 报未知字段
 
 学生 Spec 使用严格 schema。删除旧版种子、切片和独立操作规格等字段，按当前五类 Spec 重新表达含义，不要添加兼容包装。
 

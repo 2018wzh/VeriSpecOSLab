@@ -36,11 +36,38 @@
 
 ## 3. 当前契约映射
 
+```yaml
+id: kernel/pipe
+module: kernel/pipe
+level: 3
+purpose: TODO
+owns: [TODO_IMPLEMENTATION_PATH, TODO_TEST_PATH]
+interface: [TODO_OPERATION]
+properties: [TODO]
+errors: [TODO]
+state: { TODO_STATE: TODO }
+preconditions: [TODO]
+postconditions: [TODO]
+invariants: [TODO]
+dependencies: [TODO]
+concurrency: { TODO_CONCURRENCY_FIELD: TODO }
+rely: [TODO]
+guarantee: [TODO]
+algorithm_intent: TODO
+```
+
 ```sh
-vos agent spec kernel/pipe
-vos spec check
-vos agent implement kernel/pipe
+vos agent ask "pipe 的资源生命周期、阻塞语义与 ABI 错误应如何分层表达？"
+# 学生手写 spec/modules/pipe.yaml 并更新资源 ABI InterfaceSpec
+vos spec lint kernel/pipe
 vos agent review kernel/pipe
+# 学生修改后再次 lint，并手动提交
+vos spec lint kernel/pipe
+git add spec/modules/pipe.yaml spec/interfaces spec/patches
+git commit -m "[spec][pipe] Define Lab 7 resource ABI"
+vos agent implement kernel/pipe
+vos build
+vos run qemu
 vos verify
 ```
 
