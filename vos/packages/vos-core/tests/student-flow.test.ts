@@ -217,6 +217,26 @@ describe("student v2 workflow", () => {
       git(root, ["commit", "-m", "add memory module spec"]);
       await ensureHeadLedgerEntry({ projectRoot: root, actor: "human", intent: "record memory module spec", changedTargets: ["vos.yaml", "spec/modules/memory.yaml"] });
 
+      const reviewResult = await executeCliInvocation([
+        "bun", "vos", "--project-root", root, "--json", "agent", "review", "memory",
+      ], {
+        print: false,
+        agentRunner: async (options) => {
+          expect(options.context).toMatchObject({
+            counts: { operations: 1, public_requirements: 2 },
+            inventory: {
+              operations: ["memory.allocate"],
+              public_requirements: [
+                { id: "contract-memory", verifies: ["memory"] },
+                { id: "public-memory", verifies: ["memory"] },
+              ],
+            },
+          });
+          return { content: "reviewed", events: acceptedSubmitEvents("spec_review.v1", { findings: [], summary: "ready" }) };
+        },
+      });
+      expect(reviewResult.status).toBe("passed");
+
       const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
         print: false,
         agentRunner: async (options) => {

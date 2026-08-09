@@ -5008,6 +5008,21 @@ async function runDefaultAgentSpecReview(params: {
   context: ExecContext;
   evidence: EvidenceWriter;
 }): Promise<AgentSpecReview> {
+  const targetRefs = new Set(params.targetRefs ?? []);
+  const targetPaths = new Set(params.targetPaths ?? []);
+  const scoped = targetRefs.size > 0 || targetPaths.size > 0;
+  const operations = params.bundle.operations.filter((operation) =>
+    !scoped || targetRefs.has(operation.module) || targetPaths.has(operation.path)
+  );
+  const publicChecks = (params.bundle.manifest?.checks ?? []).filter((check) =>
+    !scoped || check.verifies.some((ref) => targetRefs.has(ref))
+  );
+  const stages = new Set(params.bundle.architecture.stages.map((stage) => stage.stage));
+  for (const module of params.bundle.normalized_modules) {
+    if (scoped && !targetRefs.has(module.id) && !targetPaths.has(module.path)) continue;
+    const stage = typeof module.state?.stage === "string" ? module.state.stage.trim() : "";
+    if (stage) stages.add(stage);
+  }
   const reviewInput = {
     command: params.command,
     target: params.target,
@@ -5017,11 +5032,15 @@ async function runDefaultAgentSpecReview(params: {
     counts: {
       sources: params.bundle.sources.length,
       modules: params.bundle.modules.length,
-      operations: params.bundle.operations.length,
-      public_requirements: params.bundle.verification.public_requirements.length,
+      operations: operations.length,
+      public_requirements: publicChecks.length,
+    },
+    inventory: {
+      operations: operations.map((operation) => operation.id),
+      public_requirements: publicChecks.map((check) => ({ id: check.id, verifies: check.verifies })),
     },
     architecture: {
-      stages: params.bundle.architecture.stages.map((stage) => stage.stage),
+      stages: [...stages].sort(),
     },
     impact: params.impact,
   };
