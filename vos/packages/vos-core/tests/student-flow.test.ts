@@ -317,6 +317,29 @@ describe("student v2 workflow", () => {
     });
   }, 30_000);
 
+  test("preserves streamed Agent events when the implementation runtime throws", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          await options.onEvent?.({ type: "tool.call", name: "Bash", arguments: "bun test" });
+          throw new Error("agent loop exhausted");
+        },
+      });
+
+      expect(result.status).toBe("validation_failed");
+      const artifact = result.artifacts.find((item) => item.summary === "student implement evidence");
+      const recorded = JSON.parse(readFileSync(join(root, artifact!.path), "utf8")) as {
+        agent_events: Array<Record<string, unknown>>;
+      };
+      expect(recorded.agent_events).toEqual([
+        { type: "tool.call", name: "Bash", arguments: "bun test" },
+      ]);
+    });
+  }, 30_000);
+
   test("does not land code, tests, or manifest targets when a proposed regression fails", async () => {
     const root = makeRoot();
     await withGitIdentity(async () => {

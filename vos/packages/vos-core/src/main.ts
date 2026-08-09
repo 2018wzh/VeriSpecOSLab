@@ -2426,6 +2426,7 @@ export async function executeAgentImplement(
   let agentSubmission: unknown;
   let implementationEvents: Array<Record<string, unknown>> = [];
   try {
+    const progress = createAgentProgressParams(context, "agent implement");
     const agentResult = await runAgentWithPrompt({
       projectRoot: worktree,
       taskPrompt: `Implement ModuleSpec ${module.id}. Work only within these owned paths: ${ownedPaths.join(", ")}. Generate the implementation plus concrete public, contract, fixed-seed bounded fuzz, bounded trace/oracle, and local hidden tests for this module. Test source paths must also be covered by owns. Do not edit vos.yaml: return structured test_targets and hidden_tests so VOS can validate and project them atomically. Existing test target IDs are immutable and MUST NOT be proposed again: ${JSON.stringify(existingTargetIds)}. Choose new module-prefixed IDs that do not collide with that list. Every fuzz target needs seed, cases, timeout, and reproduction_artifact. Every trace target needs workload, oracle, timeout, artifacts, and verifies. Hidden test content is returned in the result and must not be written into Git. Run useful local checks, but VOS will independently run the build and every existing and proposed non-hidden target before applying anything. Do not edit specs, .git, .vos, or worktrees. Stop when evidence is complete or report the root cause.`,
@@ -2437,7 +2438,10 @@ export async function executeAgentImplement(
       courseMode: false,
       resultSubmissionSchema: "student_implementation_result.v1",
       taskRunner: context.agentRunner,
-      onEvent: createAgentProgressParams(context, "agent implement").onEvent,
+      onEvent: async (event) => {
+        implementationEvents.push(event);
+        await progress.onEvent(event);
+      },
     });
     implementationEvents = agentResult.rawEvents;
     agentSubmission = agentResult.parsedResult;
