@@ -14,6 +14,8 @@ spec/patches/<patch>.yaml            手写语义变化影响
 
 `design.yaml` 必须包含 `system`（name/language/isa）、`machine`（qemu/hardware）、`kernel`（organization/execution/protection/communication/resource_model）、`hardware_port`（board/boot/console/interrupt）以及 `composition_invariants`。组合不变量最多三个。学生通过 `vos agent design` 讨论取舍，确认后由运行时原子写入并单独提交。
 
+DesignSpec 是随课程推进演进的单一事实来源，不是 Lab 1 一次填满的答案。每个课程标签的整棵树只能出现当期及以前的机制、稳定 Spec ID、check ID 和文档术语；实现、测试名或空占位文件同样算未来内容泄露。参考项目通过 `course/lab1-complete` 至 `course/lab10-candidate` 展示这一边界，旧完整源码只保存在 archive 标签中，不是新课程 `main` 的祖先。
+
 ## ModuleSpec
 
 每个模块文件使用严格 schema：
