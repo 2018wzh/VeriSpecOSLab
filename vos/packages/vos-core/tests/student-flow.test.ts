@@ -220,6 +220,10 @@ describe("student v2 workflow", () => {
       const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
         print: false,
         agentRunner: async (options) => {
+          expect(options.task).toContain("Existing test target IDs are immutable and MUST NOT be proposed again:");
+          expect(options.task).toContain('"contract-memory"');
+          expect(options.task).toContain('"public-memory"');
+          expect(options.task).toContain("Choose new module-prefixed IDs");
           mkdirSync(join(options.projectRoot, "src"), { recursive: true });
           writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 0;\n");
           return {
@@ -229,7 +233,7 @@ describe("student v2 workflow", () => {
         },
       });
 
-      expect(result.status).toBe("passed");
+      expect(result).toMatchObject({ status: "passed" });
       expect(readFileSync(join(root, "src", "memory.ts"), "utf8")).toContain("allocate");
       expect(git(root, ["log", "-1", "--pretty=%s"]).trim()).toBe("[vos][agent] Implement memory");
       expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
