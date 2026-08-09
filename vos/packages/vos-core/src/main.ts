@@ -2476,9 +2476,20 @@ export async function executeAgentImplement(
       }
     }
   } catch (error) {
+    let changedPaths: string[] = [];
+    let patchCaptureError: string | undefined;
+    try {
+      changedPaths = await studentChangedPaths(worktree);
+      patch = await studentWorktreeDiff(worktree);
+    } catch (captureError) {
+      patchCaptureError = errorMessage(captureError);
+    }
     validation = {
       status: "validation_failed",
       message: errorMessage(error),
+      changed_paths: changedPaths,
+      owns_violations: changedPaths.filter((target) => !isOwnedStudentPath(target, ownedPaths)),
+      ...(patchCaptureError ? { patch_capture_error: patchCaptureError } : {}),
       ...(agentSubmission === undefined ? {} : { agent_result: agentSubmission }),
     };
   } finally {

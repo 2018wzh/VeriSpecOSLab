@@ -332,18 +332,26 @@ describe("student v2 workflow", () => {
         print: false,
         agentRunner: async (options) => {
           await options.onEvent?.({ type: "tool.call", name: "Bash", arguments: "bun test" });
+          mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+          writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const partial = true;\n");
           throw new Error("agent loop exhausted");
         },
       });
 
       expect(result.status).toBe("validation_failed");
+      expect(result.details?.patch_available).toBe(true);
       const artifact = result.artifacts.find((item) => item.summary === "student implement evidence");
       const recorded = JSON.parse(readFileSync(join(root, artifact!.path), "utf8")) as {
         agent_events: Array<Record<string, unknown>>;
+        patch: string;
+        validation: { changed_paths: string[] };
       };
       expect(recorded.agent_events).toEqual([
         { type: "tool.call", name: "Bash", arguments: "bun test" },
       ]);
+      expect(recorded.validation.changed_paths).toEqual(["src/memory.ts"]);
+      expect(recorded.patch).toContain("export const partial = true");
+      expect(existsSync(join(root, "src", "memory.ts"))).toBe(false);
     });
   }, 30_000);
 
