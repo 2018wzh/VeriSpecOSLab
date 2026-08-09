@@ -93,6 +93,7 @@ const EXPLICIT_FILE_ORDER: Record<string, string[]> = {
   appendices: [
     "ai-policy.md",
     "common-bugs.md",
+    "ctf-flags.md",
     "debugging-methodology.md",
     "dev-environment.md",
     "dev-environment-setup.md",
