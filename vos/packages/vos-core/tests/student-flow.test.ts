@@ -225,6 +225,9 @@ describe("student v2 workflow", () => {
           expect(options.task).toContain('"public-memory"');
           expect(options.task).toContain("Choose new module-prefixed IDs");
           expect(options.task).toContain("hard 50-iteration limit");
+          expect(options.task).toContain("write the implementation and every non-hidden test by iteration 24");
+          expect(options.task).toContain("call submit_result no later than iteration 45");
+          expect(options.task).toContain("Never spend more than five iterations debugging one failed command");
           expect(options.task).toContain("batch independent Read/Write/Bash calls");
           expect(options.task).toContain("Do not inspect parent or sibling directories");
           expect(options.task).toContain("Do not perform repo-wide schema searches");
