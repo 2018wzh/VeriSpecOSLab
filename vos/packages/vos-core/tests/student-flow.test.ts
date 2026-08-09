@@ -224,6 +224,8 @@ describe("student v2 workflow", () => {
           expect(options.task).toContain('"contract-memory"');
           expect(options.task).toContain('"public-memory"');
           expect(options.task).toContain("Choose new module-prefixed IDs");
+          expect(options.task).toContain("hard 50-iteration limit");
+          expect(options.task).toContain("batch independent Read/Write/Bash calls");
           mkdirSync(join(options.projectRoot, "src"), { recursive: true });
           writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 0;\n");
           return {
