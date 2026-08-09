@@ -290,6 +290,44 @@ export function optionalOutputSchemaForId(id: string): OutputSchemaDefinition | 
   return schemas[id];
 }
 
+export function validateOutputSemantics(id: string, value: unknown): string[] {
+  if (id !== "student_implementation_result.v1" || !value || typeof value !== "object" || Array.isArray(value)) return [];
+  const result = value as Record<string, unknown>;
+  if (result.status !== "passed") return [];
+  const targets = Array.isArray(result.test_targets) ? result.test_targets : [];
+  const hidden = Array.isArray(result.hidden_tests) ? result.hidden_tests : [];
+  const errors: string[] = [];
+  for (const kind of ["public", "contract", "fuzz", "trace"]) {
+    if (!targets.some((target) => isRecord(target) && target.kind === kind)) {
+      errors.push(`result.test_targets must contain a ${kind} target`);
+    }
+  }
+  if (hidden.length === 0) errors.push("result.hidden_tests must contain at least one hidden test");
+  const ids = new Set<string>();
+  targets.forEach((target, index) => {
+    if (!isRecord(target)) return;
+    if (typeof target.id === "string") {
+      if (ids.has(target.id)) errors.push(`result.test_targets[${index}].id must be unique`);
+      ids.add(target.id);
+    }
+    if (target.kind === "fuzz") {
+      if (!Number.isInteger(target.seed) || Number(target.seed) < 0) errors.push(`result.test_targets[${index}].seed must be a nonnegative integer`);
+      if (!Number.isInteger(target.cases) || Number(target.cases) <= 0) errors.push(`result.test_targets[${index}].cases must be a positive integer`);
+      if (typeof target.reproduction_artifact !== "string" || !target.reproduction_artifact.trim()) errors.push(`result.test_targets[${index}].reproduction_artifact is required`);
+    }
+    if (target.kind === "trace") {
+      if (typeof target.workload !== "string" || !target.workload.trim()) errors.push(`result.test_targets[${index}].workload is required`);
+      if (typeof target.oracle !== "string" || !target.oracle.trim()) errors.push(`result.test_targets[${index}].oracle is required`);
+      if (!Array.isArray(target.artifacts) || target.artifacts.length === 0) errors.push(`result.test_targets[${index}].artifacts must contain at least one path`);
+    }
+  });
+  return errors;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 function objectSchema(
   properties: Record<string, JsonSchema>,
   required: string[],

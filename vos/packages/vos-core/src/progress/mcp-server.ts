@@ -1,5 +1,5 @@
 import { createInterface } from "node:readline";
-import { outputSchemaForId } from "vos-agent/output-schemas";
+import { outputSchemaForId, validateOutputSemantics } from "vos-agent/output-schemas";
 import { validateSchema } from "vos-agent/schema-validation";
 import type { ProgressStatus, ProgressUpdate } from "./types.ts";
 
@@ -160,6 +160,7 @@ function handleSubmitResult(value: unknown): string {
     return `Error validating submit_result arguments: unknown schema ${schemaId}`;
   }
   const errors = validateSchema(raw.result, schema.schema, "result");
+  errors.push(...validateOutputSemantics(schemaId, raw.result));
   if (errors.length > 0) {
     return `Error validating submit_result arguments for ${schemaId}:\n${errors.join("\n")}`;
   }

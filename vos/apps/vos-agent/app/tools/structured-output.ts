@@ -1,4 +1,4 @@
-import type { OutputSchemaDefinition, JsonSchema } from "../agent/output-schemas.ts";
+import { validateOutputSemantics, type OutputSchemaDefinition, type JsonSchema } from "../agent/output-schemas.ts";
 import type { Tool } from "./types.ts";
 
 export const STRUCTURED_OUTPUT_TOOL_NAME = "StructuredOutput";
@@ -25,6 +25,7 @@ export function createStructuredOutputTool(options: {
         return `Error validating StructuredOutput: arguments are not valid JSON: ${error instanceof Error ? error.message : String(error)}`;
       }
       const errors = validateSchema(value, options.schema.schema, "StructuredOutput");
+      errors.push(...validateOutputSemantics(options.schema.id, value));
       if (errors.length > 0) {
         return `Error validating StructuredOutput for ${options.schema.id}:\n${errors.join("\n")}`;
       }

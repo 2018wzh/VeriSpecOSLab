@@ -105,6 +105,34 @@ describe("vos-cli progress MCP server", () => {
     expect(line.result.isError).toBe(true);
     expect(line.result.content[0].text).toContain("unknown schema");
   }, 20_000);
+
+  test("rejects a passed implementation trace target without artifacts", async () => {
+    const target = (kind: string) => ({
+      id: `${kind}-memory`, kind, program: "bun", args: ["--version"], cwd: ".", env: [],
+      timeout: 30_000, verifies: ["memory"], artifacts: [],
+    });
+    const line = callProgressMcp({
+      name: "submit_result",
+      arguments: {
+        schema_id: "student_implementation_result.v1",
+        result: {
+          status: "passed",
+          test_targets: [
+            target("public"),
+            target("contract"),
+            { ...target("fuzz"), seed: 1, cases: 10, reproduction_artifact: "build/fuzz-repro.txt" },
+            { ...target("trace"), workload: "boot", oracle: "banner" },
+          ],
+          hidden_tests: [{
+            id: "hidden-memory", path: "hidden.sh", content: "exit 0\n", program: "sh", args: ["{hidden_test}"], cwd: ".", env: [], timeout: 30_000, verifies: ["memory"], seed: 1,
+          }],
+        },
+      },
+    });
+
+    expect(line.result.isError).toBe(true);
+    expect(line.result.content[0].text).toContain("artifacts must contain at least one path");
+  }, 20_000);
 });
 
 function callProgressMcp(params: Record<string, unknown>): { result: { isError: boolean; content: Array<{ text: string }> } } {
