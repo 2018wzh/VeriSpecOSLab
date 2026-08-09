@@ -104,6 +104,19 @@ describe("handwritten Spec teaching flow", () => {
     expect(modified.status).toBe("validation_failed");
     expect(modified.details?.missing).toContain("doctor-readonly");
   }, 30_000);
+
+  test("reconciles the ledger after the documented manual Git commit step", async () => {
+    const root = await initializedProject();
+    writeFileSync(join(root, "student-note.md"), "handwritten Spec decision\n");
+    git(root, ["add", "student-note.md"]);
+    git(root, ["-c", "user.name=VOS Test", "-c", "user.email=vos@example.invalid", "commit", "-m", "record handwritten decision"]);
+    const head = git(root, ["rev-parse", "HEAD"]).trim();
+
+    const verified = await invoke(root, "verify");
+
+    expect(verified.status).toBe("passed");
+    expect(readFileSync(join(root, ".vos", "commit-ledger.jsonl"), "utf8")).toContain(head);
+  }, 30_000);
 });
 
 async function initializedProject(): Promise<string> {
@@ -142,6 +155,12 @@ async function initializedProject(): Promise<string> {
 function restore(key: string, value: string | undefined): void {
   if (value === undefined) delete process.env[key];
   else process.env[key] = value;
+}
+
+function git(root: string, args: string[]): string {
+  const result = Bun.spawnSync(["git", ...args], { cwd: root, stdout: "pipe", stderr: "pipe" });
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString() || result.stdout.toString());
+  return result.stdout.toString();
 }
 
 async function invoke(root: string, ...args: string[]) {

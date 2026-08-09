@@ -776,6 +776,21 @@ async function resolveReproducibilityContext(
   if (!isReproControlledCommand(command)) {
     return await resolveOptionalReproducibilityContext(projectRoot);
   }
+  if (!isLegacyProject(projectRoot)) {
+    const current = await checkReproducibility(projectRoot);
+    if (!current.ok && current.reason === "ledger_missing") {
+      const changedTargets = git(projectRoot, ["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"])
+        .split(/\r?\n/)
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+      await ensureHeadLedgerEntry({
+        projectRoot,
+        actor: "human",
+        intent: `record manually committed student state before ${commandLabel(command)}`,
+        changedTargets,
+      });
+    }
+  }
   const verdict = await assertReproducible(projectRoot);
   return {
     commitSha: verdict.commitSha,
