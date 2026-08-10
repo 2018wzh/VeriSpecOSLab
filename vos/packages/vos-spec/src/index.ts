@@ -148,6 +148,16 @@ export async function buildNormalizedSpecBundle(params: {
         design = { id: "design", path: rel, document: doc };
       } else if (kind === "module" && typeof parsed.level === "number") {
         const doc = moduleV2Schema.parse(parsed);
+        const missingFields = missingModuleLevelFields(parsed);
+        if (missingFields.length > 0) {
+          diagnostics.push(errorDiagnostic(
+            "module.level_fields_missing",
+            `ModuleSpec L${parsed.level} is missing required field(s): ${missingFields.join(", ")}`,
+            rel,
+            typeof parsed.id === "string" ? parsed.id : undefined,
+          ));
+          continue;
+        }
         const normalized = normalizeModuleV2(doc, rel);
         v2ModulePaths.add(rel);
         normalizedModules.push(normalized);
@@ -435,6 +445,17 @@ function normalizeModuleV2(
     algorithm_intent: doc.algorithm_intent,
     operations,
   };
+}
+
+function missingModuleLevelFields(doc: Record<string, unknown>): string[] {
+  const required = ["interface", "properties", "errors", "owns"];
+  if (doc.level === 2 || doc.level === 3) {
+    required.push("state", "preconditions", "postconditions", "invariants", "dependencies");
+  }
+  if (doc.level === 3) {
+    required.push("concurrency", "rely", "guarantee", "algorithm_intent");
+  }
+  return required.filter((field) => !Object.hasOwn(doc, field));
 }
 
 function normalizeOperation(operation: unknown, owner: string, rel: string): NormalizedOperation {

@@ -118,6 +118,41 @@ describe("vos-spec semantic bundle", () => {
     expect(bundle.normalized_modules).toEqual([]);
   });
 
+  test("requires the declared L2 and L3 ModuleSpec fields without blocking an explicit L1", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vos-spec-v2-level-fields-"));
+    await mkdir(path.join(root, "spec", "modules"), { recursive: true });
+    await writeFile(path.join(root, "spec", "modules", "incomplete.yaml"), [
+      "id: incomplete",
+      "module: incomplete",
+      "level: 3",
+      "purpose: incomplete L3",
+      "owns: [src/incomplete.c, tests/incomplete]",
+      "interface: []",
+      "properties: []",
+      "errors: []",
+      "",
+    ].join("\n"));
+    await writeFile(path.join(root, "spec", "modules", "intro.yaml"), [
+      "id: intro",
+      "module: intro",
+      "level: 1",
+      "purpose: intentionally introductory",
+      "owns: [src/intro.c, tests/intro]",
+      "interface: []",
+      "properties: []",
+      "errors: []",
+      "",
+    ].join("\n"));
+
+    const bundle = await buildNormalizedSpecBundle({ projectRoot: root });
+    const incomplete = bundle.diagnostics.find((diagnostic) => diagnostic.code === "module.level_fields_missing");
+    expect(incomplete?.message).toContain("state");
+    expect(incomplete?.message).toContain("algorithm_intent");
+    expect(bundle.normalized_modules.map((module) => module.id)).toEqual(["intro"]);
+    expect(bundle.diagnostics.some((diagnostic) =>
+      diagnostic.code === "module.level_incomplete" && diagnostic.ref === "intro" && diagnostic.severity === "warning")).toBe(true);
+  });
+
   test("rejects legacy Spec kinds before a manifest exists", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vos-spec-no-legacy-"));
     await mkdir(path.join(root, "spec", "modules", "kernel", "memory", "ops"), { recursive: true });
