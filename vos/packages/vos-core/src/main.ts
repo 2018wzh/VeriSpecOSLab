@@ -2430,12 +2430,11 @@ export async function executeAgentImplement(
   const commitMessage = `[vos][agent] Implement ${module.module}\n\nRun-ID: ${evidence.run_id}\nSpec-Hash: ${specHash}`;
   try {
     const progress = createAgentProgressParams(context, "agent implement");
-    const initialPrompt = `Implement ModuleSpec ${module.id}. Work only within these owned paths: ${ownedPaths.join(", ")}. Generate the implementation plus concrete public, contract, fixed-seed bounded fuzz, bounded trace/oracle, and local hidden tests for this module. Test source paths must also be covered by owns. This is an implementation task, not a planning task: do not stop after describing a plan; write the owned files, run validation, and call submit_result. Read only the current project root: its Spec, vos.yaml, owned files, and public test framework. Reuse helpers under tests/public and do not reimplement them in generated tests. Do not inspect parent or sibling directories, other checkouts/worktrees, VOS implementation source, Git history, old Lab implementations/diffs, or previous .vos runs; the current Spec and the result contract below are the complete authority. Do not perform repo-wide schema searches or toolchain discovery. Do not edit vos.yaml: return structured test_targets and hidden_tests so VOS can validate and project them atomically. Existing test target IDs are immutable and MUST NOT be proposed again: ${JSON.stringify(existingTargetIds)}. Choose new module-prefixed IDs that do not collide with that list. Each test_targets entry is {id, kind, program, args, cwd, env, timeout, verifies, artifacts}; timeout is an integer number of milliseconds and must be at least 1000 (for example 60000 for 60 seconds); use env: [\"PATH\"] for every target whose program or script resolves host tools by name. Fuzz additionally requires seed, cases, reproduction_artifact; trace additionally requires workload and oracle. Each hidden_tests entry is {id, path, content, program, args, cwd, env, timeout, verifies, seed} with the same millisecond timeout rule, and args may use {hidden_test}; hidden tests that resolve host tools also require PATH in env. Every verifies list must include ${module.id}. Hidden test content is returned in the result and must not be written into Git. The loop has a hard 50-iteration limit shared by implementation and repair. Finish discovery by iteration 5, write the implementation and every non-hidden test by iteration 12, verify that every proposed command path exists, and submit by iteration 30 so VOS can run authoritative gates and reserve about 20 iterations for evidence-driven repair. Batch independent Read/Write/Bash calls in the same response. Never spend more than five iterations debugging one failed command: either fix it, choose a simpler Spec-compliant implementation, or submit a failed result with the root cause. Do not spend iterations investigating harmless output formatting after the declared oracle passes. Run useful local checks, but VOS will independently run the build and every existing and proposed non-hidden target before applying anything. Do not edit specs, .git, .vos, or worktrees. Stop when evidence is complete or report the root cause.`;
+    const initialPrompt = `Implement ModuleSpec ${module.id}. Work only within these owned paths: ${ownedPaths.join(", ")}. Generate the implementation plus concrete public, contract, fixed-seed bounded fuzz, bounded trace/oracle, and local hidden tests for this module. Test source paths must also be covered by owns. This is an implementation task, not a planning task: do not stop after describing a plan; write the owned files, run validation, and call submit_result. Read only the current project root: its Spec, vos.yaml, owned files, and public test framework. Reuse helpers under tests/public and do not reimplement them in generated tests. Do not inspect parent or sibling directories, other checkouts/worktrees, VOS implementation source, Git history, old Lab implementations/diffs, or previous .vos runs; the current Spec and the result contract below are the complete authority. Do not perform repo-wide schema searches or toolchain discovery. Do not edit vos.yaml: return structured test_targets and hidden_tests so VOS can validate and project them atomically. Existing test target IDs are immutable and MUST NOT be proposed again: ${JSON.stringify(existingTargetIds)}. Choose new module-prefixed IDs that do not collide with that list. Each test_targets entry is {id, kind, program, args, cwd, env, timeout, verifies, artifacts}; timeout is an integer number of milliseconds and must be at least 1000 (for example 60000 for 60 seconds); use env: [\"PATH\"] for every target whose program or script resolves host tools by name. Fuzz additionally requires seed, cases, reproduction_artifact; trace additionally requires workload and oracle. Each hidden_tests entry is {id, path, content, program, args, cwd, env, timeout, verifies, seed} with the same millisecond timeout rule, and args may use {hidden_test}; hidden tests that resolve host tools also require PATH in env. Every verifies list must include ${module.id}. Hidden test content is returned in the result and must not be written into Git. Each implementation or evidence-driven repair turn retains the Agent runtime's required hard 50-iteration maxIterations guard. Finish discovery by iteration 5, write the implementation and every non-hidden test by iteration 12, verify that every proposed command path exists, and submit by iteration 30 so VOS can run authoritative gates and return bounded failures to the same thread. Batch independent Read/Write/Bash calls in the same response. Never spend more than five iterations debugging one failed command: either fix it, choose a simpler Spec-compliant implementation, or submit a failed result with the root cause. Do not spend iterations investigating harmless output formatting after the declared oracle passes. Run useful local checks, but VOS will independently run the build and every existing and proposed non-hidden target before applying anything. Do not edit specs, .git, .vos, or worktrees. Stop when evidence is complete or report the root cause.`;
     let taskPrompt = `${initialPrompt}\nImplement only operations and behavior explicitly declared by the target ModuleSpec. Do not add adjacent later-stage operations merely because a reference OS commonly includes them; choose the smallest complete composition that satisfies the current Spec. Prefer WriteFiles to create a related implementation or test-file batch in one tool call. A missing implementation or test file is not an external blocker: create it with the available tools and do not submit failed merely because owned work remains.`;
     let threadId: string | undefined;
-    let remainingIterations = 50;
     const projectedTargetIds = new Set<string>();
-    while (remainingIterations > 0) {
+    while (true) {
       const eventCountBeforeRun = implementationEvents.length;
       const agentResult = await runAgentWithPrompt({
         projectRoot: worktree,
@@ -2447,8 +2446,8 @@ export async function executeAgentImplement(
         requiredValidations: ["build", "public tests", "contract tests", "fixed-seed fuzz tests", "bounded trace/oracle tests"],
         courseMode: false,
         threadId,
-        maxIterations: remainingIterations,
-        completionReserveIterations: threadId ? 2 : 20,
+        maxIterations: 50,
+        completionReserveIterations: 20,
         resultSubmissionSchema: "student_implementation_result.v1",
         taskRunner: context.agentRunner,
         onEvent: async (event) => {
@@ -2459,7 +2458,6 @@ export async function executeAgentImplement(
       if (implementationEvents.length === eventCountBeforeRun) implementationEvents.push(...agentResult.rawEvents);
       agentSubmission = agentResult.parsedResult;
       const usedIterations = Math.max(1, agentResult.iterations);
-      remainingIterations = Math.max(0, remainingIterations - usedIterations);
       threadId = agentResult.threadId ?? threadId;
       try {
         implementation = parseStudentImplementationPayload(agentResult.parsedResult, module.id, bundle);
@@ -2469,9 +2467,18 @@ export async function executeAgentImplement(
           message: errorMessage(error),
           agent_result: agentResult.parsedResult,
         };
-        if (remainingIterations === 0 || !threadId) break;
-        taskPrompt = `VOS rejected the structured implementation result before running gates. Preserve the current worktree. Use the available tools now to correct the result fields and any incomplete owned files, then run validation and resubmit status passed. Do not merely describe a known fix or immediately resubmit failed while iterations remain. This continuation shares the original 50-iteration budget; ${remainingIterations} iterations remain. Bounded validation evidence:\n${JSON.stringify(studentImplementationRepairSummary(validation), null, 2)}`;
+        if (usedIterations >= 50 || !threadId) break;
+        taskPrompt = `VOS rejected the structured implementation result before running gates. Preserve the current worktree. Use the available tools now to correct the result fields and any incomplete owned files, then run validation and resubmit status passed. Do not merely describe a known fix or immediately resubmit failed while iterations remain. This continuation keeps the same Agent thread and has the required 50-iteration maxIterations guard. Bounded validation evidence:\n${JSON.stringify(studentImplementationRepairSummary(validation), null, 2)}`;
         continue;
+      }
+
+      if (implementation.status !== "passed") {
+        validation = {
+          status: "validation_failed",
+          message: `student implementation Agent reported ${implementation.status}`,
+          agent_result: agentResult.parsedResult,
+        };
+        break;
       }
 
       const agentChanged = await studentChangedPaths(worktree);
@@ -2526,8 +2533,8 @@ export async function executeAgentImplement(
           }
         }
       }
-      if (validation.status === "passed" || validation.status === "owns_violation" || remainingIterations === 0 || !threadId) break;
-      taskPrompt = `VOS authoritative validation rejected the current implementation. Keep the existing projected test target IDs. Use the available tools now to inspect and correct the current worktree files, create every missing owned test file, run the failing commands, and resubmit status passed when every gate succeeds. A missing implementation or test file is not an external blocker. Do not merely describe a known fix or immediately resubmit failed while iterations remain. This continuation shares the original 50-iteration budget; ${remainingIterations} iterations remain. Bounded validation evidence:\n${JSON.stringify(studentImplementationRepairSummary(validation), null, 2)}`;
+      if (validation.status === "passed" || validation.status === "owns_violation" || usedIterations >= 50 || !threadId) break;
+      taskPrompt = `VOS authoritative validation rejected the current implementation. Keep the existing projected test target IDs. Use the available tools now to inspect and correct the current worktree files, create every missing owned test file, run the failing commands, and resubmit status passed when every gate succeeds. A missing implementation or test file is not an external blocker. Do not merely describe a known fix or immediately resubmit failed while iterations remain. This continuation keeps the same Agent thread and has the required 50-iteration maxIterations guard. Bounded validation evidence:\n${JSON.stringify(studentImplementationRepairSummary(validation), null, 2)}`;
     }
     if (validation.status === "passed") {
       if (!implementation) throw new CliError("implementation result disappeared before commit preparation", "failed");

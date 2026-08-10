@@ -472,8 +472,8 @@ describe("student v2 workflow", () => {
             expect(options.completionReserveIterations).toBe(20);
           } else {
             expect(options.threadId).toBe("repair-thread");
-            expect(options.maxIterations).toBe(5);
-            expect(options.completionReserveIterations).toBe(2);
+            expect(options.maxIterations).toBe(50);
+            expect(options.completionReserveIterations).toBe(20);
             expect(options.task).toContain("authoritative validation rejected");
             expect(options.task).toContain("Do not merely describe a known fix");
             expect(options.task).toContain("generated-public-memory");
