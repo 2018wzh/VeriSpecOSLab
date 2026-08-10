@@ -365,11 +365,14 @@ Start the server:
 vos-agent serve --host 127.0.0.1 --port 8787
 ```
 
-or through the CLI wrapper:
+or from the workspace development script:
 
 ```sh
-vos agent serve --host 127.0.0.1 --port 8787
+bun run dev:agent
 ```
+
+The HTTP service is an internal integration surface retained for Portal. It is
+not part of the student `vos` command set.
 
 ### `POST /api/v1/agent/profile`
 
