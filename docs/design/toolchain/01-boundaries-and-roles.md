@@ -21,6 +21,8 @@ runners:
     env: [PATH]
     timeout: 30000
     artifacts: [.vos/qemu/serial.log]
+    success_pattern: 'BOOT_OK(?:\r?\n|$)'
+    failure_pattern: 'panic|PANIC|fatal|FATAL'
   hardware:
     program: ./tools/flash
     args: [--board, virt-board]

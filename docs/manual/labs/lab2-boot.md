@@ -275,6 +275,8 @@ runners:
     artifacts:
       - build/qemu-boot.log
     workload: boot-smoke
+    success_pattern: 'XV6_BOOT_OK(?:\r?\n|$)'
+    failure_pattern: 'panic|PANIC|fatal|FATAL|unexpected trap'
 checks:
   boot_banner:
     kind: public
@@ -287,7 +289,7 @@ checks:
       - kernel/boot
 ```
 
-示例中的程序名、镜像参数和产物路径必须按所选平台调整。所有 `cwd` 与 artifact 都是仓库相对路径；`env` 只是允许继承的变量名。QEMU 建议使用非图形串口，避免图形界面让日志采集失去确定性。
+示例中的程序名、镜像参数、成功/失败模式和产物路径必须按所选平台调整。所有 `cwd` 与 artifact 都是仓库相对路径；`env` 只是允许继承的变量名。QEMU 建议使用非图形串口，避免图形界面让日志采集失去确定性。成功模式应匹配完整、稳定的完成标记，失败模式则覆盖 panic、致命错误和未预期 trap。两者都没命中时，超时仍会单独报告为 `timed_out`。
 
 ### 步骤 4：先验证 Spec 和构建投影
 

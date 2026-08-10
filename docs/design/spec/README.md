@@ -66,4 +66,6 @@ env: [RUSTUP_TOOLCHAIN]
 timeout: 120000
 ```
 
-build、QEMU、hardware、public/contract/fuzz/trace 目标可以声明产物；每个测试目标必须列出其验证的稳定 Spec ID。知识来源不写入 `vos.yaml`，由 `vos kb add/list/search/remove/clear/export-manifest/import-manifest` 管理，并在 `.vos/kb/` 中保存来源、revision 和 content hash。实际运行通过 Bun argv API，不把这些字段拼成 shell 字符串。
+build、QEMU、hardware、public/contract/fuzz/trace 目标可以声明产物；每个测试目标必须列出其验证的稳定 Spec ID。QEMU 目标还可以声明 `success_pattern` 和 `failure_pattern`。串口输出命中失败模式时立即失败，命中成功模式时立即结束本次运行；配置了成功模式却在退出前没有命中，也按失败处理。超时仍是独立终态，不会被算作成功。
+
+知识来源不写入 `vos.yaml`，由 `vos kb add/list/search/remove/clear/export-manifest/import-manifest` 管理，并在 `.vos/kb/` 中保存来源、revision 和 content hash。实际运行通过 Bun argv API，不把这些字段拼成 shell 字符串。

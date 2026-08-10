@@ -16,4 +16,4 @@
 
 ## `vos.yaml`
 
-`version: vos.project.v1`、`build`、`runners.qemu`、`runners.hardware`、`checks.<id>`。命令 target 使用 `program`、`args`、`cwd`、`env`、`timeout`；build/runner 可声明 `artifacts`，check 必须声明 `verifies` 稳定 Spec ID。KB 来源不写进 `vos.yaml`，统一使用 `vos kb` 命令管理。
+`version: vos.project.v1`、`build`、`runners.qemu`、`runners.hardware`、`checks.<id>`。命令 target 使用 `program`、`args`、`cwd`、`env`、`timeout`；build/runner 可声明 `artifacts`，check 必须声明 `verifies` 稳定 Spec ID。QEMU runner 可另加 `success_pattern` 和 `failure_pattern`，用串口输出区分成功、panic/故障与超时。两个字段都必须是有效的正则表达式。KB 来源不写进 `vos.yaml`，统一使用 `vos kb` 命令管理。

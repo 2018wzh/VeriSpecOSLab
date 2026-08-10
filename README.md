@@ -37,7 +37,7 @@ vos agent review design
 - `spec/interfaces/<interface>.yaml`：syscall、IPC、驱动和用户/内核 ABI 等跨边界接口。
 - `spec/goals/<goal>.yaml`：可选的性能、兼容性和形式化目标。
 - `spec/patches/<patch>.yaml`：架构或跨模块语义变化的手写影响声明。
-- `vos.yaml`：工具链 ModuleSpec 的执行投影，只允许结构化 `program + args + cwd + env allowlist + timeout`、runner、测试 target、产物和稳定 Spec ID。知识库来源由 `vos kb` 命令管理。
+- `vos.yaml`：工具链 ModuleSpec 的执行投影，只允许结构化 `program + args + cwd + env allowlist + timeout`、runner、测试 target、产物和稳定 Spec ID。QEMU runner 可用 `success_pattern` 与 `failure_pattern` 区分成功、故障和超时。知识库来源由 `vos kb` 命令管理。
 
 ModuleSpec 的 `level` 为 L1/L2/L3。缺少高等级字段只产生警告；`vos spec lint` 确定性检查 schema、引用、路径、等级、`owns` 和 `vos.yaml` 映射。`owns` 必须是仓库相对路径，并覆盖模块实现与测试。Agent 实现只能触及目标模块与已提交 SpecPatch 影响模块的 owns 并集。
 
