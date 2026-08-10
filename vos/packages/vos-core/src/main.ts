@@ -1010,6 +1010,8 @@ async function ensureStudentProjectFiles(projectRoot: string): Promise<void> {
       "    env: []",
       "    timeout: 30000",
       "    artifacts: []",
+      "    success_pattern: '[0-9]+[.][0-9]+[.][0-9]+'",
+      "    failure_pattern: '[Ee]rror|[Ff]ailed|panic'",
       "  hardware:",
       "    program: bun",
       "    args: [--version]",

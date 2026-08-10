@@ -371,6 +371,20 @@ export const projectManifestSchema = z.object({
     }
   }
   const qemu = manifest.runners.qemu;
+  if (qemu && !qemu.success_pattern) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["runners", "qemu", "success_pattern"],
+      message: "QEMU runners require a serial success_pattern",
+    });
+  }
+  if (qemu && !qemu.failure_pattern) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["runners", "qemu", "failure_pattern"],
+      message: "QEMU runners require a serial failure_pattern",
+    });
+  }
   for (const [path, target] of [["build", manifest.build], ["hardware", manifest.runners.hardware]] as const) {
     if (!target) continue;
     if (target.success_pattern !== undefined || target.failure_pattern !== undefined) {

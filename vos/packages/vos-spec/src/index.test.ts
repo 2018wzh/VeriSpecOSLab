@@ -66,7 +66,7 @@ describe("vos-spec semantic bundle", () => {
     await writeFile(path.join(root, "vos.yaml"), [
       "version: vos.project.v1",
       "build: { program: bun, args: [--version], cwd: ., env: [], timeout: 1000, artifacts: [build/kernel.elf] }",
-      "runners: { qemu: { program: bun, args: [--version], cwd: ., env: [], timeout: 1000, artifacts: [] } }",
+      "runners: { qemu: { program: bun, args: [--version], cwd: ., env: [], timeout: 1000, artifacts: [], success_pattern: '[0-9]+[.][0-9]+[.][0-9]+', failure_pattern: 'error|failed|panic' } }",
       "checks: { public-memory: { program: bun, args: [--version], cwd: ., env: [], timeout: 1000, verifies: [kernel/memory] } }",
       "",
     ].join("\n"));
@@ -200,6 +200,12 @@ describe("vos-spec semantic bundle", () => {
       runners: { qemu: { program: "qemu-system-riscv64", args: [] } },
       checks: {},
     })).toThrow(/-nographic|knowledge/i);
+    expect(() => parseProjectManifest({
+      version: "vos.project.v1",
+      build: { program: "bun", args: [] },
+      runners: { qemu: { program: "make", args: ["qemu"] } },
+      checks: {},
+    })).toThrow(/success_pattern|failure_pattern/i);
     expect(() => parseProjectManifest({
       version: "vos.project.v1",
       build: { program: "bun", args: [] },
