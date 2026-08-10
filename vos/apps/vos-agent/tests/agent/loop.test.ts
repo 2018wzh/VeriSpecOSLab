@@ -303,6 +303,29 @@ describe("runAgent", () => {
     });
   });
 
+  test("executes the required completion tool when a provider adds an extra final tool call", async () => {
+    const { tool: submitTool, calls: submissions } = recordingTool("Submit", ["accepted"]);
+    const { tool: writeTool, calls: writes } = recordingTool("Write", ["OK"]);
+    const chat = new ScriptedChatClient([
+      toolCallResponse([
+        { name: "Write", args: { file_path: "late.txt" } },
+        { name: "Submit", args: { status: "partial" } },
+      ]),
+    ]);
+    const result = await runAgent({
+      model: TEST_MODEL,
+      chat,
+      registry: new ToolRegistry([writeTool, submitTool]),
+      prompt: "implement",
+      maxIterations: 1,
+      requiredCompletionTool: "Submit",
+    });
+
+    expect(result.iterations).toBe(1);
+    expect(submissions).toHaveLength(1);
+    expect(writes).toHaveLength(0);
+  });
+
   test("prepends an optional system prompt", async () => {
     const chat = new ScriptedChatClient([textResponse("ok")]);
     const registry = new ToolRegistry();

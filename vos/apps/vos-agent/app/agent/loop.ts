@@ -247,7 +247,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     await onEvent?.({ type: "assistant.message", iteration, message });
     throwIfAborted(signal);
 
-    const toolCalls = message.tool_calls;
+    let toolCalls = message.tool_calls;
     if (!toolCalls || toolCalls.length === 0) {
       if (requiredCompletionTool && !completionToolAccepted) {
         if (iteration === maxIterations) {
@@ -265,12 +265,21 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       return { content: message.content, messages, iterations: iteration };
     }
 
-    if (iteration === maxIterations && (!requiredCompletionTool || toolCalls.some((call) =>
-      call.type !== "function" || call.function.name !== requiredCompletionTool
-    ))) {
-      throw new Error(
-        `agent loop reached max iterations (${maxIterations}) before tool calls could be completed`,
+    if (iteration === maxIterations) {
+      if (!requiredCompletionTool) {
+        throw new Error(
+          `agent loop reached max iterations (${maxIterations}) before tool calls could be completed`,
+        );
+      }
+      const completionCalls = toolCalls.filter((call) =>
+        call.type === "function" && call.function.name === requiredCompletionTool
       );
+      if (completionCalls.length === 0) {
+        throw new Error(
+          `agent loop reached max iterations (${maxIterations}) before tool calls could be completed`,
+        );
+      }
+      toolCalls = completionCalls;
     }
 
     for (const call of toolCalls) {
