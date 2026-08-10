@@ -259,6 +259,7 @@ describe("student v2 workflow", () => {
           expect(options.task).toContain('use env: ["PATH"] for every target');
           expect(options.task).toContain("hidden tests that resolve host tools also require PATH in env");
           expect(options.task).toContain("This is an implementation task, not a planning task");
+          expect(options.task).toContain("Do not add adjacent later-stage operations");
           expect(options.task).toContain("write the owned files, run validation, and call submit_result");
           expect(options.task).toContain("Reuse helpers under tests/public");
           mkdirSync(join(options.projectRoot, "src"), { recursive: true });
