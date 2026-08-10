@@ -247,12 +247,12 @@ describe("student v2 workflow", () => {
           expect(options.task).toContain('"contract-memory"');
           expect(options.task).toContain('"public-memory"');
           expect(options.task).toContain("Choose new module-prefixed IDs");
-          expect(options.task).toContain("hard 150-iteration maxIterations guard");
-          expect(options.task).toContain("all four non-hidden test kinds by iteration 70");
-          expect(options.task).toContain("iteration-131 checkpoint");
+          expect(options.task).toContain("hard 300-iteration maxIterations guard");
+          expect(options.task).toContain("all four non-hidden test kinds by iteration 140");
+          expect(options.task).toContain("iteration-261 checkpoint");
           expect(options.task).toContain("verify that every proposed command path exists");
           expect(options.task).toContain("timeout is an integer number of milliseconds");
-          expect(options.completionReserveIterations).toBe(20);
+          expect(options.completionReserveIterations).toBe(40);
           expect(options.task).toContain("Do not call submit_result with failed, partial, or blocked status");
           expect(options.task).toContain("Batch independent Read/Write/Bash calls");
           expect(options.task).toContain("Do not inspect parent or sibling directories");
@@ -507,12 +507,12 @@ describe("student v2 workflow", () => {
           const proposal = implementationResult();
           if (turn === 1) {
             proposal.test_targets[0]!.args = ["-e", "process.exit(1)"];
-            expect(options.maxIterations).toBe(150);
-            expect(options.completionReserveIterations).toBe(20);
+            expect(options.maxIterations).toBe(300);
+            expect(options.completionReserveIterations).toBe(40);
           } else {
             expect(options.threadId).toBe("repair-thread");
-            expect(options.maxIterations).toBe(150);
-            expect(options.completionReserveIterations).toBe(20);
+            expect(options.maxIterations).toBe(300);
+            expect(options.completionReserveIterations).toBe(40);
             expect(options.task).toContain("authoritative validation rejected");
             expect(options.task).toContain("Do not merely describe a known fix");
             expect(options.task).toContain("generated-public-memory");

@@ -187,9 +187,9 @@ Full test guide: [docs/testing.md](docs/testing.md).
   `bun test`. Don't claim integration with a real LLM unless you
   actually ran it.
 - The agent loop has `maxIterations` (default 50). Student implementation
-  tasks set a 150-iteration hard limit at the `vos-core` call site. Their
-  structured submission checkpoint starts at iteration 131; a rejected payload
-  restores full repair tools through iteration 149 and iteration 150 forces the
+  tasks set a 300-iteration hard limit at the `vos-core` call site. Their
+  structured submission checkpoint starts at iteration 261; a rejected payload
+  restores full repair tools through iteration 299 and iteration 300 forces the
   corrected resubmission. Do not remove the guard.
 - New env vars use a meaningful prefix: `OPENAI_*`/`ANTHROPIC_*` for
   provider settings, a project prefix for cross-cutting settings.
