@@ -246,9 +246,10 @@ describe("student v2 workflow", () => {
           expect(options.task).toContain('"public-memory"');
           expect(options.task).toContain("Choose new module-prefixed IDs");
           expect(options.task).toContain("hard 50-iteration limit");
-          expect(options.task).toContain("write the implementation and every non-hidden test by iteration 24");
-          expect(options.task).toContain("submit by iteration 45");
-          expect(options.completionReserveIterations).toBe(6);
+          expect(options.task).toContain("write the implementation and every non-hidden test by iteration 20");
+          expect(options.task).toContain("submit by iteration 38");
+          expect(options.task).toContain("verify that every proposed command path exists");
+          expect(options.completionReserveIterations).toBe(12);
           expect(options.task).toContain("Never spend more than five iterations debugging one failed command");
           expect(options.task).toContain("Batch independent Read/Write/Bash calls");
           expect(options.task).toContain("Do not inspect parent or sibling directories");
@@ -466,7 +467,7 @@ describe("student v2 workflow", () => {
           if (turn === 1) {
             proposal.test_targets[0]!.args = ["-e", "process.exit(1)"];
             expect(options.maxIterations).toBe(50);
-            expect(options.completionReserveIterations).toBe(6);
+            expect(options.completionReserveIterations).toBe(12);
           } else {
             expect(options.threadId).toBe("repair-thread");
             expect(options.maxIterations).toBe(5);
