@@ -628,6 +628,33 @@ describe("student v2 workflow", () => {
       expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
     });
   }, 30_000);
+
+  test("restores Agent manifest edits and projects structured targets exactly once", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+          writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 0;\n");
+          writeFileSync(join(options.projectRoot, "vos.yaml"), `${readFileSync(join(options.projectRoot, "vos.yaml"), "utf8")}  generated-public-memory: { program: bun, args: [--version], cwd: ., env: [], timeout: 30000, verifies: [memory] }\n`);
+          return {
+            content: "implemented with an unauthorized manifest edit",
+            events: acceptedSubmitEvents("student_implementation_result.v1", implementationResult()),
+          };
+        },
+      });
+
+      expect(result.status).toBe("passed");
+      expect(result.details?.validation.policy_corrections).toEqual([
+        expect.objectContaining({ policy: "manifest_projection_owned_by_vos", action: "restored_vos_yaml" }),
+      ]);
+      const manifest = readFileSync(join(root, "vos.yaml"), "utf8");
+      expect(manifest.match(/generated-public-memory:/g)).toHaveLength(1);
+      expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
+    });
+  }, 120_000);
 });
 
 function makeRoot(): string {

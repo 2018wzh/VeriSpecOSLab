@@ -2455,6 +2455,7 @@ export async function executeAgentImplement(
   let agentSubmission: unknown;
   let implementationEvents: Array<Record<string, unknown>> = [];
   let implementationCommit = "";
+  const policyCorrections: Array<Record<string, unknown>> = [];
   const commitMessage = `[vos][agent] Implement ${module.module}\n\nRun-ID: ${evidence.run_id}\nSpec-Hash: ${specHash}`;
   try {
     const progress = createAgentProgressParams(context, "agent implement");
@@ -2464,6 +2465,8 @@ export async function executeAgentImplement(
     let threadId: string | undefined;
     const projectedTargetIds = new Set<string>();
     while (true) {
+      const manifestPath = path.join(worktree, "vos.yaml");
+      const manifestBeforeAgent = await readFile(manifestPath, "utf8");
       const eventCountBeforeRun = implementationEvents.length;
       const agentResult = await runAgentWithPrompt({
         projectRoot: worktree,
@@ -2488,6 +2491,16 @@ export async function executeAgentImplement(
       agentSubmission = agentResult.parsedResult;
       const usedIterations = Math.max(1, agentResult.iterations);
       threadId = agentResult.threadId ?? threadId;
+      const manifestAfterAgent = await readFile(manifestPath, "utf8");
+      if (manifestAfterAgent !== manifestBeforeAgent) {
+        await writeFile(manifestPath, manifestBeforeAgent);
+        policyCorrections.push({
+          policy: "manifest_projection_owned_by_vos",
+          action: "restored_vos_yaml",
+          thread_id: threadId,
+          iteration: usedIterations,
+        });
+      }
       try {
         implementation = parseStudentImplementationPayload(agentResult.parsedResult, module.id, bundle);
       } catch (error) {
@@ -2604,6 +2617,8 @@ export async function executeAgentImplement(
   } finally {
     await removeStudentWorktree(projectRoot, worktree);
   }
+
+  if (policyCorrections.length > 0) validation.policy_corrections = policyCorrections;
 
   await writeStudentAgentArtifact(projectRoot, evidence, "implement", {
     module: module.id,
