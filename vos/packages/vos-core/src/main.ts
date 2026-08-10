@@ -1418,6 +1418,7 @@ async function executeStudentDoctor(context: ExecContext, evidence: EvidenceWrit
         message: tool.purpose,
         spec_refs: tool.spec_refs,
         probe_ids: tool.probe_ids,
+        probes: tool.probes,
         suggestions: tool.suggestions,
       });
     }
@@ -1461,7 +1462,14 @@ interface DoctorDiagnosisTool {
   status: "installed" | "missing" | "failed";
   spec_refs: string[];
   probe_ids: string[];
+  probes: DoctorProbeEvidence[];
   suggestions: string[];
+}
+
+interface DoctorProbeEvidence {
+  id: string;
+  command: string;
+  result: string;
 }
 
 interface DoctorDiagnosis {
@@ -1474,10 +1482,23 @@ function parseDoctorDiagnosis(value: unknown, events: Array<Record<string, unkno
   if (!isRecord(value) || typeof value.summary !== "string" || !Array.isArray(value.tools) || !Array.isArray(value.limitations) || !value.limitations.every((item) => typeof item === "string")) {
     throw new AgentOutputError("doctor diagnosis does not match doctor_diagnosis.v1");
   }
-  const bashResults = new Set(events.flatMap((event) => {
-    if (event.type !== "tool.result" || event.name !== "Bash" || typeof event.toolCallId !== "string") return [];
-    return [event.toolCallId];
-  }));
+  const bashCalls = new Map<string, string>();
+  const bashResults = new Map<string, string>();
+  for (const event of events) {
+    if (event.name !== "Bash" || typeof event.id !== "string") continue;
+    if (event.type === "tool.call" && typeof event.arguments === "string") {
+      let command: unknown;
+      try {
+        command = (JSON.parse(event.arguments) as Record<string, unknown>).command;
+      } catch {
+        command = undefined;
+      }
+      if (typeof command === "string") bashCalls.set(event.id, command);
+    }
+    if (event.type === "tool.result" && typeof event.content === "string") {
+      bashResults.set(event.id, event.content);
+    }
+  }
   const tools = value.tools.map((raw, index): DoctorDiagnosisTool => {
     if (!isRecord(raw) || typeof raw.program !== "string" || typeof raw.purpose !== "string" || typeof raw.required !== "boolean" ||
       !["installed", "missing", "failed"].includes(String(raw.status)) || !Array.isArray(raw.spec_refs) || !raw.spec_refs.every((item) => typeof item === "string") ||
@@ -1485,10 +1506,17 @@ function parseDoctorDiagnosis(value: unknown, events: Array<Record<string, unkno
       throw new AgentOutputError(`doctor diagnosis tool ${index} is invalid`);
     }
     if (raw.spec_refs.length === 0) throw new AgentOutputError(`doctor diagnosis tool ${raw.program} has no Spec basis`);
-    if (raw.probe_ids.length === 0 || raw.probe_ids.some((id) => !bashResults.has(id))) {
+    if (raw.probe_ids.length === 0 || raw.probe_ids.some((id) => !bashCalls.has(id) || !bashResults.has(id))) {
       throw new AgentOutputError(`doctor diagnosis tool ${raw.program} is not bound to actual Bash evidence`);
     }
-    return raw as unknown as DoctorDiagnosisTool;
+    return {
+      ...raw,
+      probes: raw.probe_ids.map((id) => ({
+        id,
+        command: bashCalls.get(id)!,
+        result: bashResults.get(id)!,
+      })),
+    } as unknown as DoctorDiagnosisTool;
   });
   return { summary: value.summary, tools, limitations: value.limitations as string[] };
 }
@@ -2432,7 +2460,7 @@ export async function executeAgentImplement(
     const progress = createAgentProgressParams(context, "agent implement");
     const initialPrompt = `Implement ModuleSpec ${module.id}. Work only within these owned paths: ${ownedPaths.join(", ")}. Generate the implementation plus concrete public, contract, fixed-seed bounded fuzz, bounded trace/oracle, and local hidden tests for this module. Test source paths must also be covered by owns. This is an implementation task, not a planning task: do not stop after describing a plan; write the owned files, run validation, and call submit_result. Read only the current project root: its Spec, vos.yaml, owned files, and public test framework. Reuse helpers under tests/public and do not reimplement them in generated tests. Do not inspect parent or sibling directories, other checkouts/worktrees, VOS implementation source, Git history, old Lab implementations/diffs, or previous .vos runs; the current Spec and the result contract below are the complete authority. Do not perform repo-wide schema searches or toolchain discovery. Do not edit vos.yaml: return structured test_targets and hidden_tests so VOS can validate and project them atomically. Existing test target IDs are immutable and MUST NOT be proposed again: ${JSON.stringify(existingTargetIds)}. Choose new module-prefixed IDs that do not collide with that list. Each test_targets entry is {id, kind, program, args, cwd, env, timeout, verifies, artifacts}; timeout is an integer number of milliseconds and must be at least 1000 (for example 60000 for 60 seconds); use env: [\"PATH\"] for every target whose program or script resolves host tools by name. Fuzz additionally requires seed, cases, reproduction_artifact; trace additionally requires workload and oracle. Each hidden_tests entry is {id, path, content, program, args, cwd, env, timeout, verifies, seed} with the same millisecond timeout rule, and args may use {hidden_test}; hidden tests that resolve host tools also require PATH in env. Every verifies list must include ${module.id}. Hidden test content is returned in the result and must not be written into Git. Each implementation or evidence-driven repair turn retains the Agent runtime's required hard 50-iteration maxIterations guard. Finish discovery by iteration 5, write the implementation and every non-hidden test by iteration 12, verify that every proposed command path exists, and submit by iteration 30 so VOS can run authoritative gates and return bounded failures to the same thread. Batch independent Read/Write/Bash calls in the same response. Never spend more than five iterations debugging one failed command: either fix it, choose a simpler Spec-compliant implementation, or submit a failed result with the root cause. Do not spend iterations investigating harmless output formatting after the declared oracle passes. Run useful local checks, but VOS will independently run the build and every existing and proposed non-hidden target before applying anything. Do not edit specs, .git, .vos, or worktrees. Stop when evidence is complete or report the root cause.`;
     let taskPrompt = `${initialPrompt}\nImplement only operations and behavior explicitly declared by the target ModuleSpec. Do not implement another newly declared ModuleSpec even when a committed SpecPatch makes its owned paths writable; cross-module access exists only for the smallest integration edit required by this target. Scope every proposed test and hidden test to this target and already-implemented dependencies, never to a sibling module that has not landed yet. Do not add adjacent later-stage operations merely because a reference OS commonly includes them; choose the smallest complete composition that satisfies the current Spec. Prefer WriteFiles to create a related implementation or test-file batch in one tool call. A missing implementation or test file is not an external blocker: create it with the available tools and do not submit failed merely because owned work remains.`;
-    taskPrompt += "\nThe earlier iteration-30 submission guidance is superseded: finish implementation and tests, then submit no later than iteration 49. The hard maxIterations value remains 50; only its final iteration is reserved for a required structured submission if the Agent has not submitted sooner.";
+    taskPrompt += "\nThe earlier iteration-30 submission guidance is superseded: finish implementation and tests, then submit no later than iteration 48. The hard maxIterations value remains 50; iteration 49 is reserved for a required structured submission and iteration 50 only for correcting a schema-rejected submission.";
     let threadId: string | undefined;
     const projectedTargetIds = new Set<string>();
     while (true) {
@@ -2448,7 +2476,7 @@ export async function executeAgentImplement(
         courseMode: false,
         threadId,
         maxIterations: 50,
-        completionReserveIterations: 1,
+        completionReserveIterations: 2,
         resultSubmissionSchema: "student_implementation_result.v1",
         taskRunner: context.agentRunner,
         onEvent: async (event) => {

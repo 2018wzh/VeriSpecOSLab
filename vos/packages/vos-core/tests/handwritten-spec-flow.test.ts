@@ -81,6 +81,11 @@ describe("handwritten Spec teaching flow", () => {
     });
     expect(required.status).toBe("validation_failed");
     expect(required.details?.missing).toContain("agent-tool:riscv64-unknown-elf-gcc");
+    expect(required.details?.diagnosis.tools[0].probes).toEqual([{
+      id: "probe-1",
+      command: "riscv64-unknown-elf-gcc --version",
+      result: "command not found",
+    }]);
 
     const optional = await invokeWithAgent(root, ["doctor"], async () => doctorEvents({ required: false, status: "missing" }));
     expect(optional.status).toBe("passed");
@@ -182,7 +187,8 @@ function doctorEvents(tool: { required: boolean; status: "installed" | "missing"
   return {
     content: "doctor",
     events: [
-      { type: "tool.result", toolCallId: "probe-1", name: "Bash", content: "command not found" },
+      { type: "tool.call", id: "probe-1", name: "Bash", arguments: JSON.stringify({ command: "riscv64-unknown-elf-gcc --version" }) },
+      { type: "tool.result", id: "probe-1", name: "Bash", content: "command not found" },
       ...submitted("doctor_diagnosis.v1", {
         summary: "tool probe complete",
         tools: [{
