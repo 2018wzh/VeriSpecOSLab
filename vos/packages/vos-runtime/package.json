@@ -5,6 +5,10 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "dependencies": {
+    "vos-spec": "workspace:*",
+    "yaml": "^2.9.0"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test"

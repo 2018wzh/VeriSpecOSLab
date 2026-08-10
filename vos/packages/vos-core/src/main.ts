@@ -106,7 +106,7 @@ import {
   type DebugTraceInput,
 } from "./runtime/debug-trace.ts";
 import { resolveToolchainManifestPath } from "./runtime/toolchain-manifest.ts";
-import { HardwareRunner, HostRunner, ManifestRunner, QemuRunner, readStudentManifest, runStructuredStudentCommand } from "./runtime/student-runner.ts";
+import { HardwareRunner, HostRunner, ManifestRunner, QemuRunner, readStudentManifest, runStructuredStudentCommand } from "vos-runtime";
 import { runCommand } from "./runtime/executor.ts";
 import { buildContextBundle, loadAgentAllowedPaths } from "./agent/context.ts";
 import {
@@ -830,88 +830,11 @@ async function collectRunMetadata(projectRoot: string, command: CliCommand): Pro
       ...(manifestText.length === 0 ? { specHash: undefined } : {}),
     };
   }
-  const specHash = await computeToolchainSpecHash(projectRoot);
-  const metadata: {
-    specHash?: string;
-    inputFiles?: string[];
-    outputFiles?: string[];
-    testsRun?: string[];
-  } = {
-    specHash,
-  };
-  const manifestPath = await resolveToolchainManifestPath({ projectRoot }).catch(() => undefined);
-  if (!manifestPath || !existsSync(manifestPath)) {
-    return metadata;
-  }
-  const raw = await readFile(manifestPath, "utf8").catch(() => undefined);
-  const manifest = raw ? safeJsonTryParse(raw) as Record<string, unknown> | undefined : undefined;
-  if (!manifest || typeof manifest !== "object") {
-    return metadata;
-  }
-  const files = collectStringArray(manifest.files);
-  metadata.inputFiles = [...new Set([".vos/toolchain.json", ...files])];
-  metadata.outputFiles = collectManifestOutputFiles(manifest);
-  metadata.testsRun = collectManifestTests(command, manifest);
-  metadata.specHash = typeof manifest.spec_hash === "string" && manifest.spec_hash.trim()
-    ? manifest.spec_hash.trim()
-    : metadata.specHash;
-  return metadata;
-}
-
-async function computeToolchainSpecHash(projectRoot: string): Promise<string | undefined> {
-  const specRoot = path.join(projectRoot, "spec", "toolchain");
-  if (!existsSync(specRoot)) return undefined;
-  const files = await listFiles(specRoot);
-  if (files.length === 0) return undefined;
-  const hash = createHash("sha256");
-  for (const file of files.sort()) {
-    const rel = path.relative(projectRoot, file).replace(/\\/g, "/");
-    hash.update(rel);
-    hash.update("\0");
-    hash.update(await readFile(file));
-    hash.update("\0");
-  }
-  return hash.digest("hex");
-}
-
-async function listFiles(root: string): Promise<string[]> {
-  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
-  const files: string[] = [];
-  for (const entry of entries) {
-    const fullPath = path.join(root, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...await listFiles(fullPath));
-    } else if (entry.isFile()) {
-      files.push(fullPath);
-    }
-  }
-  return files;
+  return {};
 }
 
 function collectStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
-}
-
-function collectManifestOutputFiles(manifest: Record<string, unknown>): string[] {
-  const variants = (manifest.build as { variants?: Array<{ artifacts?: unknown }> } | undefined)?.variants ?? [];
-  const out = variants.flatMap((variant) => collectStringArray(variant.artifacts));
-  return [...new Set(out)];
-}
-
-function collectManifestTests(command: CliCommand, manifest: Record<string, unknown>): string[] {
-  if (command.kind !== "test" && !(command.kind === "verify" && command.scope === "public")) {
-    return [];
-  }
-  if (command.kind === "test" && command.suites.length > 0) {
-    return [...command.suites];
-  }
-  const suites = (manifest.test as { suites?: unknown } | undefined)?.suites;
-  if (Array.isArray(suites)) {
-    return suites
-      .map((suite) => suite && typeof suite === "object" ? (suite as { name?: unknown }).name : undefined)
-      .filter((name): name is string => typeof name === "string");
-  }
-  return collectStringArray(manifest.tests);
 }
 
 function isReproBypassCommand(command: CliCommand): boolean {

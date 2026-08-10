@@ -157,6 +157,10 @@
     "packages/vos-runtime": {
       "name": "vos-runtime",
       "version": "0.1.0",
+      "dependencies": {
+        "vos-spec": "workspace:*",
+        "yaml": "^2.9.0",
+      },
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "^5.9.3",
