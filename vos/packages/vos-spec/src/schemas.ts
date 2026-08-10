@@ -285,6 +285,8 @@ const targetSchema = z.preprocess(
     board: z.string().min(1).optional(),
     serial: z.string().min(1).optional(),
     workload: z.string().min(1).optional(),
+    success_pattern: z.string().min(1).optional(),
+    failure_pattern: z.string().min(1).optional(),
   }).strict(),
 );
 
@@ -366,5 +368,17 @@ export const projectManifestSchema = z.object({
   const qemu = manifest.runners.qemu;
   if (qemu && /qemu-system/i.test(qemu.program) && !qemu.args.includes("-nographic")) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["runners", "qemu", "args"], message: "QEMU targets must include -nographic for serial-only evidence" });
+  }
+  for (const [field, pattern] of [["success_pattern", qemu?.success_pattern], ["failure_pattern", qemu?.failure_pattern]] as const) {
+    if (!pattern) continue;
+    try {
+      new RegExp(pattern);
+    } catch (error) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["runners", "qemu", field],
+        message: `QEMU ${field} must be a valid regular expression: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
   }
 });

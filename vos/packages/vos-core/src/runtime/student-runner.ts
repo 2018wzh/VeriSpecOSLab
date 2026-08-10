@@ -13,6 +13,10 @@ export interface BuildEvidence {
   durationMs: number;
   artifacts: string[];
   submittable: boolean;
+  oracle?: {
+    outcome: "success" | "failure" | "missing";
+    pattern: string;
+  };
 }
 
 export interface RunEvidence extends BuildEvidence {
@@ -47,6 +51,8 @@ interface TargetCommand {
   board?: string;
   serial?: string;
   workload?: string;
+  successPattern?: string;
+  failurePattern?: string;
 }
 
 export interface StructuredStudentCommand {
@@ -213,6 +219,8 @@ function normalizeTarget(raw: ProjectManifest["build"] | NonNullable<ProjectMani
     board: "board" in raw ? raw.board : undefined,
     serial: "serial" in raw ? raw.serial : undefined,
     workload: "workload" in raw ? raw.workload : undefined,
+    successPattern: "success_pattern" in raw ? raw.success_pattern : undefined,
+    failurePattern: "failure_pattern" in raw ? raw.failure_pattern : undefined,
   };
 }
 
@@ -260,6 +268,10 @@ async function runStructuredCommand(command: TargetCommand, projectRoot: string,
   });
   let timer: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
+  let oracle: BuildEvidence["oracle"];
+  const successPattern = command.successPattern ? new RegExp(command.successPattern) : undefined;
+  const failurePattern = command.failurePattern ? new RegExp(command.failurePattern) : undefined;
+  let combinedOutput = "";
   const timeout = command.timeout;
   const abort = () => proc.kill();
   if (signal?.aborted) abort();
@@ -271,18 +283,61 @@ async function runStructuredCommand(command: TargetCommand, projectRoot: string,
     }, timeout);
   }
   const started = Date.now();
+  const inspectOutput = (text: string) => {
+    if (oracle || text.length === 0) return;
+    combinedOutput += text;
+    if (failurePattern?.test(combinedOutput)) {
+      oracle = { outcome: "failure", pattern: command.failurePattern! };
+      proc.kill();
+      return;
+    }
+    if (successPattern?.test(combinedOutput)) {
+      oracle = { outcome: "success", pattern: command.successPattern! };
+      proc.kill();
+    }
+  };
   const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
+    readCommandStream(proc.stdout, inspectOutput),
+    readCommandStream(proc.stderr, inspectOutput),
     proc.exited,
   ]);
   if (timer) clearTimeout(timer);
   signal?.removeEventListener("abort", abort);
+  if (!oracle && successPattern) {
+    oracle = { outcome: "missing", pattern: command.successPattern! };
+  }
   return {
-    status: timedOut ? "timed_out" : exitCode === 0 ? "passed" : "failed",
+    status: timedOut
+      ? "timed_out"
+      : oracle?.outcome === "failure" || oracle?.outcome === "missing"
+        ? "failed"
+        : oracle?.outcome === "success" || exitCode === 0
+          ? "passed"
+          : "failed",
     exitCode,
     stdout,
     stderr,
     durationMs: Date.now() - started,
+    ...(oracle ? { oracle } : {}),
   };
+}
+
+async function readCommandStream(
+  stream: ReadableStream<Uint8Array>,
+  onText: (text: string) => void,
+): Promise<string> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let output = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const text = decoder.decode(value, { stream: true });
+    output += text;
+    onText(text);
+  }
+  const tail = decoder.decode();
+  output += tail;
+  onText(tail);
+  return output;
 }

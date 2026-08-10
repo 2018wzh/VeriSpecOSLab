@@ -146,6 +146,12 @@ describe("vos-spec semantic bundle", () => {
     })).toThrow(/-nographic|knowledge/i);
     expect(() => parseProjectManifest({
       version: "vos.project.v1",
+      build: { program: "bun", args: [] },
+      runners: { qemu: { program: "bun", args: [], success_pattern: "[" } },
+      checks: {},
+    })).toThrow(/valid regular expression/i);
+    expect(() => parseProjectManifest({
+      version: "vos.project.v1",
       build: { program: "bun", args: [], cwd: "../outside" },
       runners: {},
       checks: {},
