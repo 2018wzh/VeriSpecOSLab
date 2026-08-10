@@ -299,7 +299,7 @@ describe("runAgent", () => {
     expect(calls).toHaveLength(2);
     expect(chat.requests[1].messages.at(-1)).toMatchObject({
       role: "user",
-      content: expect.stringContaining("Correct any validation errors"),
+      content: expect.stringContaining("final repair and resubmission turn"),
     });
   });
 
@@ -332,7 +332,34 @@ describe("runAgent", () => {
     expect(chat.requests[2].tools.map((entry) => entry.function.name)).toEqual(["Submit"]);
   });
 
-  test("executes the required completion tool when a provider adds an extra final tool call", async () => {
+  test("allows multiple full-tool repair turns before the final submission reserve", async () => {
+    const { tool: submitTool, calls: submissions } = recordingTool("Submit", ["validation error", "accepted"]);
+    const { tool: writeTool, calls: writes } = recordingTool("Write", ["OK", "OK"]);
+    const chat = new ScriptedChatClient([
+      toolCallResponse([{ name: "Submit", args: { status: "partial" } }]),
+      toolCallResponse([{ name: "Write", args: { file_path: "implementation.c" } }]),
+      toolCallResponse([{ name: "Write", args: { file_path: "tests/public.ts" } }]),
+      toolCallResponse([{ name: "Submit", args: { status: "passed" } }]),
+    ]);
+    const result = await runAgent({
+      model: TEST_MODEL,
+      chat,
+      registry: new ToolRegistry([writeTool, submitTool]),
+      prompt: "implement",
+      maxIterations: 5,
+      completionReserveIterations: 2,
+      requiredCompletionTool: "Submit",
+    });
+
+    expect(result.iterations).toBe(4);
+    expect(submissions).toHaveLength(2);
+    expect(writes).toHaveLength(2);
+    expect(chat.requests[1].tools.map((entry) => entry.function.name)).toEqual(["Write", "Submit"]);
+    expect(chat.requests[2].tools.map((entry) => entry.function.name)).toEqual(["Write", "Submit"]);
+    expect(chat.requests[3].requiredTool).toBe("Submit");
+  });
+
+  test("executes repairs before the required completion tool on the final turn", async () => {
     const { tool: submitTool, calls: submissions } = recordingTool("Submit", ["accepted"]);
     const { tool: writeTool, calls: writes } = recordingTool("Write", ["OK"]);
     const chat = new ScriptedChatClient([
@@ -352,7 +379,7 @@ describe("runAgent", () => {
 
     expect(result.iterations).toBe(1);
     expect(submissions).toHaveLength(1);
-    expect(writes).toHaveLength(0);
+    expect(writes).toHaveLength(1);
   });
 
   test("prepends an optional system prompt", async () => {

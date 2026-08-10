@@ -215,7 +215,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     if (completionRepairTurn && requiredCompletionTool) {
       messages.push({
         role: "user",
-        content: `The previous ${requiredCompletionTool} call was rejected. Use this turn to correct the implementation or the structured payload using the full allowed tool set. Preserve the validation error exactly, do not abandon the task, and be ready to call ${requiredCompletionTool} again on the next submission turn.`,
+        content: iteration === maxIterations
+          ? `The previous ${requiredCompletionTool} call was rejected. This is the final repair and resubmission turn. Use the full allowed tool set, put any repair calls before ${requiredCompletionTool} in this same response, and resubmit a corrected result. Preserve the validation error exactly and do not abandon the task.`
+          : `The previous ${requiredCompletionTool} call was rejected. Continue correcting the implementation or structured payload with the full allowed tool set. Preserve the validation error exactly and do not abandon the task. Resubmit only after the result is complete; you are not limited to one repair turn.`,
       });
     }
     if (submissionPhase) {
@@ -289,7 +291,6 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
           `agent loop reached max iterations (${maxIterations}) before tool calls could be completed`,
         );
       }
-      toolCalls = completionCalls;
     }
 
     for (const call of toolCalls) {
