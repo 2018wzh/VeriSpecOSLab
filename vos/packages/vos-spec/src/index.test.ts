@@ -152,6 +152,12 @@ describe("vos-spec semantic bundle", () => {
     })).toThrow(/valid regular expression/i);
     expect(() => parseProjectManifest({
       version: "vos.project.v1",
+      build: { program: "bun", args: [], success_pattern: "ok" },
+      runners: {},
+      checks: {},
+    })).toThrow(/only valid for the QEMU runner/i);
+    expect(() => parseProjectManifest({
+      version: "vos.project.v1",
       build: { program: "bun", args: [], cwd: "../outside" },
       runners: {},
       checks: {},

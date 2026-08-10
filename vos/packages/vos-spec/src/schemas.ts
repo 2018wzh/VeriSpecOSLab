@@ -366,6 +366,16 @@ export const projectManifestSchema = z.object({
     }
   }
   const qemu = manifest.runners.qemu;
+  for (const [path, target] of [["build", manifest.build], ["hardware", manifest.runners.hardware]] as const) {
+    if (!target) continue;
+    if (target.success_pattern !== undefined || target.failure_pattern !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: path === "build" ? ["build"] : ["runners", "hardware"],
+        message: "success_pattern and failure_pattern are only valid for the QEMU runner",
+      });
+    }
+  }
   if (qemu && /qemu-system/i.test(qemu.program) && !qemu.args.includes("-nographic")) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["runners", "qemu", "args"], message: "QEMU targets must include -nographic for serial-only evidence" });
   }
