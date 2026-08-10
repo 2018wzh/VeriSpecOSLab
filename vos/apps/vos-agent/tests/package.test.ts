@@ -128,9 +128,10 @@ describe("package metadata", () => {
     input.write("/quit\rhello\r");
     const result = await handle.result;
 
-    expect(result.content).toBe("kb answer");
+    expect(result.content).toBeNull();
+    expect(result.structuredOutput).toMatchObject({ answer: "kb answer" });
     expect(result.agentProfile.promptId).toBe("knowledgebase.v1");
-    expect(chat.requests).toHaveLength(2);
+    expect(chat.requests).toHaveLength(1);
     expect(streamingHookSeen).toBe(true);
     expect(rawModeValues).toEqual([true, false]);
     const text = readOutput();

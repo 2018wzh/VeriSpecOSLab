@@ -124,8 +124,9 @@ describe("createBuiltinToolRegistry", () => {
       "Read",
       "Vos",
       "Write",
+      "WriteFiles",
     ]);
-    expect(reg.schemas()).toHaveLength(6);
+    expect(reg.schemas()).toHaveLength(7);
   });
 
   test("enables host Bash only for an explicitly writable implementation registry", () => {
@@ -138,6 +139,7 @@ describe("createBuiltinToolRegistry", () => {
       "Read",
       "Vos",
       "Write",
+      "WriteFiles",
     ]);
 
     const course = createBuiltinToolRegistry({ courseMode: true });
@@ -159,6 +161,7 @@ describe("createBuiltinToolRegistry", () => {
       "Task",
       "Vos",
       "Write",
+      "WriteFiles",
     ]);
   });
 
@@ -171,6 +174,7 @@ describe("createBuiltinToolRegistry", () => {
       "Grep",
       "Read",
       "Write",
+      "WriteFiles",
     ]);
     expect(reg.schemas().map((schema) => schema.function.name)).not.toContain("Vos");
     expect(await reg.execute("Vos", "{}")).toContain('Tool "Vos" denied by policy');

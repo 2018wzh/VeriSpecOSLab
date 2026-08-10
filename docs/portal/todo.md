@@ -14,7 +14,7 @@
 - [x] Core dashboard, evidence, pipeline, review, score adjustment, appeal and Q&A APIs.
 - [x] Commit-ledger-bound design revisions, auditable staff review state machine and interactive Production/Demo architecture workspace.
 - [x] Browser EventSource Q&A updates and persistent per-user notification acknowledgement UI/API.
-- [x] SKIP LOCKED worker lease and typed `vos serve` invocation with no host fallback.
+- [x] SKIP LOCKED worker lease and frozen typed runner-service invocation with no host fallback.
 - [x] Immutable course manifest dry-run/import/publish/rollback, grouped CSV enrollment and course-scoped project membership gates.
 - [x] Role-bound, expiring, bounded-use course invitation codes with hash-only Production persistence, one-time secret display, transactional redemption/audit, and versioned Demo persistence.
 - [x] Accessible course/project context enumeration and selection across API, Production transport, Demo adapter and shared shell; Q&A is explicitly bound to the selected project.
@@ -43,7 +43,7 @@
 - [x] Re-run the full connected Compose teaching cycle after migration 016, including Gitea push delivery, isolated runner execution, MinIO evidence, immutable grading and appeal closure.
 - [x] Verify real Gitea template provisioning/collaborator/webhook configuration and MinIO SigV4/checksum/metadata adapters.
 - [x] Verify a signed Gitea push delivery through Portal webhook ingestion, commit ledger update and member notification.
-- [x] Verify per-job Docker container isolation, checkout/runner network transition, resource limits, authenticated `vos serve`, no-egress and cleanup through the restricted runtime adapter.
+- [x] Verify the frozen per-job Docker runner path: container isolation, checkout/runner network transition, resource limits, authenticated runner service, no-egress and cleanup through the restricted runtime adapter.
 - [x] Run CLI device authorization, encrypted credential persistence, online `whoami`, logout and server-side revoke against HTTPS Portal and PostgreSQL.
 - [x] Complete OIDC provider integration and replay/issuer/audience/nonce verification.
 - [x] Execute a real PostgreSQL 100-student/100-project queue fixture with 20 concurrent isolated runner startups and an explicit readiness threshold.

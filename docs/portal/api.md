@@ -1,5 +1,7 @@
 # Portal API
 
+> 冻结边界：本页保留 Portal 冻结前的 API 与 runner 协议，供维护现有 typecheck、build 和 unit test 使用。学生 CLI 已删除旧 runner 服务入口，下面的 connected 路径不是当前可运行承诺。
+
 Portal Web 与控制面同源，所有当前应用接口位于 `/api/v1`。生产请求使用
 `Secure`、`HttpOnly`、`SameSite=Strict` session cookie；mutation 还必须携带
 同源 `Origin` 和与 `vos_csrf` cookie 一致的 `X-CSRF-Token`。
@@ -149,7 +151,7 @@ envelope 经受限 Docker exec 投影到 tmpfs 并在容器内解密。运行结
 
 ## Runner API 边界
 
-worker 只调用项目内 `vos serve` 的 typed API：
+冻结前的 worker 只调用项目内旧 runner HTTP 服务的 typed API：
 
 ```http
 POST /api/v1/verify/runs
@@ -167,7 +169,7 @@ worker 通过 MinIO 内部客户端上传并通过 API 的 MinIO HEAD 校验后�
 
 worker 不接受共享的静态 runner endpoint。它为每个完整 commit SHA 创建短生命周期任务
 容器：checkout 期间容器只接入 Gitea 网络，随后先断开 checkout 网络，再接入内部 runner
-网络并以非 root 身份启动 `vos serve`。除 `/health` 外，所有 `vos serve` API（包括
+网络并以非 root 身份启动旧 runner HTTP 服务。除 `/health` 外，所有 runner API（包括
 OpenAPI、run、manifest 和 artifact）都要求该任务独立的 Bearer token。
 
 校园 issuer 的实际注册和 BYOK runner 解封 connected 复验仍属于部署/产品验收范围；对象保留由 `gc`

@@ -2,7 +2,7 @@
 
 ## 边界
 
-`apps/vos-portal` 包含 client、server、worker、storage、domain 和 demo。Web 与 API 同源部署；worker 是同一应用镜像的独立进程。Portal 不读取学生 checkout、不解析 ToolchainSpec、不直接执行 QEMU，也不在 API 容器中访问容器运行时。
+`apps/vos-portal` 包含 client、server、worker、storage、domain 和 demo。Web 与 API 同源部署；worker 是同一应用镜像的独立进程。Portal 不读取学生 checkout、不解析学生 Spec 或 `vos.yaml`、不直接执行 QEMU，也不在 API 容器中访问容器运行时。
 
 > 本页保存冻结前的 Portal 架构。学生 CLI 已移除 `serve`，所以下图的 worker → `vos serve` 链路不能作为当前 connected teaching loop 可用的证据。
 

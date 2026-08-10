@@ -62,6 +62,7 @@ describe("headless profile tasks", () => {
       agentProfile: { mcpServers: [] },
       chat,
       model: "test-model",
+      maxIterations: 1,
     })).rejects.toThrow(/StructuredOutput/);
   });
 
