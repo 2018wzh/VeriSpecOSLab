@@ -1,8 +1,5 @@
 #!/usr/bin/env bun
 
-import path from "node:path";
-import { readFileSync } from "node:fs";
-import type { PolicySnapshot, PortalUserSummary } from "vos-core";
 import {
   COMMAND_VERSION,
   executeCliInvocation,
@@ -12,7 +9,6 @@ import {
   runProgressMcpServer,
 } from "vos-core";
 import { runDemoCli } from "vos-demo";
-import { startVosHttpServer } from "vos-server";
 
 async function main(): Promise<void> {
   try {
@@ -34,25 +30,6 @@ async function main(): Promise<void> {
       process.exitCode = printHelp(parsed.command.topic) ? 0 : 1;
       return;
     }
-    if (parsed.command.kind === "serve") {
-      const accessToken = process.env.VOS_SERVE_ACCESS_TOKEN;
-      const runnerIdentity = loadRunnerIdentity(process.env.VOS_RUNNER_IDENTITY_FILE);
-      delete process.env.VOS_SERVE_ACCESS_TOKEN;
-      delete process.env.VOS_RUNNER_IDENTITY_FILE;
-      const server = startVosHttpServer({
-        projectRoot: path.resolve(parsed.global.projectRoot),
-        portalUrl: parsed.command.portalUrl,
-        projectId: parsed.command.projectId,
-        host: parsed.command.host,
-        port: parsed.command.port,
-        accessToken,
-        runnerIdentity,
-      });
-      console.log(`vos serve listening on ${server.url}`);
-      await waitForStop(server.server);
-      return;
-    }
-
     const controller = new AbortController();
     const abort = () => controller.abort();
     process.once("SIGINT", abort);
@@ -66,26 +43,6 @@ async function main(): Promise<void> {
     printCliError(error, process.argv);
     process.exitCode = 1;
   }
-}
-
-function loadRunnerIdentity(file: string | undefined): { user: PortalUserSummary; policy: PolicySnapshot } | undefined {
-  if (!file) return undefined;
-  const parsed = JSON.parse(readFileSync(file, "utf8")) as { user?: PortalUserSummary; policy?: PolicySnapshot };
-  if (!parsed.user?.id || !parsed.policy?.ref || !parsed.policy.projectId || !parsed.policy.expiresAt) {
-    throw new Error("VOS_RUNNER_IDENTITY_FILE does not contain a valid runner identity and policy snapshot");
-  }
-  return { user: parsed.user, policy: parsed.policy };
-}
-
-function waitForStop(server: Bun.Server<undefined>): Promise<void> {
-  return new Promise((resolve) => {
-    const stop = () => {
-      server.stop(true);
-      resolve();
-    };
-    process.once("SIGINT", stop);
-    process.once("SIGTERM", stop);
-  });
 }
 
 export { executeCliInvocation, parseArgs, printCliError, printHelp };
