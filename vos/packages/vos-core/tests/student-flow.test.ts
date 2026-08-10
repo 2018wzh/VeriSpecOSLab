@@ -474,6 +474,7 @@ describe("student v2 workflow", () => {
             expect(options.maxIterations).toBe(5);
             expect(options.completionReserveIterations).toBe(2);
             expect(options.task).toContain("authoritative validation rejected");
+            expect(options.task).toContain("Do not merely describe a known fix");
             expect(options.task).toContain("generated-public-memory");
           }
           return {

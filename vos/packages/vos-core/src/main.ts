@@ -2470,7 +2470,7 @@ export async function executeAgentImplement(
           agent_result: agentResult.parsedResult,
         };
         if (remainingIterations === 0 || !threadId) break;
-        taskPrompt = `VOS rejected the structured implementation result before running gates. Preserve the current worktree, correct the result fields and any incomplete owned files, run validation, and resubmit status passed. This continuation shares the original 50-iteration budget; ${remainingIterations} iterations remain. Bounded validation evidence:\n${JSON.stringify(studentImplementationRepairSummary(validation), null, 2)}`;
+        taskPrompt = `VOS rejected the structured implementation result before running gates. Preserve the current worktree. Use the available tools now to correct the result fields and any incomplete owned files, then run validation and resubmit status passed. Do not merely describe a known fix or immediately resubmit failed while iterations remain. This continuation shares the original 50-iteration budget; ${remainingIterations} iterations remain. Bounded validation evidence:\n${JSON.stringify(studentImplementationRepairSummary(validation), null, 2)}`;
         continue;
       }
 
@@ -2517,7 +2517,7 @@ export async function executeAgentImplement(
         }
       }
       if (validation.status === "passed" || validation.status === "owns_violation" || remainingIterations === 0 || !threadId) break;
-      taskPrompt = `VOS authoritative validation rejected the current implementation. Keep the existing projected test target IDs, inspect and correct only the current worktree files, run the failing commands, and resubmit status passed when every gate succeeds. This continuation shares the original 50-iteration budget; ${remainingIterations} iterations remain. Bounded validation evidence:\n${JSON.stringify(studentImplementationRepairSummary(validation), null, 2)}`;
+      taskPrompt = `VOS authoritative validation rejected the current implementation. Keep the existing projected test target IDs. Use the available tools now to inspect and correct the current worktree files, run the failing commands, and resubmit status passed when every gate succeeds. Do not merely describe a known fix or immediately resubmit failed while iterations remain. This continuation shares the original 50-iteration budget; ${remainingIterations} iterations remain. Bounded validation evidence:\n${JSON.stringify(studentImplementationRepairSummary(validation), null, 2)}`;
     }
     if (validation.status === "passed") {
       if (!implementation) throw new CliError("implementation result disappeared before commit preparation", "failed");
