@@ -168,10 +168,11 @@ describe("student v2 workflow", () => {
       expect((await invoke(root, "init")).status).toBe("passed");
       const design = [
         "system: { name: student-os, language: rust, isa: riscv64 }",
-        "machine: { qemu: { machine: virt }, hardware: {} }",
+        "machine: { qemu: { machine: virt }, hardware: { board: virt-board } }",
         "kernel: { organization: monolithic, execution: preemptive, protection: paging, communication: ipc, resource_model: ownership }",
         "required_mechanisms: [syscall]",
         "composition_invariants: [all syscalls validate pointers]",
+        "non_goals: []",
         "hardware_port: { board: virt-board, boot: serial, console: uart, interrupt: plic }",
         "",
       ].join("\n");

@@ -18,10 +18,11 @@ describe("vos-spec semantic bundle", () => {
     await mkdir(path.join(root, "spec", "interfaces"), { recursive: true });
     await writeFile(path.join(root, "spec", "design.yaml"), [
       "system: { name: demo-os, language: rust, isa: riscv64 }",
-      "machine: { qemu: { machine: virt }, hardware: {} }",
+      "machine: { qemu: { machine: virt }, hardware: { board: demo } }",
       "kernel: { organization: monolithic, execution: preemptive, protection: paging, communication: ipc, resource_model: ownership }",
       "required_mechanisms: [syscall]",
       "composition_invariants: [all syscalls validate pointers]",
+      "non_goals: []",
       "hardware_port: { board: demo, boot: serial, console: uart, interrupt: plic }",
       "",
     ].join("\n"));
@@ -78,6 +79,26 @@ describe("vos-spec semantic bundle", () => {
     expect(bundle.interfaces[0]?.boundary).toBe("abi");
     expect(bundle.manifest?.checks[0]?.verifies).toEqual(["kernel/memory"]);
     expect(deriveTestMatrix(bundle).public_tests.map((test) => test.id)).toContain("public-memory");
+  });
+
+  test("rejects an incomplete DesignSpec machine projection and empty composition invariants", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vos-spec-v2-design-incomplete-"));
+    await mkdir(path.join(root, "spec"), { recursive: true });
+    await writeFile(path.join(root, "spec", "design.yaml"), [
+      "system: { name: demo-os, language: c, isa: riscv64 }",
+      "machine: { qemu: {}, hardware: {} }",
+      "kernel: { organization: monolithic, execution: serial, protection: none, communication: uart, resource_model: static }",
+      "required_mechanisms: []",
+      "composition_invariants: []",
+      "non_goals: []",
+      "hardware_port: { board: none, boot: none, console: none, interrupt: none }",
+      "",
+    ].join("\n"));
+
+    const bundle = await buildNormalizedSpecBundle({ projectRoot: root });
+    expect(hasBlockingDiagnostics(bundle.diagnostics)).toBe(true);
+    expect(bundle.diagnostics.some((diagnostic) =>
+      diagnostic.code === "schema.validation_failed" && diagnostic.path === "spec/design.yaml")).toBe(true);
   });
 
   test("reports v2 owns traversal and strict unknown fields", async () => {

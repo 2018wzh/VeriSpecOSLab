@@ -182,6 +182,11 @@ const v2OperationSchema = z.object({
   properties: z.array(v2PropertySchema).default([]),
 }).strict();
 
+const nonEmptyMachineProjectionSchema = z.record(z.unknown()).refine(
+  (value) => Object.keys(value).length > 0,
+  "machine projection must declare at least one field",
+);
+
 export const designSpecSchema = z.object({
   system: z.object({
     name: z.string().min(1),
@@ -189,8 +194,8 @@ export const designSpecSchema = z.object({
     isa: z.string().min(1),
   }).strict(),
   machine: z.object({
-    qemu: z.record(z.unknown()).optional(),
-    hardware: z.record(z.unknown()).optional(),
+    qemu: nonEmptyMachineProjectionSchema,
+    hardware: nonEmptyMachineProjectionSchema,
   }).strict(),
   kernel: z.object({
     organization: z.string().min(1),
@@ -199,9 +204,9 @@ export const designSpecSchema = z.object({
     communication: z.string().min(1),
     resource_model: z.string().min(1),
   }).strict(),
-  required_mechanisms: z.array(z.string()).default([]),
-  composition_invariants: z.array(z.string()).max(3).default([]),
-  non_goals: z.array(z.string()).default([]),
+  required_mechanisms: z.array(z.string()),
+  composition_invariants: z.array(z.string().min(1)).min(1).max(3),
+  non_goals: z.array(z.string()),
   hardware_port: z.object({
     board: z.string().min(1),
     boot: z.string().min(1),
