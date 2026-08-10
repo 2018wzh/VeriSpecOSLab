@@ -191,7 +191,15 @@ const schemas: Record<string, OutputSchemaDefinition> = {
       answer: { type: "string" },
       stage_key: { type: "string" },
       design_goal_alignment: stringArray,
-      citations: { type: "array", items: stringObject },
+      citations: {
+        type: "array",
+        items: strictObjectSchema({
+          source_id: { type: "string" },
+          title: { type: "string" },
+          object_ref: { type: "string" },
+          chunk_id: { type: "string" },
+        }, ["source_id", "title"]),
+      },
       suggested_next_steps: stringArray,
       allowed_snippets: stringArray,
     }, ["answer", "design_goal_alignment", "citations", "suggested_next_steps", "allowed_snippets"]),

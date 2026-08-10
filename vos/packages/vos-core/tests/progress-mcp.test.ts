@@ -1,8 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { appendAgentProgressInstructions } from "../src/progress/agent.ts";
 
 describe("vos-cli progress MCP server", () => {
+  test("documents the canonical knowledge-base citation contract", () => {
+    const prompt = appendAgentProgressInstructions("Answer the question.", "knowledgebase_answer.v1");
+
+    expect(prompt).toContain("{source_id, title, object_ref?, chunk_id?}");
+    expect(prompt).toContain("empty citations array when no source was used");
+  });
+
   test("lists and calls report_progress", async () => {
     const proc = spawnSync(process.execPath, [
       join(import.meta.dir, "..", "src", "progress", "mcp-entry.ts"),
