@@ -155,7 +155,7 @@ describe("agent task profiles", () => {
   });
 
   test("every read-only and code-generation profile exposes Bash with an explicit read-only boundary", async () => {
-    for (const taskKind of ["plan", "design_review", "spec_revision", "codegen", "validate", "debug", "doctor", "knowledgebase_qa", "spec_review"]) {
+    for (const taskKind of ["plan", "design_review", "spec_revision", "codegen", "validate", "debug", "student_debug", "doctor", "knowledgebase_qa", "spec_review"]) {
       const profile = resolveAgentTaskProfile({ taskKind });
       const policy = createProfileToolPolicy(profile);
       expect(await allowed(policy, "Bash")).toBe(true);
@@ -163,6 +163,16 @@ describe("agent task profiles", () => {
       expect(prompt).toContain("bounded diagnostics");
       expect(prompt).toContain("not a host security boundary");
     }
+  });
+
+  test("student debug keeps Bash diagnostics without starting GDB MCP", async () => {
+    const profile = resolveAgentTaskProfile({ taskKind: "student_debug" });
+    const policy = createProfileToolPolicy(profile);
+
+    expect(profile.promptId).toBe("student-debug-agent.v1");
+    expect(profile.skills).toEqual(["verification-diagnosis"]);
+    expect(await allowed(policy, "Bash")).toBe(true);
+    expect(await allowed(policy, "mcp__gdb__gdb_command")).toBe(false);
   });
 
   test("only debug profile can use GDB MCP tools", async () => {

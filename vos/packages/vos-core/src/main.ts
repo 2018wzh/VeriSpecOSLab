@@ -4580,7 +4580,7 @@ export async function executeAgentDebug(
     response = await runAgentWithValidatedSubmission({
       projectRoot,
       taskPrompt: agentProgress.taskPrompt(`Diagnose VOS run failure from ${path.basename(logPath)}.`),
-      taskKind: "debug",
+      taskKind: existsSync(path.join(projectRoot, "vos.yaml")) && !command.runId && !command.logPath ? "student_debug" : "debug",
       requestedScope: "agent.debug",
       context: {
         log_ref: path.basename(logPath),

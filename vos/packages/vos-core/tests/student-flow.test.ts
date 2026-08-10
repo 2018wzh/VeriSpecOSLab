@@ -138,7 +138,7 @@ describe("student v2 workflow", () => {
       const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "debug"], {
         print: false,
         agentRunner: async (options) => {
-          expect(options.taskKind).toBe("debug");
+          expect(options.taskKind).toBe("student_debug");
           expect(JSON.stringify(options.context)).toContain("CTF_BAREMETAL_OK");
           return {
             content: "diagnosed",
