@@ -50,6 +50,8 @@ export type { ReadonlyAgentDisplayHandle, ReadonlyAgentDisplayOptions };
 
 export async function runAgentWithPrompt(params: {
   projectRoot: string;
+  /** Root that owns .vos/config.toml and .env when the Agent works in a disposable worktree. */
+  configurationRoot?: string;
   taskPrompt: string;
   taskKind?: string;
   requestedScope?: string;
@@ -75,7 +77,7 @@ export async function runAgentWithPrompt(params: {
   taskRunner?: HeadlessAgentTaskRunner;
 }): Promise<AgentRunResult> {
   const bootstrap = buildAgentEnv({
-    projectRoot: params.projectRoot,
+    projectRoot: params.configurationRoot ?? params.projectRoot,
     env: process.env,
   });
 

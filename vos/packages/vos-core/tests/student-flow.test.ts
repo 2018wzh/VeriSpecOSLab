@@ -240,9 +240,26 @@ describe("student v2 workflow", () => {
       });
       expect(reviewResult.status).toBe("passed");
 
+      writeFileSync(join(root, ".env"), "STUDENT_AGENT_TOKEN=test-only-token\n");
+      writeFileSync(join(root, ".vos", "config.toml"), [
+        "[agent]",
+        'provider = "openai-compatible"',
+        'model = "configured-course-model"',
+        'base_url = "https://provider.example.invalid/v1"',
+        "[agent.auth]",
+        'env = "STUDENT_AGENT_TOKEN"',
+        "",
+      ].join("\n"));
+
       const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
         print: false,
         agentRunner: async (options) => {
+          expect(options.projectRoot).not.toBe(root);
+          expect(existsSync(join(options.projectRoot, ".env"))).toBe(false);
+          expect(existsSync(join(options.projectRoot, ".vos", "config.toml"))).toBe(false);
+          expect(options.model).toBe("configured-course-model");
+          expect(options.env?.OPENAI_COMPATIBLE_API_KEY).toBe("test-only-token");
+          expect(options.env?.OPENAI_COMPATIBLE_BASE_URL).toBe("https://provider.example.invalid/v1");
           expect(options.task).toContain("Existing test target IDs are immutable and MUST NOT be proposed again:");
           expect(options.task).toContain('"contract-memory"');
           expect(options.task).toContain('"public-memory"');

@@ -2429,6 +2429,7 @@ export async function executeAgentImplement(
       const eventCountBeforeRun = implementationEvents.length;
       const agentResult = await runAgentWithPrompt({
         projectRoot: worktree,
+        configurationRoot: projectRoot,
         taskPrompt,
         taskKind: "implementation",
         requestedScope: `implement:${module.id}`,

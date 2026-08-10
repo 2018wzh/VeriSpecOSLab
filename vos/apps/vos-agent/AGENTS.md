@@ -191,6 +191,10 @@ Full test guide: [docs/testing.md](docs/testing.md).
   structured submission checkpoint starts at iteration 261; a rejected payload
   restores full repair tools through iteration 299 and iteration 300 forces the
   corrected resubmission. Do not remove the guard.
+- Disposable implementation worktrees use the original student project as the
+  Agent configuration root. Keep `.vos/config.toml` and `.env` out of the
+  worktree; pass the resolved provider, model, endpoint, and credential mapping
+  into the in-process runtime while file tools remain rooted in the worktree.
 - New env vars use a meaningful prefix: `OPENAI_*`/`ANTHROPIC_*` for
   provider settings, a project prefix for cross-cutting settings.
 - The router dispatches by `request.model`. To mix models inside a
