@@ -118,6 +118,53 @@ describe("student v2 workflow", () => {
     });
   }, 30_000);
 
+  test("uses the configured Debug Agent for the latest student failure without modifying the project", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      const failedRoot = join(root, ".vos", "runs", "failed-qemu");
+      mkdirSync(join(failedRoot, "artifacts"), { recursive: true });
+      writeFileSync(join(failedRoot, "artifacts", "student-qemu.json"), JSON.stringify({
+        status: "failed",
+        oracle: { outcome: "missing", pattern: "CTF_BAREMETAL_OK" },
+        stdout: "qemu: completion marker observed",
+      }));
+      writeFileSync(join(failedRoot, "manifest.json"), JSON.stringify({
+        run_id: "failed-qemu",
+        status: "failed",
+        artifacts: [{ kind: "qemu", path: ".vos/runs/failed-qemu/artifacts/student-qemu.json" }],
+      }));
+
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "debug"], {
+        print: false,
+        agentRunner: async (options) => {
+          expect(options.taskKind).toBe("debug");
+          expect(JSON.stringify(options.context)).toContain("CTF_BAREMETAL_OK");
+          return {
+            content: "diagnosed",
+            events: acceptedSubmitEvents("debug_output.v1", {
+              failure_class: "verification_failure",
+              summary: "The runner cannot observe the completion marker.",
+              suspected_clauses: ["toolchain.run_qemu"],
+              related_specs: ["toolchain"],
+              suspected_concepts: ["serial oracle projection"],
+              evidence_chain: [{ label: "qemu evidence", artifact: ".vos/runs/failed-qemu/artifacts/student-qemu.json", observation: "marker absent from captured stdout" }],
+              visualization_steps: [{ phase: "capture", description: "Runner checks captured stdout." }],
+              visualization_html: "<!doctype html><html><body><main data-agent-generated=\"true\"><section>capture</section><input id=\"scrubber\" type=\"range\"><script>const states=[];</script></main></body></html>",
+              trace_summary: "No additional trace was required.",
+              gdb_summary: "GDB was not required.",
+              next_diagnostic_commands: ["vos run qemu"],
+              student_visible_limitations: ["Diagnosis is limited to captured evidence."],
+            }),
+          };
+        },
+      });
+
+      expect(result).toMatchObject({ status: "passed", details: { role: "debug", model_used: true, worktree_read_only: true } });
+      expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
+    });
+  }, 30_000);
+
   test("allows dirty development build but requires clean HEAD for verify and hardware evidence", async () => {
     const root = makeRoot();
     await withGitIdentity(async () => {

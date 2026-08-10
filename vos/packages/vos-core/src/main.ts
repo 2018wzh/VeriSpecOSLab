@@ -4549,18 +4549,6 @@ export async function executeAgentDebug(
       },
     };
   }
-  if (!command.logPath && !command.runId) {
-    const bundle = await buildNormalizedSpecBundle({ projectRoot });
-    const state = await studentGitStatus(projectRoot).catch(() => ({ clean: false, changed: [] as string[] }));
-    const logPath = await findLatestLogPath(projectRoot);
-    const text = logPath && existsSync(logPath) ? await readFile(logPath, "utf8") : "";
-    const suspectLines = text.split(/\r?\n/).filter((line) => /error|fail|panic|assert|timeout|segfault/i.test(line));
-    const artifact = path.join(evidence.artifacts_root, "student-debug.json");
-    await writeFile(artifact, `${JSON.stringify({ role: "debug", root_cause: suspectLines[0] ?? (bundle.diagnostics[0]?.message ?? "no deterministic failure evidence"), evidence: suspectLines.slice(0, 20), diagnostics: bundle.diagnostics, clean_head: state.clean, changed_targets: state.changed }, null, 2)}\n`);
-    evidence.addArtifactFromPath("agent", artifact, "read-only student debug evidence");
-    return { status: "passed", details: { role: "debug", root_cause: suspectLines[0] ?? (bundle.diagnostics[0]?.message ?? "no deterministic failure evidence"), evidence: suspectLines.slice(0, 20), diagnostics: bundle.diagnostics, clean_head: state.clean, changed_targets: state.changed, model_used: false } };
-  }
-
   updateProgress(context, { stage: "agent debug", status: "running", message: "loading log" });
   const runContext = command.runId ? await loadDebugRunContext(projectRoot, command.runId) : undefined;
   const debugTarget = runContext ? inferDebugTarget(runContext) : undefined;
@@ -4656,6 +4644,9 @@ export async function executeAgentDebug(
   return {
     status: "passed",
     details: {
+      role: "debug",
+      model_used: true,
+      worktree_read_only: true,
       debug: debugOutput,
       run_id: command.runId,
       artifact: path.relative(projectRoot, artifact),
