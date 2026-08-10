@@ -102,7 +102,7 @@ export interface RunAgentOptions {
   responseFormat?: unknown;
   /** Keep the turn open until this tool has been called at least once. */
   requiredCompletionTool?: string;
-  /** Number of trailing iterations reserved exclusively for a structured submission and corrections. */
+  /** Number of trailing iterations in which VOS probes once for a structured submission and reserves the final turn for resubmission. */
   completionReserveIterations?: number;
   /** Existing transcript to continue. Copied before mutation. */
   history?: OpenAI.Chat.ChatCompletionMessageParam[];
@@ -192,6 +192,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     throw new Error(`required completion tool is unavailable: ${requiredCompletionTool}`);
   }
   let completionToolAccepted = false;
+  let completionToolAttempted = false;
   let completionRepairPending = false;
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = history
     ? [...history]
@@ -206,26 +207,28 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
     throwIfAborted(signal);
-    const completionRepairTurn = completionRepairPending;
-    completionRepairPending = false;
-    const submissionPhase = iteration >= Math.max(1, maxIterations - completionReserveIterations + 1)
+    const finalSubmissionTurn = iteration === maxIterations
+      && requiredCompletionTool
+      && !completionToolAccepted;
+    const initialSubmissionTurn = iteration >= Math.max(1, maxIterations - completionReserveIterations + 1)
       && requiredCompletionTool
       && !completionToolAccepted
-      && !completionRepairTurn;
+      && !completionToolAttempted;
+    const submissionPhase = Boolean(finalSubmissionTurn || initialSubmissionTurn);
+    const completionRepairTurn = completionRepairPending && !submissionPhase;
+    if (completionRepairTurn) completionRepairPending = false;
     if (completionRepairTurn && requiredCompletionTool) {
       messages.push({
         role: "user",
-        content: iteration === maxIterations
-          ? `The previous ${requiredCompletionTool} call was rejected. This is the final repair and resubmission turn. Use the full allowed tool set, put any repair calls before ${requiredCompletionTool} in this same response, and resubmit a corrected result. Preserve the validation error exactly and do not abandon the task.`
-          : `The previous ${requiredCompletionTool} call was rejected. Continue correcting the implementation or structured payload with the full allowed tool set. Preserve the validation error exactly and do not abandon the task. Resubmit only after the result is complete; you are not limited to one repair turn.`,
+        content: `The previous ${requiredCompletionTool} call was rejected. Continue correcting the implementation or structured payload with the full allowed tool set. Preserve the validation error exactly and do not abandon the task. You may use the remaining repair turns; VOS reserves the final iteration for a required corrected resubmission.`,
       });
     }
     if (submissionPhase) {
       messages.push({
         role: "user",
         content: iteration === maxIterations
-          ? `This is the final allowed iteration. Correct any validation errors from the prior submission and call ${requiredCompletionTool} now. Do not call any other tool and do not add more implementation work.`
-          : `The submission phase has started. Call ${requiredCompletionTool} now with the best complete result supported by the work already performed. Do not call any other tool and do not add more implementation work; if validation rejects the payload, the final iteration is reserved for one corrected submission.`,
+          ? `This is the final allowed iteration. Call ${requiredCompletionTool} now with the corrected result supported by the completed work. Do not call any other tool.`
+          : `The submission checkpoint has started. Call ${requiredCompletionTool} now with the best complete result supported by the work already performed. Do not call any other tool. If validation rejects the payload, all intervening iterations restore the full tool set for repair and the final iteration requires a corrected resubmission.`,
       });
     }
     const message = await chat.chat({
@@ -318,6 +321,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         content: result,
       });
       if (call.function.name === requiredCompletionTool) {
+        completionToolAttempted = true;
         if (isAcceptedCompletionResult(result)) {
           completionToolAccepted = true;
         } else {

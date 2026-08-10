@@ -186,9 +186,11 @@ Full test guide: [docs/testing.md](docs/testing.md).
 - Before claiming a change works, run `bunx tsc --noEmit` and
   `bun test`. Don't claim integration with a real LLM unless you
   actually ran it.
-- The agent loop has `maxIterations` (default 50). If a real task
-  legitimately needs more, raise it at the call site; do not remove
-  the guard.
+- The agent loop has `maxIterations` (default 50). Student implementation
+  tasks set a 100-iteration hard limit at the `vos-core` call site. Their
+  structured submission checkpoint starts at iteration 91; a rejected payload
+  restores full repair tools through iteration 99 and iteration 100 forces the
+  corrected resubmission. Do not remove the guard.
 - New env vars use a meaningful prefix: `OPENAI_*`/`ANTHROPIC_*` for
   provider settings, a project prefix for cross-cutting settings.
 - The router dispatches by `request.model`. To mix models inside a
