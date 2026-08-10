@@ -1,30 +1,15 @@
 import type {
-  AgentApplyPatchCommand,
   AgentAskCommand,
-  AgentContextCommand,
   AgentDebugCommand,
-  AgentGenerateCommand,
-  AgentLogCommand,
-  AgentPlanCommand,
-  AgentServeCommand,
-  AgentValidateGeneratedCommand,
   AgentImplementCommand,
   AgentVerifyCommand,
   AgentReviewCommand,
   AgentConfigCommand,
-  ArchComposeCommand,
-  ArchDeriveTestsCommand,
-  ArchLintCommand,
   BuildCommand,
-  BuildGenerateCommand,
   CliCommand,
-  DebugExplainLogCommand,
   DoctorCommand,
   GlobalOptions,
   InitCommand,
-  LoginCommand,
-  LedgerRecordCommand,
-  LogoutCommand,
   KbAddCommand,
   KbClearCommand,
   KbExportManifestCommand,
@@ -33,65 +18,49 @@ import type {
   KbRemoveCommand,
   KbSearchCommand,
   ParsedInvocation,
-  PortalPipelineCommand,
-  ProjectBindCommand,
   ReportGenerateCommand,
   RunQemuCommand,
   RunHardwareCommand,
-  ServeCommand,
-  StageShowCommand,
-  StageSaveCommand,
-  SeedStatusCommand,
-  SpecCheckConsistencyCommand,
   SpecLintCommand,
-  SpecNormalizeCommand,
-  SpecPatchApplyCommand,
-  SpecPatchLintCommand,
   SubmitPackCommand,
-  TestCommand,
-  ToolchainLintCommand,
-  ToolchainInitCommand,
-  TraceSyscallCommand,
   VerifyCommand,
-  VerifyScope,
-  WhoamiCommand,
 } from "./types.ts";
 
 const VALUE_FLAGS = new Set([
   "--project-root",
   "--progress",
-  "--agent-session",
-  "--actor",
-  "--intent",
-  "--report",
-  "--evidence-dir",
-  "--toolchain",
-  "--timeout",
-  "--ready-pattern",
-  "--suite",
-  "--target",
-  "--task",
-  "--scope",
-  "--stage",
-  "--log",
-  "--entry",
-  "--host",
-  "--port",
-  "--portal-url",
-  "--project-id",
-  "--token",
-  "--apply",
-  "--build",
-  "--run",
-  "--no-require-spec",
-  "--run-validation",
-  "--patch-file",
-  "--keep-worktree",
+  "--provider",
+  "--model",
+  "--base-url",
+  "--auth-env",
+  "--embedding-provider",
+  "--embedding-model",
+  "--embedding-base-url",
+  "--embedding-auth-env",
   "--source-kind",
+  "--stage",
   "--title",
   "--manifest",
   "--out",
-  "--model-credential",
+  "--branch",
+  "--tag",
+]);
+
+const RETIRED_TOP_LEVEL_COMMANDS = new Set([
+  "login",
+  "logout",
+  "whoami",
+  "pipeline",
+  "project",
+  "serve",
+  "stage",
+  "toolchain",
+  "arch",
+  "test",
+  "trace",
+  "debug",
+  "ledger",
+  "seed",
 ]);
 
 export function parseArgs(argv: string[]): ParsedInvocation {
@@ -134,20 +103,10 @@ export function parseArgs(argv: string[]): ParsedInvocation {
       global.progress = parseProgressMode(arg.slice("--progress=".length));
       continue;
     }
-    if (arg === "--agent-session") {
-      global.agentSession = resolveRequiredValue(input, i, arg);
-      i++;
-      continue;
-    }
-    if (arg === "--report") {
-      global.reportPath = resolveRequiredValue(input, i, arg);
-      i++;
-      continue;
-    }
-    if (arg === "--evidence-dir") {
-      global.evidenceDir = resolveRequiredValue(input, i, arg);
-      i++;
-      continue;
+    if (arg === "--agent-session" || arg.startsWith("--agent-session=")
+      || arg === "--report" || arg.startsWith("--report=")
+      || arg === "--evidence-dir" || arg.startsWith("--evidence-dir=")) {
+      throw new Error(`${arg.split("=")[0]} was removed from the student CLI`);
     }
     if (arg === "-h" || arg === "--help") {
       commandTokens.push(arg);
@@ -180,230 +139,22 @@ function parseProgressMode(value: string): GlobalOptions["progress"] {
   throw new Error("--progress must be one of: auto, always, never");
 }
 
-function parsePort(value: string): number {
-  const port = Number(value);
-  if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    throw new Error("--port requires a valid TCP port");
-  }
-  return port;
-}
-
 function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
   const [command, ...rest] = tokens;
   void global;
 
-  if (command === "login") {
-    let portalUrl: string | undefined;
-    let token: string | undefined;
-    let tokenStdin = false;
-    for (let i = 0; i < rest.length; i++) {
-      const arg = rest[i];
-      if (arg === "--portal-url") {
-        portalUrl = resolveRequiredValue(rest, i, arg);
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--portal-url=")) {
-        portalUrl = arg.slice("--portal-url=".length);
-        continue;
-      }
-      if (arg === "--token") {
-        token = resolveRequiredValue(rest, i, arg);
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--token=")) {
-        token = arg.slice("--token=".length);
-        continue;
-      }
-      if (arg === "--token-stdin") {
-        tokenStdin = true;
-        continue;
-      }
-      throw new Error(`unknown flag for login: ${arg}`);
-    }
-    if (!portalUrl) {
-      throw new Error("login requires --portal-url");
-    }
-    if (token && tokenStdin) {
-      throw new Error("login accepts either --token or --token-stdin, not both");
-    }
-    return { kind: "login", portalUrl, token, tokenStdin } satisfies LoginCommand;
-  }
-
-  if (command === "logout") {
-    let portalUrl: string | undefined;
-    for (let i = 0; i < rest.length; i++) {
-      const arg = rest[i];
-      if (arg === "--portal-url") {
-        portalUrl = resolveRequiredValue(rest, i, arg);
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--portal-url=")) {
-        portalUrl = arg.slice("--portal-url=".length);
-        continue;
-      }
-      throw new Error(`unknown flag for logout: ${arg}`);
-    }
-    return { kind: "logout", portalUrl } satisfies LogoutCommand;
-  }
-
-  if (command === "whoami") {
-    let portalUrl: string | undefined;
-    for (let i = 0; i < rest.length; i++) {
-      const arg = rest[i];
-      if (arg === "--portal-url") {
-        portalUrl = resolveRequiredValue(rest, i, arg);
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--portal-url=")) {
-        portalUrl = arg.slice("--portal-url=".length);
-        continue;
-      }
-      throw new Error(`unknown flag for whoami: ${arg}`);
-    }
-    return { kind: "whoami", portalUrl } satisfies WhoamiCommand;
-  }
-
-  if(command==="pipeline"){
-    const action=rest[0];
-    if(action!=="trigger"&&action!=="status"&&action!=="watch"&&action!=="cancel"&&action!=="evidence"&&action!=="download"&&action!=="reproduce")throw new Error("pipeline requires trigger, status, watch, cancel, evidence, download, or reproduce");
-    let runId:string|undefined;let reason:string|undefined;let scope:"public"|"staff"|"final"="public";let modelCredentialId:string|undefined;let outDir:string|undefined;
-    for(let i=1;i<rest.length;i++){const arg=rest[i];if(!arg.startsWith("-")&&!runId&&action!=="trigger"){runId=arg;continue;}if(arg==="--reason"){reason=resolveRequiredValue(rest,i,arg);i++;continue;}if(arg.startsWith("--reason=")){reason=arg.slice(9);continue;}if(arg==="--scope"){const value=resolveRequiredValue(rest,i,arg);if(value!=="public"&&value!=="staff"&&value!=="final")throw new Error("--scope must be public, staff, or final");scope=value;i++;continue;}if(arg.startsWith("--scope=")){const value=arg.slice(8);if(value!=="public"&&value!=="staff"&&value!=="final")throw new Error("--scope must be public, staff, or final");scope=value;continue;}if(arg==="--model-credential"){modelCredentialId=resolveRequiredValue(rest,i,arg);i++;continue;}if(arg.startsWith("--model-credential=")){modelCredentialId=arg.slice("--model-credential=".length);continue;}if(arg==="--out"){outDir=resolveRequiredValue(rest,i,arg);i++;continue;}if(arg.startsWith("--out=")){outDir=arg.slice("--out=".length);continue;}throw new Error(`unknown flag for pipeline ${action}: ${arg}`);}
-    if(modelCredentialId&&action!=="trigger")throw new Error("--model-credential is only valid for pipeline trigger");
-    if(outDir&&action!=="download")throw new Error("--out is only valid for pipeline download");
-    if(action!=="trigger"&&!runId)throw new Error(`pipeline ${action} requires <run-id>`);
-    if((action==="trigger"||action==="cancel")&&(!reason||reason.trim().length<10))throw new Error(`pipeline ${action} requires --reason with at least 10 characters`);
-    return{kind:"portal_pipeline",action,runId,reason,scope,...(modelCredentialId?{modelCredentialId}:{}),...(outDir?{outDir}:{})} satisfies PortalPipelineCommand;
-  }
-
-  if(command==="project"&&rest[0]==="bind"){
-    let portalUrl:string|undefined;let projectId:string|undefined;
-    for(let i=1;i<rest.length;i++){const arg=rest[i];if(arg==="--portal-url"){portalUrl=resolveRequiredValue(rest,i,arg);i++;continue;}if(arg.startsWith("--portal-url=")){portalUrl=arg.slice(13);continue;}if(arg==="--project-id"){projectId=resolveRequiredValue(rest,i,arg);i++;continue;}if(arg.startsWith("--project-id=")){projectId=arg.slice(13);continue;}throw new Error(`unknown flag for project bind: ${arg}`);}
-    if(!portalUrl||!projectId)throw new Error("project bind requires --portal-url and --project-id");return{kind:"project_bind",portalUrl,projectId} satisfies ProjectBindCommand;
-  }
-
-  if (command === "serve") {
-    let portalUrl: string | undefined;
-    let projectId: string | undefined;
-    let host: string | undefined;
-    let port: number | undefined;
-    for (let i = 0; i < rest.length; i++) {
-      const arg = rest[i];
-      if (arg === "--portal-url") {
-        portalUrl = resolveRequiredValue(rest, i, arg);
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--portal-url=")) {
-        portalUrl = arg.slice("--portal-url=".length);
-        continue;
-      }
-      if (arg === "--project-id") {
-        projectId = resolveRequiredValue(rest, i, arg);
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--project-id=")) {
-        projectId = arg.slice("--project-id=".length);
-        continue;
-      }
-      if (arg === "--host") {
-        host = resolveRequiredValue(rest, i, arg);
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--host=")) {
-        host = arg.slice("--host=".length);
-        continue;
-      }
-      if (arg === "--port") {
-        port = parsePort(resolveRequiredValue(rest, i, arg));
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--port=")) {
-        port = parsePort(arg.slice("--port=".length));
-        continue;
-      }
-      throw new Error(`unknown flag for serve: ${arg}`);
-    }
-    if (!portalUrl) {
-      throw new Error("serve requires --portal-url");
-    }
-    if (!projectId) {
-      throw new Error("serve requires --project-id");
-    }
-    return { kind: "serve", portalUrl, projectId, host, port } satisfies ServeCommand;
+  if (RETIRED_TOP_LEVEL_COMMANDS.has(command)) {
+    throw new Error(`${command} was removed from the student CLI`);
   }
 
   if (command === "init") {
+    if (rest.length > 0) throw new Error("vos init accepts no command-specific options");
     return { kind: "init" } satisfies InitCommand;
   }
 
   if (command === "doctor") {
+    if (rest.length > 0) throw new Error("vos doctor accepts no command-specific options");
     return { kind: "doctor" } satisfies DoctorCommand;
-  }
-
-  if (command === "stage") {
-    const second = rest[0];
-    if (second === "show") {
-      return { kind: "stage_show" } satisfies StageShowCommand;
-    }
-    if (second === "save") {
-      let intent: string | undefined;
-      let actor: "human" | "agent" = "human";
-      for (let i = 1; i < rest.length; i++) {
-        const arg = rest[i];
-        if (arg === "--intent") {
-          intent = resolveRequiredValue(rest, i, arg);
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--intent=")) {
-          intent = arg.slice("--intent=".length);
-          continue;
-        }
-        if (arg === "--actor") {
-          const value = resolveRequiredValue(rest, i, arg);
-          if (value !== "human" && value !== "agent") throw new Error("--actor must be human or agent");
-          actor = value;
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--actor=")) {
-          const value = arg.slice("--actor=".length);
-          if (value !== "human" && value !== "agent") throw new Error("--actor must be human or agent");
-          actor = value;
-          continue;
-        }
-        throw new Error(`unknown flag for stage save: ${arg}`);
-      }
-      if (!intent) throw new Error("stage save requires --intent");
-      return { kind: "stage_save", intent, actor } satisfies StageSaveCommand;
-    }
-    throw new Error("unknown command: stage (use: stage show|save)");
-  }
-
-  if (command === "toolchain") {
-    const second = rest[0];
-    if (second === "lint") {
-      return { kind: "toolchain_lint" } satisfies ToolchainLintCommand;
-    }
-    if (second === "init") {
-      let force = false;
-      for (const arg of rest.slice(1)) {
-        if (arg === "--force") {
-          force = true;
-          continue;
-        }
-        throw new Error(`unknown flag for toolchain init: ${arg}`);
-      }
-      return { kind: "toolchain_init", force } satisfies ToolchainInitCommand;
-    }
-    throw new Error("unknown command: toolchain (use: toolchain lint|init)");
   }
 
   if (command === "spec") {
@@ -420,446 +171,57 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       }
       return { kind: "spec_lint", target } satisfies SpecLintCommand;
     }
-    if (second === "normalize") {
-      return { kind: "spec_normalize" } satisfies SpecNormalizeCommand;
-    }
-    if (second === "check-consistency") {
-      return { kind: "spec_check_consistency" } satisfies SpecCheckConsistencyCommand;
-    }
-    if (second === "patch") {
-      const sub = rest[1];
-      if (sub === "lint") {
-        if (rest[2] === "-") {
-          throw new Error("spec patch lint requires a SpecPatch YAML path or commit-ish; use `vos agent apply-patch` for unified diffs");
-        }
-        return { kind: "spec_patch_lint", patchPath: rest[2] } satisfies SpecPatchLintCommand;
-      }
-      if (sub === "apply") {
-        const patchPath = rest[2];
-        if (!patchPath || patchPath === "-") {
-          throw new Error("spec patch apply requires a SpecPatch YAML path or commit-ish; use `vos agent apply-patch` for unified diffs");
-        }
-        return { kind: "spec_patch_apply", patchPath } satisfies SpecPatchApplyCommand;
-      }
+    if (second === "normalize" || second === "check-consistency" || second === "patch") {
+      throw new Error(`spec ${second} was removed from the student CLI; use \`vos spec lint [target]\``);
     }
     throw new Error("unknown command: spec");
   }
 
-  if (command === "arch") {
-    const second = rest[0];
-    if (second === "lint") {
-      let noAgent = false;
-      let target: string | undefined;
-      for (const arg of rest.slice(1)) {
-        if (arg === "--no-agent") {
-          noAgent = true;
-          continue;
-        }
-        if (arg.startsWith("-")) throw new Error(`unknown flag for arch lint: ${arg}`);
-        target = arg;
-      }
-      return { kind: "arch_lint", path: target, noAgent } satisfies ArchLintCommand;
-    }
-    if (second === "compose") {
-      return { kind: "arch_compose", path: rest[1] } satisfies ArchComposeCommand;
-    }
-    if (second === "derive-tests") {
-      return { kind: "arch_derive_tests", path: rest[1] } satisfies ArchDeriveTestsCommand;
-    }
-    throw new Error("unknown command: arch");
-  }
-
   if (command === "build") {
     if (rest[0] === "generate") {
-      let agentSession: string | undefined;
-      let noAgent = false;
-      for (let i = 1; i < rest.length; i++) {
-        const arg = rest[i];
-        if (arg === "--agent-session") {
-          agentSession = resolveRequiredValue(rest, i, arg);
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--agent-session=")) {
-          agentSession = arg.slice("--agent-session=".length);
-          continue;
-        }
-        if (arg === "--no-agent") {
-          noAgent = true;
-          continue;
-        }
-        throw new Error(`unknown flag for build generate: ${arg}`);
-      }
-      return { kind: "build_generate", agentSession: agentSession ?? global.agentSession, noAgent } satisfies BuildGenerateCommand;
+      throw new Error("build generate was removed from the student CLI; use `vos agent implement <module>`");
     }
-    let dryRun = false;
-    let toolchainPath: string | undefined;
-    let variant: string | undefined;
-    for (let i = 0; i < rest.length; i++) {
-      const arg = rest[i];
-      if (arg === "--dry-run") {
-        dryRun = true;
-        continue;
-      }
-      if (arg === "--toolchain") {
-        toolchainPath = resolveRequiredValue(rest, i, arg);
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--toolchain=")) {
-        toolchainPath = arg.slice("--toolchain=".length);
-        continue;
-      }
-      if (arg === "--variant") {
-        variant = resolveRequiredValue(rest, i, arg);
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--variant=")) {
-        variant = arg.slice("--variant=".length);
-        continue;
-      }
-      throw new Error(`unknown flag for build: ${arg}`);
-    }
-    return { kind: "build", dryRun, toolchainPath, variant } satisfies BuildCommand;
-  }
-
-  if (command === "ledger") {
-    const second = rest[0];
-    if (second !== "record") {
-      throw new Error("only `ledger record` is supported");
-    }
-    let actor: "human" | "agent" | undefined;
-    let intent: string | undefined;
-    const specRefs: string[] = [];
-    const changedTargets: string[] = [];
-    for (let i = 1; i < rest.length; i++) {
-      const arg = rest[i];
-      if (arg === "--actor") {
-        const value = resolveRequiredValue(rest, i, arg);
-        if (value !== "human" && value !== "agent") {
-          throw new Error("--actor must be human or agent");
-        }
-        actor = value;
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--actor=")) {
-        const value = arg.slice("--actor=".length);
-        if (value !== "human" && value !== "agent") {
-          throw new Error("--actor must be human or agent");
-        }
-        actor = value;
-        continue;
-      }
-      if (arg === "--intent") {
-        intent = resolveRequiredValue(rest, i, arg);
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--intent=")) {
-        intent = arg.slice("--intent=".length);
-        continue;
-      }
-      if (arg === "--spec-ref") {
-        specRefs.push(resolveRequiredValue(rest, i, arg));
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--spec-ref=")) {
-        specRefs.push(arg.slice("--spec-ref=".length));
-        continue;
-      }
-      if (arg === "--changed-target") {
-        changedTargets.push(resolveRequiredValue(rest, i, arg));
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--changed-target=")) {
-        changedTargets.push(arg.slice("--changed-target=".length));
-        continue;
-      }
-      throw new Error(`unknown flag for ledger record: ${arg}`);
-    }
-    if (!actor) throw new Error("ledger record requires --actor");
-    if (!intent) throw new Error("ledger record requires --intent");
-    return { kind: "ledger_record", actor, intent, specRefs, changedTargets } satisfies LedgerRecordCommand;
+    if (rest.length > 0) throw new Error("vos build accepts no command-specific options");
+    return { kind: "build", dryRun: false } satisfies BuildCommand;
   }
 
   if (command === "run") {
     const second = rest[0];
     if (second === "hardware") {
-      let dryRun = false;
-      let timeoutMs: number | undefined;
-      for (let i = 1; i < rest.length; i++) {
-        const arg = rest[i];
-        if (arg === "--dry-run") {
-          dryRun = true;
-          continue;
-        }
-        if (arg === "--timeout") {
-          timeoutMs = Number(resolveRequiredValue(rest, i, arg));
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--timeout=")) {
-          timeoutMs = Number(arg.slice("--timeout=".length));
-          continue;
-        }
-        throw new Error(`unknown flag for run hardware: ${arg}`);
-      }
-      if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs < 0)) {
-        throw new Error("--timeout requires a non-negative integer");
-      }
-      return { kind: "run_hardware", dryRun, timeoutMs } satisfies RunHardwareCommand;
+      if (rest.length > 1) throw new Error("vos run hardware accepts no command-specific options");
+      return { kind: "run_hardware", dryRun: false } satisfies RunHardwareCommand;
     }
     if (second !== "qemu") {
       throw new Error("only `run qemu` is supported");
     }
-    let dryRun = false;
-    let timeoutMs: number | undefined;
-    let readyPattern: string | undefined;
-    let profileId: string | undefined;
-    let caseId: string | undefined;
-    let listProfiles = false;
-    let listCases = false;
-    for (let i = 1; i < rest.length; i++) {
-      const arg = rest[i];
-      if (arg === "--dry-run") {
-        dryRun = true;
-        continue;
-      }
-      if (arg === "--timeout") {
-        timeoutMs = Number(resolveRequiredValue(rest, i, arg));
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--timeout=")) {
-        timeoutMs = Number(arg.slice("--timeout=".length));
-        continue;
-      }
-      if (arg === "--ready-pattern") {
-        readyPattern = resolveRequiredValue(rest, i, arg);
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--ready-pattern=")) {
-        readyPattern = arg.slice("--ready-pattern=".length);
-        continue;
-      }
-      if (arg === "--profile") {
-        profileId = resolveRequiredValue(rest, i, arg);
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--profile=")) {
-        profileId = arg.slice("--profile=".length);
-        continue;
-      }
-      if (arg === "--case") {
-        caseId = resolveRequiredValue(rest, i, arg);
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--case=")) {
-        caseId = arg.slice("--case=".length);
-        continue;
-      }
-      if (arg === "--list-profiles") {
-        listProfiles = true;
-        continue;
-      }
-      if (arg === "--list-cases") {
-        listCases = true;
-        continue;
-      }
-      if (arg.startsWith("-")) {
-        throw new Error(`unknown flag for run qemu: ${arg}`);
-      }
-      throw new Error(`unexpected positional argument for run qemu: ${arg}`);
-    }
-    if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs < 0)) {
-      throw new Error("--timeout requires a non-negative integer");
-    }
-    return {
-      kind: "run_qemu",
-      dryRun,
-      timeoutMs,
-      readyPattern,
-      profileId,
-      caseId,
-      listProfiles,
-      listCases,
-    } satisfies RunQemuCommand;
-  }
-
-  if (command === "test") {
-    const suites: string[] = [];
-    let dryRun = false;
-    for (let i = 0; i < rest.length; i++) {
-      const arg = rest[i];
-      if (arg === "--dry-run") {
-        dryRun = true;
-        continue;
-      }
-      if (arg.startsWith("--suite=")) {
-        suites.push(arg.slice("--suite=".length));
-        continue;
-      }
-      if (arg === "--suite") {
-        const next = rest[i + 1];
-        if (!next || next.startsWith("-")) {
-          throw new Error("--suite requires a value");
-        }
-        suites.push(next);
-        i++;
-        continue;
-      }
-      if (arg.startsWith("-")) {
-        throw new Error(`unknown flag for test: ${arg}`);
-      }
-      suites.push(arg);
-    }
-    return { kind: "test", suites, dryRun } satisfies TestCommand;
+    if (rest.length > 1) throw new Error("vos run qemu accepts no command-specific options");
+    return { kind: "run_qemu", dryRun: false } satisfies RunQemuCommand;
   }
 
   if (command === "verify") {
-    const hasScope = Boolean(rest[0] && !rest[0]!.startsWith("-"));
-    const scope = (hasScope ? rest[0] : "public") as VerifyScope;
-    if (!isVerifyScope(scope)) {
-      throw new Error(`unsupported verify mode: ${rest[0]}`);
+    if (rest.some((arg) => arg !== "--hidden") || rest.filter((arg) => arg === "--hidden").length > 1) {
+      throw new Error("vos verify accepts only --hidden");
     }
-    let dryRun = false;
-    let target: string | undefined;
-    let staffPolicy: string | undefined;
-    let hidden = false;
-    for (let i = hasScope ? 1 : 0; i < rest.length; i++) {
-      const arg = rest[i];
-      if (arg === "--hidden") {
-        hidden = true;
-        continue;
-      }
-      if (arg === "--dry-run") {
-        dryRun = true;
-        continue;
-      }
-      if (arg.startsWith("--target=")) {
-        target = arg.slice("--target=".length);
-        continue;
-      }
-      if (arg === "--target") {
-        target = resolveRequiredValue(rest, i, arg);
-        i++;
-        continue;
-      }
-      if (arg === "--staff-policy") {
-        staffPolicy = resolveRequiredValue(rest, i, arg);
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--staff-policy=")) {
-        staffPolicy = arg.slice("--staff-policy=".length);
-        continue;
-      }
-      if (!arg.startsWith("-")) {
-        target = arg;
-        continue;
-      }
-      throw new Error(`unknown flag for verify: ${arg}`);
-    }
-    return { kind: "verify", scope, target, dryRun, staffPolicy, ...(hidden ? { hidden: true } : {}) } satisfies VerifyCommand;
-  }
-
-  if (command === "trace") {
-    const second = rest[0];
-    if (second !== "syscall") {
-      throw new Error("only `trace syscall` is supported");
-    }
-    let dryRun = false;
-    let timeoutMs: number | undefined;
-    for (const arg of rest.slice(1)) {
-      if (arg === "--dry-run") {
-        dryRun = true;
-        continue;
-      }
-      if (arg.startsWith("--timeout=")) {
-        timeoutMs = Number(arg.slice("--timeout=".length));
-        continue;
-      }
-      if (arg === "--timeout") {
-        throw new Error("--timeout requires a value");
-      }
-      if (arg.startsWith("-")) {
-        throw new Error(`unknown flag for trace syscall: ${arg}`);
-      }
-      throw new Error(`unexpected positional argument for trace syscall: ${arg}`);
-    }
-    if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs < 0)) {
-      throw new Error("--timeout requires a non-negative integer");
-    }
-    return { kind: "trace_syscall", dryRun, timeoutMs } satisfies TraceSyscallCommand;
-  }
-
-  if (command === "debug") {
-    const second = rest[0];
-    if (second !== "explain-log") {
-      throw new Error("only `debug explain-log` is supported");
-    }
-    if (rest.length > 2) {
-      throw new Error("debug explain-log accepts at most one log path");
-    }
-    return { kind: "debug_explain_log", logPath: rest[1] } satisfies DebugExplainLogCommand;
+    return {
+      kind: "verify",
+      scope: "public",
+      target: undefined,
+      dryRun: false,
+      staffPolicy: undefined,
+      ...(rest.includes("--hidden") ? { hidden: true } : {}),
+    } satisfies VerifyCommand;
   }
 
   if (command === "report") {
     const second = rest[0];
     if (!second) return { kind: "report_generate", final: false } satisfies ReportGenerateCommand;
-    if (second !== "generate") {
-      throw new Error("only `report generate` is supported");
-    }
-    let stage: string | undefined;
-    let final = false;
-    for (let i = 1; i < rest.length; i++) {
-      const arg = rest[i];
-      if (arg === "--final") {
-        final = true;
-        continue;
-      }
-      if (arg === "--stage") {
-        stage = resolveRequiredValue(rest, i, arg);
-        i++;
-        continue;
-      }
-      if (arg.startsWith("--stage=")) {
-        stage = arg.slice("--stage=".length);
-        continue;
-      }
-      if (arg.startsWith("-")) {
-        throw new Error(`unknown flag for report generate: ${arg}`);
-      }
-      throw new Error(`unexpected positional argument for report generate: ${arg}`);
-    }
-    if (final && stage) {
-      throw new Error("report generate accepts either --final or --stage, not both");
-    }
-    return { kind: "report_generate", stage, final } satisfies ReportGenerateCommand;
+    throw new Error("report generate was removed; use `vos report`");
   }
 
   if (command === "submit") {
     const second = rest[0];
     if (!second) return { kind: "submit_pack" } satisfies SubmitPackCommand;
-    if (second !== "pack") {
-      throw new Error("only `submit pack` is supported");
-    }
-    return { kind: "submit_pack" } satisfies SubmitPackCommand;
-  }
-
-  if (command === "seed") {
-    const second = rest[0];
-    if (second === "status") {
-      return { kind: "seed_status" } satisfies SeedStatusCommand;
-    }
-    throw new Error("unknown seed subcommand; available: seed status");
+    throw new Error("submit pack was removed; use `vos submit`");
   }
 
   if (command === "kb") {
@@ -938,7 +300,10 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       }
       return { kind: "kb_add", source, sourceKind, stage, title, recursive, manifestPath, branch, tag } satisfies KbAddCommand;
     }
-    if (second === "list") return { kind: "kb_list" } satisfies KbListCommand;
+    if (second === "list") {
+      if (rest.length > 1) throw new Error("kb list accepts no command-specific options");
+      return { kind: "kb_list" } satisfies KbListCommand;
+    }
     if (second === "search") {
       const query = rest.slice(1).join(" ").trim();
       if (!query) throw new Error("kb search requires <query>");
@@ -947,9 +312,13 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
     if (second === "remove") {
       const id = rest[1];
       if (!id || id.startsWith("-")) throw new Error("kb remove requires <source-id>");
+      if (rest.length > 2) throw new Error("kb remove accepts exactly one source ID");
       return { kind: "kb_remove", id } satisfies KbRemoveCommand;
     }
-    if (second === "clear") return { kind: "kb_clear" } satisfies KbClearCommand;
+    if (second === "clear") {
+      if (rest.length > 1) throw new Error("kb clear accepts no command-specific options");
+      return { kind: "kb_clear" } satisfies KbClearCommand;
+    }
     if (second === "export-manifest") {
       let outPath: string | undefined;
       for (let i = 1; i < rest.length; i++) {
@@ -970,6 +339,7 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
     if (second === "import-manifest") {
       const manifestPath = rest[1];
       if (!manifestPath || manifestPath.startsWith("-")) throw new Error("kb import-manifest requires <path>");
+      if (rest.length > 2) throw new Error("kb import-manifest accepts exactly one path");
       return { kind: "kb_import_manifest", manifestPath } satisfies KbImportManifestCommand;
     }
     throw new Error(`unknown kb subcommand: ${second}`);
@@ -977,6 +347,9 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
 
   if (command === "agent") {
     const second = rest[0];
+    if (["serve", "context", "plan", "generate", "apply-patch", "validate-generated", "log"].includes(second ?? "")) {
+      throw new Error(`agent ${second} was removed from the student CLI`);
+    }
     if (second === "config") {
       let provider: AgentConfigCommand["provider"];
       let model: string | undefined;
@@ -1051,18 +424,17 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       const module = rest[1];
       if (!module || module.startsWith("-")) throw new Error("agent implement requires <module>");
       const tail = rest.slice(2);
-      if (tail.some((arg) => !isInteractiveDisplayFlag(arg))) throw new Error("agent implement accepts one module and --interactive");
-      return { kind: "agent_implement", module, ...(tail.some(isInteractiveDisplayFlag) ? { display: true } : {}) } satisfies AgentImplementCommand;
+      if (tail.length > 0) throw new Error("agent implement accepts exactly one module");
+      return { kind: "agent_implement", module } satisfies AgentImplementCommand;
     }
     if (second === "verify") {
-      const display = rest.slice(1).some(isInteractiveDisplayFlag);
-      if (rest.slice(1).some((arg) => !isInteractiveDisplayFlag(arg))) throw new Error("agent verify accepts only --interactive");
-      return { kind: "agent_verify", ...(display ? { display: true } : {}) } satisfies AgentVerifyCommand;
+      if (rest.length > 1) throw new Error("agent verify accepts no command-specific options");
+      return { kind: "agent_verify" } satisfies AgentVerifyCommand;
     }
     if (second === "ask") {
       const question = rest.slice(1).filter((arg) => !isInteractiveDisplayFlag(arg)).join(" ").trim() || undefined;
       const interactive = rest.slice(1).some(isInteractiveDisplayFlag) || !question;
-      if (rest.slice(1).some((arg) => arg.startsWith("--") && !isInteractiveDisplayFlag(arg))) {
+      if (rest.slice(1).some((arg) => arg.startsWith("-") && !isInteractiveDisplayFlag(arg))) {
         throw new Error("agent ask accepts a question and optional --interactive");
       }
       return { kind: "agent_ask", question, interactive } satisfies AgentAskCommand;
@@ -1073,344 +445,9 @@ function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
       if (positional[0]?.startsWith("-")) throw new Error(`unknown flag for agent review: ${positional[0]}`);
       return { kind: "agent_review", target: positional[0], ...(rest.some(isInteractiveDisplayFlag) ? { display: true } : {}) } satisfies AgentReviewCommand;
     }
-    if (second === "serve") {
-      let host: string | undefined;
-      let port: number | undefined;
-      let display = false;
-      for (let i = 1; i < rest.length; i++) {
-        const arg = rest[i];
-        if (isInteractiveDisplayFlag(arg)) {
-          display = true;
-          continue;
-        }
-        if (arg === "--host") {
-          host = resolveRequiredValue(rest, i, arg);
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--host=")) {
-          host = arg.slice("--host=".length);
-          continue;
-        }
-        if (arg === "--port") {
-          port = Number(resolveRequiredValue(rest, i, arg));
-          if (!Number.isInteger(port) || port < 1 || port > 65535) {
-            throw new Error("--port requires a valid TCP port");
-          }
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--port=")) {
-          port = Number(arg.slice("--port=".length));
-          if (!Number.isInteger(port) || port < 1 || port > 65535) {
-            throw new Error("--port requires a valid TCP port");
-          }
-          continue;
-        }
-        if (arg.startsWith("-")) {
-          throw new Error(`unknown flag for agent serve: ${arg}`);
-        }
-      }
-      return { kind: "agent_serve", host, port, ...displayFlag(display) } satisfies AgentServeCommand;
-    }
-    if (second === "context") {
-      let display = false;
-      for (let i = 1; i < rest.length; i++) {
-        const arg = rest[i];
-        if (isInteractiveDisplayFlag(arg)) {
-          display = true;
-          continue;
-        }
-        if (arg === "--scope" || arg === "--stage") {
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--scope=") || arg.startsWith("--stage=")) continue;
-        throw new Error(`unknown flag for agent context: ${arg}`);
-      }
-      const scopeArg = parseOptionalStringValue(rest, "--scope") ?? parseOptionalStringValue(rest, "--stage");
-      return { kind: "agent_context", scope: scopeArg, ...displayFlag(display) } satisfies AgentContextCommand;
-    }
-    if (second === "plan") {
-      let task: string | undefined;
-      let display = false;
-      let scope = parseOptionalStringValue(rest, "--scope") ?? parseOptionalStringValue(rest, "--stage");
-      for (let i = 1; i < rest.length; i++) {
-        const arg = rest[i];
-        if (isInteractiveDisplayFlag(arg)) {
-          display = true;
-          continue;
-        }
-        if (arg === "--scope") {
-          i++;
-          continue;
-        }
-        if (arg === "--stage") {
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--scope=") || arg.startsWith("--stage=")) {
-          continue;
-        }
-        if (arg === "--task") {
-          task = resolveRequiredValue(rest, i, arg);
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--task=")) {
-          task = arg.slice("--task=".length);
-          continue;
-        }
-        if (arg.startsWith("--") && !arg.startsWith("--scope") && !arg.startsWith("--stage")) {
-          throw new Error(`unknown flag for agent plan: ${arg}`);
-        }
-        if (task === undefined && !arg.startsWith("--")) {
-          task = arg;
-          for (let j = i + 1; j < rest.length; j++) {
-            const next = rest[j];
-            if (next.startsWith("-")) {
-              break;
-            }
-            task = `${task} ${next}`.trim();
-            i = j;
-          }
-        }
-      }
-      return { kind: "agent_plan", task, scope, ...displayFlag(display) } satisfies AgentPlanCommand;
-    }
-    if (second === "generate") {
-      let target: string | undefined;
-      let apply = false;
-      let build = false;
-      let run = false;
-      let task: string | undefined;
-      let display = false;
-      for (let i = 1; i < rest.length; i++) {
-        const arg = rest[i];
-        if (isInteractiveDisplayFlag(arg)) {
-          display = true;
-          continue;
-        }
-        if (arg === "--target") {
-          target = resolveRequiredValue(rest, i, arg);
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--target=")) {
-          target = arg.slice("--target=".length);
-          continue;
-        }
-        if (arg === "--apply") {
-          apply = true;
-          continue;
-        }
-        if (arg === "--build") {
-          build = true;
-          continue;
-        }
-        if (arg === "--run") {
-          run = true;
-          continue;
-        }
-        if (arg === "--task") {
-          task = resolveRequiredValue(rest, i, arg);
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--task=")) {
-          task = arg.slice("--task=".length);
-          continue;
-        }
-        if (i === 1 && !arg.startsWith("--") && target === undefined) {
-          target = arg;
-          continue;
-        }
-        if (arg.startsWith("--")) {
-          throw new Error(`unknown flag for agent generate: ${arg}`);
-        }
-      }
-      if (run && !build) {
-        throw new Error("`agent generate --run` requires `--build`");
-      }
-      if (build && !apply) {
-        throw new Error("`agent generate --build` requires `--apply`");
-      }
-      return { kind: "agent_generate", target, apply, build, run, task, ...displayFlag(display) } satisfies AgentGenerateCommand;
-    }
-    if (second === "apply-patch") {
-      let patchFile: string | undefined;
-      let requireSpec = true;
-      let runValidation = false;
-      let display = false;
-      for (let i = 1; i < rest.length; i++) {
-        const arg = rest[i];
-        if (isInteractiveDisplayFlag(arg)) {
-          display = true;
-          continue;
-        }
-        if (arg === "--patch-file") {
-          patchFile = resolveRequiredValue(rest, i, arg);
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--patch-file=")) {
-          patchFile = arg.slice("--patch-file=".length);
-          continue;
-        }
-        if (arg === "--no-require-spec") {
-          requireSpec = false;
-          continue;
-        }
-        if (arg === "--run-validation") {
-          runValidation = true;
-          continue;
-        }
-        if (i === 1 && !arg.startsWith("--") && patchFile === undefined) {
-          patchFile = arg;
-          continue;
-        }
-        if (arg.startsWith("-")) {
-          throw new Error(`unknown flag for agent apply-patch: ${arg}`);
-        }
-      }
-      return {
-        kind: "agent_apply_patch",
-        patchFile,
-        requireSpec,
-        runValidation,
-        ...displayFlag(display),
-      } satisfies AgentApplyPatchCommand;
-    }
-    if (second === "validate-generated") {
-      let target: string | undefined;
-      let patchFile: string | undefined;
-      let keepWorktree = false;
-      let display = false;
-      for (let i = 1; i < rest.length; i++) {
-        const arg = rest[i];
-        if (isInteractiveDisplayFlag(arg)) {
-          display = true;
-          continue;
-        }
-        if (arg === "--target") {
-          target = resolveRequiredValue(rest, i, arg);
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--target=")) {
-          target = arg.slice("--target=".length);
-          continue;
-        }
-        if (arg === "--patch-file") {
-          patchFile = resolveRequiredValue(rest, i, arg);
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--patch-file=")) {
-          patchFile = arg.slice("--patch-file=".length);
-          continue;
-        }
-        if (arg === "--keep-worktree") {
-          keepWorktree = true;
-          continue;
-        }
-        if (!arg.startsWith("-") && target === undefined) {
-          target = arg;
-          continue;
-        }
-        if (arg.startsWith("-")) {
-          throw new Error(`unknown flag for agent validate-generated: ${arg}`);
-        }
-        throw new Error(`unexpected positional value for agent validate-generated: ${arg}`);
-      }
-      if (!target || target.trim().length === 0) {
-        throw new Error("agent validate-generated requires --target <spec-ref|stage>");
-      }
-      return {
-        kind: "agent_validate_generated",
-        target,
-        patchFile,
-        keepWorktree,
-        ...displayFlag(display),
-      } satisfies AgentValidateGeneratedCommand;
-    }
     if (second === "debug") {
-      let logPath: string | undefined;
-      let runId: string | undefined;
-      let keepWorktree = false;
-      let display = false;
-      for (let i = 1; i < rest.length; i++) {
-        const arg = rest[i];
-        if (isInteractiveDisplayFlag(arg)) {
-          display = true;
-          continue;
-        }
-        if (arg === "--log") {
-          logPath = resolveRequiredValue(rest, i, arg);
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--log=")) {
-          logPath = arg.slice("--log=".length);
-          continue;
-        }
-        if (arg === "--run") {
-          runId = resolveRequiredValue(rest, i, arg);
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--run=")) {
-          runId = arg.slice("--run=".length);
-          continue;
-        }
-        if (arg === "--keep-worktree") {
-          keepWorktree = true;
-          continue;
-        }
-        throw new Error(`unknown flag for agent debug: ${arg}`);
-      }
-      if (logPath && runId) {
-        throw new Error("agent debug accepts either --log or --run, not both");
-      }
-      return { kind: "agent_debug", logPath, runId, keepWorktree, ...displayFlag(display) } satisfies AgentDebugCommand;
-    }
-    if (second === "log") {
-      let append = false;
-      let inputPath: string | undefined;
-      let display = false;
-      for (let i = 1; i < rest.length; i++) {
-        const arg = rest[i];
-        if (isInteractiveDisplayFlag(arg)) {
-          display = true;
-          continue;
-        }
-        if (arg === "--append") {
-          append = true;
-          continue;
-        }
-        if (arg === "--entry") {
-          const next = rest[i + 1];
-          if (!next || next.startsWith("-")) {
-            throw new Error("--entry requires a value");
-          }
-          inputPath = next;
-          i++;
-          continue;
-        }
-        if (arg.startsWith("--entry=")) {
-          inputPath = arg.slice("--entry=".length);
-          continue;
-        }
-        if (arg.startsWith("-")) {
-          throw new Error(`unknown flag for agent log: ${arg}`);
-        }
-        if (inputPath === undefined) {
-          inputPath = arg;
-          continue;
-        }
-        throw new Error(`unexpected positional value for agent log: ${arg}`);
-      }
-      return { kind: "agent_log", append, inputPath, ...displayFlag(display) } satisfies AgentLogCommand;
+      if (rest.length > 1) throw new Error("agent debug accepts no command-specific options");
+      return { kind: "agent_debug", keepWorktree: false } satisfies AgentDebugCommand;
     }
     if (second === "review-spec") {
       throw new Error("agent review-spec was removed; use `vos agent review [target] [-i]`");
@@ -1439,17 +476,6 @@ function parseAgentEmbeddingProvider(value: string): AgentConfigCommand["embeddi
   return normalized as AgentConfigCommand["embeddingProvider"];
 }
 
-function isVerifyScope(value: string): value is VerifyScope {
-  return [
-    "public",
-    "patch",
-    "full",
-    "invariant",
-    "generated",
-    "fuzz",
-  ].includes(value);
-}
-
 function parseKbSourceKind(value: string): KbAddCommand["sourceKind"] {
   if (value === "course" || value === "project" || value === "external") return value;
   throw new Error("--source-kind must be one of: course, project, external");
@@ -1457,23 +483,6 @@ function parseKbSourceKind(value: string): KbAddCommand["sourceKind"] {
 
 function isInteractiveDisplayFlag(value: string): boolean {
   return value === "-i" || value === "--interactive";
-}
-
-function displayFlag(display: boolean): { display?: true } {
-  return display ? { display: true } : {};
-}
-
-function parseOptionalStringValue(args: string[], flag: string): string | undefined {
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === flag) {
-      return args[i + 1] && !args[i + 1].startsWith("-") ? args[i + 1] : undefined;
-    }
-    if (arg.startsWith(`${flag}=`)) {
-      return arg.slice(flag.length + 1);
-    }
-  }
-  return undefined;
 }
 
 function resolveRequiredValue(args: string[], index: number, flag: string): string {

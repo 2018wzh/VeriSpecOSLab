@@ -17,7 +17,8 @@ describe("student v2 workflow", () => {
   test("exposes the reduced command grammar and structured runner argv", () => {
     expect(parseArgs(["bun", "vos", "spec", "lint", "design"]).command).toEqual({ kind: "spec_lint", target: "design" });
     expect(() => parseArgs(["bun", "vos", "spec", "check"])).toThrow("spec check was removed");
-    expect(parseArgs(["bun", "vos", "run", "hardware", "--timeout", "42"]).command).toEqual({ kind: "run_hardware", dryRun: false, timeoutMs: 42 });
+    expect(parseArgs(["bun", "vos", "run", "hardware"]).command).toEqual({ kind: "run_hardware", dryRun: false });
+    expect(() => parseArgs(["bun", "vos", "run", "hardware", "--timeout", "42"])).toThrow("accepts no command-specific options");
     expect(() => parseArgs(["bun", "vos", "agent", "spec", "memory"])).toThrow("agent spec was removed");
     expect(() => parseArgs(["bun", "vos", "agent", "design"])).toThrow("agent design was removed");
     expect(() => parseArgs(["bun", "vos", "agent", "review-spec"])).toThrow("review-spec was removed");
