@@ -101,6 +101,13 @@ accepted targets into `vos.yaml`. Doctor uses the read-only Debug profile to
 derive host tools and run bounded Bash probes. Read-only and code-generation
 profiles may use Bash under their prompt and runtime policy boundaries.
 
+Schema-bound outputs are accepted only through their submission tool. When a
+submission is rejected, keep the same model thread alive, return the exact
+validation error as the tool result, restore the profile's normal tools for a
+repair turn, and require a corrected submission afterward. An implementation
+payload whose status is `failed`, `partial`, or `blocked` is a repairable tool
+error, not a completed run.
+
 The worktree, prompt, Git status checks, and audit log are not process,
 network, credential, or host-filesystem security sandboxes. Host commands
 inherit the current user and network permissions, and repository-external

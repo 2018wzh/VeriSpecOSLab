@@ -1,6 +1,8 @@
 # VOS Portal
 
-`vos/apps/vos-portal` 是课程教学控制面，同时提供同源 Web、`/api/v1`、后台 worker 和独立静态 Demo。旧 Portal 前端已经退役，不存在生产兼容入口。
+> 本目录记录暂留 Portal 的现有实现，不是本阶段的学生契约。Portal API、worker、Web UI 和静态 Demo 已冻结，只维持 typecheck、build 与 unit test；旧 connected teaching loop 不属于当前验收，也不能重新暴露成学生 CLI。
+
+`vos/apps/vos-portal` 保留同源 Web、`/api/v1`、后台 worker 和独立静态 Demo。旧 Portal 前端已经退役，不存在生产兼容入口。内部 runner 仍可使用 HTTP 服务，但学生 CLI 只在进程内调用 `vos-agent/headless`。
 
 ## 运行模式
 

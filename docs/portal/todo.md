@@ -1,5 +1,7 @@
 # VOS Portal Delivery Status
 
+> 冻结快照：下面的勾选项记录 Portal 冻结前的实现与历史验收，不能据此声称当前学生 v2 主链仍接入 connected teaching loop。本阶段只重新验证 Portal/Demo 的 typecheck、build 和 unit test。
+
 ## Implemented in the new application
 
 - [x] Independent React/Vite Portal with student, TA, teacher and administrator workspaces.

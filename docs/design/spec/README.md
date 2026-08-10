@@ -66,4 +66,4 @@ env: [RUSTUP_TOOLCHAIN]
 timeout: 120000
 ```
 
-build、QEMU、hardware、public/contract check 目标可以声明产物；每个测试目标必须列出其验证的稳定 Spec ID。知识来源必须带相对路径或 Git URL、revision（可选）和 SHA-256 content hash。实际运行通过 Bun argv API，不把这些字段拼成 shell 字符串。
+build、QEMU、hardware、public/contract/fuzz/trace 目标可以声明产物；每个测试目标必须列出其验证的稳定 Spec ID。知识来源不写入 `vos.yaml`，由 `vos kb add/list/search/remove/clear/export-manifest/import-manifest` 管理，并在 `.vos/kb/` 中保存来源、revision 和 content hash。实际运行通过 Bun argv API，不把这些字段拼成 shell 字符串。

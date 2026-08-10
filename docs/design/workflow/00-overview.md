@@ -3,8 +3,8 @@
 课程入口只保留一条本地循环：
 
 ```text
-vos init → design/spec → implement → build → verify
-        → qemu/hardware → report → submit
+vos init → agent ask → 学生手写 Spec → lint/review → 手动提交
+        → agent implement → build → qemu/hardware → verify → report → submit
 ```
 
 ## State transitions

@@ -1,5 +1,7 @@
 # Portal Development
 
+> 冻结说明：本页保留 Portal 维护与历史连接测试方法，当前交付只保证 typecheck、build 和 unit test。下文 connected/Production 命令不属于学生主链，也不能作为本阶段已经完成 connected teaching loop 的证据。
+
 从 `vos/` 运行：
 
 ```sh
@@ -51,7 +53,7 @@ docker compose up -d vos-portal caddy
 为真实 HTTPS 域名。应用代码和测试配置不得关闭 TLS 校验。API 与 PostgreSQL 不直接
 发布到宿主网络。
 
-连接式适配器测试显式传入测试端点才会运行：
+以下连接式适配器测试只有显式传入测试端点时才会运行。本阶段不把它们列入交付门禁：
 
 ```sh
 bun test apps/vos-portal/tests/postgres.integration.test.ts

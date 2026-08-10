@@ -59,6 +59,6 @@ Host、QEMU、Hardware Runner 共用同一 manifest projection。QEMU 采集非�
 
 ## Agent worktree boundary
 
-`design`、`spec` 和 `implement` 的写操作在 detached linked worktree 中完成。设计变更只有确认后原子应用并单独提交；实现成功且原工作树 HEAD 未漂移、owns 未越界、所有门禁通过时才应用 patch 并提交。worktree 只是 Git 回滚机制，不是进程、网络、凭据或宿主文件安全边界；宿主命令继承当前用户权限。
+学生手写 DesignSpec 和 ModuleSpec，`spec lint` 与 `agent review` 都不写文件。只有 `implement` 在 detached linked worktree 中修改代码和测试。模型通过结构化工具提交实现结果与 test target 提案；校验失败时，错误返回同一模型线程继续修正。实现成功且原工作树 HEAD 未漂移、owns 未越界、所有门禁通过时，VOS 才应用 patch、原子投影 `vos.yaml` 并提交。worktree 只是 Git 回滚机制，不是进程、网络、凭据或宿主文件安全边界；宿主命令继承当前用户权限。
 
 Portal/Demo 保留现有 HTTP/API 构建和单测作为冻结平台边界。学生 CLI 不公开 HTTP 服务、旧 pipeline、旧 Spec kind 或旧 Agent 入口。

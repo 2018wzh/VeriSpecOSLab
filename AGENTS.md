@@ -37,6 +37,8 @@ The public student surface is intentionally small: `init`, `doctor`, determinist
 
 The Agent implementation worktree is a detached linked Git worktree. It protects the original tree from failed patches and ownership violations; it is not a process, network, credentials, or host-filesystem sandbox. Host commands inherit the current user and network by design. Keep this limitation explicit in code, tests, and docs.
 
+Structured Agent results must be submitted through the declared runtime tool. A rejected schema or semantic submission is returned to the same model thread as a tool error, with the normal tools restored so the Agent can inspect, repair, and resubmit. Do not treat `failed`, `partial`, or `blocked` implementation payloads as successful completion, and do not bypass this loop by parsing prose.
+
 ## Commit & Pull Request Guidelines
 
 Recent commits use bracketed scopes such as `[vos][cli] Simplify student workflow` and `[docs][spec] Document ModuleSpec v2`. Use the same pattern: `[area][component] Imperative summary`. This branch is pushed without creating or merging a PR. Describe the behavioral change, list tests run, note affected docs/specs, and call out generated `.vos/` artifacts or local-only files.

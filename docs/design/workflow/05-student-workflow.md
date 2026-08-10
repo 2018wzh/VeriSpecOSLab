@@ -14,9 +14,9 @@
 
 ## 3. 实现与修复
 
-`vos agent implement <module>` 要求 clean HEAD 和已提交 ModuleSpec；跨模块变更还要求已提交 SpecPatch。Agent 在 detached linked worktree 中修改、构建、运行 public/contract checks，直到全部通过、主动中止或已有 maxIterations 上限命中。只有原工作树 HEAD 未漂移、changed paths 全部在 owns 并集内且 evidence 通过时，VOS 才应用 patch 并创建 `[vos][agent] Implement <module>` 提交。
+`vos agent implement <module>` 要求 clean HEAD 和已提交 ModuleSpec；跨模块变更还要求已提交 SpecPatch。Agent 在 detached linked worktree 中修改代码和测试，运行 build、public、contract、固定种子 fuzz 与有界 trace 门禁，直到全部通过、主动中止或已有 maxIterations 上限命中。实现结果和 test target 提案必须通过结构化工具提交；校验失败时，工具把错误返回同一模型线程，允许 Agent 继续检查、修改和重新提交。VOS 不接受 `failed`、`partial` 或 `blocked` 作为完成结果。只有原工作树 HEAD 未漂移、changed paths 全部在 owns 并集内且 evidence 通过时，VOS 才应用 patch 并创建 `[vos][agent] Implement <module>` 提交。
 
-失败、越界、漂移和迭代上限不会修改原工作树，只保留诊断、diff 和 evidence。`debug`、`verify`、`review` 和 `kb` 永远只读或问答。
+失败、越界、漂移和迭代上限不会修改原工作树，只保留诊断、diff 和 evidence。`debug`、`verify`、`review` 和 `ask` 永远只读或问答。
 
 ## 4. 运行、验证和提交
 
