@@ -258,7 +258,8 @@ describe("agent task profiles", () => {
     const tracePrompt = buildAgentTaskSystemPrompt(traceProfile);
 
     expect(traceProfile.skills).toContain("instrumentation-testing");
-    expect(toolchainPrompt).toContain("ToolchainSpec semantic build contract");
+    expect(toolchainPrompt).toContain("special toolchain ModuleSpec");
+    expect(toolchainPrompt).toContain("structured vos.yaml execution projection");
     expect(reportPrompt).toContain("Do not change pass/fail facts");
     expect(tracePrompt).toContain("VOS_TRACE");
     expect(tracePrompt).toContain("serial output");
@@ -269,14 +270,14 @@ describe("agent task profiles", () => {
     const resolved = resolveBuiltInSkills([
       "os-spec-authoring",
       "audit-review",
-      "operation-codegen",
+      "module-implementation",
       "reference-policy",
       "teaching-explanation",
     ]);
 
-    expect(resolved.promptText).toContain("Architecture -> Module -> Operation -> SpecPatch");
+    expect(resolved.promptText).toContain("DesignSpec -> ModuleSpec with embedded operations");
     expect(resolved.promptText).toContain("risk flags");
-    expect(resolved.promptText).toContain("allowed paths");
+    expect(resolved.promptText).toContain("ModuleSpec owns");
     expect(resolved.promptText).toContain("citation");
     expect(resolved.promptText).toContain("design goal");
     expect(resolved.mcpServers).toEqual([]);
@@ -287,8 +288,9 @@ describe("agent task profiles", () => {
     const codegenPrompt = buildAgentTaskSystemPrompt(resolveAgentTaskProfile({ taskKind: "toolchain_generate" }));
     const kbPrompt = buildAgentTaskSystemPrompt(resolveAgentTaskProfile({ taskKind: "knowledgebase_qa" }));
 
-    expect(codegenPrompt).toContain("ToolchainSpec semantic build contract");
-    expect(codegenPrompt).toContain("allowed_output_path");
+    expect(codegenPrompt).toContain("special toolchain ModuleSpec");
+    expect(codegenPrompt).toContain("program/args/cwd/env/timeout");
+    expect(codegenPrompt).toContain("never encode shell command strings in vos.yaml");
     expect(codegenPrompt).toContain("deterministic gates");
     expect(kbPrompt).toContain("source refs");
     expect(kbPrompt).toContain("hidden or staff-only material");

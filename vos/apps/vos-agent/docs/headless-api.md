@@ -63,7 +63,7 @@ Default public profiles are resolved from `taskKind`:
 | `plan`                                  | `planning-agent.v1`      | `deep`  | `os-spec-authoring`                        | `spec-index`, `course-kb`      | `plan_draft.v1`           |
 | `design_review`, `spec_review`, `arch_review` | `review-agent.v1` | `deep`  | `os-spec-authoring`, `audit-review`        | `spec-index`, `course-kb`      | `spec_review.v1`          |
 | `spec_revision`, `spec_patch`            | `spec-assistant.v1`      | `deep`  | `os-spec-authoring`                        | `spec-index`, `course-kb`      | `spec_revision_draft.v1`  |
-| `codegen`, `skeleton_generation`         | `spec-compiler.v1`       | `deep`  | `operation-codegen`                        | `spec-index`                   | `spec_compiler_output.v1` |
+| `codegen`, `skeleton_generation`         | `spec-compiler.v1`       | `deep`  | `module-implementation`                    | `spec-index`                   | `spec_compiler_output.v1` |
 | `toolchain_generate`                     | `toolchain-agent.v1`     | `deep`  | `toolchain-authoring`                      | `spec-index`                   | `toolchain_generation_draft.v1` |
 | `validate`, `review_patch`               | `spec-validator.v1`      | `deep`  | `verification-diagnosis`, `audit-review`   | `spec-index`, `evidence-store` | `validator_feedback.v1`   |
 | `debug`, `explain_log`, `failure_triage` | `debug-agent.v1`         | `smart` | `gdb-debug`, `qemu-monitor`, `visualization`, `verification-diagnosis` | `evidence-store`, `spec-index` | `debug_output.v1` |
@@ -90,7 +90,7 @@ comes from `vos-kb` or caller-supplied MCP servers. Actual tool exposure is
 always intersected with the internal profile tool policy.
 
 Built-in prompt skills are: `os-spec-authoring`, `audit-review`,
-`operation-codegen`, `toolchain-authoring`, `evidence-reporting`,
+`module-implementation`, `toolchain-authoring`, `evidence-reporting`,
 `instrumentation-testing`, `reference-policy`, `teaching-explanation`,
 `gdb-debug`, `qemu-monitor`, `visualization`, and
 `verification-diagnosis`.

@@ -4,7 +4,7 @@ import { bretVictorTutorSkill } from "./bret-victor-tutor.ts";
 import { evidenceReportingSkill } from "./evidence-reporting.ts";
 import { gdbDebugSkill } from "./gdb-debug.ts";
 import { instrumentationTestingSkill } from "./instrumentation-testing.ts";
-import { operationCodegenSkill } from "./operation-codegen.ts";
+import { moduleImplementationSkill } from "./module-implementation.ts";
 import { osSpecAuthoringSkill } from "./os-spec-authoring.ts";
 import { qemuMonitorSkill } from "./qemu-monitor.ts";
 import { referencePolicySkill } from "./reference-policy.ts";
@@ -17,7 +17,7 @@ import type { BuiltInSkill, BuiltInSkillResolution } from "./types.ts";
 const BUILT_IN_SKILLS: Record<string, BuiltInSkill> = {
   "os-spec-authoring": osSpecAuthoringSkill,
   "audit-review": auditReviewSkill,
-  "operation-codegen": operationCodegenSkill,
+  "module-implementation": moduleImplementationSkill,
   "toolchain-authoring": toolchainAuthoringSkill,
   "evidence-reporting": evidenceReportingSkill,
   "instrumentation-testing": instrumentationTestingSkill,
