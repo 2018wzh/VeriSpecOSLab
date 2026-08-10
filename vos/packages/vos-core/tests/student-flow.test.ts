@@ -217,7 +217,7 @@ describe("student v2 workflow", () => {
       ].join("\n"));
       writeFileSync(join(root, "vos.yaml"), [
         "version: vos.project.v1",
-        "build: { program: bun, args: [--version], cwd: ., env: [], timeout: 30000, artifacts: [] }",
+        "build: { program: bun, args: [-e, \"require('node:fs').mkdirSync('build', { recursive: true }); require('node:fs').writeFileSync('build/hidden-prerequisite.txt', 'built')\"], cwd: ., env: [], timeout: 30000, artifacts: [build/hidden-prerequisite.txt] }",
         "runners: {}",
         "checks:",
         "  public-memory: { program: bun, args: [--version], cwd: ., env: [], timeout: 30000, verifies: [memory] }",
@@ -305,7 +305,8 @@ describe("student v2 workflow", () => {
       expect(readFileSync(join(root, "src", "memory.ts"), "utf8")).toContain("allocate");
       expect(git(root, ["log", "-1", "--pretty=%s"]).trim()).toBe("[vos][agent] Implement memory");
       expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
-      expect((await invoke(root, "verify", "--hidden")).status).toBe("passed");
+      const hiddenVerification = await invoke(root, "verify", "--hidden");
+      expect(hiddenVerification).toMatchObject({ status: "passed" });
       expect(existsSync(join(root, "memory.hidden.output"))).toBe(false);
       writeFileSync(join(root, "untracked.txt"), "must not enter the submission\n");
       expect((await invoke(root, "submit")).status).toBe("policy_blocked");
@@ -747,7 +748,7 @@ async function prepareModuleProject(root: string): Promise<void> {
   ].join("\n"));
   writeFileSync(join(root, "vos.yaml"), [
     "version: vos.project.v1",
-    "build: { program: bun, args: [--version], cwd: ., env: [], timeout: 30000, artifacts: [] }",
+    "build: { program: bun, args: [-e, \"require('node:fs').mkdirSync('build', { recursive: true }); require('node:fs').writeFileSync('build/hidden-prerequisite.txt', 'built')\"], cwd: ., env: [], timeout: 30000, artifacts: [build/hidden-prerequisite.txt] }",
     "runners: {}",
     "checks:",
     "  public-memory: { program: bun, args: [--version], cwd: ., env: [], timeout: 30000, verifies: [memory] }",
@@ -804,7 +805,7 @@ function implementationResult(moduleId = "memory") {
     hidden_tests: [{
       id: `hidden-${moduleId}`,
       path: `${moduleId}.hidden.ts`,
-      content: "import { expect, test } from 'bun:test'; test('hidden arithmetic contract', () => expect(1 + 1).toBe(2));\n",
+      content: "import { existsSync } from 'node:fs'; import { expect, test } from 'bun:test'; test('hidden worktree is built before verification', () => expect(existsSync('build/hidden-prerequisite.txt')).toBe(true));\n",
       program: "bun",
       args: ["test", "{hidden_test}"],
       cwd: ".",

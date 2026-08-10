@@ -106,7 +106,7 @@ import {
   type DebugTraceInput,
 } from "./runtime/debug-trace.ts";
 import { resolveToolchainManifestPath } from "./runtime/toolchain-manifest.ts";
-import { HardwareRunner, HostRunner, ManifestRunner, QemuRunner, readStudentManifest, runStructuredStudentCommand } from "vos-runtime";
+import { HardwareRunner, HostRunner, ManifestRunner, QemuRunner, readStudentManifest, runStructuredStudentCommand, type BuildEvidence } from "vos-runtime";
 import { runCommand } from "./runtime/executor.ts";
 import { buildContextBundle, loadAgentAllowedPaths } from "./agent/context.ts";
 import {
@@ -3975,17 +3975,18 @@ async function executeStudentVerify(
   evidence.addArtifactFromPath("verify", artifact, "deterministic student verification evidence");
   const passed = publicPassed && (!command.hidden || hidden?.status === "passed");
   return {
-    status: passed ? "passed" : build.status === "timed_out" || checks.some((check) => check.status === "timed_out") || hidden?.results.some((result) => result.status === "timed_out") ? "timed_out" : "validation_failed",
+    status: passed ? "passed" : build.status === "timed_out" || checks.some((check) => check.status === "timed_out") || hidden?.status === "timed_out" || hidden?.results.some((result) => result.status === "timed_out") ? "timed_out" : "validation_failed",
     details: { diagnostics, build, checks, hidden, evidence: collected, clean_head: collected.cleanHead, submittable: passed },
   };
 }
 
 interface StudentHiddenVerification {
-  status: "passed" | "validation_failed";
+  status: "passed" | "validation_failed" | "timed_out";
   commit_sha: string;
   spec_hash: string;
   config_hash: string;
   manifest_path: string;
+  build: BuildEvidence;
   results: Array<Record<string, unknown> & { status: "passed" | "failed" | "timed_out" }>;
   verification_path: string;
 }
@@ -4006,37 +4007,46 @@ async function executeStudentHiddenVerification(projectRoot: string, bundle: Nor
   }
   const results = [] as StudentHiddenVerification["results"];
   const executionRoot = await createStudentWorktree(projectRoot, `hidden-verify-${process.pid}-${Date.now()}`);
+  let build: BuildEvidence;
   try {
-    for (const raw of manifest.tests) {
-      if (!isRecord(raw) || typeof raw.id !== "string" || typeof raw.path !== "string" || typeof raw.content_hash !== "string" || typeof raw.program !== "string" || !isStringArray(raw.args) || typeof raw.cwd !== "string" || !isStringArray(raw.env) || !isPositiveInteger(raw.timeout)) {
-        throw new CliError("hidden test manifest contains an invalid command", "validation_failed");
+    build = await new HostRunner(executionRoot, signal).build("hidden-build");
+    if (build.status === "passed") {
+      for (const raw of manifest.tests) {
+        if (!isRecord(raw) || typeof raw.id !== "string" || typeof raw.path !== "string" || typeof raw.content_hash !== "string" || typeof raw.program !== "string" || !isStringArray(raw.args) || typeof raw.cwd !== "string" || !isStringArray(raw.env) || !isPositiveInteger(raw.timeout)) {
+          throw new CliError("hidden test manifest contains an invalid command", "validation_failed");
+        }
+        assertSafeStudentRelativePath(raw.path, `hidden test ${raw.id} path`);
+        const hiddenFile = path.resolve(projectRoot, raw.path);
+        if (!existsSync(hiddenFile) || hashString(await readFile(hiddenFile, "utf8")) !== raw.content_hash) {
+          throw new CliError(`hidden test ${raw.id} content does not match its bound hash`, "validation_failed", { reason: "hidden_content_mismatch", hidden_test: raw.id });
+        }
+        const result = await runStructuredStudentCommand(executionRoot, {
+          program: raw.program,
+          args: raw.args.map((value) => value === raw.path || value === "{hidden_test}" ? hiddenFile : value),
+          cwd: raw.cwd,
+          env: raw.env,
+          timeout: raw.timeout,
+        }, signal);
+        results.push({ id: raw.id, ...result });
       }
-      assertSafeStudentRelativePath(raw.path, `hidden test ${raw.id} path`);
-      const hiddenFile = path.resolve(projectRoot, raw.path);
-      if (!existsSync(hiddenFile) || hashString(await readFile(hiddenFile, "utf8")) !== raw.content_hash) {
-        throw new CliError(`hidden test ${raw.id} content does not match its bound hash`, "validation_failed", { reason: "hidden_content_mismatch", hidden_test: raw.id });
-      }
-      const result = await runStructuredStudentCommand(executionRoot, {
-        program: raw.program,
-        args: raw.args.map((value) => value === raw.path || value === "{hidden_test}" ? hiddenFile : value),
-        cwd: raw.cwd,
-        env: raw.env,
-        timeout: raw.timeout,
-      }, signal);
-      results.push({ id: raw.id, ...result });
     }
   } finally {
     await removeStudentWorktree(projectRoot, executionRoot);
   }
-  const status = results.length > 0 && results.every((result) => result.status === "passed") ? "passed" : "validation_failed";
+  const status = build.status === "timed_out"
+    ? "timed_out"
+    : build.status === "passed" && results.length > 0 && results.every((result) => result.status === "passed")
+      ? "passed"
+      : results.some((result) => result.status === "timed_out") ? "timed_out" : "validation_failed";
   const verificationPath = path.join(root, "last-verification.json");
-  await writeFile(verificationPath, `${JSON.stringify({ version: "vos.hidden-verification.v1", status, commit_sha: commitSha, spec_hash: specHash, config_hash: configHash, manifest_hash: hashString(await readFile(manifestPath, "utf8")), results }, null, 2)}\n`);
+  await writeFile(verificationPath, `${JSON.stringify({ version: "vos.hidden-verification.v1", status, commit_sha: commitSha, spec_hash: specHash, config_hash: configHash, manifest_hash: hashString(await readFile(manifestPath, "utf8")), build, results }, null, 2)}\n`);
   return {
     status,
     commit_sha: commitSha,
     spec_hash: specHash,
     config_hash: configHash,
     manifest_path: studentRelativePath(projectRoot, manifestPath),
+    build,
     results,
     verification_path: studentRelativePath(projectRoot, verificationPath),
   };
