@@ -7,7 +7,7 @@
 > - **学完能做什么**：写出一套可检查的内存管理子系统，包括物理页分配器、不变量检查器和分页切换，并说清每条内存不变量为什么成立。
 > - **预计耗时**：15–20 小时，建议安排 1–2 周。其中分配器与不变量检查器约占一半，页表与用户映射占另一半。
 > - **前置依赖**：已完成 Lab 2（内核能启动并输出 banner），阅读第 3 章与对应 ISA 的页表参考。
-> - **产出物**：`kernel/memory` 与 `kernel/vm` 两个 ModuleSpec、对应实现与公开测试、内存地图与分页切换日志、不变量检查器及故障注入结果。
+> - **产出物**：覆盖物理分配与虚拟映射的 `kernel/memory` ModuleSpec、对应实现与公开测试、内存地图与分页切换日志、不变量检查器及故障注入结果。
 
 ## 1. 设计问题
 
@@ -103,7 +103,7 @@ free ∩ allocated = ∅
 
 ## 4. Spec 与 Agent 工作流
 
-物理分配器和虚拟内存通常分别建立 ModuleSpec。涉及锁、跨核 TLB 或中断上下文时使用 L3；否则至少使用 L2。
+参考课程把物理分配、内核页表和用户映射收在同一个 `kernel/memory` ModuleSpec 中，以便统一声明页所有权、映射权限和 TLB 可见性。若学生的架构确实需要拆分模块，必须为新增模块提供稳定 ID、独立 `owns` 和明确依赖，不能在本 Lab 提前引用后续课程模块。涉及锁、跨核 TLB 或中断上下文时使用 L3；否则至少使用 L2。
 
 最小字段骨架如下，`TODO` 必须换成你从前文设计问题推导出的契约：
 
@@ -125,12 +125,12 @@ dependencies: [toolchain]
 
 ```sh
 vos agent ask "物理页分配、地址空间与 TLB 约束应如何写进同一个分级 ModuleSpec？"
-# 学生根据本节设计问题和字段骨架手写 spec/modules/memory.yaml
+# 学生根据本节设计问题和字段骨架手写 spec/modules/kernel/memory.yaml
 vos spec lint kernel/memory
 vos agent review kernel/memory -i
 # 学生修改后再次 lint，并手动提交
 vos spec lint kernel/memory
-git add spec/modules/memory.yaml
+git add spec/modules/kernel/memory.yaml
 git commit -m "[spec][memory] Define Lab 3 memory contract"
 vos agent implement kernel/memory
 vos build
@@ -148,7 +148,7 @@ ModuleSpec 应覆盖：
 - dependencies：启动、工具链和平台内存描述；
 - L3 concurrency/rely/guarantee：锁顺序、TLB 可见性和调用上下文。
 
-测试 target 在 `vos.yaml` 中分别绑定稳定 ID，例如 `kernel/memory` 与 `kernel/vm`。若启用分页需要同时改变 boot 的可观察语义，先手写并提交 SpecPatch，再实现跨模块修改。
+测试 target 在 `vos.yaml` 中绑定稳定 ID `kernel/memory`；不同性质可以拆成多条 public、contract、fuzz 和 trace target。若启用分页需要同时改变 boot 的可观察语义，先手写并提交 SpecPatch，再实现跨模块修改。
 
 ## 5. 质量门禁
 
@@ -179,7 +179,7 @@ Agent 可以审查不变量、生成测试框架和解释页错误证据。学�
 
 ## 8. 提交物
 
-- [ ] `spec/modules/memory.yaml` 与 `spec/modules/vm.yaml`；
+- [ ] `spec/modules/kernel/memory.yaml`；
 - [ ] 实现、公开测试和 `verifies` 映射；
 - [ ] 物理内存地图与分页切换日志；
 - [ ] 不变量检查器及故障注入结果；

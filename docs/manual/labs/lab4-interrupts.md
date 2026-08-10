@@ -104,12 +104,12 @@ algorithm_intent: TODO
 
 ```sh
 vos agent ask "trap、interrupt、exception 与设备 IRQ 的边界应如何进入 ModuleSpec？"
-# 学生手写 spec/modules/trap.yaml 以及需要的跨边界 InterfaceSpec
+# 学生手写 spec/modules/kernel/trap.yaml 以及需要的跨边界 InterfaceSpec
 vos spec lint kernel/trap
 vos agent review kernel/trap
 # 学生修改后再次 lint，并手动提交
 vos spec lint kernel/trap
-git add spec/modules/trap.yaml spec/interfaces
+git add spec/modules/kernel/trap.yaml spec/interfaces
 git commit -m "[spec][trap] Define Lab 4 trap contract"
 vos agent implement kernel/trap
 vos build

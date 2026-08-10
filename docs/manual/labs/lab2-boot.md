@@ -5,9 +5,9 @@
 > **本 Lab 概览**
 >
 > - **学完能做什么**：用 YAML Spec 精确描述启动序列的行为和契约，让 Agent 从你的 Spec 生成能通过 QEMU 启动的内核，并读懂串口证据。
-> - **预计耗时**：10–14 小时，建议安排 1 周。**本 Lab 不写实现代码**，时间花在 Spec 设计、工具链投影与验证上。
+> - **预计耗时**：10–14 小时，建议安排 1 周。**本 Lab 不要求学生手写实现代码**，时间花在 Spec 设计、工具链投影、Agent 实现审查与验证上。
 > - **前置依赖**：已完成 Lab 1（DesignSpec 已提交），阅读第 2 章与对应平台附录。
-> - **产出物**：`spec/modules/boot.yaml`（L3）、更新后的工具链 ModuleSpec 与 `vos.yaml`、启动实现、QEMU 串口 evidence、clean HEAD 验证结果。
+> - **产出物**：`spec/modules/kernel/boot.yaml`（L3）、更新后的工具链 ModuleSpec 与 `vos.yaml`、启动实现、QEMU 串口 evidence、clean HEAD 验证结果。
 
 ## 1. 设计问题
 
@@ -179,7 +179,7 @@ Lab 2 把前面的启动分析收敛到一个 L3 ModuleSpec、工具链 ModuleSp
 vos agent ask "启动模块的状态、并发假设和可观察错误应如何区分？"
 ```
 
-启动模块通常需要 L3，因为它包含多核协作、内存序和中断状态。Ask Agent 只用于澄清概念，下面的内容要由学生写入 `spec/modules/boot.yaml`：
+启动模块通常需要 L3，因为它包含多核协作、内存序和中断状态。Ask Agent 只用于澄清概念，下面的内容要由学生写入 `spec/modules/kernel/boot.yaml`：
 
 - 稳定 `id`、`module`、`level: 3` 和明确 `purpose`；
 - 只覆盖启动实现与相应测试的 `owns`；
@@ -238,9 +238,9 @@ algorithm_intent: TODO
 ```sh
 vos spec lint kernel/boot
 vos agent review kernel/boot -i
-# 学生按建议修改 spec/modules/boot.yaml
+# 学生按建议修改 spec/modules/kernel/boot.yaml
 vos spec lint kernel/boot
-git add spec/modules/boot.yaml
+git add spec/modules/kernel/boot.yaml
 git commit -m "[spec][boot] Define Lab 2 boot contract"
 ```
 
@@ -366,7 +366,7 @@ vos verify
 
 ## 5. 质量门禁
 
-- [ ] `spec/modules/boot.yaml` 为 L3，结构校验通过。
+- [ ] `spec/modules/kernel/boot.yaml` 为 L3，结构校验通过。
 - [ ] `owns` 只包含启动实现和相关公开测试。
 - [ ] 每个操作都有 pre、post、errors 和可验证性质。
 - [ ] 工具链命令全部使用 `program + args`，没有 shell 字符串拼接。
@@ -382,7 +382,7 @@ Agent 可以解释启动链、生成入口汇编草案和审查 Spec 字段。�
 
 ## 7. 提交物
 
-- [ ] `spec/modules/boot.yaml`；
+- [ ] `spec/modules/kernel/boot.yaml`；
 - [ ] 更新后的 `spec/modules/toolchain.yaml`；
 - [ ] 更新后的 `vos.yaml`；
 - [ ] 启动实现与公开测试；

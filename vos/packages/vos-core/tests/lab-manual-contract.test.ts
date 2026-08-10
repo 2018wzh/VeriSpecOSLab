@@ -14,6 +14,13 @@ const expectedModuleCommands: Record<string, string[]> = {
   "lab7-resource-abi.md": ["kernel/pipe"],
 };
 
+const expectedModulePaths: Record<string, string[]> = {
+  "lab2-boot.md": ["spec/modules/kernel/boot.yaml"],
+  "lab3-memory.md": ["spec/modules/kernel/memory.yaml"],
+  "lab4-interrupts.md": ["spec/modules/kernel/trap.yaml"],
+  "lab7-resource-abi.md": ["spec/modules/kernel/pipe.yaml"],
+};
+
 describe("Lab 1-10 manual command contract", () => {
   test("preserves the Lab 1 CTF warm-up and teaches handwritten Spec review", () => {
     const lab = readLab("lab1-seed.md");
@@ -33,6 +40,15 @@ describe("Lab 1-10 manual command contract", () => {
       expect(new Set(commands)).toEqual(new Set(expected));
       expect(commands.every((target) => target.includes("/"))).toBe(true);
     }
+  });
+
+  test("uses the same nested ModuleSpec paths as the replayed course history", () => {
+    for (const [file, expected] of Object.entries(expectedModulePaths)) {
+      const lab = readLab(file);
+      for (const path of expected) expect(lab).toContain(path);
+      expect(lab).not.toMatch(/spec\/modules\/(?:boot|memory|vm|trap|pipe)\.yaml/);
+    }
+    expect(readLab("lab3-memory.md")).not.toContain("kernel/vm");
   });
 
   test("keeps later labs on executable public commands and explicit acceptance boundaries", () => {

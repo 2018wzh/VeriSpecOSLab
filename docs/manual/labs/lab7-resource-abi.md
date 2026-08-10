@@ -58,12 +58,12 @@ algorithm_intent: TODO
 
 ```sh
 vos agent ask "pipe 的资源生命周期、阻塞语义与 ABI 错误应如何分层表达？"
-# 学生手写 spec/modules/pipe.yaml 并更新资源 ABI InterfaceSpec
+# 学生手写 spec/modules/kernel/pipe.yaml 并更新资源 ABI InterfaceSpec
 vos spec lint kernel/pipe
 vos agent review kernel/pipe
 # 学生修改后再次 lint，并手动提交
 vos spec lint kernel/pipe
-git add spec/modules/pipe.yaml spec/interfaces spec/patches
+git add spec/modules/kernel/pipe.yaml spec/interfaces spec/patches
 git commit -m "[spec][pipe] Define Lab 7 resource ABI"
 vos agent implement kernel/pipe
 vos build
