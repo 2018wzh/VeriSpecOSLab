@@ -4601,7 +4601,11 @@ export async function executeAgentDebug(
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
       taskRunner: context.agentRunner,
-      validateSubmission: (submission) => parseDebugOutput(submission),
+      validateSubmission: (submission) => {
+        const parsed = parseDebugOutput(submission);
+        sanitizeAgentVisualizationHtml(parsed.visualization_html);
+        return parsed;
+      },
     });
   } catch (error) {
     if (readonlyBefore) assertStudentReadonlyFingerprint(readonlyBefore, await studentGitFingerprint(projectRoot), "agent debug");

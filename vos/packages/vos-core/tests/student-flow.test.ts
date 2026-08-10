@@ -135,13 +135,20 @@ describe("student v2 workflow", () => {
         artifacts: [{ kind: "qemu", path: ".vos/runs/failed-qemu/artifacts/student-qemu.json" }],
       }));
 
+      let turn = 0;
       const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "debug"], {
         print: false,
         agentRunner: async (options) => {
+          turn++;
           expect(options.taskKind).toBe("student_debug");
           expect(JSON.stringify(options.context)).toContain("CTF_BAREMETAL_OK");
+          if (turn === 2) {
+            expect(options.threadId).toBe("student-debug-repair");
+            expect(options.task).toContain("visualization_html must be a complete HTML document");
+          }
           return {
             content: "diagnosed",
+            threadId: "student-debug-repair",
             events: acceptedSubmitEvents("debug_output.v1", {
               failure_class: "verification_failure",
               summary: "The runner cannot observe the completion marker.",
@@ -150,7 +157,9 @@ describe("student v2 workflow", () => {
               suspected_concepts: ["serial oracle projection"],
               evidence_chain: [{ label: "qemu evidence", artifact: ".vos/runs/failed-qemu/artifacts/student-qemu.json", observation: "marker absent from captured stdout" }],
               visualization_steps: [{ phase: "capture", description: "Runner checks captured stdout." }],
-              visualization_html: "<!doctype html><html><body><main data-agent-generated=\"true\"><section>capture</section><input id=\"scrubber\" type=\"range\"><script>const states=[];</script></main></body></html>",
+              visualization_html: turn === 1
+                ? "<main>incomplete</main>"
+                : "<!doctype html><html><body><main data-agent-generated=\"true\"><section>capture</section><input id=\"scrubber\" type=\"range\"><script>const states=[];</script></main></body></html>",
               trace_summary: "No additional trace was required.",
               gdb_summary: "GDB was not required.",
               next_diagnostic_commands: ["vos run qemu"],
@@ -160,6 +169,7 @@ describe("student v2 workflow", () => {
         },
       });
 
+      expect(turn).toBe(2);
       expect(result).toMatchObject({ status: "passed", details: { role: "debug", model_used: true, worktree_read_only: true } });
       expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
     });
