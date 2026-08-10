@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { isWindows } from "vos-platform";
 import { bashTool, createBashTool } from "../../app/tools/bash.ts";
 import { makeTmpDir, removeTmpDir, writeFixture } from "../helpers/tmp.ts";
 
@@ -28,7 +27,7 @@ describe("bashTool", () => {
 
   test("captures stdout of a successful command", async () => {
     const result = await bashTool.execute(
-      JSON.stringify({ command: shellCommand("echo hello", "Write-Output \"hello\"") }),
+      JSON.stringify({ command: "echo hello" }),
     );
     expect(normalizeNewlines(result)).toBe("hello\n");
   });
@@ -36,10 +35,7 @@ describe("bashTool", () => {
   test("captures stderr of a failing command and does not throw", async () => {
     const result = await bashTool.execute(
       JSON.stringify({
-        command: shellCommand(
-          "echo to-out; echo to-err 1>&2; exit 3",
-          "[Console]::Out.WriteLine(\"to-out\"); [Console]::Error.WriteLine(\"to-err\"); exit 3",
-        ),
+        command: "echo to-out; echo to-err 1>&2; exit 3",
       }),
     );
     expect(result).toContain("to-out");
@@ -51,7 +47,7 @@ describe("bashTool", () => {
     writeFixture(tmp, "marker.txt", "x");
     const tool = createBashTool({ cwd: tmp });
     const result = await tool.execute(JSON.stringify({
-      command: shellCommand("ls", "Get-ChildItem -Name"),
+      command: "ls",
     }));
     expect(result).toContain("marker.txt");
   });
@@ -61,7 +57,7 @@ describe("bashTool", () => {
     const tool = createBashTool({ cwd: tmp });
     const result = await tool.execute(
       JSON.stringify({
-        command: shellCommand("rm to-delete.txt", "Remove-Item -LiteralPath \"to-delete.txt\""),
+        command: "rm to-delete.txt",
       }),
     );
     expect(result).toBe("");
@@ -71,7 +67,7 @@ describe("bashTool", () => {
   test("respects per-command timeout (returns error string, no throw)", async () => {
     const fast = createBashTool({ timeoutMs: 50 });
     const result = await fast.execute(JSON.stringify({
-      command: shellCommand("sleep 1", "Start-Sleep -Seconds 1"),
+      command: "sleep 1",
     }));
     expect(result).toContain("Command timed out after 50ms");
   });
@@ -79,10 +75,7 @@ describe("bashTool", () => {
   test("handles pipes and chained commands", async () => {
     const result = await bashTool.execute(
       JSON.stringify({
-        command: shellCommand(
-          "printf 'a\\nb\\nc\\n' | wc -l | tr -d ' '",
-          "\"a\", \"b\", \"c\" | Measure-Object | ForEach-Object { $_.Count }",
-        ),
+        command: "printf 'a\\nb\\nc\\n' | wc -l | tr -d ' '",
       }),
     );
     expect(result.trim()).toBe("3");
@@ -111,17 +104,13 @@ describe("bashTool", () => {
     const tool = createBashTool({ maxOutputBytes: 5 });
     const result = await tool.execute(
       JSON.stringify({
-        command: shellCommand("printf 'hello world'", "[Console]::Out.Write(\"hello world\")"),
+        command: "printf 'hello world'",
       }),
     );
     expect(result).toContain("hello");
     expect(result).toContain("output truncated");
   });
 });
-
-function shellCommand(posix: string, windows: string): string {
-  return isWindows() ? windows : posix;
-}
 
 function normalizeNewlines(value: string): string {
   return value.replace(/\r\n/g, "\n");

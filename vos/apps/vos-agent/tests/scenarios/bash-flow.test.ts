@@ -6,7 +6,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { isWindows } from "vos-platform";
 import { runAgent } from "../../app/agent/loop.ts";
 import { createBashTool } from "../../app/tools/bash.ts";
 import { ToolRegistry } from "../../app/tools/types.ts";
@@ -50,7 +49,7 @@ describe("scenario: bash filesystem manipulation", () => {
     const chat = new CallbackChatClient((_req, i) => {
       if (i === 0) {
         return toolCallResponse([
-          { name: "Bash", args: { command: shellCommand("ls", "Get-ChildItem -Name") }, id: "b1" },
+          { name: "Bash", args: { command: "ls" }, id: "b1" },
         ]);
       }
       if (i === 1) {
@@ -58,10 +57,7 @@ describe("scenario: bash filesystem manipulation", () => {
           {
             name: "Bash",
             args: {
-              command: shellCommand(
-                "rm README_old.md",
-                "Remove-Item -LiteralPath \"README_old.md\"",
-              ),
+              command: "rm README_old.md",
             },
             id: "b2",
           },
@@ -83,7 +79,3 @@ describe("scenario: bash filesystem manipulation", () => {
     expect(readFileSync(join(tmp, "app/main.js"), "utf8")).toBe(MAIN_JS);
   }, 20_000);
 });
-
-function shellCommand(posix: string, windows: string): string {
-  return isWindows() ? windows : posix;
-}

@@ -20,25 +20,17 @@ describe("vos-platform", () => {
     expect(toPosixPath(relativePosixPath("a", "a/b/c"))).toBe("b/c");
   });
 
-  test("builds a Windows shell invocation", () => {
-    expect(shellInvocation("Write-Output 1", "win32")).toEqual({
-      executable: "powershell.exe",
-      args: [
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        "Write-Output 1",
-      ],
+  test("builds a Windows Bash invocation", () => {
+    expect(shellInvocation("printf 1", "win32", "C:\\Git\\bin\\bash.exe")).toEqual({
+      executable: "C:\\Git\\bin\\bash.exe",
+      args: ["--noprofile", "--norc", "-c", "printf 1"],
     });
   });
 
-  test("builds a POSIX shell invocation", () => {
+  test("builds a POSIX Bash invocation", () => {
     expect(shellInvocation("echo 1", "darwin")).toEqual({
-      executable: "sh",
-      args: ["-c", "echo 1"],
+      executable: "bash",
+      args: ["--noprofile", "--norc", "-c", "echo 1"],
     });
   });
 });

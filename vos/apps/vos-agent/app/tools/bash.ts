@@ -30,13 +30,13 @@ export function createBashTool(opts: BashOptions = {}): Tool {
       function: {
         name: "Bash",
         description:
-          "Execute a shell command in the workspace and return combined stdout+stderr. Exits non-zero are returned as text (no throw).",
+          "Execute a GNU Bash command in the workspace and return combined stdout+stderr. Use POSIX shell syntax on every host. Exits non-zero are returned as text (no throw).",
         parameters: {
           type: "object",
           properties: {
             command: {
               type: "string",
-              description: "The shell command to execute",
+              description: "The GNU Bash command to execute using POSIX shell syntax",
             },
           },
           required: ["command"],
