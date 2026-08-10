@@ -7,7 +7,7 @@
 > - **学完能做什么**：实现一个可写的文件系统，从块设备、buffer cache、inode/目录到日志，四层各自独立可验证，并能在故障注入下证明崩溃一致性。
 > - **预计耗时**：16–22 小时，建议安排 2 周。块设备与 buffer cache 约四分之一，inode/目录约四分之一，日志与崩溃注入约占一半。
 > - **前置依赖**：已完成 Lab 5（用户程序能通过 syscall 读写），阅读第 6 章。
-> - **产出物**：block、buffer-cache、filesystem 三个 ModuleSpec，文件 ABI 更新，实现与崩溃注入矩阵，空间泄漏检查，串口/测试证据。
+> - **产出物**：`kernel/virtio`、`kernel/bio`、`kernel/log`、`kernel/inode`、`kernel/file` 五个 ModuleSpec，文件 ABI 更新，实现与崩溃注入矩阵，空间泄漏检查，串口/测试证据。
 
 ## 1. 设计问题
 
@@ -80,7 +80,7 @@ buffer cache 通常为 L3 ModuleSpec。声明 free、loading、valid、dirty、w
 
 ## 4. Spec 与 Agent 工作流
 
-virtio 与 fs 分别填写下面的骨架。不要把两个模块的实现路径放进同一个 `owns`，跨模块锁顺序或事务变化用 SpecPatch 表达。
+virtio、buffer cache、redo log、inode 和文件 ABI 实现分别填写下面的骨架。不要把多个模块的实现路径塞进同一个 `owns`，跨模块锁顺序或事务变化用 SpecPatch 表达。
 
 ```yaml
 id: TODO_MODULE_ID
@@ -104,23 +104,32 @@ algorithm_intent: TODO
 
 ```sh
 vos agent ask "块设备、缓存与文件系统事务的模块边界和锁顺序应如何表达？"
-# 学生手写 virtio/fs ModuleSpec，并更新必要的 ABI InterfaceSpec
+# 学生手写五份 ModuleSpec，并更新必要的 ABI InterfaceSpec
 vos spec lint kernel/virtio
 vos agent review kernel/virtio
-vos spec lint kernel/fs
-vos agent review kernel/fs -i
+vos spec lint kernel/bio
+vos agent review kernel/bio
+vos spec lint kernel/log
+vos agent review kernel/log
+vos spec lint kernel/inode
+vos agent review kernel/inode -i
+vos spec lint kernel/file
+vos agent review kernel/file -i
 # 学生修改、再次 lint，并手动提交
 vos spec lint all
 git add spec/modules spec/interfaces spec/patches
 git commit -m "[spec][fs] Define Lab 6 filesystem contracts"
 vos agent implement kernel/virtio
-vos agent implement kernel/fs
+vos agent implement kernel/bio
+vos agent implement kernel/log
+vos agent implement kernel/inode
+vos agent implement kernel/file
 vos build
 vos run qemu
 vos verify
 ```
 
-块设备、buffer cache 和文件系统分别使用 ModuleSpec；`open/read/write/close` 等用户可见 ABI 延续 Lab 5 的 InterfaceSpec。跨模块锁顺序或事务语义变化先写 SpecPatch。测试 target 分别绑定模块与接口稳定 ID。
+块设备、buffer cache、redo log、inode/目录和文件对象分别使用 ModuleSpec；`open/read/write/close` 等用户可见 ABI 延续 Lab 5 的 InterfaceSpec。跨模块锁顺序或事务语义变化先写 SpecPatch。测试 target 分别绑定模块与接口稳定 ID。
 
 ## 5. 质量门禁
 
@@ -144,7 +153,7 @@ Agent 可以生成磁盘布局可视化、审查状态机和分析恢复日志�
 
 ## 8. 提交物
 
-- [ ] 三个层次的 ModuleSpec；
+- [ ] 五个职责边界清楚的 ModuleSpec；
 - [ ] 文件 ABI 更新（InterfaceSpec）；
 - [ ] 实现与公开测试；
 - [ ] 崩溃注入矩阵与结果；

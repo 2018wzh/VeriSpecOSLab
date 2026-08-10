@@ -10,7 +10,7 @@ const expectedModuleCommands: Record<string, string[]> = {
   "lab3-memory.md": ["kernel/memory"],
   "lab4-interrupts.md": ["kernel/trap"],
   "lab5-user-space.md": ["kernel/trap", "kernel/process", "kernel/syscall"],
-  "lab6-filesystem.md": ["kernel/virtio", "kernel/fs"],
+  "lab6-filesystem.md": ["kernel/virtio", "kernel/bio", "kernel/log", "kernel/inode", "kernel/file"],
   "lab7-resource-abi.md": ["kernel/pipe"],
 };
 
