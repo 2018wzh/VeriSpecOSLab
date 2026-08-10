@@ -303,6 +303,35 @@ describe("runAgent", () => {
     });
   });
 
+  test("returns a rejected structured submission to a full-tool repair turn", async () => {
+    const { tool: submitTool, calls: submissions } = recordingTool("Submit", ["validation error", "accepted"]);
+    const { tool: writeTool, calls: writes } = recordingTool("Write", ["OK"]);
+    const chat = new ScriptedChatClient([
+      toolCallResponse([{ name: "Submit", args: { seed: "bad" } }]),
+      toolCallResponse([{ name: "Write", args: { file_path: "fixed" } }]),
+      toolCallResponse([{ name: "Submit", args: { seed: 42 } }]),
+    ]);
+    const result = await runAgent({
+      model: TEST_MODEL,
+      chat,
+      registry: new ToolRegistry([writeTool, submitTool]),
+      prompt: "implement",
+      maxIterations: 3,
+      completionReserveIterations: 3,
+      requiredCompletionTool: "Submit",
+    });
+
+    expect(result.iterations).toBe(3);
+    expect(submissions).toHaveLength(2);
+    expect(writes).toHaveLength(1);
+    expect(chat.requests[1].tools.map((entry) => entry.function.name)).toEqual(["Write", "Submit"]);
+    expect(chat.requests[1].messages.at(-1)).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("previous Submit call was rejected"),
+    });
+    expect(chat.requests[2].tools.map((entry) => entry.function.name)).toEqual(["Submit"]);
+  });
+
   test("executes the required completion tool when a provider adds an extra final tool call", async () => {
     const { tool: submitTool, calls: submissions } = recordingTool("Submit", ["accepted"]);
     const { tool: writeTool, calls: writes } = recordingTool("Write", ["OK"]);

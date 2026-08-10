@@ -192,6 +192,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     throw new Error(`required completion tool is unavailable: ${requiredCompletionTool}`);
   }
   let completionToolAccepted = false;
+  let completionRepairPending = false;
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = history
     ? [...history]
     : [];
@@ -205,9 +206,18 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
     throwIfAborted(signal);
+    const completionRepairTurn = completionRepairPending;
+    completionRepairPending = false;
     const submissionPhase = iteration >= Math.max(1, maxIterations - completionReserveIterations + 1)
       && requiredCompletionTool
-      && !completionToolAccepted;
+      && !completionToolAccepted
+      && !completionRepairTurn;
+    if (completionRepairTurn && requiredCompletionTool) {
+      messages.push({
+        role: "user",
+        content: `The previous ${requiredCompletionTool} call was rejected. Use this turn to correct the implementation or the structured payload using the full allowed tool set. Preserve the validation error exactly, do not abandon the task, and be ready to call ${requiredCompletionTool} again on the next submission turn.`,
+      });
+    }
     if (submissionPhase) {
       messages.push({
         role: "user",
@@ -306,8 +316,12 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         tool_call_id: call.id,
         content: result,
       });
-      if (call.function.name === requiredCompletionTool && isAcceptedCompletionResult(result)) {
-        completionToolAccepted = true;
+      if (call.function.name === requiredCompletionTool) {
+        if (isAcceptedCompletionResult(result)) {
+          completionToolAccepted = true;
+        } else {
+          completionRepairPending = true;
+        }
       }
     }
     if (completionToolAccepted) {
