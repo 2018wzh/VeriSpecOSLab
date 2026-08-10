@@ -42,12 +42,14 @@ describe("student QEMU runner", () => {
       failurePattern: "panic",
       timeout,
     });
-    const result = await new QemuRunner(root).run();
+    const runner = new QemuRunner(root);
+    const result = await runner.run();
     expect(result.status).toBe("passed");
     expect(result.stdout).toContain("BOOT_OK");
     expect(result.oracle).toEqual({ outcome: "success", pattern: "BOOT_OK" });
     expect(result.durationMs).toBeLessThan(timeout);
-  });
+    expect(await runner.collectEvidence()).toMatchObject({ cleanHead: true, submittable: true });
+  }, 30_000);
 
   test("fails immediately when serial output matches the panic oracle", async () => {
     const timeout = process.platform === "win32" ? 30_000 : 2_000;
@@ -61,7 +63,7 @@ describe("student QEMU runner", () => {
     expect(result.status).toBe("failed");
     expect(result.oracle).toEqual({ outcome: "failure", pattern: "panic(?:[: ]|$)" });
     expect(result.durationMs).toBeLessThan(timeout);
-  });
+  }, 30_000);
 
   test("reports a timeout when no serial oracle completes", async () => {
     const root = makeProject({
@@ -73,7 +75,7 @@ describe("student QEMU runner", () => {
     const result = await new QemuRunner(root).run();
     expect(result.status).toBe("timed_out");
     expect(result.oracle).toEqual({ outcome: "missing", pattern: "BOOT_OK" });
-  });
+  }, 30_000);
 });
 
 function makeProject(params: {

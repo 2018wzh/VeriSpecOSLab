@@ -138,7 +138,7 @@ export class ManifestRunner implements Runner {
       buildIdentity: { commitSha: await currentHead(this.projectRoot) },
     } satisfies RunEvidence;
     this.evidence.runs.push(evidence);
-    this.evidence.submittable = this.evidence.submittable && submittable;
+    this.evidence.submittable = (this.evidence.build?.submittable ?? true) && submittable;
     return evidence;
   }
 
@@ -158,14 +158,16 @@ export class ManifestRunner implements Runner {
       humanReview: "not_required",
     } satisfies RunEvidence;
     this.evidence.runs.push(evidence);
-    this.evidence.submittable = this.evidence.submittable && submittable;
+    this.evidence.submittable = (this.evidence.build?.submittable ?? true) && submittable;
     return evidence;
   }
 
   async collectEvidence(): Promise<EvidenceBundle> {
     const cleanHead = await this.isCleanHead();
+    const hasEvidence = Boolean(this.evidence.build) || this.evidence.runs.length > 0;
+    const buildPassed = !this.evidence.build || (this.evidence.build.status === "passed" && this.evidence.build.submittable);
     this.evidence.cleanHead = cleanHead;
-    this.evidence.submittable = cleanHead && Boolean(this.evidence.build?.status === "passed") && this.evidence.runs.every((run) => run.status === "passed" && run.submittable);
+    this.evidence.submittable = cleanHead && hasEvidence && buildPassed && this.evidence.runs.every((run) => run.status === "passed" && run.submittable);
     return structuredClone(this.evidence);
   }
 
@@ -358,14 +360,12 @@ function spawnWindowsTreeKill(pid: number): boolean {
   const windowsRoot = process.env.SystemRoot ?? process.env.WINDIR;
   const taskkill = windowsRoot ? path.join(windowsRoot, "System32", "taskkill.exe") : "taskkill.exe";
   try {
-    const killer = Bun.spawn([taskkill, "/PID", String(pid), "/T", "/F"], {
+    const killer = Bun.spawnSync([taskkill, "/PID", String(pid), "/T", "/F"], {
       stdin: "ignore",
       stdout: "ignore",
       stderr: "ignore",
     });
-    void killer.exited.catch(() => undefined);
-    killer.unref();
-    return true;
+    return killer.exitCode === 0;
   } catch {
     return false;
   }
