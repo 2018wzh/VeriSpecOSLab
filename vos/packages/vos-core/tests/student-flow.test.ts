@@ -503,6 +503,50 @@ describe("student v2 workflow", () => {
     });
   }, 60_000);
 
+  test("retains hidden tests for an unchanged module across an unrelated Spec hash change", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+
+      const implement = async (moduleId: string) => executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", moduleId], {
+        print: false,
+        agentRunner: async (options) => {
+          mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+          writeFileSync(join(options.projectRoot, "src", `${moduleId}.ts`), `export const ${moduleId} = true;\n`);
+          return {
+            content: `implemented ${moduleId}`,
+            events: acceptedSubmitEvents("student_implementation_result.v1", implementationResult(moduleId)),
+          };
+        },
+      });
+
+      expect((await implement("memory")).status).toBe("passed");
+      writeFileSync(join(root, "spec", "modules", "scheduler.yaml"), [
+        "id: scheduler",
+        "module: scheduler",
+        "level: 1",
+        "purpose: Own the scheduler implementation.",
+        "owns: [src/scheduler.ts, tests/scheduler]",
+        "interface: [schedule]",
+        "properties: [runnable work is selected]",
+        "errors: [no_runnable_work]",
+        "",
+      ].join("\n"));
+      git(root, ["add", "spec/modules/scheduler.yaml"]);
+      git(root, ["commit", "-m", "add unrelated scheduler module spec"]);
+      await ensureHeadLedgerEntry({ projectRoot: root, actor: "human", intent: "record scheduler module spec", changedTargets: ["spec/modules/scheduler.yaml"] });
+
+      expect((await implement("scheduler")).status).toBe("passed");
+      const hiddenRoots = [...new Bun.Glob("*/manifest.json").scanSync({ cwd: join(root, ".vos", "hidden-tests"), absolute: true })];
+      expect(hiddenRoots).toHaveLength(2);
+      const manifests = hiddenRoots.map((file) => JSON.parse(readFileSync(file, "utf8")) as { spec_hash: string; tests: Array<Record<string, unknown>> });
+      const latest = manifests.find((manifest) => manifest.tests.some((test) => test.module_id === "scheduler"));
+      expect(latest?.tests.map((test) => test.module_id).sort()).toEqual(["memory", "scheduler"]);
+      expect(latest?.tests.every((test) => typeof test.binding_hash === "string")).toBe(true);
+      expect((await invoke(root, "verify", "--hidden")).status).toBe("passed");
+    });
+  }, 60_000);
+
   test("does not project invalid test targets or land code when structured validation fails", async () => {
     const root = makeRoot();
     await withGitIdentity(async () => {

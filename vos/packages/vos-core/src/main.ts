@@ -2554,7 +2554,7 @@ export async function executeAgentImplement(
   }
   const commit = await runStudentGit(projectRoot, ["merge", "--ff-only", implementationCommit]);
   if (!implementation) throw new CliError("implementation result disappeared before hidden-test persistence", "failed");
-  const hidden = await persistStudentHiddenTests({ projectRoot, specHash, runId: evidence.run_id, moduleId: module.id, payload: implementation, events: implementationEvents });
+  const hidden = await persistStudentHiddenTests({ projectRoot, bundle, specHash, runId: evidence.run_id, moduleId: module.id, payload: implementation, events: implementationEvents });
   await ensureHeadLedgerEntry({ projectRoot, actor: "agent", intent: `implement ${module.module}`, specRefs: [module.path], changedTargets: changed, runId: evidence.run_id, evidenceRefs: [{ id: evidence.run_id, kind: "run", path: path.relative(projectRoot, evidence.manifest_path) }] });
   return { status: "passed", details: { module: module.id, commit: commit.stdout.trim(), run_id: evidence.run_id, spec_hash: specHash, hidden_tests: hidden, validation } };
 }
@@ -2763,6 +2763,7 @@ async function applyStudentTestTargetProposals(
 
 async function persistStudentHiddenTests(params: {
   projectRoot: string;
+  bundle: NormalizedSpecBundle;
   specHash: string;
   runId: string;
   moduleId: string;
@@ -2785,6 +2786,58 @@ async function persistStudentHiddenTests(params: {
     const moduleId = typeof test.module_id === "string" ? test.module_id : legacyModuleId;
     return moduleId !== params.moduleId;
   });
+  const retainedModules = new Set(retainedTests.flatMap((test) => typeof test.module_id === "string" ? [test.module_id] : []));
+  const hiddenBase = path.dirname(root);
+  const historical = (await readdir(hiddenBase, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory() && entry.name !== params.specHash)
+    .map((entry) => entry.name);
+  const candidates = new Map<string, { generationRunId: string; sourceRoot: string; tests: Array<Record<string, unknown>> }>();
+  for (const hash of historical) {
+    const sourceRoot = path.join(hiddenBase, hash);
+    const sourceManifestPath = path.join(sourceRoot, "manifest.json");
+    if (!existsSync(sourceManifestPath)) continue;
+    let sourceManifest: unknown;
+    try {
+      sourceManifest = JSON.parse(await readFile(sourceManifestPath, "utf8")) as unknown;
+    } catch {
+      continue;
+    }
+    if (!isRecord(sourceManifest) || sourceManifest.version !== "vos.hidden-tests.v1" || !Array.isArray(sourceManifest.tests)) continue;
+    for (const test of sourceManifest.tests.filter(isRecord)) {
+      const moduleId = typeof test.module_id === "string" ? test.module_id : typeof sourceManifest.module_id === "string" ? sourceManifest.module_id : undefined;
+      if (!moduleId || moduleId === params.moduleId || retainedModules.has(moduleId)) continue;
+      const bindingHash = hiddenModuleBindingHash(params.bundle, moduleId);
+      if (!bindingHash || test.binding_hash !== bindingHash) continue;
+      const generationRunId = typeof test.generation_run_id === "string" ? test.generation_run_id : "";
+      const candidate = candidates.get(moduleId);
+      if (!candidate || generationRunId > candidate.generationRunId) {
+        candidates.set(moduleId, { generationRunId, sourceRoot, tests: [test] });
+      } else if (candidate.sourceRoot === sourceRoot && generationRunId === candidate.generationRunId) {
+        candidate.tests.push(test);
+      }
+    }
+  }
+  for (const [moduleId, candidate] of candidates) {
+    for (const test of candidate.tests) {
+      if (typeof test.path !== "string" || typeof test.content_hash !== "string" || !Array.isArray(test.args)) continue;
+      const sourceFile = path.resolve(params.projectRoot, test.path);
+      const relative = path.relative(candidate.sourceRoot, sourceFile).replace(/\\/g, "/");
+      if (relative.startsWith("../") || path.isAbsolute(relative)) continue;
+      const content = existsSync(sourceFile) ? await readFile(sourceFile, "utf8") : undefined;
+      if (content === undefined || hashString(content) !== test.content_hash) continue;
+      const destination = path.join(root, relative);
+      await mkdir(path.dirname(destination), { recursive: true });
+      await writeFile(destination, content);
+      const hiddenPath = studentRelativePath(params.projectRoot, destination);
+      retainedTests.push({
+        ...test,
+        module_id: moduleId,
+        path: hiddenPath,
+        args: test.args.map((value) => value === test.path ? hiddenPath : value),
+      });
+      retainedModules.add(moduleId);
+    }
+  }
   const retainedIds = new Set(retainedTests.flatMap((test) => typeof test.id === "string" ? [test.id] : []));
   const retainedPaths = new Set(retainedTests.flatMap((test) => typeof test.path === "string" ? [test.path] : []));
   const model = params.events.find((event) => event.type === "model.usage" && typeof event.model === "string")?.model ?? "unknown";
@@ -2807,6 +2860,7 @@ async function persistStudentHiddenTests(params: {
       args: canonicalStudentHiddenArgs(hiddenPath, proposal.args),
       content_hash: hashString(proposal.content),
       module_id: params.moduleId,
+      binding_hash: hiddenModuleBindingHash(params.bundle, params.moduleId),
       model,
       generation_run_id: params.runId,
     });
@@ -2830,6 +2884,39 @@ async function persistStudentHiddenTests(params: {
     retained_count: retainedTests.length,
     model,
   };
+}
+
+function hiddenModuleBindingHash(bundle: NormalizedSpecBundle, moduleId: string): string | undefined {
+  const selected = new Set<string>();
+  const pending = [moduleId];
+  while (pending.length > 0) {
+    const ref = pending.pop()!;
+    const module = bundle.normalized_modules.find((candidate) => candidate.id === ref || candidate.module === ref || moduleMatches(candidate.id, ref) || moduleMatches(candidate.module, ref));
+    if (!module || selected.has(module.id)) continue;
+    selected.add(module.id);
+    for (const dependency of module.dependencies) pending.push(dependency);
+  }
+  if (!selected.has(moduleId) && !bundle.normalized_modules.some((module) => selected.has(module.id) && (module.module === moduleId || moduleMatches(module.module, moduleId)))) return undefined;
+  const paths = new Set<string>();
+  if (bundle.design?.path) paths.add(bundle.design.path);
+  for (const module of bundle.normalized_modules) {
+    if (selected.has(module.id)) paths.add(module.path);
+  }
+  for (const specInterface of bundle.interfaces) {
+    const interfaceModule = specInterface.module;
+    if (interfaceModule && bundle.normalized_modules.some((module) => selected.has(module.id) && (module.id === interfaceModule || module.module === interfaceModule || moduleMatches(module.id, interfaceModule) || moduleMatches(module.module, interfaceModule)))) {
+      paths.add(specInterface.path);
+    }
+  }
+  for (const patch of bundle.patch_records) {
+    if (patch.path && patch.affected_modules.some((affected) => bundle.normalized_modules.some((module) => selected.has(module.id) && (module.id === affected || module.module === affected || moduleMatches(module.id, affected) || moduleMatches(module.module, affected))))) {
+      paths.add(patch.path);
+    }
+  }
+  const hashes = [...paths]
+    .sort()
+    .map((specPath) => [specPath, bundle.hashes[specPath] ?? ""]);
+  return hashString(JSON.stringify(hashes));
 }
 
 export async function executeAgentVerify(
