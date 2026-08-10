@@ -61,7 +61,15 @@ describe("student v2 workflow", () => {
       writeFileSync(join(root, ".env"), "OPENAI_API_KEY=test-only\n");
       const configured = await invoke(root, "agent", "config", "--provider", "openai", "--model", "gpt-5", "--auth-env", "OPENAI_API_KEY");
       expect(configured.status).toBe("passed");
-      expect((await invoke(root, "doctor")).status).toBe("passed");
+      const configuredDoctor = await executeCliInvocation([
+        "bun", "vos", "--project-root", root, "--json", "doctor",
+      ], {
+        print: false,
+        agentRunner: async () => {
+          throw new Error("provider network unavailable");
+        },
+      });
+      expect(configuredDoctor.status).toBe("passed");
       expect((await invoke(root, "kb", "list")).status).toBe("passed");
     });
     expect(existsSync(join(root, "vos.yaml"))).toBe(true);
@@ -71,7 +79,7 @@ describe("student v2 workflow", () => {
     expect(existsSync(join(root, ".vos", "project.yaml"))).toBe(false);
     expect(existsSync(join(root, ".vos", "policy.yaml"))).toBe(false);
     expect(readFileSync(join(root, "vos.yaml"), "utf8")).toContain("program: bun");
-  });
+  }, 30_000);
 
   test("runs agent ask without an embedding provider when no KB sources are configured", async () => {
     const root = makeRoot();
