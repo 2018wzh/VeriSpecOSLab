@@ -1,8 +1,10 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { bashTool, createBashTool } from "../../app/tools/bash.ts";
 import { makeTmpDir, removeTmpDir, writeFixture } from "../helpers/tmp.ts";
+
+setDefaultTimeout(20_000);
 
 describe("bashTool", () => {
   let tmp: string;
@@ -65,12 +67,22 @@ describe("bashTool", () => {
   });
 
   test("respects per-command timeout (returns error string, no throw)", async () => {
-    const fast = createBashTool({ timeoutMs: 50 });
+    const fast = createBashTool({ timeoutMs: 500 });
     const result = await fast.execute(JSON.stringify({
-      command: "sleep 1",
+      command: "sleep 2",
     }));
-    expect(result).toContain("Command timed out after 50ms");
-  });
+    expect(result).toContain("Command timed out after 500ms");
+  }, 15_000);
+
+  test("terminates descendants when a command times out", async () => {
+    const tool = createBashTool({ cwd: tmp, timeoutMs: 500 });
+    const result = await tool.execute(JSON.stringify({
+      command: "(sleep 2; printf leaked > descendant.txt) & wait",
+    }));
+    expect(result).toContain("Command timed out after 500ms");
+    await Bun.sleep(2_200);
+    expect(existsSync(join(tmp, "descendant.txt"))).toBe(false);
+  }, 15_000);
 
   test("handles pipes and chained commands", async () => {
     const result = await bashTool.execute(
