@@ -2782,62 +2782,19 @@ async function persistStudentHiddenTests(params: {
   const legacyModuleId = isRecord(previousManifest) && typeof previousManifest.module_id === "string"
     ? previousManifest.module_id
     : undefined;
-  const retainedTests = previousTests.filter((test) => {
+  const currentTests = previousTests.map((test) => {
     const moduleId = typeof test.module_id === "string" ? test.module_id : legacyModuleId;
-    return moduleId !== params.moduleId;
+    const bindingHash = moduleId ? hiddenModuleBindingHash(params.bundle, moduleId) : undefined;
+    return moduleId && bindingHash ? { ...test, module_id: moduleId, binding_hash: bindingHash } : test;
   });
-  const retainedModules = new Set(retainedTests.flatMap((test) => typeof test.module_id === "string" ? [test.module_id] : []));
-  const hiddenBase = path.dirname(root);
-  const historical = (await readdir(hiddenBase, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory() && entry.name !== params.specHash)
-    .map((entry) => entry.name);
-  const candidates = new Map<string, { generationRunId: string; sourceRoot: string; tests: Array<Record<string, unknown>> }>();
-  for (const hash of historical) {
-    const sourceRoot = path.join(hiddenBase, hash);
-    const sourceManifestPath = path.join(sourceRoot, "manifest.json");
-    if (!existsSync(sourceManifestPath)) continue;
-    let sourceManifest: unknown;
-    try {
-      sourceManifest = JSON.parse(await readFile(sourceManifestPath, "utf8")) as unknown;
-    } catch {
-      continue;
-    }
-    if (!isRecord(sourceManifest) || sourceManifest.version !== "vos.hidden-tests.v1" || !Array.isArray(sourceManifest.tests)) continue;
-    for (const test of sourceManifest.tests.filter(isRecord)) {
-      const moduleId = typeof test.module_id === "string" ? test.module_id : typeof sourceManifest.module_id === "string" ? sourceManifest.module_id : undefined;
-      if (!moduleId || moduleId === params.moduleId || retainedModules.has(moduleId)) continue;
-      const bindingHash = hiddenModuleBindingHash(params.bundle, moduleId);
-      if (!bindingHash || test.binding_hash !== bindingHash) continue;
-      const generationRunId = typeof test.generation_run_id === "string" ? test.generation_run_id : "";
-      const candidate = candidates.get(moduleId);
-      if (!candidate || generationRunId > candidate.generationRunId) {
-        candidates.set(moduleId, { generationRunId, sourceRoot, tests: [test] });
-      } else if (candidate.sourceRoot === sourceRoot && generationRunId === candidate.generationRunId) {
-        candidate.tests.push(test);
-      }
-    }
-  }
-  for (const [moduleId, candidate] of candidates) {
-    for (const test of candidate.tests) {
-      if (typeof test.path !== "string" || typeof test.content_hash !== "string" || !Array.isArray(test.args)) continue;
-      const sourceFile = path.resolve(params.projectRoot, test.path);
-      const relative = path.relative(candidate.sourceRoot, sourceFile).replace(/\\/g, "/");
-      if (relative.startsWith("../") || path.isAbsolute(relative)) continue;
-      const content = existsSync(sourceFile) ? await readFile(sourceFile, "utf8") : undefined;
-      if (content === undefined || hashString(content) !== test.content_hash) continue;
-      const destination = path.join(root, relative);
-      await mkdir(path.dirname(destination), { recursive: true });
-      await writeFile(destination, content);
-      const hiddenPath = studentRelativePath(params.projectRoot, destination);
-      retainedTests.push({
-        ...test,
-        module_id: moduleId,
-        path: hiddenPath,
-        args: test.args.map((value) => value === test.path ? hiddenPath : value),
-      });
-      retainedModules.add(moduleId);
-    }
-  }
+  const retainedTests = await collectStudentHiddenTests({
+    projectRoot: params.projectRoot,
+    bundle: params.bundle,
+    specHash: params.specHash,
+    root,
+    currentTests,
+    excludedModules: new Set([params.moduleId]),
+  });
   const retainedIds = new Set(retainedTests.flatMap((test) => typeof test.id === "string" ? [test.id] : []));
   const retainedPaths = new Set(retainedTests.flatMap((test) => typeof test.path === "string" ? [test.path] : []));
   const model = params.events.find((event) => event.type === "model.usage" && typeof event.model === "string")?.model ?? "unknown";
@@ -2886,7 +2843,80 @@ async function persistStudentHiddenTests(params: {
   };
 }
 
+async function collectStudentHiddenTests(params: {
+  projectRoot: string;
+  bundle: NormalizedSpecBundle;
+  specHash: string;
+  root: string;
+  currentTests: Array<Record<string, unknown>>;
+  excludedModules: Set<string>;
+}): Promise<Array<Record<string, unknown>>> {
+  const retainedTests = params.currentTests.filter((test) => typeof test.module_id === "string" && !params.excludedModules.has(test.module_id));
+  const retainedModules = new Set(retainedTests.flatMap((test) => typeof test.module_id === "string" ? [test.module_id] : []));
+  const hiddenBase = path.dirname(params.root);
+  const historical = (await readdir(hiddenBase, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory() && entry.name !== params.specHash)
+    .map((entry) => entry.name);
+  const candidates = new Map<string, { generationRunId: string; sourceRoot: string; tests: Array<Record<string, unknown>> }>();
+  for (const hash of historical) {
+    const sourceRoot = path.join(hiddenBase, hash);
+    const sourceManifestPath = path.join(sourceRoot, "manifest.json");
+    if (!existsSync(sourceManifestPath)) continue;
+    let sourceManifest: unknown;
+    try {
+      sourceManifest = JSON.parse(await readFile(sourceManifestPath, "utf8")) as unknown;
+    } catch {
+      continue;
+    }
+    if (!isRecord(sourceManifest) || sourceManifest.version !== "vos.hidden-tests.v1" || !Array.isArray(sourceManifest.tests)) continue;
+    for (const test of sourceManifest.tests.filter(isRecord)) {
+      const moduleId = typeof test.module_id === "string" ? test.module_id : typeof sourceManifest.module_id === "string" ? sourceManifest.module_id : undefined;
+      if (!moduleId || params.excludedModules.has(moduleId) || retainedModules.has(moduleId)) continue;
+      const bindingHash = hiddenModuleBindingHash(params.bundle, moduleId);
+      const legacyMatches = bindingHash && test.binding_hash === undefined && typeof sourceManifest.commit_sha === "string"
+        ? await legacyHiddenBindingMatches(params.projectRoot, sourceManifest.commit_sha, params.bundle, moduleId)
+        : false;
+      if (!bindingHash || (test.binding_hash !== bindingHash && !legacyMatches)) continue;
+      const generationRunId = typeof test.generation_run_id === "string" ? test.generation_run_id : "";
+      const candidate = candidates.get(moduleId);
+      if (!candidate || generationRunId > candidate.generationRunId) {
+        candidates.set(moduleId, { generationRunId, sourceRoot, tests: [test] });
+      } else if (candidate.sourceRoot === sourceRoot && generationRunId === candidate.generationRunId) {
+        candidate.tests.push(test);
+      }
+    }
+  }
+  for (const [moduleId, candidate] of candidates) {
+    for (const test of candidate.tests) {
+      if (typeof test.path !== "string" || typeof test.content_hash !== "string" || !isStringArray(test.args)) continue;
+      const sourceFile = path.resolve(params.projectRoot, test.path);
+      const relative = path.relative(candidate.sourceRoot, sourceFile).replace(/\\/g, "/");
+      if (relative.startsWith("../") || path.isAbsolute(relative)) continue;
+      const content = existsSync(sourceFile) ? await readFile(sourceFile, "utf8") : undefined;
+      if (content === undefined || hashString(content) !== test.content_hash) continue;
+      const destination = path.join(params.root, relative);
+      await mkdir(path.dirname(destination), { recursive: true });
+      await writeFile(destination, content);
+      const hiddenPath = studentRelativePath(params.projectRoot, destination);
+      retainedTests.push({
+        ...test,
+        module_id: moduleId,
+        binding_hash: hiddenModuleBindingHash(params.bundle, moduleId),
+        path: hiddenPath,
+        args: test.args.map((value) => value === test.path ? hiddenPath : value),
+      });
+      retainedModules.add(moduleId);
+    }
+  }
+  return retainedTests;
+}
+
 function hiddenModuleBindingHash(bundle: NormalizedSpecBundle, moduleId: string): string | undefined {
+  const sources = hiddenModuleBindingSources(bundle, moduleId);
+  return sources ? hashString(JSON.stringify(sources)) : undefined;
+}
+
+function hiddenModuleBindingSources(bundle: NormalizedSpecBundle, moduleId: string): Array<[string, string]> | undefined {
   const selected = new Set<string>();
   const pending = [moduleId];
   while (pending.length > 0) {
@@ -2915,8 +2945,19 @@ function hiddenModuleBindingHash(bundle: NormalizedSpecBundle, moduleId: string)
   }
   const hashes = [...paths]
     .sort()
-    .map((specPath) => [specPath, bundle.hashes[specPath] ?? ""]);
-  return hashString(JSON.stringify(hashes));
+    .map((specPath): [string, string] => [specPath, bundle.hashes[specPath] ?? ""]);
+  return hashes;
+}
+
+async function legacyHiddenBindingMatches(projectRoot: string, commitSha: string, bundle: NormalizedSpecBundle, moduleId: string): Promise<boolean> {
+  if (!/^[0-9a-f]{7,64}$/i.test(commitSha)) return false;
+  const sources = hiddenModuleBindingSources(bundle, moduleId);
+  if (!sources) return false;
+  for (const [specPath, expectedHash] of sources) {
+    const result = await runStudentGit(projectRoot, ["show", `${commitSha}:${specPath}`]);
+    if (result.exitCode !== 0 || hashString(result.stdout) !== expectedHash) return false;
+  }
+  return true;
 }
 
 export async function executeAgentVerify(
@@ -4093,6 +4134,49 @@ interface StudentHiddenVerification {
   verification_path: string;
 }
 
+async function refreshStudentHiddenManifest(projectRoot: string, bundle: NormalizedSpecBundle, specHash: string): Promise<void> {
+  const root = path.join(projectRoot, ".vos", "hidden-tests", specHash);
+  await mkdir(root, { recursive: true });
+  const manifestPath = path.join(root, "manifest.json");
+  let currentManifest: unknown;
+  if (existsSync(manifestPath)) {
+    try {
+      currentManifest = JSON.parse(await readFile(manifestPath, "utf8")) as unknown;
+    } catch {
+      currentManifest = undefined;
+    }
+  }
+  const legacyModuleId = isRecord(currentManifest) && typeof currentManifest.module_id === "string" ? currentManifest.module_id : undefined;
+  const currentTests = isRecord(currentManifest) && currentManifest.version === "vos.hidden-tests.v1" && currentManifest.spec_hash === specHash && Array.isArray(currentManifest.tests)
+    ? currentManifest.tests.filter(isRecord).flatMap((test) => {
+      const moduleId = typeof test.module_id === "string" ? test.module_id : legacyModuleId;
+      const bindingHash = moduleId ? hiddenModuleBindingHash(bundle, moduleId) : undefined;
+      return moduleId && bindingHash ? [{ ...test, module_id: moduleId, binding_hash: bindingHash }] : [];
+    })
+    : [];
+  const tests = await collectStudentHiddenTests({
+    projectRoot,
+    bundle,
+    specHash,
+    root,
+    currentTests,
+    excludedModules: new Set(),
+  });
+  if (tests.length === 0) return;
+  const generationRunId = tests.reduce((latest, test) => typeof test.generation_run_id === "string" && test.generation_run_id > latest ? test.generation_run_id : latest, "");
+  const manifest = {
+    version: "vos.hidden-tests.v1",
+    commit_sha: currentHead(projectRoot),
+    spec_hash: specHash,
+    config_hash: hashString(await readFile(path.join(projectRoot, "vos.yaml"), "utf8")),
+    module_id: "aggregate",
+    model: "retained",
+    generation_run_id: generationRunId,
+    tests,
+  };
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
 async function executeStudentHiddenVerification(projectRoot: string, bundle: NormalizedSpecBundle, signal?: AbortSignal): Promise<StudentHiddenVerification> {
   const commitSha = currentHead(projectRoot);
   if (!commitSha) throw new CliError("hidden verification requires a committed HEAD", "policy_blocked", { reason: "head_missing" });
@@ -4100,6 +4184,7 @@ async function executeStudentHiddenVerification(projectRoot: string, bundle: Nor
   const configHash = hashString(await readFile(path.join(projectRoot, "vos.yaml"), "utf8"));
   const root = path.join(projectRoot, ".vos", "hidden-tests", specHash);
   const manifestPath = path.join(root, "manifest.json");
+  await refreshStudentHiddenManifest(projectRoot, bundle, specHash);
   if (!existsSync(manifestPath)) {
     throw new CliError("no hidden tests are bound to the current Spec hash; rerun vos agent implement", "validation_failed", { spec_hash: specHash });
   }

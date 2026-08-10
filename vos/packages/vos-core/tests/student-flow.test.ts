@@ -521,6 +521,10 @@ describe("student v2 workflow", () => {
       });
 
       expect((await implement("memory")).status).toBe("passed");
+      const firstManifestPath = [...new Bun.Glob("*/manifest.json").scanSync({ cwd: join(root, ".vos", "hidden-tests"), absolute: true })][0]!;
+      const legacyManifest = JSON.parse(readFileSync(firstManifestPath, "utf8")) as { tests: Array<Record<string, unknown>> };
+      for (const test of legacyManifest.tests) delete test.binding_hash;
+      writeFileSync(firstManifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`);
       writeFileSync(join(root, "spec", "modules", "scheduler.yaml"), [
         "id: scheduler",
         "module: scheduler",
@@ -544,6 +548,47 @@ describe("student v2 workflow", () => {
       expect(latest?.tests.map((test) => test.module_id).sort()).toEqual(["memory", "scheduler"]);
       expect(latest?.tests.every((test) => typeof test.binding_hash === "string")).toBe(true);
       expect((await invoke(root, "verify", "--hidden")).status).toBe("passed");
+    });
+  }, 60_000);
+
+  test("hydrates unchanged legacy hidden tests for the current Spec hash before verification", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      const implemented = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+          writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const memory = true;\n");
+          return { content: "implemented memory", events: acceptedSubmitEvents("student_implementation_result.v1", implementationResult("memory")) };
+        },
+      });
+      expect(implemented.status).toBe("passed");
+      const oldManifestPath = [...new Bun.Glob("*/manifest.json").scanSync({ cwd: join(root, ".vos", "hidden-tests"), absolute: true })][0]!;
+      const oldManifest = JSON.parse(readFileSync(oldManifestPath, "utf8")) as { tests: Array<Record<string, unknown>> };
+      for (const test of oldManifest.tests) delete test.binding_hash;
+      writeFileSync(oldManifestPath, `${JSON.stringify(oldManifest, null, 2)}\n`);
+
+      writeFileSync(join(root, "spec", "modules", "scheduler.yaml"), [
+        "id: scheduler",
+        "module: scheduler",
+        "level: 1",
+        "purpose: Own the scheduler implementation.",
+        "owns: [src/scheduler.ts, tests/scheduler]",
+        "interface: [schedule]",
+        "properties: [runnable work is selected]",
+        "errors: [no_runnable_work]",
+        "",
+      ].join("\n"));
+      git(root, ["add", "spec/modules/scheduler.yaml"]);
+      git(root, ["commit", "-m", "add unrelated scheduler module spec"]);
+      await ensureHeadLedgerEntry({ projectRoot: root, actor: "human", intent: "record scheduler module spec", changedTargets: ["spec/modules/scheduler.yaml"] });
+
+      expect((await invoke(root, "verify", "--hidden")).status).toBe("passed");
+      const manifests = [...new Bun.Glob("*/manifest.json").scanSync({ cwd: join(root, ".vos", "hidden-tests"), absolute: true })]
+        .map((file) => JSON.parse(readFileSync(file, "utf8")) as { spec_hash: string; tests: Array<Record<string, unknown>> });
+      expect(manifests).toHaveLength(2);
+      expect(manifests.some((manifest) => manifest.tests.some((test) => test.module_id === "memory" && typeof test.binding_hash === "string"))).toBe(true);
     });
   }, 60_000);
 
