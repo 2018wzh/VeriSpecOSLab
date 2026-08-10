@@ -4041,23 +4041,28 @@ async function executeStudentHiddenVerification(projectRoot: string, bundle: Nor
     throw new CliError("hidden tests are not bound to the current Spec and vos.yaml", "validation_failed", { reason: "hidden_binding_mismatch" });
   }
   const results = [] as StudentHiddenVerification["results"];
-  for (const raw of manifest.tests) {
-    if (!isRecord(raw) || typeof raw.id !== "string" || typeof raw.path !== "string" || typeof raw.content_hash !== "string" || typeof raw.program !== "string" || !isStringArray(raw.args) || typeof raw.cwd !== "string" || !isStringArray(raw.env) || !isPositiveInteger(raw.timeout)) {
-      throw new CliError("hidden test manifest contains an invalid command", "validation_failed");
+  const executionRoot = await createStudentWorktree(projectRoot, `hidden-verify-${process.pid}-${Date.now()}`);
+  try {
+    for (const raw of manifest.tests) {
+      if (!isRecord(raw) || typeof raw.id !== "string" || typeof raw.path !== "string" || typeof raw.content_hash !== "string" || typeof raw.program !== "string" || !isStringArray(raw.args) || typeof raw.cwd !== "string" || !isStringArray(raw.env) || !isPositiveInteger(raw.timeout)) {
+        throw new CliError("hidden test manifest contains an invalid command", "validation_failed");
+      }
+      assertSafeStudentRelativePath(raw.path, `hidden test ${raw.id} path`);
+      const hiddenFile = path.resolve(projectRoot, raw.path);
+      if (!existsSync(hiddenFile) || hashString(await readFile(hiddenFile, "utf8")) !== raw.content_hash) {
+        throw new CliError(`hidden test ${raw.id} content does not match its bound hash`, "validation_failed", { reason: "hidden_content_mismatch", hidden_test: raw.id });
+      }
+      const result = await runStructuredStudentCommand(executionRoot, {
+        program: raw.program,
+        args: [hiddenFile, ...raw.args.filter((value) => value !== raw.path && value !== "{hidden_test}")],
+        cwd: raw.cwd,
+        env: raw.env,
+        timeout: raw.timeout,
+      }, signal);
+      results.push({ id: raw.id, ...result });
     }
-    assertSafeStudentRelativePath(raw.path, `hidden test ${raw.id} path`);
-    const hiddenFile = path.resolve(projectRoot, raw.path);
-    if (!existsSync(hiddenFile) || hashString(await readFile(hiddenFile, "utf8")) !== raw.content_hash) {
-      throw new CliError(`hidden test ${raw.id} content does not match its bound hash`, "validation_failed", { reason: "hidden_content_mismatch", hidden_test: raw.id });
-    }
-    const result = await runStructuredStudentCommand(projectRoot, {
-      program: raw.program,
-      args: canonicalStudentHiddenArgs(raw.path, raw.args),
-      cwd: raw.cwd,
-      env: raw.env,
-      timeout: raw.timeout,
-    }, signal);
-    results.push({ id: raw.id, ...result });
+  } finally {
+    await removeStudentWorktree(projectRoot, executionRoot);
   }
   const status = results.length > 0 && results.every((result) => result.status === "passed") ? "passed" : "validation_failed";
   const verificationPath = path.join(root, "last-verification.json");

@@ -276,6 +276,7 @@ describe("student v2 workflow", () => {
       expect(git(root, ["log", "-1", "--pretty=%s"]).trim()).toBe("[vos][agent] Implement memory");
       expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
       expect((await invoke(root, "verify", "--hidden")).status).toBe("passed");
+      expect(existsSync(join(root, "memory.hidden.output"))).toBe(false);
       expect((await invoke(root, "submit")).status).toBe("passed");
       writeFileSync(join(root, "student-note.md"), "new committed state\n");
       git(root, ["add", "student-note.md"]);
@@ -706,9 +707,9 @@ function implementationResult(moduleId = "memory") {
     hidden_tests: [{
       id: `hidden-${moduleId}`,
       path: `${moduleId}.hidden.ts`,
-      content: "if (1 + 1 !== 2) process.exit(1);\n",
+      content: "if (1 + 1 !== 2) process.exit(1); await Bun.write(process.argv[2]!, 'hidden output\\n');\n",
       program: "bun",
-      args: [`tests/${moduleId}.hidden.output`, "{hidden_test}"],
+      args: [`${moduleId}.hidden.output`, "{hidden_test}"],
       cwd: ".",
       env: [] as string[],
       timeout: 30_000,
