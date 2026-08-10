@@ -52,7 +52,7 @@ describe("student v2 workflow", () => {
     const root = makeRoot();
     await withGitIdentity(async () => {
       const result = await invoke(root, "init");
-      expect(result.status).toBe("passed");
+      expect(result).toMatchObject({ status: "passed" });
       const unconfigured = await invoke(root, "doctor");
       expect(unconfigured.status).toBe("passed");
       expect(unconfigured.details?.warnings).toContain("agent-tool-diagnosis");
@@ -529,6 +529,43 @@ describe("student v2 workflow", () => {
 
       expect(turn).toBe(2);
       expect(result.status).toBe("passed");
+    });
+  }, 30_000);
+
+  test("rejects missing proposed command inputs before running authoritative gates", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      let turn = 0;
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          turn++;
+          mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+          writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 0;\n");
+          const proposal = implementationResult();
+          proposal.test_targets[0]!.program = "bun";
+          proposal.test_targets[0]!.args = ["tests/memory/public.ts"];
+          if (turn === 2) {
+            expect(options.task).toContain("proposed test command inputs do not exist");
+            expect(options.task).toContain("tests/memory/public.ts");
+            expect(options.task).toContain("missing implementation or test file is not an external blocker");
+            mkdirSync(join(options.projectRoot, "tests", "memory"), { recursive: true });
+            writeFileSync(join(options.projectRoot, "tests", "memory", "public.ts"), "if (1 + 1 !== 2) process.exit(1);\n");
+          }
+          return {
+            content: "submitted",
+            threadId: "missing-input-repair-thread",
+            events: [
+              { type: "model.usage", thread_id: "missing-input-repair-thread", iteration: turn === 1 ? 45 : 2 },
+              ...acceptedSubmitEvents("student_implementation_result.v1", proposal).map((event) => ({ ...event, thread_id: "missing-input-repair-thread", iteration: turn === 1 ? 45 : 2 })),
+            ],
+          };
+        },
+      });
+
+      expect(turn).toBe(2);
+      expect(result).toMatchObject({ status: "passed" });
     });
   }, 30_000);
 

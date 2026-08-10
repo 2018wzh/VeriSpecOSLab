@@ -2431,7 +2431,7 @@ export async function executeAgentImplement(
   try {
     const progress = createAgentProgressParams(context, "agent implement");
     const initialPrompt = `Implement ModuleSpec ${module.id}. Work only within these owned paths: ${ownedPaths.join(", ")}. Generate the implementation plus concrete public, contract, fixed-seed bounded fuzz, bounded trace/oracle, and local hidden tests for this module. Test source paths must also be covered by owns. This is an implementation task, not a planning task: do not stop after describing a plan; write the owned files, run validation, and call submit_result. Read only the current project root: its Spec, vos.yaml, owned files, and public test framework. Reuse helpers under tests/public and do not reimplement them in generated tests. Do not inspect parent or sibling directories, other checkouts/worktrees, VOS implementation source, Git history, old Lab implementations/diffs, or previous .vos runs; the current Spec and the result contract below are the complete authority. Do not perform repo-wide schema searches or toolchain discovery. Do not edit vos.yaml: return structured test_targets and hidden_tests so VOS can validate and project them atomically. Existing test target IDs are immutable and MUST NOT be proposed again: ${JSON.stringify(existingTargetIds)}. Choose new module-prefixed IDs that do not collide with that list. Each test_targets entry is {id, kind, program, args, cwd, env, timeout, verifies, artifacts}; timeout is an integer number of milliseconds and must be at least 1000 (for example 60000 for 60 seconds); use env: [\"PATH\"] for every target whose program or script resolves host tools by name. Fuzz additionally requires seed, cases, reproduction_artifact; trace additionally requires workload and oracle. Each hidden_tests entry is {id, path, content, program, args, cwd, env, timeout, verifies, seed} with the same millisecond timeout rule, and args may use {hidden_test}; hidden tests that resolve host tools also require PATH in env. Every verifies list must include ${module.id}. Hidden test content is returned in the result and must not be written into Git. The loop has a hard 50-iteration limit shared by implementation and repair. Finish discovery by iteration 8, write the implementation and every non-hidden test by iteration 20, verify that every proposed command path exists, and submit by iteration 38 so VOS can run authoritative gates and return bounded failure evidence within the remaining iterations. Batch independent Read/Write/Bash calls in the same response. Never spend more than five iterations debugging one failed command: either fix it, choose a simpler Spec-compliant implementation, or submit a failed result with the root cause. Do not spend iterations investigating harmless output formatting after the declared oracle passes. Run useful local checks, but VOS will independently run the build and every existing and proposed non-hidden target before applying anything. Do not edit specs, .git, .vos, or worktrees. Stop when evidence is complete or report the root cause.`;
-    let taskPrompt = `${initialPrompt}\nPrefer WriteFiles to create a related implementation or test-file batch in one tool call.`;
+    let taskPrompt = `${initialPrompt}\nPrefer WriteFiles to create a related implementation or test-file batch in one tool call. A missing implementation or test file is not an external blocker: create it with the available tools and do not submit failed merely because owned work remains.`;
     let threadId: string | undefined;
     let remainingIterations = 50;
     const projectedTargetIds = new Set<string>();
@@ -2485,39 +2485,49 @@ export async function executeAgentImplement(
         if (projectedTargetIds.size > 0 && (proposedIds.size !== projectedTargetIds.size || [...proposedIds].some((id) => !projectedTargetIds.has(id)))) {
           validation = { status: "validation_failed", message: "repair submission changed the projected test target ID set", expected_ids: [...projectedTargetIds], actual_ids: [...proposedIds] };
         } else {
-          await applyStudentTestTargetProposals(worktree, implementation.test_targets, projectedTargetIds);
-          for (const id of proposedIds) projectedTargetIds.add(id);
-          patch = await studentWorktreeDiff(worktree);
-          if (!patch.trim() || agentChanged.length === 0) {
-            validation = { status: "no_changes", agent_result: agentResult.parsedResult };
+          const missingCommandInputs = studentMissingProposedCommandInputs(worktree, implementation.test_targets);
+          if (missingCommandInputs.length > 0) {
+            validation = {
+              status: "validation_failed",
+              message: "proposed test command inputs do not exist",
+              missing_command_inputs: missingCommandInputs,
+              agent_result: agentResult.parsedResult,
+            };
           } else {
-            const proposedBundle = await buildNormalizedSpecBundle({ projectRoot: worktree });
-            const specDiagnostics = proposedBundle.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
-            if (specDiagnostics.length > 0) {
-              validation = { status: "validation_failed", spec_diagnostics: specDiagnostics, agent_result: agentResult.parsedResult };
+            await applyStudentTestTargetProposals(worktree, implementation.test_targets, projectedTargetIds);
+            for (const id of proposedIds) projectedTargetIds.add(id);
+            patch = await studentWorktreeDiff(worktree);
+            if (!patch.trim() || agentChanged.length === 0) {
+              validation = { status: "no_changes", agent_result: agentResult.parsedResult };
             } else {
-              const runner = new HostRunner(worktree, context.signal);
-              const build = await runner.build("build");
-              const manifest = await readStudentManifest(worktree);
-              const checks = [] as unknown[];
-              if (build.status === "passed") {
-                for (const id of Object.keys(manifest.manifest.checks)) checks.push(await runner.check(id));
+              const proposedBundle = await buildNormalizedSpecBundle({ projectRoot: worktree });
+              const specDiagnostics = proposedBundle.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+              if (specDiagnostics.length > 0) {
+                validation = { status: "validation_failed", spec_diagnostics: specDiagnostics, agent_result: agentResult.parsedResult };
+              } else {
+                const runner = new HostRunner(worktree, context.signal);
+                const build = await runner.build("build");
+                const manifest = await readStudentManifest(worktree);
+                const checks = [] as unknown[];
+                if (build.status === "passed") {
+                  for (const id of Object.keys(manifest.manifest.checks)) checks.push(await runner.check(id));
+                }
+                const gatesPassed = build.status === "passed" && checks.length > 0 && (checks as Array<{ status?: string }>).every((check) => check.status === "passed");
+                validation = {
+                  status: gatesPassed && implementation.status === "passed" ? "passed" : "validation_failed",
+                  ...(implementation.status === "passed" ? {} : { message: `student implementation Agent reported ${implementation.status}` }),
+                  build,
+                  checks,
+                  evidence: await runner.collectEvidence(),
+                  agent_result: agentResult.parsedResult,
+                };
               }
-              const gatesPassed = build.status === "passed" && checks.length > 0 && (checks as Array<{ status?: string }>).every((check) => check.status === "passed");
-              validation = {
-                status: gatesPassed && implementation.status === "passed" ? "passed" : "validation_failed",
-                ...(implementation.status === "passed" ? {} : { message: `student implementation Agent reported ${implementation.status}` }),
-                build,
-                checks,
-                evidence: await runner.collectEvidence(),
-                agent_result: agentResult.parsedResult,
-              };
             }
           }
         }
       }
       if (validation.status === "passed" || validation.status === "owns_violation" || remainingIterations === 0 || !threadId) break;
-      taskPrompt = `VOS authoritative validation rejected the current implementation. Keep the existing projected test target IDs. Use the available tools now to inspect and correct the current worktree files, run the failing commands, and resubmit status passed when every gate succeeds. Do not merely describe a known fix or immediately resubmit failed while iterations remain. This continuation shares the original 50-iteration budget; ${remainingIterations} iterations remain. Bounded validation evidence:\n${JSON.stringify(studentImplementationRepairSummary(validation), null, 2)}`;
+      taskPrompt = `VOS authoritative validation rejected the current implementation. Keep the existing projected test target IDs. Use the available tools now to inspect and correct the current worktree files, create every missing owned test file, run the failing commands, and resubmit status passed when every gate succeeds. A missing implementation or test file is not an external blocker. Do not merely describe a known fix or immediately resubmit failed while iterations remain. This continuation shares the original 50-iteration budget; ${remainingIterations} iterations remain. Bounded validation evidence:\n${JSON.stringify(studentImplementationRepairSummary(validation), null, 2)}`;
     }
     if (validation.status === "passed") {
       if (!implementation) throw new CliError("implementation result disappeared before commit preparation", "failed");
@@ -2622,6 +2632,7 @@ function studentImplementationRepairSummary(validation: Record<string, unknown>)
   return {
     status: validation.status,
     message: validation.message,
+    missing_command_inputs: validation.missing_command_inputs,
     spec_diagnostics: validation.spec_diagnostics,
     build: build ? boundedRunnerFailure(build) : undefined,
     failed_checks: checks.filter((check) => isRecord(check) && check.status !== "passed").map((check) => boundedRunnerFailure(check as Record<string, unknown>)),
@@ -2726,6 +2737,23 @@ function assertSafeStudentRelativePath(value: string, label: string, allowDot = 
   if ((!allowDot || normalized !== ".") && (!normalized || normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized) || normalized.split("/").some((part) => part === ".."))) {
     throw new AgentOutputError(`${label} must be a repository-relative path without traversal`);
   }
+}
+
+function studentMissingProposedCommandInputs(projectRoot: string, targets: StudentTestTargetProposal[]): Array<{ target: string; path: string }> {
+  const scriptPrograms = new Set(["sh", "bash", "bun", "python", "python3"]);
+  const missing: Array<{ target: string; path: string }> = [];
+  for (const target of targets) {
+    const program = path.basename(target.program).toLowerCase();
+    const firstArg = target.args[0];
+    if (!scriptPrograms.has(program) || !firstArg || firstArg.startsWith("-") || firstArg.includes("{") || !firstArg.replace(/\\/g, "/").includes("/")) continue;
+    const cwd = target.cwd === "." ? projectRoot : path.resolve(projectRoot, target.cwd);
+    const input = path.resolve(cwd, firstArg);
+    const relative = path.relative(projectRoot, input).replace(/\\/g, "/");
+    if (relative.startsWith("../") || path.isAbsolute(relative) || !existsSync(input)) {
+      missing.push({ target: target.id, path: firstArg.replace(/\\/g, "/") });
+    }
+  }
+  return missing;
 }
 
 async function applyStudentTestTargetProposals(
