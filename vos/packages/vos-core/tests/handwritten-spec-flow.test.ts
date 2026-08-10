@@ -70,6 +70,35 @@ describe("handwritten Spec teaching flow", () => {
     expect(initialTask).toContain("complete, evidence-grounded review");
   }, 30_000);
 
+  test("returns review semantic errors to the same Agent thread for correction", async () => {
+    const root = await initializedProject();
+    let turn = 0;
+    const result = await invokeWithAgent(root, ["agent", "review", "design"], async (options) => {
+      turn++;
+      if (turn === 1) {
+        return {
+          content: null,
+          threadId: "review-semantic-repair",
+          events: submitted("spec_review.v1", {
+            findings: [{ severity: "critical", message: "invalid severity", related_specs: ["design"], suggested_actions: [] }],
+            summary: "invalid",
+          }),
+        };
+      }
+      expect(options.threadId).toBe("review-semantic-repair");
+      expect(options.task).toContain("VOS rejected the previously accepted submit_result payload");
+      return {
+        content: null,
+        threadId: "review-semantic-repair",
+        events: submitted("spec_review.v1", { findings: [], summary: "corrected" }),
+      };
+    });
+
+    expect(turn).toBe(2);
+    expect(result.status).toBe("passed");
+    expect(result.details?.agent_review.summary).toBe("corrected");
+  }, 30_000);
+
   test("doctor binds every inferred tool to Bash evidence and separates required from optional failures", async () => {
     const root = await initializedProject();
     const required = await invokeWithAgent(root, ["doctor"], async (options) => {
@@ -90,6 +119,40 @@ describe("handwritten Spec teaching flow", () => {
     const optional = await invokeWithAgent(root, ["doctor"], async () => doctorEvents({ required: false, status: "missing" }));
     expect(optional.status).toBe("passed");
     expect(optional.details?.warnings).toContain("agent-tool:riscv64-unknown-elf-gcc");
+  }, 30_000);
+
+  test("returns doctor evidence-binding errors to the same Agent thread for correction", async () => {
+    const root = await initializedProject();
+    let turn = 0;
+    const result = await invokeWithAgent(root, ["doctor"], async (options) => {
+      turn++;
+      if (turn === 1) {
+        return {
+          content: null,
+          threadId: "doctor-semantic-repair",
+          events: submitted("doctor_diagnosis.v1", {
+            summary: "unsupported conclusion",
+            tools: [{
+              program: "riscv64-unknown-elf-gcc",
+              purpose: "Compile the declared ISA",
+              required: false,
+              status: "installed",
+              spec_refs: ["design"],
+              probe_ids: ["missing-probe"],
+              suggestions: [],
+            }],
+            limitations: [],
+          }),
+        };
+      }
+      expect(options.threadId).toBe("doctor-semantic-repair");
+      expect(options.task).toContain("not bound to actual Bash evidence");
+      return { ...doctorEvents({ required: false, status: "installed" }), threadId: "doctor-semantic-repair" };
+    });
+
+    expect(turn).toBe(2);
+    expect(result.status).toBe("passed");
+    expect(result.details?.diagnosis.tools[0].probe_ids).toEqual(["probe-1"]);
   }, 30_000);
 
   test("doctor degrades provider failures to warnings but rejects project writes", async () => {

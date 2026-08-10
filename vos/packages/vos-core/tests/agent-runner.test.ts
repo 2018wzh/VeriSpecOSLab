@@ -5,6 +5,7 @@ import {
   buildAgentEnv,
   runAgentInteractiveTask,
   runAgentWithPrompt,
+  runAgentWithValidatedSubmission,
   startAgentReadonlyDisplay,
 } from "../src/agent/runner.ts";
 import {
@@ -205,6 +206,49 @@ describe("vos-cli package agent runner", () => {
     });
 
     expect(result.parsedResult).toEqual(submitted);
+  });
+
+  test("returns caller semantic rejection to the same Agent thread within one iteration budget", async () => {
+    const projectRoot = makeProject();
+    const requests: AgentTaskRequest[] = [];
+    const runner = async (options: AgentTaskRequest) => {
+      requests.push(options);
+      const task = requests.length === 1 ? "semantically incomplete" : "corrected";
+      return {
+        content: null,
+        threadId: "semantic-repair-thread",
+        events: acceptedSubmitEvents("plan_draft.v1", {
+          task,
+          related_specs: [],
+          suspected_files: [],
+          required_validations: [],
+          notes: [],
+        }),
+      };
+    };
+
+    const result = await runAgentWithValidatedSubmission({
+      projectRoot,
+      taskPrompt: "produce a semantically complete plan",
+      taskKind: "plan",
+      resultSubmissionSchema: "plan_draft.v1",
+      maxIterations: 5,
+      taskRunner: runner,
+      validateSubmission(submission) {
+        const task = (submission as { task?: unknown }).task;
+        if (task !== "corrected") throw new Error("task must reflect the required scope");
+        return task;
+      },
+    });
+
+    expect(result.validatedResult).toBe("corrected");
+    expect(result.iterations).toBe(2);
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.maxIterations).toBe(5);
+    expect(requests[1]?.maxIterations).toBe(4);
+    expect(requests[1]?.threadId).toBe("semantic-repair-thread");
+    expect(requests[1]?.task).toContain("VOS rejected the previously accepted submit_result payload");
+    expect(requests[1]?.task).toContain("4 iteration(s) remain");
   });
 
   test("rejects when the last MCP submission is not accepted", async () => {

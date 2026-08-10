@@ -119,6 +119,7 @@ import {
 } from "./agent/prompt.ts";
 import {
   runAgentWithPrompt,
+  runAgentWithValidatedSubmission,
   runInteractiveAgentWithPrompt,
   runAgentInteractiveTask,
   startAgentReadonlyDisplay,
@@ -127,6 +128,7 @@ import {
   type InteractiveAgentTaskRunner,
   type ReadonlyAgentDisplayHandle,
   type ReadonlyAgentDisplayStarter,
+  type ValidatedAgentRunResult,
 } from "./agent/runner.ts";
 import { isRecord, parseDebugOutput, parseKnowledgebaseAnswer, parsePatchProposal, parsePlanDraft } from "./agent/schemas.ts";
 import { applyPatchText, readPatchFromStdin } from "./agent/apply-patch.ts";
@@ -1286,7 +1288,7 @@ async function executeStudentDoctor(context: ExecContext, evidence: EvidenceWrit
   let diagnosisWarning: string | undefined;
   try {
     const agentProgress = createAgentProgressParams(context, "doctor debug agent");
-    const response = await runAgentWithPrompt({
+    const response = await runAgentWithValidatedSubmission({
       projectRoot,
       taskPrompt: agentProgress.taskPrompt([
         "Act as the VOS Doctor Debug Agent. Read every Spec, vos.yaml, the project tree, and the deterministic diagnostics provided in context.",
@@ -1312,8 +1314,9 @@ async function executeStudentDoctor(context: ExecContext, evidence: EvidenceWrit
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
       taskRunner: context.agentRunner,
+      validateSubmission: (submission, events) => parseDoctorDiagnosis(submission, events),
     });
-    diagnosis = parseDoctorDiagnosis(agentStructuredOutput(response, "doctor"), response.rawEvents);
+    diagnosis = response.validatedResult;
   } catch (error) {
     diagnosisWarning = `Debug Agent unavailable: ${errorMessage(error)}`;
   }
@@ -4317,36 +4320,41 @@ export async function executeAgentAsk(
   }
   updateProgress(context, { stage: "agent ask", status: "running", message: "waiting for agent" });
   const agentProgress = createAgentProgressParams(context, "agent ask");
-  const response = await runAgentWithPrompt({
-    projectRoot,
-    taskPrompt: agentProgress.taskPrompt(command.question),
-    taskKind: "knowledgebase_qa",
-    requestedScope,
-    context: { bundle, kb_hits: kbHits, object_manifest: kbManifest },
-    evidenceRefs: bundle.recent_evidence.map((entry) => entry.run_id),
-    policyFlags: bundle.policy_flags,
-    courseMode: true,
-    allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
-    resultSubmissionSchema: "knowledgebase_answer.v1",
-    extraMcpServers: [
-      ...agentProgress.extraMcpServers,
-      ...(kbMcpServer ? [kbMcpServer] : []),
-    ],
-    onEvent: agentProgress.onEvent,
-    taskRunner: context.agentRunner,
-  });
-  let parsed: ReturnType<typeof parseKnowledgebaseAnswer>;
+  let response: ValidatedAgentRunResult<ReturnType<typeof parseKnowledgebaseAnswer>>;
   try {
-    parsed = parseKnowledgebaseAnswer(agentStructuredOutput(response, "agent_ask"));
+    response = await runAgentWithValidatedSubmission({
+      projectRoot,
+      taskPrompt: agentProgress.taskPrompt(command.question),
+      taskKind: "knowledgebase_qa",
+      requestedScope,
+      context: { bundle, kb_hits: kbHits, object_manifest: kbManifest },
+      evidenceRefs: bundle.recent_evidence.map((entry) => entry.run_id),
+      policyFlags: bundle.policy_flags,
+      courseMode: true,
+      allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      resultSubmissionSchema: "knowledgebase_answer.v1",
+      extraMcpServers: [
+        ...agentProgress.extraMcpServers,
+        ...(kbMcpServer ? [kbMcpServer] : []),
+      ],
+      onEvent: agentProgress.onEvent,
+      taskRunner: context.agentRunner,
+      validateSubmission: (submission) => parseKnowledgebaseAnswer(submission),
+    });
   } catch (error) {
-    const rawPath = await recordRawAgentOutput(evidence, "agent", "agent-ask-raw.txt", response.resultText);
-    throw new AgentOutputError(`knowledgebase answer does not match knowledgebase_answer.v1: ${error instanceof Error ? error.message : String(error)}`, {
-      schema: "knowledgebase_answer.v1",
-      schema_error: error instanceof Error ? error.message : String(error),
+    if (!(error instanceof AgentOutputError)) throw error;
+    const rawPath = await recordRawAgentOutput(
+      evidence,
+      "agent",
+      "agent-ask-raw.txt",
+      typeof error.details?.raw_result_text === "string" ? error.details.raw_result_text : "",
+    );
+    throw new AgentOutputError(error.message, {
+      ...error.details,
       raw_artifact: path.relative(evidence.artifacts_root, rawPath),
-      suggested_next_commands: ["rerun `vos agent ask` or inspect the raw artifact"],
     });
   }
+  const parsed = response.validatedResult;
   const artifact = path.join(projectRoot, ".vos", "agent-ask.json");
   await writeFile(artifact, `${JSON.stringify({ question: command.question, answer: parsed, kb_hits: kbHits, object_manifest: kbManifest }, null, 2)}\n`);
   evidence.addArtifact("agent", path.relative(projectRoot, artifact), "knowledgebase answer");
@@ -4552,9 +4560,9 @@ export async function executeAgentDebug(
   const readonlyBefore = existsSync(path.join(projectRoot, "vos.yaml")) ? await studentGitFingerprint(projectRoot) : undefined;
   updateProgress(context, { stage: "agent debug", status: "running", message: "waiting for agent" });
   const agentProgress = createAgentProgressParams(context, "agent debug");
-  let response: Awaited<ReturnType<typeof runAgentWithPrompt>>;
+  let response: ValidatedAgentRunResult<ReturnType<typeof parseDebugOutput>>;
   try {
-    response = await runAgentWithPrompt({
+    response = await runAgentWithValidatedSubmission({
       projectRoot,
       taskPrompt: agentProgress.taskPrompt(`Diagnose VOS run failure from ${path.basename(logPath)}.`),
       taskKind: "debug",
@@ -4578,9 +4586,22 @@ export async function executeAgentDebug(
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
       taskRunner: context.agentRunner,
+      validateSubmission: (submission) => parseDebugOutput(submission),
     });
   } catch (error) {
     if (readonlyBefore) assertStudentReadonlyFingerprint(readonlyBefore, await studentGitFingerprint(projectRoot), "agent debug");
+    if (error instanceof AgentOutputError) {
+      const rawPath = await recordRawAgentOutput(
+        evidence,
+        "agent-debug",
+        "agent-debug-raw.txt",
+        typeof error.details?.raw_result_text === "string" ? error.details.raw_result_text : "",
+      );
+      throw new AgentOutputError(error.message, {
+        ...error.details,
+        raw_artifact: path.relative(evidence.artifacts_root, rawPath),
+      });
+    }
     if (!command.runId) throw error;
     const failurePath = await writeGdbFailureArtifact(projectRoot, evidence, debugRoot, error, adapterContractPath);
     return {
@@ -4594,18 +4615,7 @@ export async function executeAgentDebug(
     };
   }
   if (readonlyBefore) assertStudentReadonlyFingerprint(readonlyBefore, await studentGitFingerprint(projectRoot), "agent debug");
-  let debugOutput: ReturnType<typeof parseDebugOutput>;
-  try {
-    debugOutput = parseDebugOutput(agentStructuredOutput(response, "agent_debug"));
-  } catch (error) {
-    const rawPath = await recordRawAgentOutput(evidence, "agent-debug", "agent-debug-raw.txt", response.resultText);
-    throw new AgentOutputError(`agent debug output does not match debug_output.v1: ${error instanceof Error ? error.message : String(error)}`, {
-      schema: "debug_output.v1",
-      schema_error: error instanceof Error ? error.message : String(error),
-      raw_artifact: path.relative(evidence.artifacts_root, rawPath),
-      suggested_next_commands: ["rerun `vos agent debug --run <run-id>` or inspect the raw artifact"],
-    });
-  }
+  const debugOutput = response.validatedResult;
   const gdbSummaryPath = await writeGdbSummaryArtifact(projectRoot, evidence, debugRoot, debugOutput, adapterContractPath);
   const artifact = path.join(debugRoot, "debug.json");
   const markdown = path.join(debugRoot, "debug.md");
@@ -5192,7 +5202,7 @@ async function runDefaultAgentSpecReview(params: {
 
   try {
     const agentProgress = createAgentProgressParams(params.context, "agent spec review");
-    const response = await runAgentWithPrompt({
+    const response = await runAgentWithValidatedSubmission({
       projectRoot: params.context.projectRoot,
       taskPrompt: agentProgress.taskPrompt(prompt),
       taskKind: "design_review",
@@ -5204,8 +5214,9 @@ async function runDefaultAgentSpecReview(params: {
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
       taskRunner: params.context.agentRunner,
+      validateSubmission: (submission, _events, resultText) => parseAgentSpecReview(submission, resultText),
     });
-    const review = parseAgentSpecReview(agentStructuredOutput(response, "agent_review"), response.resultText);
+    const review = response.validatedResult;
     await writeAgentReviewArtifact(params.context.projectRoot, params.evidence, review);
     return review;
   } catch (error) {

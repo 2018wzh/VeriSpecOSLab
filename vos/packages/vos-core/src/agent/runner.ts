@@ -37,6 +37,10 @@ export interface AgentRunResult {
   iterations: number;
 }
 
+export interface ValidatedAgentRunResult<T> extends AgentRunResult {
+  validatedResult: T;
+}
+
 export type HeadlessAgentTaskRunner = (options: AgentTaskRequest) => Promise<{
   content: string | null;
   structuredOutput?: unknown;
@@ -131,6 +135,65 @@ export async function runAgentWithPrompt(params: {
     threadId: result.threadId ?? lastAgentThreadId(rawEvents),
     iterations: maxAgentIteration(rawEvents),
   };
+}
+
+export async function runAgentWithValidatedSubmission<T>(params: Parameters<typeof runAgentWithPrompt>[0] & {
+  validateSubmission: (
+    submission: unknown,
+    events: Array<Record<string, unknown>>,
+    resultText: string,
+  ) => T;
+}): Promise<ValidatedAgentRunResult<T>> {
+  const totalBudget = params.maxIterations ?? 50;
+  let remaining = totalBudget;
+  let taskPrompt = params.taskPrompt;
+  let threadId = params.threadId;
+  const rawEvents: Array<Record<string, unknown>> = [];
+  let lastError: unknown;
+  let lastResultText = "";
+
+  while (remaining > 0) {
+    const response = await runAgentWithPrompt({
+      ...params,
+      taskPrompt,
+      threadId,
+      maxIterations: remaining,
+    });
+    rawEvents.push(...response.rawEvents);
+    lastResultText = response.resultText;
+    const consumed = Math.max(1, response.iterations);
+    remaining = Math.max(0, remaining - consumed);
+    threadId = response.threadId ?? threadId;
+    try {
+      return {
+        ...response,
+        rawEvents,
+        threadId,
+        iterations: totalBudget - remaining,
+        validatedResult: params.validateSubmission(response.parsedResult, rawEvents, response.resultText),
+      };
+    } catch (error) {
+      lastError = error;
+      if (remaining === 0) break;
+      const message = error instanceof Error ? error.message : String(error);
+      taskPrompt = [
+        "VOS rejected the previously accepted submit_result payload during caller semantic validation.",
+        `Validation error: ${message}`,
+        "Stay in this same thread. The normal profile tools are restored: inspect the existing evidence, correct the result, and call submit_result again.",
+        "Do not repeat the unchanged payload and do not answer with prose; only a newly accepted tool submission completes the task.",
+        `The original maxIterations budget is shared across all repairs; ${remaining} iteration(s) remain.`,
+      ].join("\n");
+    }
+  }
+
+  throw new AgentOutputError(
+    `agent structured result for ${params.resultSubmissionSchema} remained semantically invalid after ${totalBudget} iteration(s): ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+    {
+      schema: params.resultSubmissionSchema,
+      schema_error: lastError instanceof Error ? lastError.message : String(lastError),
+      raw_result_text: lastResultText,
+    },
+  );
 }
 
 function lastAgentThreadId(events: readonly Record<string, unknown>[]): string | undefined {
