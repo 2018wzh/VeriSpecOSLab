@@ -9,4 +9,4 @@ The active student sources are:
 - [`../workflow/README.md`](../workflow/README.md): the student loop;
 - [`../agent/README.md`](../agent/README.md): role boundaries and worktree trust limits.
 
-Judge hidden tests, fuzz/trace/oracle, course hardware automation, Portal retirement, and merging the workspace into a single engine are deferred. The platform documents may mention those future contracts, but they must not be surfaced as student commands or represented as current acceptance evidence.
+Judge 的 staff-only hidden tests、非固定种子的风险 fuzz、自适应 trace/oracle、课程硬件自动化、Portal 裁撤和 workspace 合并仍属后续平台阶段。学生本地的固定种子 fuzz、有界 trace/oracle 与可读取的 local hidden tests 已进入当前契约；两者不能混写。下列平台文档描述的是冻结的未来设计，不得把其中的内部适配器或 staff-only 能力当作当前学生命令或验收证据。

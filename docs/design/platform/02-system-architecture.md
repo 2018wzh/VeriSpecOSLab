@@ -59,7 +59,7 @@
       v             v
 +-----------+  +----------------+
 | Runner     |  | Judge Ctrl     |
-| vos serve  |  | standard score |
+| adapter    |  | standard score |
 | vos / QEMU |  |                |
 +-----+------+  +--------+-------+
       |                  |
@@ -101,7 +101,7 @@
 
 - 接收 webhook、手动触发和定时触发任务
 - 生成 `PipelinePlan`
-- 分发到 Runner 队列，通过 `vos serve` 或 authenticated `vos` 命令聚合结果
+- 分发到 Runner 队列，通过 authenticated `vos` 命令或后续平台专用适配器聚合结果
 
 ### 2.6 Judge Controller
 
@@ -149,7 +149,7 @@ Portal -> Backend API -> Repo Provisioner
 Git webhook -> Backend API -> Pipeline Orchestrator
   -> fetch project state and visible rules
   -> Runner checkout commit and bind policy snapshot
-  -> Runner starts vos serve or runs authenticated vos
+  -> Runner invokes authenticated vos through CLI or a future platform adapter
   -> Artifact Store persists outputs
   -> Backend API publishes public summary
 ```
@@ -160,7 +160,7 @@ Git webhook -> Backend API -> Pipeline Orchestrator
 Teacher or stage freeze -> Backend API
   -> Judge Controller
   -> isolated runner
-  -> authenticated vos / vos serve
+  -> authenticated vos / future platform adapter
   -> JudgeResult + EvidenceBundle
   -> Scorebook update
 ```

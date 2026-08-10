@@ -55,13 +55,13 @@
 - 派生验证计划
 - 绑定评分证据
 
-平台不能重新定义 `ArchitectureSpec`、`ModuleSpec` 或 `GoalValidationContract` 的语义。
+平台不能重新定义 DesignSpec、ModuleSpec、InterfaceSpec、GoalSpec 或 SpecPatch 的语义。
 
 ### 2.2 `toolchain/`
 
 `toolchain/` 负责定义 `vos` 的消费、执行编排和证据采集真相。平台只能：
 
-- 通过 authenticated `vos` CLI 或 `vos serve` HTTP API 调用 `vos`
+- 通过 authenticated `vos` CLI 或后续平台专用适配器调用 `vos`；当前学生 CLI 不提供 `vos serve`
 - 提供课程和项目级输入
 - 接收结构化输出
 - 存储和展示结果
@@ -104,7 +104,7 @@
 以下能力通过实验类型适配器实现：
 
 1. `QEMU` / `KVM` 启动与串口日志采集
-2. `ToolchainSpec` 与镜像、boot chain、ISA、machine profile 的绑定
+2. 工具链 ModuleSpec 与 `vos.yaml` 执行投影对镜像、boot chain、ISA、machine profile 的绑定
 3. OS 特有的 trace、panic、page table、syscall ABI 与 benchmark 采集
 4. 硬件移植和兼容性目标的特化验证
 

@@ -177,7 +177,7 @@ teacher or policy freeze
 VeriSpecOSLab 项目初始化时至少需要：
 
 - `spec/` 骨架
-- `ToolchainSpec` 或其引用
+- 工具链 ModuleSpec 与结构化 `vos.yaml` 执行投影
 - `vos` 入口脚本
 - QEMU 基础 profile
 - OS 验证 artifact 目录约定

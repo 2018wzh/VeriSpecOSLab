@@ -79,7 +79,7 @@ Agent Line:
 
 1. 管理课程、实验、阶段门禁、评分规则、AI Policy 和验证策略。
 2. 自动创建学生项目、仓库、工作区、Runner 和 Judge 绑定。
-3. 消费 authenticated `vos` 产出的本地 `spec` / `ToolchainSpec` 摘要、evidence 和 report，派生公开验证和私有验证。
+3. 消费 authenticated `vos` 产出的五类 `spec/`、`vos.yaml` 执行投影、evidence 和 report 摘要，派生公开验证和私有验证。
 4. 为本地 Agent、Portal、CI、Judge 和教师看板提供统一数据模型和审计记录。
 5. 支持 VeriSpecOSLab 的 OS 特化验证，并为其他 SpecLab 实验保留扩展点。
 
@@ -98,8 +98,8 @@ Agent Line:
 平台必须显式支持：
 
 - `QEMU` / `KVM` 驱动的 OS 验证
-- 由 `vos` 摘要和 evidence 支撑的 `spec/architecture/` 阶段切片审核
-- 由 `vos` 执行的 `ToolchainSpec` 构建/镜像/运行契约
+- 由 `vos` 摘要和 evidence 支撑的 DesignSpec、ModuleSpec 与 SpecPatch 阶段审核
+- 由 `vos` 执行的结构化 `vos.yaml` 构建、镜像和运行契约
 - 串口标记、镜像产物、trace、benchmark 和 AI 审计日志归档
 
 这些能力通过实验类型适配器进入平台，不应污染全部课程核心模型。

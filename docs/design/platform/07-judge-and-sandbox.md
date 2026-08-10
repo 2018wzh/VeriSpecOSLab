@@ -112,8 +112,8 @@ fetch frozen repo
   -> checkout frozen_commit_sha
   -> verify commit ledger
   -> bind Portal project / judge policy snapshot
-  -> start vos serve or invoke authenticated vos
-  -> run vos build generate
+  -> invoke authenticated vos through CLI or a future platform adapter
+  -> run vos spec lint
   -> run vos build
   -> build kernel / userland / image from manifest
   -> launch QEMU
@@ -152,7 +152,7 @@ Judge 输入至少需要：
 - timeout 与 success oracle
 - policy snapshot ref 与 auth verdict
 
-Judge 不直接解析 `ToolchainSpec` 或拼接 QEMU 命令。所有 repo 内执行必须经
+Judge 不直接解析工具链 ModuleSpec、`vos.yaml` 或拼接 QEMU 命令。所有 repo 内执行必须经
 authenticated `vos-cli` 裁决并生成 evidence；staff-only hidden 规则只能以
 runner 输入或 policy snapshot 形式参与验证，不能写入学生 repo 或学生可见
 report。

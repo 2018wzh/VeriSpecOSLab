@@ -40,7 +40,7 @@
 - Repo Provisioner
 - Pipeline Orchestrator 基础版
 - Artifact Store
-- authenticated `vos-cli` / `vos serve` 集成
+- authenticated `vos-cli` 与后续平台专用适配器集成
 - Agent governance / audit 基础版
 
 ### 2.3 验收标准

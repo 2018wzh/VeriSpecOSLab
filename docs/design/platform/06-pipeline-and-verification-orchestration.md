@@ -57,7 +57,7 @@ report publish
 - 项目绑定的规则快照
 - Portal 签发或校验的 `vos` policy snapshot
 - 由 `vos` 产出的学生仓库 `spec/` 摘要
-- 由 `vos` 产出的 `ToolchainSpec` 摘要
+- 由 `vos` 产出的工具链 ModuleSpec 与 `vos.yaml` 摘要
 - 触发类型
 
 Pipeline 不接受本地未提交文件、未跟踪文件或本地 `.vos/runs/` 作为复现
@@ -76,8 +76,9 @@ Base Tests
 
 派生来源：
 
-- 本地 `spec/architecture/`
+- 本地 `spec/design.yaml`
 - 本地 `spec/modules/`
+- 本地 `spec/interfaces/` 与 `spec/patches/`
 - 本地 `spec/goals/`
 - 云端 `VerificationPolicy`
 - staff-only 风险扩展规则
@@ -121,8 +122,8 @@ checkout commit_sha
   -> bind Portal user / project / stage / policy snapshot
   -> derive test matrix
   -> allocate runner
-  -> start vos serve or invoke authenticated vos
-  -> execute vos build generate
+  -> invoke authenticated vos through CLI or a future platform adapter
+  -> execute vos spec lint
   -> execute vos build
   -> execute vos verify
   -> collect evidence
@@ -142,8 +143,8 @@ checkout commit_sha
 - artifact 引用
 
 平台 Runner 的复现入口必须从 clean tree 和当前 `HEAD` ledger 记录开始。
-关键入口包括 `vos build generate`、非 dry-run `vos build`、`vos run qemu`、
-`vos test`、`vos verify` 和提交前检查。只读检查、上下文查看、知识问答和诊断说明
+关键入口包括 `vos spec lint`、非 dry-run `vos build`、`vos run qemu`、
+`vos verify` 和 `vos submit`。只读检查、知识问答和诊断说明
 不要求 clean tree gate；checkout 后进入构建、验证或提交前仍必须通过等价 gate。
 
 ## 6. 失败分类
@@ -215,22 +216,21 @@ VeriSpecOSLab 额外生成：
 
 ## 10. VeriSpecOSLab 特化说明
 
-平台通过 sandbox runner 中的 authenticated `vos` 与 OS 项目交互。推荐由
-runner 启动单项目绑定的 `vos serve`，再通过命令 RPC 创建 run；也可以在
-同一 auth / policy gate 下直接调用 CLI。典型命令包括：
+平台通过 sandbox runner 中的 authenticated `vos` 与 OS 项目交互。当前可执行
+契约是由 runner 在同一 auth / policy gate 下直接调用 CLI；后续若增加平台专用
+适配器，也只能投影同一组命令和结构化结果，不能重新暴露已删除的学生入口。典型命令包括：
 
 ```text
 git checkout <commit_sha>
-vos serve --portal-url <url> --project-id <project_id>
-vos build generate
 vos spec lint
-vos arch lint
 vos build
 vos run qemu
-vos verify public --stage <stage>
+vos verify
+vos report
+vos submit
 ```
 
-平台不直接替代 `vos` 做本地解析、ToolchainSpec 消费、QEMU 编排、Agent
+平台不直接替代 `vos` 做本地解析、工具链 ModuleSpec 与 `vos.yaml` 消费、QEMU 编排、Agent
 工具执行或 patch gate。hidden / staff-only 规则只作为 policy snapshot 或
 runner 输入参与裁决，不进入学生 repo、本地学生 Agent 或 Portal 前端可见输出。
 
