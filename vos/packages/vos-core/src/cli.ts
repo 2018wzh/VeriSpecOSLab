@@ -6,7 +6,6 @@ import type {
   AgentReviewCommand,
   AgentConfigCommand,
   BuildCommand,
-  CliCommand,
   DoctorCommand,
   GlobalOptions,
   InitCommand,
@@ -17,12 +16,13 @@ import type {
   KbListCommand,
   KbRemoveCommand,
   KbSearchCommand,
-  ParsedInvocation,
+  ParsedStudentInvocation,
   ReportGenerateCommand,
   RunQemuCommand,
   RunHardwareCommand,
   SpecLintCommand,
   SubmitPackCommand,
+  StudentCliCommand,
   VerifyCommand,
 } from "./types.ts";
 
@@ -63,7 +63,7 @@ const RETIRED_TOP_LEVEL_COMMANDS = new Set([
   "seed",
 ]);
 
-export function parseArgs(argv: string[]): ParsedInvocation {
+export function parseArgs(argv: string[]): ParsedStudentInvocation {
   const input = argv.slice(2);
 
   const global: GlobalOptions = {
@@ -139,7 +139,7 @@ function parseProgressMode(value: string): GlobalOptions["progress"] {
   throw new Error("--progress must be one of: auto, always, never");
 }
 
-function parseCommand(tokens: string[], global: GlobalOptions): CliCommand {
+function parseCommand(tokens: string[], global: GlobalOptions): StudentCliCommand {
   const [command, ...rest] = tokens;
   void global;
 

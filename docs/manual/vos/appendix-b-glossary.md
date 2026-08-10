@@ -13,7 +13,7 @@
 | Evidence | 命令的 manifest、事件、stdout/stderr、产物和 Spec 覆盖记录 |
 | clean HEAD | `git status --porcelain --untracked-files=all` 没有项目改动 |
 | pending_human_review | 硬件本地结果已记录，但尚未通过人工验收 |
-| KB | 由 `vos.yaml` 锁定 revision/hash 的知识来源集合 |
+| KB | 由 `vos kb` 命令管理，并在 `.vos/kb/` 中记录 revision/hash 的知识来源集合 |
 | audit chain | `.vos/audit/chain.jsonl` 中用前一条 hash 串联的本地明文审计事件 |
 | linked worktree | Git 的临时 detached worktree，只提供变更回滚，不是安全沙箱 |
 | QEMU | 在宿主机模拟目标 ISA 的虚拟机；本链使用非图形串口输出 |

@@ -221,10 +221,6 @@ export async function executeCliInvocation(
   if (parsed.command.kind === "help") {
     throw new CliError("help output is not available through executeCliInvocation", "failed");
   }
-  if (parsed.command.kind === "serve") {
-    throw new CliError("serve must be started through startVosHttpServer", "failed");
-  }
-
   const projectRoot = path.resolve(parsed.global.projectRoot);
   return await withProjectEnv(projectRoot, async () => {
     if (parsed.command.kind !== "init" && !existsSync(path.join(projectRoot, "vos.yaml")) && isLegacyProject(projectRoot)) {

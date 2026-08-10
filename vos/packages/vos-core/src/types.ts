@@ -381,20 +381,43 @@ export interface KbImportManifestCommand extends BaseCommand {
   manifestPath: string;
 }
 
-export type CliCommand =
+export type StudentCliCommand =
+  | InitCommand
+  | DoctorCommand
+  | SpecLintCommand
+  | BuildCommand
+  | RunQemuCommand
+  | RunHardwareCommand
+  | VerifyCommand
+  | ReportGenerateCommand
+  | SubmitPackCommand
+  | AgentDebugCommand
+  | AgentImplementCommand
+  | AgentVerifyCommand
+  | AgentReviewCommand
+  | AgentConfigCommand
+  | AgentAskCommand
+  | KbAddCommand
+  | KbListCommand
+  | KbSearchCommand
+  | KbRemoveCommand
+  | KbClearCommand
+  | KbExportManifestCommand
+  | KbImportManifestCommand
+  | { kind: "help"; topic?: string };
+
+/** Commands retained only for the frozen Portal/internal execution API. */
+export type FrozenPortalCommand =
   | LoginCommand
   | LogoutCommand
   | WhoamiCommand
   | PortalPipelineCommand
   | ProjectBindCommand
   | ServeCommand
-  | InitCommand
-  | DoctorCommand
   | StageShowCommand
   | StageSaveCommand
   | ToolchainLintCommand
   | ToolchainInitCommand
-  | SpecLintCommand
   | SpecNormalizeCommand
   | SpecCheckConsistencyCommand
   | SpecPatchLintCommand
@@ -402,16 +425,10 @@ export type CliCommand =
   | ArchLintCommand
   | ArchComposeCommand
   | ArchDeriveTestsCommand
-  | BuildCommand
   | BuildGenerateCommand
-  | RunQemuCommand
-  | RunHardwareCommand
   | TestCommand
-  | VerifyCommand
   | TraceSyscallCommand
   | DebugExplainLogCommand
-  | ReportGenerateCommand
-  | SubmitPackCommand
   | LedgerRecordCommand
   | AgentServeCommand
   | AgentContextCommand
@@ -419,22 +436,10 @@ export type CliCommand =
   | AgentGenerateCommand
   | AgentApplyPatchCommand
   | AgentValidateGeneratedCommand
-  | AgentDebugCommand
-  | AgentImplementCommand
-  | AgentVerifyCommand
-  | AgentReviewCommand
-  | AgentConfigCommand
   | AgentLogCommand
-  | AgentAskCommand
-  | KbAddCommand
-  | KbListCommand
-  | SeedStatusCommand
-  | KbSearchCommand
-  | KbRemoveCommand
-  | KbClearCommand
-  | KbExportManifestCommand
-  | KbImportManifestCommand
-  | { kind: "help"; topic?: string };
+  | SeedStatusCommand;
+
+export type CliCommand = StudentCliCommand | FrozenPortalCommand;
 
 export type CliOnlyCommand =
   | LoginCommand
@@ -451,6 +456,10 @@ export type VosCommand = Exclude<CliCommand, CliOnlyCommand>;
 export interface ParsedInvocation {
   global: GlobalOptions;
   command: CliCommand;
+}
+
+export interface ParsedStudentInvocation extends Omit<ParsedInvocation, "command"> {
+  command: StudentCliCommand;
 }
 
 export type AuthVerdict = "allowed" | "denied" | "not_required";

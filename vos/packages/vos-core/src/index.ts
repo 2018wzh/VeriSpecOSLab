@@ -155,10 +155,12 @@ export type {
   EffectivePolicy,
   GlobalOptions,
   ParsedInvocation,
+  ParsedStudentInvocation,
   PolicySnapshot,
   PortalUserSummary,
   ProgressMode,
   RunAuthContext,
+  StudentCliCommand,
   VerifyScope,
   VosCommand,
 } from "./types.ts";
