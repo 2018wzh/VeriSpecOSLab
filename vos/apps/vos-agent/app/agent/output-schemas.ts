@@ -301,7 +301,9 @@ export function optionalOutputSchemaForId(id: string): OutputSchemaDefinition | 
 export function validateOutputSemantics(id: string, value: unknown): string[] {
   if (id !== "student_implementation_result.v1" || !value || typeof value !== "object" || Array.isArray(value)) return [];
   const result = value as Record<string, unknown>;
-  if (result.status !== "passed") return [];
+  if (result.status !== "passed") {
+    return ["result.status must be passed; keep working in the same Agent thread and resubmit after the implementation and tests succeed"];
+  }
   const targets = Array.isArray(result.test_targets) ? result.test_targets : [];
   const hidden = Array.isArray(result.hidden_tests) ? result.hidden_tests : [];
   const errors: string[] = [];

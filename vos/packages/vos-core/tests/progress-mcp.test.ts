@@ -141,6 +141,20 @@ describe("vos-cli progress MCP server", () => {
     expect(line.result.isError).toBe(true);
     expect(line.result.content[0].text).toContain("artifacts must contain at least one path");
   }, 20_000);
+
+  test("returns an unsuccessful implementation result to the Agent for repair", async () => {
+    const line = callProgressMcp({
+      name: "submit_result",
+      arguments: {
+        schema_id: "student_implementation_result.v1",
+        result: { status: "failed", test_targets: [], hidden_tests: [] },
+      },
+    });
+
+    expect(line.result.isError).toBe(true);
+    expect(line.result.content[0].text).toContain("result.status must be passed");
+    expect(line.result.content[0].text).toContain("keep working in the same Agent thread");
+  }, 20_000);
 });
 
 function callProgressMcp(params: Record<string, unknown>): { result: { isError: boolean; content: Array<{ text: string }> } } {
