@@ -91,7 +91,7 @@ vos agent ask -i
 ```sh
 vos agent review design
 vos agent review kernel/memory
-vos agent review spec/modules/memory.yaml -i
+vos agent review spec/modules/kernel/memory.yaml -i
 ```
 
 ### `vos agent implement <module>`

@@ -287,13 +287,13 @@ HHDM 并非本课程必须实现的内容，你可以选择 xv6 风格的 identi
 
 ### ModuleSpec（memory）与 DesignSpec 更新
 
-`spec/modules/memory.yaml`
+`spec/modules/kernel/memory.yaml`
 
 ### ModuleSpec
 
-- `spec/modules/memory.yaml`：物理内存模块
-- `spec/modules/vm.yaml`：虚拟内存模块
-- `spec/modules/memory.yaml`：分配器的并发规则
+- `spec/modules/kernel/memory.yaml`：统一描述物理页分配、内核页表、用户映射和分配器并发规则
+
+参考课程使用一个 `kernel/memory` ModuleSpec 保持页所有权、映射权限和 TLB 可见性的一致边界。只有在学生架构确实需要独立虚拟内存模块时才拆分，并为新模块声明稳定 ID、独立 `owns` 和依赖；不要照旧路径创建空占位 Spec。
 
 ### 设计理由（至少 1 个）
 

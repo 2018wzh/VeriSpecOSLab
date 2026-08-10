@@ -335,14 +335,15 @@ syscall() 函数：
 
 ### ModuleSpec 与 DesignSpec 更新
 
-`spec/modules/process.yaml`（覆盖 trap + process + syscall 全部）
+本 Lab 修订 `spec/modules/kernel/trap.yaml`，并新增 `spec/modules/kernel/process.yaml` 与 `spec/modules/kernel/syscall.yaml`。三个模块各自保留职责和 `owns`，不能用一个 process 文件包揽 trap、调度与 syscall。
 
 ### ModuleSpec（至少 3 个）
 
-- `spec/modules/trap.yaml`
-- `spec/modules/process.yaml`
-- `spec/modules/syscall.yaml`
-- `spec/modules/exec.yaml`（可执行加载器）
+- `spec/modules/kernel/trap.yaml`
+- `spec/modules/kernel/process.yaml`
+- `spec/modules/kernel/syscall.yaml`
+
+本阶段的首个用户程序和加载边界写进上述模块的操作与依赖。独立可执行加载器尚未进入当前课程历史时，不要预建 `exec` ModuleSpec 或测试占位；需要引入时再手写对应 Spec 和 SpecPatch。
 
 ### 设计理由（至少 2 个）
 

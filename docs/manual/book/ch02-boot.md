@@ -907,11 +907,11 @@ void kernel_main(void) {
 
 ### ModuleSpec（boot）与 DesignSpec 更新
 
-`spec/modules/boot.yaml`：声明启动阶段引入了什么机制，依赖什么前序决策。
+`spec/modules/kernel/boot.yaml`：声明启动阶段引入了什么机制，依赖什么前序决策。
 
 ### ModuleSpec (boot)
 
-`spec/modules/boot.yaml`：描述启动模块的状态（如 BSS 段、栈布局）、接口（如 `kinit` 或 `kernel_main`）和不变量（如"BSS 段在进入 C 代码前已归零"）。
+`spec/modules/kernel/boot.yaml`：描述启动模块的状态（如 BSS 段、栈布局）、接口（如 `kinit` 或 `kernel_main`）和不变量（如"BSS 段在进入 C 代码前已归零"）。
 
 ### 工具链 ModuleSpec 和 `vos.yaml`
 

@@ -51,6 +51,20 @@ describe("Lab 1-10 manual command contract", () => {
     expect(readLab("lab3-memory.md")).not.toContain("kernel/vm");
   });
 
+  test("keeps Book and command examples on the same current ModuleSpec paths", () => {
+    const cases: Array<[string, string[], RegExp]> = [
+      [join(repositoryRoot, "docs", "manual", "book", "ch02-boot.md"), ["spec/modules/kernel/boot.yaml"], /spec\/modules\/boot\.yaml/],
+      [join(repositoryRoot, "docs", "manual", "book", "ch03-memory.md"), ["spec/modules/kernel/memory.yaml"], /spec\/modules\/(?:memory|vm)\.yaml/],
+      [join(repositoryRoot, "docs", "manual", "book", "ch05-user-space.md"), ["spec/modules/kernel/trap.yaml", "spec/modules/kernel/process.yaml", "spec/modules/kernel/syscall.yaml"], /spec\/modules\/(?:trap|process|syscall|exec)\.yaml/],
+      [join(repositoryRoot, "docs", "manual", "appendices", "vos-commands.md"), ["spec/modules/kernel/memory.yaml"], /spec\/modules\/memory\.yaml/],
+    ];
+    for (const [path, expected, retired] of cases) {
+      const content = readFileSync(path, "utf8");
+      for (const current of expected) expect(content).toContain(current);
+      expect(content).not.toMatch(retired);
+    }
+  });
+
   test("keeps later labs on executable public commands and explicit acceptance boundaries", () => {
     const lab8 = readLab("lab8-personal-goal.md");
     expect(lab8).toContain("vos agent implement <module>");
