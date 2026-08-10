@@ -360,6 +360,48 @@ describe("student v2 workflow", () => {
     });
   }, 30_000);
 
+  test("returns owns violations to the same Agent thread for repair", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      const originalIgnore = readFileSync(join(root, ".gitignore"), "utf8");
+      let turn = 0;
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          turn++;
+          mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+          writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 0;\n");
+          if (turn === 1) {
+            writeFileSync(join(options.projectRoot, ".gitignore"), `${originalIgnore}agent-output\n`);
+          } else {
+            expect(options.threadId).toBe("owns-repair-thread");
+            expect(options.task).toContain("owns_violation");
+            expect(options.task).toContain(".gitignore");
+            writeFileSync(join(options.projectRoot, ".gitignore"), originalIgnore);
+          }
+          return {
+            content: "submitted",
+            threadId: "owns-repair-thread",
+            events: [
+              { type: "model.usage", thread_id: "owns-repair-thread", iteration: turn === 1 ? 45 : 2 },
+              ...acceptedSubmitEvents("student_implementation_result.v1", implementationResult()).map((event) => ({
+                ...event,
+                thread_id: "owns-repair-thread",
+                iteration: turn === 1 ? 45 : 2,
+              })),
+            ],
+          };
+        },
+      });
+
+      expect(turn).toBe(2);
+      expect(result.status, JSON.stringify(result.details)).toBe("passed");
+      expect(readFileSync(join(root, ".gitignore"), "utf8")).toBe(originalIgnore);
+      expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
+    });
+  }, 30_000);
+
   test("accumulates hidden tests from multiple modules under one Spec hash", async () => {
     const root = makeRoot();
     await withGitIdentity(async () => {
@@ -533,10 +575,13 @@ describe("student v2 workflow", () => {
           writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 0;\n");
           const proposal = implementationResult();
           if (turn === 1) {
+            mkdirSync(join(options.projectRoot, "tests", "memory"), { recursive: true });
+            writeFileSync(join(options.projectRoot, "tests", "memory", "transient.ts"), "export const transient = true;\n");
             proposal.test_targets[0]!.args = ["-e", "process.exit(1)"];
             expect(options.maxIterations).toBe(300);
             expect(options.completionReserveIterations).toBe(40);
           } else {
+            rmSync(join(options.projectRoot, "tests", "memory", "transient.ts"));
             expect(options.threadId).toBe("repair-thread");
             expect(options.maxIterations).toBe(300);
             expect(options.completionReserveIterations).toBe(40);
@@ -560,6 +605,7 @@ describe("student v2 workflow", () => {
       expect((result.details?.validation as { status?: string } | undefined)?.status).toBe("passed");
       expect(result.status).toBe("passed");
       expect(readFileSync(join(root, "src", "memory.ts"), "utf8")).toContain("allocate");
+      expect(existsSync(join(root, "tests", "memory", "transient.ts"))).toBe(false);
       expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
     });
   }, 30_000);

@@ -2354,7 +2354,7 @@ export async function executeAgentImplement(
   try {
     const progress = createAgentProgressParams(context, "agent implement");
     const initialPrompt = `Implement ModuleSpec ${module.id}. Work only within these owned paths: ${ownedPaths.join(", ")}. Generate the implementation plus concrete public, contract, fixed-seed bounded fuzz, bounded trace/oracle, and local hidden tests for this module. Test source paths must also be covered by owns. This is an implementation task, not a planning task: do not stop after describing a plan; write the owned files, run validation, and call submit_result. Read only the current project root: its Spec, vos.yaml, owned files, and public test framework. Reuse helpers under tests/public and do not reimplement them in generated tests. Do not inspect parent or sibling directories, other checkouts/worktrees, VOS implementation source, Git history, old Lab implementations/diffs, or previous .vos runs; the current Spec and the result contract below are the complete authority. Do not perform repo-wide schema searches or toolchain discovery. Do not edit vos.yaml: return structured test_targets and hidden_tests so VOS can validate and project them atomically. Existing test target IDs are immutable and MUST NOT be proposed again: ${JSON.stringify(existingTargetIds)}. Choose new module-prefixed IDs that do not collide with that list. Each test_targets entry is {id, kind, program, args, cwd, env, timeout, verifies, artifacts}; timeout is an integer number of milliseconds and must be at least 1000 (for example 60000 for 60 seconds); use env: [\"PATH\"] for every target whose program or script resolves host tools by name. Fuzz additionally requires seed, cases, reproduction_artifact; trace additionally requires workload and oracle. Each hidden_tests entry is {id, path, content, program, args, cwd, env, timeout, verifies, seed} with the same millisecond timeout rule, and args may use {hidden_test}; hidden tests that resolve host tools also require PATH in env. Every verifies list must include ${module.id}. Hidden test content is returned in the result and must not be written into Git. Each implementation or evidence-driven repair turn retains the Agent runtime's required hard ${implementationMaxIterations}-iteration maxIterations guard. Finish discovery by iteration 30, create the implementation and all four non-hidden test kinds by iteration 140, and run the local build plus proposed commands by iteration 220. Batch independent Read/Write/Bash calls in the same response. Do not call submit_result with failed, partial, or blocked status: those statuses are rejected as repairable tool errors and do not finish the run. Keep repairing within the same thread, verify that every proposed command path exists, and submit a complete passed result by the iteration-${implementationSubmissionCheckpoint} checkpoint. A rejected checkpoint restores the full tool set through iteration ${implementationLastRepairIteration}; iteration ${implementationMaxIterations} is reserved for the corrected structured resubmission. Do not spend more than ten iterations on one unchanged failure: fix its cause, use a simpler Spec-compliant design, or move to another independent required file before returning with new evidence. Do not spend iterations investigating harmless output formatting after the declared oracle passes. VOS will independently run the build and every existing and proposed non-hidden target before applying anything. Do not edit specs, .git, .vos, or worktrees.`;
-    let taskPrompt = `${initialPrompt}\nImplement only operations and behavior explicitly declared by the target ModuleSpec. Do not implement another newly declared ModuleSpec even when a committed SpecPatch makes its owned paths writable; cross-module access exists only for the smallest integration edit required by this target. Scope every proposed test and hidden test to this target and already-implemented dependencies, never to a sibling module that has not landed yet. Do not add adjacent later-stage operations merely because a reference OS commonly includes them; choose the smallest complete composition that satisfies the current Spec. Prefer WriteFiles to create a related implementation or test-file batch in one tool call. A missing implementation or test file is not an external blocker: create it with the available tools and do not submit failed merely because owned work remains.`;
+    let taskPrompt = `${initialPrompt}\nImplement only operations and behavior explicitly declared by the target ModuleSpec. Do not implement another newly declared ModuleSpec even when a committed SpecPatch makes its owned paths writable; cross-module access exists only for the smallest integration edit required by this target. Scope every proposed test and hidden test to this target and already-implemented dependencies, never to a sibling module that has not landed yet. Do not add adjacent later-stage operations merely because a reference OS commonly includes them; choose the smallest complete composition that satisfies the current Spec. Prefer WriteFiles to create a related implementation or test-file batch in one tool call. A missing implementation or test file is not an external blocker: create it with the available tools and do not submit failed merely because owned work remains. Keep disposable build intermediates under an owned ignored output directory; do not edit .gitignore.`;
     taskPrompt += `\nThe hard maxIterations value is ${implementationMaxIterations}. Iteration ${implementationSubmissionCheckpoint} is the structured submission checkpoint. If it is rejected, iterations ${implementationSubmissionCheckpoint + 1}-${implementationLastRepairIteration} restore the full tool set for repair and iteration ${implementationMaxIterations} requires the corrected submission.`;
     let threadId: string | undefined;
     const projectedTargetIds = new Set<string>();
@@ -2481,7 +2481,7 @@ export async function executeAgentImplement(
           }
         }
       }
-      if (validation.status === "passed" || validation.status === "owns_violation" || usedIterations >= implementationMaxIterations || !threadId) break;
+      if (validation.status === "passed" || usedIterations >= implementationMaxIterations || !threadId) break;
       taskPrompt = `VOS authoritative validation rejected the current implementation. Keep the existing projected test target IDs. Use the available tools now to inspect and correct the current worktree files, create every missing owned test file, run the failing commands, and resubmit status passed when every gate succeeds. A missing implementation or test file is not an external blocker. Do not merely describe a known fix or immediately resubmit failed while iterations remain. This continuation keeps the same Agent thread and has the required ${implementationMaxIterations}-iteration maxIterations guard. Bounded validation evidence:\n${JSON.stringify(studentImplementationRepairSummary(validation), null, 2)}`;
     }
     if (validation.status === "passed") {
@@ -2600,9 +2600,18 @@ interface StudentImplementationPayload {
 function studentImplementationRepairSummary(validation: Record<string, unknown>): Record<string, unknown> {
   const build = isRecord(validation.build) ? validation.build : undefined;
   const checks = Array.isArray(validation.checks) ? validation.checks : [];
+  const boundedPaths = (value: unknown): string[] | undefined => Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string").slice(0, 200)
+    : undefined;
   return {
     status: validation.status,
     message: validation.message,
+    changed: boundedPaths(validation.changed),
+    violations: boundedPaths(validation.violations),
+    changed_paths: boundedPaths(validation.changed_paths),
+    owns_violations: boundedPaths(validation.owns_violations),
+    expected_ids: boundedPaths(validation.expected_ids),
+    actual_ids: boundedPaths(validation.actual_ids),
     missing_command_inputs: validation.missing_command_inputs,
     spec_diagnostics: validation.spec_diagnostics,
     build: build ? boundedRunnerFailure(build) : undefined,
@@ -3044,8 +3053,14 @@ async function studentWorktreeDiff(projectRoot: string): Promise<string> {
   const untracked = await runStudentGit(projectRoot, ["ls-files", "--others", "--exclude-standard"]);
   const untrackedPaths = untracked.stdout.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
   if (untrackedPaths.length > 0) await runStudentGit(projectRoot, ["add", "-N", "--", ...untrackedPaths]);
-  const result = await runStudentGit(projectRoot, ["diff", "--binary", "HEAD"]);
-  return result.stdout;
+  try {
+    const result = await runStudentGit(projectRoot, ["diff", "--binary", "HEAD"]);
+    return result.stdout;
+  } finally {
+    if (untrackedPaths.length > 0) {
+      await runStudentGit(projectRoot, ["reset", "--quiet", "HEAD", "--", ...untrackedPaths]);
+    }
+  }
 }
 
 async function writeStudentAgentArtifact(projectRoot: string, evidence: EvidenceWriter, name: string, value: unknown): Promise<void> {
