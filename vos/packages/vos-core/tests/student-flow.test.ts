@@ -390,7 +390,7 @@ describe("student v2 workflow", () => {
       const manifest = JSON.parse(readFileSync(hiddenRoots[0]!, "utf8")) as { tests: Array<Record<string, unknown>> };
       expect(manifest.tests.map((test) => test.module_id).sort()).toEqual(["memory", "scheduler"]);
       expect(manifest.tests.map((test) => test.generation_run_id).every((value) => typeof value === "string")).toBe(true);
-      expect(manifest.tests.every((test) => Array.isArray(test.args) && test.args[0] === test.path)).toBe(true);
+      expect(manifest.tests.every((test) => Array.isArray(test.args) && test.args[0] === "test" && test.args[1] === test.path)).toBe(true);
       expect((await invoke(root, "verify", "--hidden")).status).toBe("passed");
     });
   }, 60_000);
@@ -796,9 +796,9 @@ function implementationResult(moduleId = "memory") {
     hidden_tests: [{
       id: `hidden-${moduleId}`,
       path: `${moduleId}.hidden.ts`,
-      content: "if (1 + 1 !== 2) process.exit(1); await Bun.write(process.argv[2]!, 'hidden output\\n');\n",
+      content: "import { expect, test } from 'bun:test'; test('hidden arithmetic contract', () => expect(1 + 1).toBe(2));\n",
       program: "bun",
-      args: [`${moduleId}.hidden.output`, "{hidden_test}"],
+      args: ["test", "{hidden_test}"],
       cwd: ".",
       env: [] as string[],
       timeout: 30_000,

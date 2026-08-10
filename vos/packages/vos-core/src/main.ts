@@ -4018,7 +4018,7 @@ async function executeStudentHiddenVerification(projectRoot: string, bundle: Nor
       }
       const result = await runStructuredStudentCommand(executionRoot, {
         program: raw.program,
-        args: [hiddenFile, ...raw.args.filter((value) => value !== raw.path && value !== "{hidden_test}")],
+        args: raw.args.map((value) => value === raw.path || value === "{hidden_test}" ? hiddenFile : value),
         cwd: raw.cwd,
         env: raw.env,
         timeout: raw.timeout,
@@ -4043,7 +4043,7 @@ async function executeStudentHiddenVerification(projectRoot: string, bundle: Nor
 }
 
 function canonicalStudentHiddenArgs(hiddenPath: string, args: string[]): string[] {
-  return [hiddenPath, ...args.filter((value) => value !== hiddenPath && value !== "{hidden_test}")];
+  return args.map((value) => value === "{hidden_test}" ? hiddenPath : value);
 }
 
 function createVerifyBehaviorTestRunner(context: ExecContext, projectRoot: string): BehaviorTestRunner {
