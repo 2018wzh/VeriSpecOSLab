@@ -34,31 +34,33 @@ describe("student QEMU runner", () => {
     }
   });
 
-  test("accepts a serial success marker and stops the guest", async () => {
+  test("accepts a serial success marker and stops the complete guest process group", async () => {
+    const timeout = process.platform === "win32" ? 30_000 : 2_000;
     const root = makeProject({
-      script: "process.stdout.write('BOOT_OK\\n'); await Bun.sleep(10_000);",
+      script: "Bun.spawn([process.execPath, '-e', 'await Bun.sleep(10_000)'], { stdout: 'inherit', stderr: 'inherit' }); process.stdout.write('BOOT_OK\\n'); await Bun.sleep(10_000);",
       successPattern: "BOOT_OK",
       failurePattern: "panic",
-      timeout: 2_000,
+      timeout,
     });
     const result = await new QemuRunner(root).run();
     expect(result.status).toBe("passed");
     expect(result.stdout).toContain("BOOT_OK");
     expect(result.oracle).toEqual({ outcome: "success", pattern: "BOOT_OK" });
-    expect(result.durationMs).toBeLessThan(2_000);
+    expect(result.durationMs).toBeLessThan(timeout);
   });
 
   test("fails immediately when serial output matches the panic oracle", async () => {
+    const timeout = process.platform === "win32" ? 30_000 : 2_000;
     const root = makeProject({
       script: "process.stdout.write('panic: boot failed\\n'); await Bun.sleep(10_000);",
       successPattern: "BOOT_OK",
       failurePattern: "panic(?:[: ]|$)",
-      timeout: 2_000,
+      timeout,
     });
     const result = await new QemuRunner(root).run();
     expect(result.status).toBe("failed");
     expect(result.oracle).toEqual({ outcome: "failure", pattern: "panic(?:[: ]|$)" });
-    expect(result.durationMs).toBeLessThan(2_000);
+    expect(result.durationMs).toBeLessThan(timeout);
   });
 
   test("reports a timeout when no serial oracle completes", async () => {

@@ -265,21 +265,25 @@ async function runStructuredCommand(command: TargetCommand, projectRoot: string,
     env: { ...env, VOS_PROJECT_ROOT: projectRoot },
     stdout: "pipe",
     stderr: "pipe",
+    detached: process.platform !== "win32",
   });
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
   let oracle: BuildEvidence["oracle"];
   const successPattern = command.successPattern ? new RegExp(command.successPattern) : undefined;
   const failurePattern = command.failurePattern ? new RegExp(command.failurePattern) : undefined;
   let combinedOutput = "";
   const timeout = command.timeout;
-  const abort = () => proc.kill();
+  const abort = () => {
+    forceKillTimer ??= terminateProcessTree(proc);
+  };
   if (signal?.aborted) abort();
   signal?.addEventListener("abort", abort, { once: true });
   if (timeout !== undefined) {
     timer = setTimeout(() => {
       timedOut = true;
-      proc.kill();
+      abort();
     }, timeout);
   }
   const started = Date.now();
@@ -288,12 +292,16 @@ async function runStructuredCommand(command: TargetCommand, projectRoot: string,
     combinedOutput += text;
     if (failurePattern?.test(combinedOutput)) {
       oracle = { outcome: "failure", pattern: command.failurePattern! };
-      proc.kill();
+      if (timer) clearTimeout(timer);
+      timer = undefined;
+      abort();
       return;
     }
     if (successPattern?.test(combinedOutput)) {
       oracle = { outcome: "success", pattern: command.successPattern! };
-      proc.kill();
+      if (timer) clearTimeout(timer);
+      timer = undefined;
+      abort();
     }
   };
   const [stdout, stderr, exitCode] = await Promise.all([
@@ -302,6 +310,7 @@ async function runStructuredCommand(command: TargetCommand, projectRoot: string,
     proc.exited,
   ]);
   if (timer) clearTimeout(timer);
+  if (forceKillTimer) clearTimeout(forceKillTimer);
   signal?.removeEventListener("abort", abort);
   if (!oracle && successPattern) {
     oracle = { outcome: "missing", pattern: command.successPattern! };
@@ -320,6 +329,46 @@ async function runStructuredCommand(command: TargetCommand, projectRoot: string,
     durationMs: Date.now() - started,
     ...(oracle ? { oracle } : {}),
   };
+}
+
+function terminateProcessTree(proc: Bun.Subprocess): ReturnType<typeof setTimeout> {
+  if (process.platform === "win32") {
+    if (!spawnWindowsTreeKill(proc.pid)) proc.kill("SIGTERM");
+  } else {
+    try {
+      process.kill(-proc.pid, "SIGTERM");
+    } catch {
+      proc.kill("SIGTERM");
+    }
+  }
+  return setTimeout(() => {
+    if (process.platform === "win32") {
+      if (!spawnWindowsTreeKill(proc.pid)) proc.kill("SIGKILL");
+      return;
+    }
+    try {
+      process.kill(-proc.pid, "SIGKILL");
+    } catch {
+      proc.kill("SIGKILL");
+    }
+  }, 1_000);
+}
+
+function spawnWindowsTreeKill(pid: number): boolean {
+  const windowsRoot = process.env.SystemRoot ?? process.env.WINDIR;
+  const taskkill = windowsRoot ? path.join(windowsRoot, "System32", "taskkill.exe") : "taskkill.exe";
+  try {
+    const killer = Bun.spawn([taskkill, "/PID", String(pid), "/T", "/F"], {
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    void killer.exited.catch(() => undefined);
+    killer.unref();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function readCommandStream(
