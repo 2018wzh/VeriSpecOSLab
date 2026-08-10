@@ -321,9 +321,7 @@ export async function buildNormalizedSpecBundle(params: {
   }
 
   const manifest = await loadProjectManifest(projectRoot, diagnostics);
-  if (manifest) {
-    diagnostics.push(...validateStudentSourceKinds(sources, v2ModulePaths, v2GoalPaths, v2PatchPaths));
-  }
+  diagnostics.push(...validateStudentSourceKinds(sources, v2ModulePaths, v2GoalPaths, v2PatchPaths));
   diagnostics.push(...runSemanticChecks({
     projectRoot,
     specRoot,

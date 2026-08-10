@@ -21,8 +21,8 @@ export type SpecDocumentKind =
   | "goal"
   | "spec_patch"
   | "unknown"
-  // Internal projections retained while the runtime is migrated. These are
-  // never accepted as student-facing document paths by the new classifier.
+  // Frozen Portal projections. The public bundle validator always reports
+  // these as errors; they are not a student compatibility surface.
   | "operation"
   | "concurrency"
   | "module_tests"

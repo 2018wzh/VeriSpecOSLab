@@ -155,8 +155,9 @@ export const agentSpecReviewSchema = z.object({
   summary: z.string().default("agent review completed"),
 }).passthrough();
 
-// Student-facing v2 contracts. Keep these separate from the legacy parser
-// exports above while the runtime projection is migrated slice by slice.
+// Student-facing v2 contracts. The bundle validator rejects every legacy
+// source kind even when vos.yaml has not been created yet. The older schemas
+// above remain internal to the frozen Portal execution API only.
 const v2StringArray = z.preprocess(
   (value) => normalizeStringList(value),
   z.array(z.string()).default([]),

@@ -5,7 +5,6 @@ import path from "node:path";
 import simpleGit, { type SimpleGit } from "simple-git";
 import {
   buildNormalizedSpecBundle,
-  composeArchitecture,
   deriveTestMatrix,
   hasBlockingDiagnostics,
   parseProjectManifest,
@@ -98,6 +97,33 @@ describe("vos-spec semantic bundle", () => {
     expect(bundle.normalized_modules).toEqual([]);
   });
 
+  test("rejects legacy Spec kinds before a manifest exists", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vos-spec-no-legacy-"));
+    await mkdir(path.join(root, "spec", "modules", "kernel", "memory", "ops"), { recursive: true });
+    await writeFile(path.join(root, "spec", "modules", "kernel", "memory", "module.yaml"), [
+      "id: kernel/memory",
+      "module: kernel/memory",
+      "stage: memory",
+      "purpose: retired module shape",
+      "",
+    ].join("\n"));
+    await writeFile(path.join(root, "spec", "modules", "kernel", "memory", "ops", "kalloc.yaml"), [
+      "id: kernel/memory.kalloc",
+      "stage: memory",
+      "module: kernel/memory",
+      "operation: kalloc",
+      "purpose: retired OperationSpec shape",
+      "depends_on: { requires_modules: [], requires_ops: [] }",
+      "guarantee: {}",
+      "test_obligations: { public: [memory], generated: [], hidden_tags: [] }",
+      "codegen: { targets: [], forbidden_changes: [], required_followup_checks: [] }",
+      "",
+    ].join("\n"));
+    const bundle = await buildNormalizedSpecBundle({ projectRoot: root });
+    expect(bundle.diagnostics.filter((diagnostic) => diagnostic.code === "spec.legacy_kind_rejected")).toHaveLength(2);
+    expect(hasBlockingDiagnostics(bundle.diagnostics)).toBe(true);
+  });
+
   test("rejects legacy manifest, declarative KB sources, and unsafe target paths", () => {
     expect(() => parseProjectManifest({
       version: "legacy",
@@ -169,26 +195,27 @@ describe("vos-spec semantic bundle", () => {
     expect(parsed.checks.trace_memory.oracle).toContain("uniquely owned");
   });
 
-  test("normalizes modules, operations, architecture, and derived tests", async () => {
-    const root = await fixtureProject();
+  test("reports semantic errors for missing v2 module dependencies", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vos-spec-v2-dependency-"));
+    await mkdir(path.join(root, "spec", "modules"), { recursive: true });
+    await writeFile(path.join(root, "spec", "modules", "memory.yaml"), [
+      "id: kernel/memory",
+      "module: kernel/memory",
+      "level: 2",
+      "purpose: allocate pages",
+      "owns: [kernel/memory.c, tests/generated/kernel/memory]",
+      "interface: []",
+      "properties: []",
+      "errors: [out_of_memory]",
+      "state: { free_pages: counter }",
+      "preconditions: [initialized]",
+      "postconditions: [ownership transferred]",
+      "invariants: [free pages are uniquely owned]",
+      "dependencies: [kernel/missing]",
+      "",
+    ].join("\n"));
     const bundle = await buildNormalizedSpecBundle({ projectRoot: root });
-    expect(hasBlockingDiagnostics(bundle.diagnostics)).toBe(false);
-    expect(bundle.modules.map((item) => item.id)).toEqual(["kernel/memory"]);
-    expect(bundle.operations.map((item) => item.id)).toEqual(["kernel/memory.kalloc"]);
-
-    const composition = composeArchitecture(bundle, "memory");
-    expect(composition.enabled_modules).toEqual(["kernel/memory"]);
-    expect(composition.enabled_operations).toEqual(["kernel/memory.kalloc"]);
-
-    const matrix = deriveTestMatrix(bundle, "memory");
-    expect(matrix.public_tests.map((item) => item.id)).toContain("kalloc_alignment");
-    expect(matrix.generated_tests.map((item) => item.id)).toContain("kalloc_zeroed");
-  });
-
-  test("reports semantic errors for missing operation dependencies", async () => {
-    const root = await fixtureProject({ missingDependency: true });
-    const bundle = await buildNormalizedSpecBundle({ projectRoot: root });
-    expect(bundle.diagnostics.some((item) => item.code === "operation.requires_op_missing")).toBe(true);
+    expect(bundle.diagnostics.some((item) => item.code === "module.dependency_missing")).toBe(true);
     expect(hasBlockingDiagnostics(bundle.diagnostics)).toBe(true);
   });
 
