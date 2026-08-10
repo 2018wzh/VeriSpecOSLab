@@ -65,9 +65,7 @@ describe("student v2 initialization and reproducibility gates", () => {
     await withGitIdentity(async () => {
       expect((await invoke(projectRoot, "init")).status).toBe("passed");
       for (const args of [["build", "generate"], ["toolchain", "init"], ["agent", "plan"]]) {
-        const result = await invoke(projectRoot, ...args);
-        expect(result.status).toBe("validation_failed");
-        expect(result.message).toContain("removed from the student v2 surface");
+        await expect(invoke(projectRoot, ...args)).rejects.toThrow("removed");
       }
     });
   });

@@ -94,7 +94,6 @@ import {
 } from "./progress/agent.ts";
 import { runBuildCommand } from "./runtime/build.ts";
 import { probeRequiredTools } from "./runtime/environment.ts";
-import { createSubmitPack } from "./submit/pack.ts";
 import { createStudentSubmitPack } from "./submit/student.ts";
 import { runQemuCommand } from "./runtime/qemu.ts";
 import { runTestCommand } from "./runtime/test.ts";
@@ -159,7 +158,6 @@ import {
   git,
   parentSha,
 } from "./repro/ledger.ts";
-import { generateCourseReport } from "./report/generate.ts";
 import {
   buildNormalizedSpecBundle,
   composeArchitecture,
@@ -2041,38 +2039,10 @@ export async function executeDebugExplainLog(
 }
 
 export async function executeReportGenerate(
-  command: ReportGenerateCommand,
+  _command: ReportGenerateCommand,
   context: ExecContext,
 ): Promise<CommandOutcome> {
-  if (existsSync(path.join(context.projectRoot, "vos.yaml"))) {
-    return executeStudentReport(context.projectRoot, context.evidence);
-  }
-  updateProgress(context, { stage: "report generate", status: "running", message: "aggregating evidence" });
-  const projectRoot = context.projectRoot;
-  const result = await generateCourseReport({
-    projectRoot,
-    stage: command.stage,
-    final: command.final,
-    visibilityScope: context.auth?.verdict === "not_required" ? "full" : context.effectivePolicy?.visibilityScope,
-    evidence: context.evidence,
-    agentRunner: context.agentRunner,
-  });
-  return {
-    status: "passed",
-    details: {
-      report_path: path.relative(projectRoot, result.reportPath),
-      summary_path: path.relative(projectRoot, result.summaryPath),
-      agent_narrative_ref: path.relative(projectRoot, result.agentNarrativePath),
-      final: command.final,
-      stage: result.summary.stage,
-      visibility_scope: result.summary.visibility_scope,
-      requirements_total: result.summary.requirements_total,
-      requirements_passed: result.summary.requirements_passed,
-      ai_used: result.summary.ai_used,
-      changed_targets: result.changedTargets,
-      spec_refs: result.specRefs,
-    },
-  };
+  return executeStudentReport(context.projectRoot, context.evidence);
 }
 
 async function executeStudentReport(projectRoot: string, evidence: EvidenceWriter): Promise<CommandOutcome> {
@@ -2143,28 +2113,15 @@ export async function executeSubmitPack(
   projectRoot: string,
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
-  if (existsSync(path.join(projectRoot, "vos.yaml"))) {
-    const report = await executeStudentReport(projectRoot, evidence);
-    if (report.status !== "passed") {
-      throw new CliError("submit requires a clean, verified student report", "policy_blocked", { report: report.details });
-    }
-    const reportPath = String((report.details as Record<string, unknown> | undefined)?.report_path ?? ".vos/report.json");
-    const pack = await createStudentSubmitPack({ projectRoot, reportPath });
-    evidence.addArtifact("submit-pack", studentRelativePath(projectRoot, pack.archivePath), "student submission archive");
-    evidence.addArtifact("submit-manifest", studentRelativePath(projectRoot, pack.manifestPath), "student submission manifest");
-    return { status: "passed", details: { ...pack.manifest, report, pack_path: studentRelativePath(projectRoot, pack.archivePath), manifest_path: studentRelativePath(projectRoot, pack.manifestPath) } };
+  const report = await executeStudentReport(projectRoot, evidence);
+  if (report.status !== "passed") {
+    throw new CliError("submit requires a clean, verified student report", "policy_blocked", { report: report.details });
   }
-  const pack = await createSubmitPack({ projectRoot, evidence });
-  evidence.addArtifact("submit-pack", path.relative(projectRoot, pack.archivePath), "submission archive");
-  evidence.addArtifact("submit-manifest", path.relative(projectRoot, pack.manifestPath), "submission manifest");
-  return {
-    status: "passed",
-    details: {
-      pack_path: path.relative(projectRoot, pack.archivePath),
-      manifest_path: path.relative(projectRoot, pack.manifestPath),
-      ...pack.manifest,
-    },
-  };
+  const reportPath = String((report.details as Record<string, unknown> | undefined)?.report_path ?? ".vos/report.json");
+  const pack = await createStudentSubmitPack({ projectRoot, reportPath });
+  evidence.addArtifact("submit-pack", studentRelativePath(projectRoot, pack.archivePath), "student submission archive");
+  evidence.addArtifact("submit-manifest", studentRelativePath(projectRoot, pack.manifestPath), "student submission manifest");
+  return { status: "passed", details: { ...pack.manifest, report, pack_path: studentRelativePath(projectRoot, pack.archivePath), manifest_path: studentRelativePath(projectRoot, pack.manifestPath) } };
 }
 
 export async function executeAgentConfig(

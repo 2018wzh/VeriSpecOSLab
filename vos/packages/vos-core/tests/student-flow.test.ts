@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as tar from "tar";
 import { executeCliInvocation } from "../src/main.ts";
 import { parseArgs } from "../src/cli.ts";
 import { verifyAuditChain } from "../src/audit/chain.ts";
@@ -280,7 +281,29 @@ describe("student v2 workflow", () => {
       expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
       expect((await invoke(root, "verify", "--hidden")).status).toBe("passed");
       expect(existsSync(join(root, "memory.hidden.output"))).toBe(false);
-      expect((await invoke(root, "submit")).status).toBe("passed");
+      writeFileSync(join(root, "untracked.txt"), "must not enter the submission\n");
+      expect((await invoke(root, "submit")).status).toBe("policy_blocked");
+      rmSync(join(root, "untracked.txt"));
+      const firstSubmit = await invoke(root, "submit");
+      expect(firstSubmit).toMatchObject({
+        status: "passed",
+        details: {
+          version: "vos.submit.v2",
+          kind: "student-submission",
+          reproducible: true,
+          hardware_status: "pending_human_review",
+        },
+      });
+      const archive = join(root, String(firstSubmit.details?.pack_path));
+      const entries = await tarEntries(archive);
+      expect(entries).toContain("repo/vos.yaml");
+      expect(entries).toContain("report/report.json");
+      expect(entries).toContain("hidden-tests/manifest.json");
+      expect(entries).toContain("hidden-tests/last-verification.json");
+      expect(entries).toContain("submit-manifest.json");
+      expect(entries.some((entry) => entry.startsWith("repo/build/"))).toBe(false);
+      expect(entries.some((entry) => entry.endsWith("/.env") || entry === "repo/.env")).toBe(false);
+      expect(entries.some((entry) => entry.endsWith("fs.img"))).toBe(false);
       writeFileSync(join(root, "student-note.md"), "new committed state\n");
       git(root, ["add", "student-note.md"]);
       git(root, ["commit", "-m", "change commit after hidden verification"]);
@@ -714,6 +737,15 @@ function git(cwd: string, args: string[]): string {
   const result = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
   if (result.exitCode !== 0) throw new Error(result.stderr.toString() || result.stdout.toString());
   return result.stdout.toString();
+}
+
+async function tarEntries(file: string): Promise<string[]> {
+  const entries: string[] = [];
+  await tar.t({
+    file,
+    onentry: (entry) => entries.push(entry.path),
+  });
+  return entries;
 }
 
 function acceptedSubmitEvents(schemaId: string, result: unknown): Array<Record<string, unknown>> {
