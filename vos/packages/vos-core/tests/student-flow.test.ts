@@ -245,7 +245,7 @@ describe("student v2 workflow", () => {
           expect(options.task).toContain('"contract-memory"');
           expect(options.task).toContain('"public-memory"');
           expect(options.task).toContain("Choose new module-prefixed IDs");
-          expect(options.task).toContain("hard 50-iteration limit");
+          expect(options.task).toContain("hard 50-iteration maxIterations guard");
           expect(options.task).toContain("write the implementation and every non-hidden test by iteration 12");
           expect(options.task).toContain("submit by iteration 30");
           expect(options.task).toContain("verify that every proposed command path exists");
@@ -283,7 +283,7 @@ describe("student v2 workflow", () => {
       await ensureHeadLedgerEntry({ projectRoot: root, actor: "human", intent: "change commit after hidden verification", changedTargets: ["student-note.md"] });
       expect((await invoke(root, "submit")).status).toBe("policy_blocked");
     });
-  }, 30_000);
+  }, 60_000);
 
   test("does not land an implementation that crosses ModuleSpec owns", async () => {
     const root = makeRoot();
@@ -343,6 +343,7 @@ describe("student v2 workflow", () => {
       const manifest = JSON.parse(readFileSync(hiddenRoots[0]!, "utf8")) as { tests: Array<Record<string, unknown>> };
       expect(manifest.tests.map((test) => test.module_id).sort()).toEqual(["memory", "scheduler"]);
       expect(manifest.tests.map((test) => test.generation_run_id).every((value) => typeof value === "string")).toBe(true);
+      expect(manifest.tests.every((test) => Array.isArray(test.args) && test.args[0] === test.path)).toBe(true);
       expect((await invoke(root, "verify", "--hidden")).status).toBe("passed");
     });
   }, 60_000);
@@ -705,7 +706,7 @@ function implementationResult(moduleId = "memory") {
       path: `${moduleId}.hidden.ts`,
       content: "if (1 + 1 !== 2) process.exit(1);\n",
       program: "bun",
-      args: ["{hidden_test}"],
+      args: [`tests/${moduleId}.hidden.output`, "{hidden_test}"],
       cwd: ".",
       env: [] as string[],
       timeout: 30_000,

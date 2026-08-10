@@ -2690,6 +2690,9 @@ function parseStudentImplementationPayload(value: unknown, moduleId: string, bun
       throw new AgentOutputError(`hidden test ${raw.id} must verify ${moduleId} using stable Spec IDs`);
     }
     if (raw.content.length === 0) throw new AgentOutputError(`hidden test ${raw.id} has empty content`);
+    if (!raw.args.includes("{hidden_test}")) {
+      throw new AgentOutputError(`hidden test ${raw.id} args must include {hidden_test}`);
+    }
     return raw as unknown as StudentHiddenTestProposal;
   });
   if (hiddenTests.length === 0) throw new AgentOutputError("implementation must generate at least one local hidden test");
@@ -2828,7 +2831,7 @@ async function persistStudentHiddenTests(params: {
     generatedTests.push({
       ...proposal,
       path: hiddenPath,
-      args: proposal.args.map((value) => value.replaceAll("{hidden_test}", hiddenPath)),
+      args: canonicalStudentHiddenArgs(hiddenPath, proposal.args),
       content_hash: hashString(proposal.content),
       module_id: params.moduleId,
       model,
@@ -4039,12 +4042,17 @@ async function executeStudentHiddenVerification(projectRoot: string, bundle: Nor
   }
   const results = [] as StudentHiddenVerification["results"];
   for (const raw of manifest.tests) {
-    if (!isRecord(raw) || typeof raw.id !== "string" || typeof raw.program !== "string" || !isStringArray(raw.args) || typeof raw.cwd !== "string" || !isStringArray(raw.env) || !isPositiveInteger(raw.timeout)) {
+    if (!isRecord(raw) || typeof raw.id !== "string" || typeof raw.path !== "string" || typeof raw.content_hash !== "string" || typeof raw.program !== "string" || !isStringArray(raw.args) || typeof raw.cwd !== "string" || !isStringArray(raw.env) || !isPositiveInteger(raw.timeout)) {
       throw new CliError("hidden test manifest contains an invalid command", "validation_failed");
+    }
+    assertSafeStudentRelativePath(raw.path, `hidden test ${raw.id} path`);
+    const hiddenFile = path.resolve(projectRoot, raw.path);
+    if (!existsSync(hiddenFile) || hashString(await readFile(hiddenFile, "utf8")) !== raw.content_hash) {
+      throw new CliError(`hidden test ${raw.id} content does not match its bound hash`, "validation_failed", { reason: "hidden_content_mismatch", hidden_test: raw.id });
     }
     const result = await runStructuredStudentCommand(projectRoot, {
       program: raw.program,
-      args: raw.args,
+      args: canonicalStudentHiddenArgs(raw.path, raw.args),
       cwd: raw.cwd,
       env: raw.env,
       timeout: raw.timeout,
@@ -4063,6 +4071,10 @@ async function executeStudentHiddenVerification(projectRoot: string, bundle: Nor
     results,
     verification_path: studentRelativePath(projectRoot, verificationPath),
   };
+}
+
+function canonicalStudentHiddenArgs(hiddenPath: string, args: string[]): string[] {
+  return [hiddenPath, ...args.filter((value) => value !== hiddenPath && value !== "{hidden_test}")];
 }
 
 function createVerifyBehaviorTestRunner(context: ExecContext, projectRoot: string): BehaviorTestRunner {
