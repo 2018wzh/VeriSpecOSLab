@@ -427,6 +427,8 @@ describe("student v2 workflow", () => {
       });
 
       expect(result.status).toBe("validation_failed");
+      expect(result.message).toBe("agent loop exhausted");
+      expect(result.details?.message).toBe("agent loop exhausted");
       expect(result.details?.patch_available).toBe(true);
       const artifact = result.artifacts.find((item) => item.summary === "student implement evidence");
       const recorded = JSON.parse(readFileSync(join(root, artifact!.path), "utf8")) as {

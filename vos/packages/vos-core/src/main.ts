@@ -2630,7 +2630,21 @@ export async function executeAgentImplement(
     agent_events: implementationEvents,
   });
   if (validation.status !== "passed") {
-    return { status: validation.status === "owns_violation" ? "policy_blocked" : "validation_failed", details: { module: module.id, base_head: baseHead, validation, patch_available: Boolean(patch) } };
+    const failureMessage = typeof validation.message === "string"
+      ? validation.message
+      : validation.status === "owns_violation"
+        ? "agent implementation changed paths outside the allowed owns set"
+        : "agent implementation validation failed";
+    return {
+      status: validation.status === "owns_violation" ? "policy_blocked" : "validation_failed",
+      details: {
+        message: failureMessage,
+        module: module.id,
+        base_head: baseHead,
+        validation,
+        patch_available: Boolean(patch),
+      },
+    };
   }
   if (currentHead(projectRoot) !== baseHead) {
     return { status: "policy_blocked", details: { module: module.id, reason: "head_drift", expected_head: baseHead, actual_head: currentHead(projectRoot), patch_available: true } };
