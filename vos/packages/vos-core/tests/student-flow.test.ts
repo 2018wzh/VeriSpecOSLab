@@ -247,10 +247,10 @@ describe("student v2 workflow", () => {
           expect(options.task).toContain("Choose new module-prefixed IDs");
           expect(options.task).toContain("hard 50-iteration maxIterations guard");
           expect(options.task).toContain("write the implementation and every non-hidden test by iteration 12");
-          expect(options.task).toContain("submit by iteration 30");
+          expect(options.task).toContain("submit no later than iteration 45");
           expect(options.task).toContain("verify that every proposed command path exists");
           expect(options.task).toContain("timeout is an integer number of milliseconds");
-          expect(options.completionReserveIterations).toBe(20);
+          expect(options.completionReserveIterations).toBe(5);
           expect(options.task).toContain("Never spend more than five iterations debugging one failed command");
           expect(options.task).toContain("Batch independent Read/Write/Bash calls");
           expect(options.task).toContain("Do not inspect parent or sibling directories");
@@ -386,19 +386,26 @@ describe("student v2 workflow", () => {
       proposal.status = "partial";
       const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
         print: false,
-        agentRunner: async () => ({
-          content: "partial implementation",
-          events: acceptedSubmitEvents("student_implementation_result.v1", proposal),
-        }),
+        agentRunner: async (options) => {
+          mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+          writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const partial = true;\n");
+          return {
+            content: "partial implementation",
+            events: acceptedSubmitEvents("student_implementation_result.v1", proposal),
+          };
+        },
       });
 
       expect(result.status).toBe("validation_failed");
+      expect(result.details?.patch_available).toBe(true);
       const artifact = result.artifacts.find((item) => item.summary === "student implement evidence");
       expect(artifact).toBeDefined();
       const recorded = JSON.parse(readFileSync(join(root, artifact!.path), "utf8")) as Record<string, unknown>;
       expect(recorded).toMatchObject({
-        validation: { agent_result: { status: "partial" } },
+        validation: { agent_result: { status: "partial" }, changed_paths: ["src/memory.ts"] },
       });
+      expect(String(recorded.patch)).toContain("export const partial = true");
+      expect(existsSync(join(root, "src", "memory.ts"))).toBe(false);
       expect(Array.isArray(recorded.agent_events)).toBe(true);
       expect((recorded.agent_events as unknown[]).length).toBeGreaterThan(0);
     });
@@ -475,11 +482,11 @@ describe("student v2 workflow", () => {
           if (turn === 1) {
             proposal.test_targets[0]!.args = ["-e", "process.exit(1)"];
             expect(options.maxIterations).toBe(50);
-            expect(options.completionReserveIterations).toBe(20);
+            expect(options.completionReserveIterations).toBe(5);
           } else {
             expect(options.threadId).toBe("repair-thread");
             expect(options.maxIterations).toBe(50);
-            expect(options.completionReserveIterations).toBe(20);
+            expect(options.completionReserveIterations).toBe(5);
             expect(options.task).toContain("authoritative validation rejected");
             expect(options.task).toContain("Do not merely describe a known fix");
             expect(options.task).toContain("generated-public-memory");
