@@ -79,7 +79,7 @@ Spec 由学生亲手编写和提交。`spec lint` 不调用模型；`agent revie
 
 ## 运行与证据
 
-build 可以在脏树上运行，但 evidence 标记为不可提交。`vos verify` 要求 clean HEAD，并确定性执行 spec lint、build、全部 public、contract、固定种子 fuzz 和有界 trace targets；`vos verify --hidden` 还会运行绑定当前 commit、Spec hash 与配置 hash 的本地 hidden tests。QEMU 使用串口输出，通常配合 `-nographic`。Hardware Runner 记录板卡、构建身份、串口日志和 workload，并始终显示 `pending_human_review`。
+build 可以在脏树上运行，但 evidence 标记为不可提交。`vos verify` 要求 clean HEAD，并确定性执行 spec lint、build、全部 public、contract、固定种子 fuzz 和有界 trace targets；`vos verify --hidden` 还会运行绑定当前 Spec、配置、content hash、模型、seed 和生成 run 的本地 hidden tests，并把本次结果绑定当前 commit。QEMU 使用串口输出，通常配合 `-nographic`。Hardware Runner 记录板卡、构建身份、串口日志和 workload，并始终显示 `pending_human_review`。
 
 每次命令的 manifest、事件和产物在 `.vos/runs/`，审计事件在 `.vos/audit/chain.jsonl` 连续哈希保存。`.vos/` 不进 Git。`vos report` 确定性生成 `.vos/report.json`，`vos submit` 在 clean HEAD 上重新生成报告并归档。归档会遮蔽凭据和本机绝对路径；原始日志不进 Git。
 

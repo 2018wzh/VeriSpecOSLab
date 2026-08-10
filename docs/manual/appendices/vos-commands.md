@@ -147,7 +147,7 @@ vos run hardware
 
 ### `vos verify`
 
-要求 clean HEAD，确定性运行 spec lint、build、全部 public、contract、固定种子 fuzz 和有界 trace targets，不调用模型。加 `--hidden` 后，还会运行绑定当前 commit、Spec hash、content hash、模型、seed 和生成 run 的本地 hidden tests。
+要求 clean HEAD，确定性运行 spec lint、build、全部 public、contract、固定种子 fuzz 和有界 trace targets，不调用模型。加 `--hidden` 后，还会运行绑定当前 Spec、配置、content hash、模型、seed 和生成 run 的本地 hidden tests，并把验证结果绑定当前 commit。
 
 ```sh
 vos verify

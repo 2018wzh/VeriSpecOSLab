@@ -282,8 +282,10 @@ describe("student v2 workflow", () => {
       git(root, ["commit", "-m", "change commit after hidden verification"]);
       await ensureHeadLedgerEntry({ projectRoot: root, actor: "human", intent: "change commit after hidden verification", changedTargets: ["student-note.md"] });
       expect((await invoke(root, "submit")).status).toBe("policy_blocked");
+      expect((await invoke(root, "verify", "--hidden")).status).toBe("passed");
+      expect((await invoke(root, "submit")).status).toBe("passed");
     });
-  }, 60_000);
+  }, 120_000);
 
   test("does not land an implementation that crosses ModuleSpec owns", async () => {
     const root = makeRoot();

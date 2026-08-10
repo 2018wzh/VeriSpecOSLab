@@ -4037,8 +4037,8 @@ async function executeStudentHiddenVerification(projectRoot: string, bundle: Nor
     throw new CliError("no hidden tests are bound to the current Spec hash; rerun vos agent implement", "validation_failed", { spec_hash: specHash });
   }
   const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as unknown;
-  if (!isRecord(manifest) || manifest.version !== "vos.hidden-tests.v1" || manifest.commit_sha !== commitSha || manifest.spec_hash !== specHash || manifest.config_hash !== configHash || !Array.isArray(manifest.tests)) {
-    throw new CliError("hidden tests are not bound to the current clean HEAD, Spec, and vos.yaml", "validation_failed", { reason: "hidden_binding_mismatch" });
+  if (!isRecord(manifest) || manifest.version !== "vos.hidden-tests.v1" || manifest.spec_hash !== specHash || manifest.config_hash !== configHash || !Array.isArray(manifest.tests)) {
+    throw new CliError("hidden tests are not bound to the current Spec and vos.yaml", "validation_failed", { reason: "hidden_binding_mismatch" });
   }
   const results = [] as StudentHiddenVerification["results"];
   for (const raw of manifest.tests) {
@@ -6396,7 +6396,7 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
   "run": helpBlock("run qemu|hardware", ["qemu", "hardware (evidence remains pending_human_review)"], ["vos run qemu"]),
   "run qemu": helpBlock("run qemu", ["Captures non-graphical serial output from the manifest runner."], ["vos run qemu"]),
   "run hardware": helpBlock("run hardware", ["Records board/build/serial evidence and never self-approves human review."], ["vos run hardware"]),
-  "verify": helpBlock("verify [--hidden]", ["Requires clean HEAD; runs spec lint, build, and every public, contract, fixed-seed fuzz, and trace target deterministically. --hidden also runs tests bound to the current commit, Spec hash, and config hash."], ["vos verify", "vos verify --hidden"]),
+  "verify": helpBlock("verify [--hidden]", ["Requires clean HEAD; runs spec lint, build, and every public, contract, fixed-seed fuzz, and trace target deterministically. --hidden runs the suite bound to the current Spec and config, then binds its result to the current commit."], ["vos verify", "vos verify --hidden"]),
   "report": helpBlock("report", ["Generates deterministic .vos/report.json without invoking a model or committing."], ["vos report"]),
   "submit": helpBlock("submit", ["Requires a current successful vos verify --hidden, refreshes the report, and creates a private reproducible archive bound to commit/spec/config/test hashes."], ["vos submit"]),
 };

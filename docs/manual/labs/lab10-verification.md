@@ -85,7 +85,7 @@ vos report
 vos submit
 ```
 
-`vos verify` 在 clean HEAD 上依次执行 spec lint、build、全部 public、contract、固定种子 fuzz 和有界 trace targets，不调用模型。`vos verify --hidden` 显式执行绑定当前 commit/spec/config hashes 的本地 hidden tests；这些测试可由学生读取，不是保密边界。`vos report` 从 commits、Spec IDs、测试、日志和 evidence 生成 `.vos` 内报告。`vos submit` 要求当前 hidden 验证已通过，并创建绑定 commit/spec/config/test hashes 的私有归档。
+`vos verify` 在 clean HEAD 上依次执行 spec lint、build、全部 public、contract、固定种子 fuzz 和有界 trace targets，不调用模型。`vos verify --hidden` 显式执行绑定当前 Spec、配置、content hash、模型、seed 和生成 run 的本地 hidden tests，再把验证结果绑定当前 commit；这些测试可由学生读取，不是保密边界。`vos report` 从 commits、Spec IDs、测试、日志和 evidence 生成 `.vos` 内报告。`vos submit` 要求当前 hidden 验证已通过，并创建绑定 commit/spec/config/test hashes 的私有归档。
 
 > **参考项目**：参考项目在干净 clone 中按 `spec lint → build → verify → verify --hidden → report → submit` 执行。`.vos/` 只保存本地证据，不进入 Git。只要 Lab 9 的实体板 evidence 仍为 `pending_human_review`，Lab 10 也只能发布 `course/lab10-candidate`；candidate 标签不得通过代码、QEMU 或模拟串口结果升级为 complete。
 
