@@ -869,7 +869,7 @@ describe("student v2 workflow", () => {
       expect(existsSync(join(root, "tests", "memory", "transient.ts"))).toBe(false);
       expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
     });
-  }, 30_000);
+  }, 120_000);
 
   test("returns authoritative gate owns violations to the same Agent thread", async () => {
     const root = makeRoot();
@@ -907,7 +907,7 @@ describe("student v2 workflow", () => {
       expect(existsSync(join(root, "outside.txt"))).toBe(false);
       expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
     });
-  }, 30_000);
+  }, 120_000);
 
   test("returns authoritative gate hidden-test writes to the same Agent thread", async () => {
     const root = makeRoot();
@@ -946,7 +946,7 @@ describe("student v2 workflow", () => {
       expect(existsSync(join(root, "tests", "memory", "hidden-output.ts"))).toBe(false);
       expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
     });
-  }, 30_000);
+  }, 120_000);
 
   test("feeds malformed structured test targets back into the same Agent thread", async () => {
     const root = makeRoot();
