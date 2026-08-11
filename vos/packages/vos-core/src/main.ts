@@ -2354,7 +2354,7 @@ export async function executeAgentImplement(
   try {
     const progress = createAgentProgressParams(context, "agent implement");
     const initialPrompt = `Implement ModuleSpec ${module.id}. Work only within these owned paths: ${ownedPaths.join(", ")}. Generate the implementation plus concrete public, contract, fixed-seed bounded fuzz, bounded trace/oracle, and local hidden tests for this module. Test source paths must also be covered by owns. This is an implementation task, not a planning task: do not stop after describing a plan; write the owned files, run validation, and call submit_result. Read only the current project root: its Spec, vos.yaml, owned files, and public test framework. Reuse helpers under tests/public and do not reimplement them in generated tests. Do not inspect parent or sibling directories, other checkouts/worktrees, VOS implementation source, Git history, old Lab implementations/diffs, or previous .vos runs; the current Spec and the result contract below are the complete authority. Do not perform repo-wide schema searches or toolchain discovery. Do not edit vos.yaml: return structured test_targets and hidden_tests so VOS can validate and project them atomically. Existing test target IDs are immutable and MUST NOT be proposed again: ${JSON.stringify(existingTargetIds)}. Choose new module-prefixed IDs that do not collide with that list. Each test_targets entry is {id, kind, program, args, cwd, env, timeout, verifies, artifacts}; timeout is an integer number of milliseconds and must be at least 1000 (for example 60000 for 60 seconds); use env: [\"PATH\"] for every target whose program or script resolves host tools by name. Fuzz additionally requires seed, cases, reproduction_artifact; trace additionally requires workload and oracle. Each hidden_tests entry is {id, path, content, program, args, cwd, env, timeout, verifies, seed} with the same millisecond timeout rule, and args may use {hidden_test}; hidden tests that resolve host tools also require PATH in env. Every verifies list must include ${module.id}. Hidden test content is returned in the result and must not be written into Git. Each implementation or evidence-driven repair turn retains the Agent runtime's required hard ${implementationMaxIterations}-iteration maxIterations guard. Finish discovery by iteration 30, create the implementation and all four non-hidden test kinds by iteration 140, and run the local build plus proposed commands by iteration 220. Batch independent Read/Write/Bash calls in the same response. Do not call submit_result with failed, partial, or blocked status: those statuses are rejected as repairable tool errors and do not finish the run. Keep repairing within the same thread, verify that every proposed command path exists, and submit a complete passed result by the iteration-${implementationSubmissionCheckpoint} checkpoint. A rejected checkpoint restores the full tool set through iteration ${implementationLastRepairIteration}; iteration ${implementationMaxIterations} is reserved for the corrected structured resubmission. Do not spend more than ten iterations on one unchanged failure: fix its cause, use a simpler Spec-compliant design, or move to another independent required file before returning with new evidence. Do not spend iterations investigating harmless output formatting after the declared oracle passes. VOS will independently run the build and every existing and proposed non-hidden target before applying anything. Do not edit specs, .git, .vos, or worktrees.`;
-    let taskPrompt = `${initialPrompt}\nImplement only operations and behavior explicitly declared by the target ModuleSpec. Do not implement another newly declared ModuleSpec even when a committed SpecPatch makes its owned paths writable; cross-module access exists only for the smallest integration edit required by this target. Scope every proposed test and hidden test to this target and already-implemented dependencies, never to a sibling module that has not landed yet. Do not add adjacent later-stage operations merely because a reference OS commonly includes them; choose the smallest complete composition that satisfies the current Spec. Prefer WriteFiles to create a related implementation or test-file batch in one tool call. A missing implementation or test file is not an external blocker: create it with the available tools and do not submit failed merely because owned work remains. Do not run git commit, amend, merge, rebase, reset, checkout, switch, or otherwise modify Git history; VOS owns the final atomic commit and deterministically squashes any accidental temporary-worktree commits. Keep disposable build intermediates under an owned ignored output directory; do not edit .gitignore.`;
+    let taskPrompt = `${initialPrompt}\nImplement only operations and behavior explicitly declared by the target ModuleSpec. Do not implement another newly declared ModuleSpec even when a committed SpecPatch makes its owned paths writable; cross-module access exists only for the smallest integration edit required by this target. Scope every proposed test and hidden test to this target and already-implemented dependencies, never to a sibling module that has not landed yet. Do not add adjacent later-stage operations merely because a reference OS commonly includes them; choose the smallest complete composition that satisfies the current Spec. Prefer WriteFiles to create a related implementation or test-file batch in one tool call. A missing implementation or test file is not an external blocker: create it with the available tools and do not submit failed merely because owned work remains. Hidden-test content must be self-contained in each hidden_tests entry; hidden args may reference only {hidden_test} and scalar flags or seeds, so do not create or retain hidden-test source, driver, support, or oracle files in the Git worktree. Do not run git commit, amend, merge, rebase, reset, checkout, switch, or otherwise modify Git history; VOS owns the final atomic commit and deterministically squashes any accidental temporary-worktree commits. Keep disposable build intermediates under an owned ignored output directory; do not edit .gitignore.`;
     taskPrompt += `\nThe hard maxIterations value is ${implementationMaxIterations}. Iteration ${implementationSubmissionCheckpoint} is the structured submission checkpoint. If it is rejected, iterations ${implementationSubmissionCheckpoint + 1}-${implementationLastRepairIteration} restore the full tool set for repair and iteration ${implementationMaxIterations} requires the corrected submission.`;
     let threadId: string | undefined;
     const projectedTargetIds = new Set<string>();
@@ -2433,7 +2433,15 @@ export async function executeAgentImplement(
       const violations = agentChanged.filter((target) =>
         !(target === "vos.yaml" && projectedTargetIds.size > 0) && !isOwnedStudentPath(target, ownedPaths)
       );
-      if (violations.length > 0) {
+      const hiddenProjectPaths = agentChanged.filter(isStudentHiddenTestProjectPath);
+      if (hiddenProjectPaths.length > 0) {
+        validation = {
+          status: "hidden_test_git_violation",
+          message: "local hidden-test files must be returned in hidden_tests and must not be written into Git",
+          changed: agentChanged,
+          hidden_test_paths: hiddenProjectPaths,
+        };
+      } else if (violations.length > 0) {
         validation = { status: "owns_violation", changed: agentChanged, violations };
       } else {
         const proposedIds = new Set(implementation.test_targets.map((target) => target.id));
@@ -2666,6 +2674,10 @@ function parseStudentImplementationPayload(value: unknown, moduleId: string, bun
     if (raw.content.length === 0) throw new AgentOutputError(`hidden test ${raw.id} has empty content`);
     if (!raw.args.includes("{hidden_test}")) {
       throw new AgentOutputError(`hidden test ${raw.id} args must include {hidden_test}`);
+    }
+    const supportPaths = raw.args.filter((argument) => argument !== "{hidden_test}" && /[\\/]/.test(argument));
+    if (supportPaths.length > 0) {
+      throw new AgentOutputError(`hidden test ${raw.id} must be self-contained; args cannot reference project support paths: ${supportPaths.join(", ")}`);
     }
     return raw as unknown as StudentHiddenTestProposal;
   });
@@ -3089,6 +3101,12 @@ function isOwnedStudentPath(target: string, ownedPaths: readonly string[], allow
     const prefix = path.posix.normalize(prefixRaw);
     return normalized === prefix || normalized.startsWith(`${prefix}/`);
   });
+}
+
+function isStudentHiddenTestProjectPath(target: string): boolean {
+  const normalized = path.posix.normalize(target.replace(/\\/g, "/").replace(/^\.\//, ""));
+  if (!normalized.startsWith("tests/")) return false;
+  return normalized.split("/").some((segment) => /(?:^|[._-])hidden(?:[._-]|$)/i.test(segment));
 }
 
 function assertStudentModuleName(value: string): void {

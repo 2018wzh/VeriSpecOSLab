@@ -340,6 +340,7 @@ describe("student v2 workflow", () => {
           expect(options.task).toContain("Batch independent Read/Write/Bash calls");
           expect(options.task).toContain("Do not inspect parent or sibling directories");
           expect(options.task).toContain("Do not perform repo-wide schema searches");
+          expect(options.task).toContain("Hidden-test content must be self-contained");
           expect(options.task).toContain("Each hidden_tests entry is");
           expect(options.task).toContain('use env: ["PATH"] for every target');
           expect(options.task).toContain("hidden tests that resolve host tools also require PATH in env");
@@ -471,6 +472,49 @@ describe("student v2 workflow", () => {
       expect(turn).toBe(2);
       expect(result.status, JSON.stringify(result.details)).toBe("passed");
       expect(readFileSync(join(root, ".gitignore"), "utf8")).toBe(originalIgnore);
+      expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
+    });
+  }, 30_000);
+
+  test("returns tracked hidden-test files to the same Agent thread for removal", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      let turn = 0;
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          turn++;
+          mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+          mkdirSync(join(options.projectRoot, "tests", "memory"), { recursive: true });
+          writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 0;\n");
+          const hiddenDriver = join(options.projectRoot, "tests", "memory", "hidden_driver.sh");
+          if (turn === 1) {
+            writeFileSync(hiddenDriver, "#!/bin/sh\nexit 0\n");
+          } else {
+            expect(options.threadId).toBe("hidden-repair-thread");
+            expect(options.task).toContain("hidden_test_git_violation");
+            expect(options.task).toContain("tests/memory/hidden_driver.sh");
+            rmSync(hiddenDriver);
+          }
+          return {
+            content: "submitted",
+            threadId: "hidden-repair-thread",
+            events: [
+              { type: "model.usage", thread_id: "hidden-repair-thread", iteration: turn === 1 ? 45 : 2 },
+              ...acceptedSubmitEvents("student_implementation_result.v1", implementationResult()).map((event) => ({
+                ...event,
+                thread_id: "hidden-repair-thread",
+                iteration: turn === 1 ? 45 : 2,
+              })),
+            ],
+          };
+        },
+      });
+
+      expect(turn).toBe(2);
+      expect(result.status, JSON.stringify(result.details)).toBe("passed");
+      expect(existsSync(join(root, "tests", "memory", "hidden_driver.sh"))).toBe(false);
       expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
     });
   }, 30_000);
