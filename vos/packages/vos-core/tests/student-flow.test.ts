@@ -330,12 +330,14 @@ describe("student v2 workflow", () => {
           expect(options.task).toContain('"contract-memory"');
           expect(options.task).toContain('"public-memory"');
           expect(options.task).toContain("Choose new module-prefixed IDs");
-          expect(options.task).toContain("hard 300-iteration maxIterations guard");
-          expect(options.task).toContain("all four non-hidden test kinds by iteration 140");
-          expect(options.task).toContain("iteration-261 checkpoint");
+          expect(options.task).toContain("hard 500-iteration maxIterations guard");
+          expect(options.task).toContain("Finish discovery by iteration 50");
+          expect(options.task).toContain("all four non-hidden test kinds by iteration 240");
+          expect(options.task).toContain("local build plus proposed commands by iteration 380");
+          expect(options.task).toContain("iteration-421 checkpoint");
           expect(options.task).toContain("verify that every proposed command path exists");
           expect(options.task).toContain("timeout is an integer number of milliseconds");
-          expect(options.completionReserveIterations).toBe(40);
+          expect(options.completionReserveIterations).toBe(80);
           expect(options.task).toContain("Do not call submit_result with failed, partial, or blocked status");
           expect(options.task).toContain("Batch independent Read/Write/Bash calls");
           expect(options.task).toContain("Do not inspect parent or sibling directories");
@@ -784,13 +786,13 @@ describe("student v2 workflow", () => {
             mkdirSync(join(options.projectRoot, "tests", "memory"), { recursive: true });
             writeFileSync(join(options.projectRoot, "tests", "memory", "transient.ts"), "export const transient = true;\n");
             proposal.test_targets[0]!.args = ["-e", "process.exit(1)"];
-            expect(options.maxIterations).toBe(300);
-            expect(options.completionReserveIterations).toBe(40);
+            expect(options.maxIterations).toBe(500);
+            expect(options.completionReserveIterations).toBe(80);
           } else {
             rmSync(join(options.projectRoot, "tests", "memory", "transient.ts"));
             expect(options.threadId).toBe("repair-thread");
-            expect(options.maxIterations).toBe(300);
-            expect(options.completionReserveIterations).toBe(40);
+            expect(options.maxIterations).toBe(500);
+            expect(options.completionReserveIterations).toBe(80);
             expect(options.task).toContain("authoritative validation rejected");
             expect(options.task).toContain("Do not merely describe a known fix");
             expect(options.task).toContain("generated-public-memory");

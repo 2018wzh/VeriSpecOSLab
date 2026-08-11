@@ -187,9 +187,9 @@ Full test guide: [docs/testing.md](docs/testing.md).
   `bun test`. Don't claim integration with a real LLM unless you
   actually ran it.
 - The agent loop has `maxIterations` (default 50). Student implementation
-  tasks set a 300-iteration hard limit at the `vos-core` call site. Their
-  structured submission checkpoint starts at iteration 261; a rejected payload
-  restores full repair tools through iteration 299 and iteration 300 forces the
+  tasks set a 500-iteration hard limit at the `vos-core` call site. Their
+  structured submission checkpoint starts at iteration 421; a rejected payload
+  restores full repair tools through iteration 499 and iteration 500 forces the
   corrected resubmission. Do not remove the guard.
 - Disposable implementation worktrees use the original student project as the
   Agent configuration root. Keep `.vos/config.toml` and `.env` out of the
