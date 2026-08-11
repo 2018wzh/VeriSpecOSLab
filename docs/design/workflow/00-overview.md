@@ -18,7 +18,7 @@ vos init → agent ask → 学生手写 Spec → lint/review → 手动提交
 
 ## Read-only roles
 
-`agent debug`、`agent verify`、`agent review` 只报告证据、缺口、根因和修复方向；`agent ask` 只回答问题。它们可以写入 gitignored evidence 和 audit，但不能修改项目源码或 Spec。
+`agent debug`、`agent verify`、`agent review` 只报告证据、缺口、根因和修复方向；`agent ask` 只回答问题。`agent verify` 会先在临时 worktree 中运行确定性公开验证，再让只读 Agent 复核结果和 Spec ID 覆盖，不能替代权威的 `vos verify`。这些命令可以写入 gitignored evidence 和 audit，但不能修改项目源码或 Spec。
 
 ## Trust boundary
 

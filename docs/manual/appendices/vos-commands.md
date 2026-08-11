@@ -112,7 +112,7 @@ vos agent verify
 ```
 
 - `debug`：报告根因、证据和修复方向；
-- `verify`：报告公开测试、契约和 Spec ID 覆盖缺口；
+- `verify`：先在临时 worktree 中执行确定性公开验证，再由只读 Agent 复核测试、契约和 Spec ID 覆盖缺口；权威结论仍以 `vos verify` 为准；
 - `ask` 与 `review` 的 Spec 教学用途见上文；
 
 这些角色不得修改项目文件。

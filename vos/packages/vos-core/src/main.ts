@@ -130,7 +130,7 @@ import {
   type ReadonlyAgentDisplayStarter,
   type ValidatedAgentRunResult,
 } from "./agent/runner.ts";
-import { isRecord, parseDebugOutput, parseKnowledgebaseAnswer, parsePatchProposal, parsePlanDraft } from "./agent/schemas.ts";
+import { isRecord, parseDebugOutput, parseKnowledgebaseAnswer, parsePatchProposal, parsePlanDraft, parseStudentVerificationReview } from "./agent/schemas.ts";
 import { applyPatchText, readPatchFromStdin } from "./agent/apply-patch.ts";
 import { createKbEmbedder, kbEmbeddingEnv } from "./kb/embedding.ts";
 import {
@@ -2984,12 +2984,78 @@ export async function executeAgentVerify(
   }
   const worktree = await createStudentWorktree(context.projectRoot, `${evidence.run_id}-verify`);
   try {
-    const result = await executeStudentVerify(
+    const verification = await executeStudentVerify(
       { kind: "verify", scope: "public", dryRun: false },
       { ...context, projectRoot: worktree },
       evidence,
     );
-    return { ...result, details: { ...(result.details ?? {}), role: "verify", model_used: false, worktree_read_only: true } };
+    const bundle = await buildNormalizedSpecBundle({ projectRoot: worktree });
+    const readonlyBefore = await studentGitFingerprint(worktree);
+    const agentProgress = createAgentProgressParams(context, "agent verify");
+    const response = await runAgentWithValidatedSubmission({
+      projectRoot: worktree,
+      configurationRoot: context.projectRoot,
+      taskPrompt: agentProgress.taskPrompt([
+        "Review the completed deterministic student verification without modifying the project.",
+        "Use the supplied verification result, all five-family Specs, vos.yaml verifies mappings, and existing evidence to identify contradictions and stable Spec IDs that lack meaningful public, contract, fixed-seed fuzz, or bounded trace/oracle coverage.",
+        "Do not rerun destructive commands, generate tests, reveal or infer hidden-test content, edit files, or treat this advisory review as authoritative verification.",
+        "Every finding must cite concrete evidence strings and the relevant stable Spec IDs. Return the exact deterministic status supplied by VOS.",
+      ].join(" ")),
+      taskKind: "student_verify",
+      requestedScope: "agent.verify:public",
+      context: {
+        deterministic_status: verification.status,
+        deterministic_verification: verification.details,
+        spec: studentSpecContext(bundle, "all"),
+        manifest: bundle.manifest,
+      },
+      evidenceRefs: [evidence.run_id],
+      policyFlags: ["read_only", "public_evidence_only", "no_hidden_test_disclosure"],
+      courseMode: true,
+      allowedVosCommands: await loadAgentAllowedCommands(worktree, context.effectivePolicy),
+      resultSubmissionSchema: "student_verification_review.v1",
+      extraMcpServers: agentProgress.extraMcpServers,
+      onEvent: agentProgress.onEvent,
+      taskRunner: context.agentRunner,
+      validateSubmission: (submission) => {
+        const review = parseStudentVerificationReview(submission);
+        if (review.deterministic_status !== verification.status) {
+          throw new Error(`student verification review status ${review.deterministic_status} does not match deterministic status ${verification.status}`);
+        }
+        return review;
+      },
+    });
+    assertStudentReadonlyFingerprint(readonlyBefore, await studentGitFingerprint(worktree), "agent verify");
+    const artifact = await recordRawAgentOutput(
+      evidence,
+      "agent",
+      "agent-verify.json",
+      `${JSON.stringify(response.validatedResult, null, 2)}\n`,
+    );
+    await recordAICollaboration({
+      projectRoot: context.projectRoot,
+      event: {
+        session_id: response.threadId ?? contextSessionId(context),
+        task_kind: "student_verify",
+        agent_profile: resolvePromptProfileEnvelope("student_verify"),
+        related_specs: bundle.normalized_modules.map((module) => module.id),
+        allowed_paths: [],
+        output_kind: "student_verification_review",
+        result: "accepted",
+        created_at: new Date().toISOString(),
+        evidence_ref: path.relative(context.projectRoot, artifact),
+      },
+    });
+    return {
+      status: verification.status,
+      details: {
+        role: "verify",
+        model_used: true,
+        worktree_read_only: true,
+        deterministic_verification: verification.details,
+        review: response.validatedResult,
+      },
+    };
   } finally {
     await removeStudentWorktree(context.projectRoot, worktree);
   }
@@ -3633,8 +3699,18 @@ export async function executeSeedStatus(projectRoot: string): Promise<CommandOut
   };
 }
 
-export async function executeKbSearch(command: KbSearchCommand, projectRoot: string): Promise<CommandOutcome> {
-  const hits = await searchKb(projectRoot, command.query, { embedder: createKbEmbedder(projectRoot) });
+export async function executeKbSearch(command: KbSearchCommand, context: ExecContext): Promise<CommandOutcome> {
+  const hits = await searchKb(context.projectRoot, command.query, { embedder: createKbEmbedder(context.projectRoot) });
+  await context.evidence.appendEvent({
+    type: "progress",
+    visibility: "agent-only",
+    payload: {
+      kind: "kb_query",
+      query: command.query,
+      visible_hits: hits,
+      policy: context.effectivePolicy?.visibilityScope ?? "local",
+    },
+  });
   return {
     status: "passed",
     details: {
@@ -5516,28 +5592,29 @@ function createAgentProgressParams(context: ExecContext, stage: string): {
   extraMcpServers: ReturnType<typeof createProgressMcpServerConfig>[];
   onEvent: (event: Record<string, unknown>) => Promise<void>;
 } {
+  const recordEvent = async (event: Record<string, unknown>): Promise<void> => {
+    context.readonlyDisplay?.onSessionEvent(event as never);
+    await context.evidence.appendEvent({
+      type: "progress",
+      visibility: "agent-only",
+      payload: { kind: "agent_event", event },
+    });
+    const update = progressUpdateFromAgentEvent(event, stage);
+    if (update) {
+      updateProgress(context, { ...update, stage: update.stage || stage });
+    }
+  };
   if (!context.progress?.enabled && !context.readonlyDisplay) {
     return {
       taskPrompt: (prompt) => prompt,
       extraMcpServers: [],
-      onEvent: async () => { },
+      onEvent: recordEvent,
     };
   }
   return {
     taskPrompt: (prompt) => prompt,
     extraMcpServers: [createProgressMcpServerConfig(context.projectRoot)],
-    onEvent: async (event) => {
-      context.readonlyDisplay?.onSessionEvent(event as never);
-      await context.evidence.appendEvent({
-        type: "progress",
-        visibility: "agent-only",
-        payload: { kind: "agent_event", event },
-      });
-      const update = progressUpdateFromAgentEvent(event, stage);
-      if (update) {
-        updateProgress(context, { ...update, stage: update.stage || stage });
-      }
-    },
+    onEvent: recordEvent,
   };
 }
 
@@ -6569,7 +6646,7 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
   "agent config": helpBlock("agent config [options]", ["No options: run the interactive setup wizard.", "--provider <anthropic|openai|openai-compatible|deepseek|ollama>", "--model <id>", "--base-url <url>", "--auth-env <name>", "--with-embedding | --without-embedding", "--embedding-provider <openai|openai-compatible>", "--embedding-model <id>", "--embedding-base-url <url>", "--embedding-auth-env <name>", "--show: show configuration without secret values", "--check: validate configuration and referenced credentials", "--reset: remove agent and embedding sections"], ["vos agent config", "vos agent config --check", "vos agent config --provider openai --model gpt-5 --auth-env OPENAI_API_KEY"]),
   "agent implement": helpBlock("agent implement <module>", ["Requires clean HEAD and a committed ModuleSpec whose owns covers implementation and test paths. Generates implementation plus public, contract, fixed-seed fuzz, trace/oracle, and local hidden tests. VOS validates and atomically projects test targets into vos.yaml."], ["vos agent implement memory"]),
   "agent debug": helpBlock("agent debug", ["Read-only root-cause and evidence summary."], ["vos agent debug"]),
-  "agent verify": helpBlock("agent verify", ["Read-only deterministic verification report."], ["vos agent verify"]),
+  "agent verify": helpBlock("agent verify", ["Runs deterministic public verification in a disposable worktree, then asks the read-only Validation Agent to review evidence and stable Spec ID coverage."], ["vos agent verify"]),
   "agent ask": helpBlock("agent ask [question]", ["Question answering only; omit the question or pass --interactive for a continuing conversation. It does not modify project files."], ["vos agent ask \"What is a syscall boundary?\"", "vos agent ask"]),
   "agent review": helpBlock("agent review [<Spec ID|path|design|all>] [-i]", ["Runs deterministic lint first, then reviews the selected handwritten Spec, related Specs, and verifies mappings without modifying files. Non-interactive blocker findings fail validation; -i begins with a full review and continues as advisory Q&A."], ["vos agent review memory", "vos agent review design -i"]),
   "kb": helpBlock("kb add|list|search|remove|clear|export-manifest|import-manifest", ["KB sources are managed by commands and indexed under .vos; vos.yaml contains no knowledge source declarations."], ["vos kb add docs/reference --recursive", "vos kb list", "vos kb search \"Sv39 page table\""]),

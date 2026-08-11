@@ -55,6 +55,8 @@ describe("vos-kb local registry", () => {
     expect(hit?.source.id).toBe(source.id);
     expect(hit?.chunk_id).toStartWith(`${source.id}:`);
     expect(hit?.citation).toMatchObject({ source_id: source.id, title: "Memory Manual" });
+    expect(hit?.source.sha256).toBe(source.sha256);
+    expect(hit?.range).toEqual({ start_offset: 0, end_offset: 38 });
     expect((await lookupKb(root, hit!.chunk_id!))?.content).toContain("allocator invariant");
     expect(await removeKbSource(root, source.id)).toBe(true);
     expect(existsSync(path.join(root, ".vos", "kb", "objects", `${source.id}.txt`))).toBe(false);

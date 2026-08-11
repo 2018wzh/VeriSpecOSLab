@@ -57,6 +57,23 @@ export interface KnowledgebaseAnswer {
   allowed_snippets: string[];
 }
 
+export interface StudentVerificationReview {
+  deterministic_status: "passed" | "validation_failed" | "policy_blocked" | "failed" | "timed_out";
+  summary: string;
+  findings: Array<{
+    severity: "blocker" | "warning" | "info";
+    message: string;
+    evidence: string[];
+    spec_ids: string[];
+    suggested_action: string;
+  }>;
+  coverage_gaps: Array<{
+    spec_id: string;
+    reason: string;
+    expected_targets: string[];
+  }>;
+}
+
 export interface AICollaborationLog {
   session_id: string;
   task_kind: string;
@@ -219,4 +236,25 @@ const knowledgebaseAnswerSchema = z.object({
 
 export function parseKnowledgebaseAnswer(value: unknown): KnowledgebaseAnswer {
   return knowledgebaseAnswerSchema.parse(value);
+}
+
+const studentVerificationReviewSchema = z.object({
+  deterministic_status: z.enum(["passed", "validation_failed", "policy_blocked", "failed", "timed_out"]),
+  summary: z.string().min(1),
+  findings: z.array(z.object({
+    severity: z.enum(["blocker", "warning", "info"]),
+    message: z.string().min(1),
+    evidence: z.array(z.string()),
+    spec_ids: z.array(z.string()),
+    suggested_action: z.string(),
+  }).strict()),
+  coverage_gaps: z.array(z.object({
+    spec_id: z.string().min(1),
+    reason: z.string().min(1),
+    expected_targets: z.array(z.string()),
+  }).strict()),
+}).strict();
+
+export function parseStudentVerificationReview(value: unknown): StudentVerificationReview {
+  return studentVerificationReviewSchema.parse(value);
 }

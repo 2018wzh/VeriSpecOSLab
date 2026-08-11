@@ -34,6 +34,7 @@ type OutputSchemaId =
   | "validator_feedback.v1"
   | "debug_output.v1"
   | "doctor_diagnosis.v1"
+  | "student_verification_review.v1"
   | "debug_trace_plan.v1"
   | "report_narrative.v1"
   | "reference_payload.v1"
@@ -177,6 +178,16 @@ const PROFILE_CONFIGS: AgentTaskProfileConfig[] = [
     mcpServers: ["spec-index", "evidence-store"],
     outputSchema: "validator_feedback.v1",
     visibilityScope: "staff-full",
+  },
+  {
+    promptId: "student-verification-agent.v1",
+    mode: "smart",
+    taskKinds: ["student_verify"],
+    toolProfile: "readonly-validation",
+    skills: ["verification-diagnosis", "audit-review"],
+    mcpServers: ["spec-index", "evidence-store"],
+    outputSchema: "student_verification_review.v1",
+    visibilityScope: "student-public",
   },
   {
     promptId: "toolchain-agent.v1",

@@ -113,8 +113,12 @@ describe("student v2 workflow", () => {
           };
         },
       });
-      expect(result.status).toBe("passed");
+      expect(result).toMatchObject({ status: "passed" });
       expect(result.details?.scope).toBe("student-kb");
+      const events = readFileSync(join(root, ".vos", "runs", result.run_id, "events.jsonl"), "utf8");
+      expect(events).toContain('"kind":"kb_query"');
+      expect(events).toContain('"query":"What is Sv39?"');
+      expect(events).toContain('"visible_hits":[]');
     });
   }, 30_000);
 
@@ -219,10 +223,51 @@ describe("student v2 workflow", () => {
       git(root, ["commit", "-m", "configure verify worktree test"]);
       await ensureHeadLedgerEntry({ projectRoot: root, actor: "human", intent: "record verify configuration", changedTargets: ["vos.yaml", ".gitignore"] });
 
-      const result = await invoke(root, "agent", "verify");
+      const result = await executeCliInvocation([
+        "bun", "vos", "--project-root", root, "--json", "agent", "verify",
+      ], {
+        print: false,
+        agentRunner: async (options) => {
+          expect(options.taskKind).toBe("student_verify");
+          expect(options.agentProfile?.outputSchema).toBe("student_verification_review.v1");
+          expect(options.context).toMatchObject({ deterministic_status: "passed" });
+          return {
+            content: "reviewed",
+            events: acceptedSubmitEvents("student_verification_review.v1", {
+              deterministic_status: "passed",
+              summary: "public verification and stable Spec ID coverage reviewed",
+              findings: [],
+              coverage_gaps: [],
+            }),
+          };
+        },
+      });
 
-      expect(result.status).toBe("passed");
+      expect(result).toMatchObject({ status: "passed" });
+      expect(result.details?.model_used).toBe(true);
+      expect(result.details?.review).toMatchObject({ deterministic_status: "passed" });
       expect(existsSync(join(root, "build-output.txt"))).toBe(false);
+      expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
+
+      const modified = await executeCliInvocation([
+        "bun", "vos", "--project-root", root, "--json", "agent", "verify",
+      ], {
+        print: false,
+        agentRunner: async (options) => {
+          writeFileSync(join(options.projectRoot, "spec", "design.yaml"), "modified by readonly verifier\n");
+          return {
+            content: "invalid readonly review",
+            events: acceptedSubmitEvents("student_verification_review.v1", {
+              deterministic_status: "passed",
+              summary: "invalid readonly mutation",
+              findings: [],
+              coverage_gaps: [],
+            }),
+          };
+        },
+      });
+      expect(modified.status).toBe("policy_blocked");
+      expect(modified.details?.reason).toBe("readonly_agent_modified_project");
       expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
     });
   }, 30_000);
@@ -320,6 +365,11 @@ describe("student v2 workflow", () => {
       const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
         print: false,
         agentRunner: async (options) => {
+          await options.onEvent?.({
+            type: "assistant.message",
+            iteration: 1,
+            message: { role: "assistant", content: "working in the disposable worktree" },
+          });
           expect(options.projectRoot).not.toBe(root);
           expect(existsSync(join(options.projectRoot, ".env"))).toBe(false);
           expect(existsSync(join(options.projectRoot, ".vos", "config.toml"))).toBe(false);
@@ -362,6 +412,9 @@ describe("student v2 workflow", () => {
       });
 
       expect(result).toMatchObject({ status: "passed" });
+      const runEvents = readFileSync(join(root, ".vos", "runs", result.run_id, "events.jsonl"), "utf8");
+      expect(runEvents).toContain('"kind":"agent_event"');
+      expect(runEvents).toContain("working in the disposable worktree");
       expect(readFileSync(join(root, "src", "memory.ts"), "utf8")).toContain("allocate");
       expect(git(root, ["log", "-1", "--pretty=%s"]).trim()).toBe("[vos][agent] Implement memory");
       expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");

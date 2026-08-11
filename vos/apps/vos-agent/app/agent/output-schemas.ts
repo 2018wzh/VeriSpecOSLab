@@ -111,6 +111,32 @@ const schemas: Record<string, OutputSchemaDefinition> = {
       required_validations: stringArray,
     }, ["status", "summary", "findings", "required_validations"]),
   },
+  "student_verification_review.v1": {
+    id: "student_verification_review.v1",
+    description: "Read-only review of deterministic student verification and stable Spec ID coverage.",
+    schema: strictObjectSchema({
+      deterministic_status: { type: "string", enum: ["passed", "validation_failed", "policy_blocked", "failed", "timed_out"] },
+      summary: { type: "string" },
+      findings: {
+        type: "array",
+        items: strictObjectSchema({
+          severity: { type: "string", enum: ["blocker", "warning", "info"] },
+          message: { type: "string" },
+          evidence: stringArray,
+          spec_ids: stringArray,
+          suggested_action: { type: "string" },
+        }, ["severity", "message", "evidence", "spec_ids", "suggested_action"]),
+      },
+      coverage_gaps: {
+        type: "array",
+        items: strictObjectSchema({
+          spec_id: { type: "string" },
+          reason: { type: "string" },
+          expected_targets: stringArray,
+        }, ["spec_id", "reason", "expected_targets"]),
+      },
+    }, ["deterministic_status", "summary", "findings", "coverage_gaps"]),
+  },
   "debug_output.v1": {
     id: "debug_output.v1",
     description: "Debug diagnosis and student-visible explanation.",

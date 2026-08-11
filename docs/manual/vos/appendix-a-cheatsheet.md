@@ -11,7 +11,7 @@
 | `vos agent review [target] [-i]` | 评审学生手写 Spec，不修改文件 |
 | `vos agent implement <module>` | 在临时 linked worktree 中实现并验证 |
 | `vos agent debug` | 只读根因和证据摘要 |
-| `vos agent verify` | 只读公开验证摘要 |
+| `vos agent verify` | 确定性公开验证后的只读 Agent 复核 |
 | `vos agent ask "<question>"` | 只问答，使用命令建立的项目 KB |
 | `vos agent review [module]` | 只读审查 Spec、代码、测试和 diff |
 | `vos build` | 执行 manifest build（脏树允许但不可提交） |

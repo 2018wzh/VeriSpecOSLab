@@ -40,6 +40,10 @@ export interface KbChunk {
   source_id: string;
   title: string;
   content: string;
+  range: {
+    start_offset: number;
+    end_offset: number;
+  };
   stage_scope?: string;
 }
 
@@ -61,6 +65,7 @@ export interface KbSearchHit {
   score: number;
   excerpt: string;
   chunk_id?: string;
+  range: KbChunk["range"];
   citation: KbCitation;
 }
 
@@ -218,7 +223,10 @@ export async function listKbSources(projectRoot: string, filter: ListKbSourcesFi
 
 export async function lookupKb(projectRoot: string, id: string): Promise<(KbChunk & { source: KbSource }) | undefined> {
   const index = await readKbIndex(projectRoot);
-  const chunk = (index.chunks ?? []).find((item) => item.id === id || item.source_id === id);
+  const chunks = index.chunks?.every(hasValidChunkRange)
+    ? index.chunks
+    : await hydrateChunks(projectRoot, index.sources);
+  const chunk = chunks.find((item) => item.id === id || item.source_id === id);
   if (!chunk) return undefined;
   const source = index.sources.find((item) => item.id === chunk.source_id);
   return source ? { ...chunk, source } : undefined;
@@ -252,7 +260,10 @@ export async function searchKb(
   const embedder = requireEmbedder(options.embedder);
   const index = await readKbIndex(projectRoot);
   const sources = new Map(index.sources.map((source) => [source.id, source]));
-  const chunks = index.chunks ?? await hydrateChunks(projectRoot, index.sources);
+  const chunks = index.chunks?.every(hasValidChunkRange)
+    ? index.chunks
+    : await hydrateChunks(projectRoot, index.sources);
+  const chunksById = new Map(chunks.map((chunk) => [chunk.id, chunk]));
   if (chunks.length === 0) return [];
   if (chunks.length > 0 && !existsSync(vectorDbPath(projectRoot))) {
     await rebuildVectorIndex(projectRoot, chunks, embedder);
@@ -277,6 +288,7 @@ export async function searchKb(
         score: 1 / (1 + row.distance),
         excerpt: excerpt(row.content, query),
         chunk_id: row.id,
+        range: chunksById.get(row.id)?.range ?? { start_offset: 0, end_offset: row.content.length },
         citation: {
           source_id: source.id,
           title: source.title,
@@ -711,26 +723,41 @@ function chunkText(source: KbSource, content: string): KbChunk[] {
   const MAX_CHUNK = 8000; // characters per chunk to stay within embedding token limits
   const chunks: KbChunk[] = [];
   let index = 0;
+  let cursor = 0;
   for (const part of parts.length ? parts : [content]) {
+    const partStart = content.indexOf(part, cursor);
+    const start = partStart >= 0 ? partStart : cursor;
+    cursor = start + part.length;
     if (part.length <= MAX_CHUNK) {
-      chunks.push(makeChunk(source, part, ++index));
+      chunks.push(makeChunk(source, part, ++index, start));
     } else {
       for (let offset = 0; offset < part.length; offset += MAX_CHUNK) {
-        chunks.push(makeChunk(source, part.slice(offset, offset + MAX_CHUNK), ++index));
+        chunks.push(makeChunk(source, part.slice(offset, offset + MAX_CHUNK), ++index, start + offset));
       }
     }
   }
   return chunks;
 }
 
-function makeChunk(source: KbSource, content: string, index: number): KbChunk {
+function makeChunk(source: KbSource, content: string, index: number, startOffset: number): KbChunk {
   return {
     id: `${source.id}:${index}`,
     source_id: source.id,
     title: source.title,
     content,
+    range: {
+      start_offset: startOffset,
+      end_offset: startOffset + content.length,
+    },
     stage_scope: source.stage_scope,
   };
+}
+
+function hasValidChunkRange(chunk: KbChunk): boolean {
+  return Number.isInteger(chunk.range?.start_offset)
+    && Number.isInteger(chunk.range?.end_offset)
+    && chunk.range.start_offset >= 0
+    && chunk.range.end_offset >= chunk.range.start_offset;
 }
 
 function indexPath(projectRoot: string): string {

@@ -32,6 +32,14 @@ describe("agent task profiles", () => {
     const tools = schema.properties.tools as { items: { additionalProperties?: boolean } };
     expect(tools.items.additionalProperties).toBe(false);
   });
+  test("student verification review uses strict findings and coverage gaps", () => {
+    const schema = outputSchemaForId("student_verification_review.v1").schema;
+    expect(schema.additionalProperties).toBe(false);
+    const findings = schema.properties.findings as { items: { additionalProperties?: boolean } };
+    const gaps = schema.properties.coverage_gaps as { items: { additionalProperties?: boolean } };
+    expect(findings.items.additionalProperties).toBe(false);
+    expect(gaps.items.additionalProperties).toBe(false);
+  });
   const cliTaskKinds = [
     "implementation",
     "plan",
@@ -40,6 +48,7 @@ describe("agent task profiles", () => {
     "codegen",
     "skeleton_generation",
     "validate",
+    "student_verify",
     "review_patch",
     "debug",
     "doctor",
@@ -62,6 +71,7 @@ describe("agent task profiles", () => {
       codegen: "spec_compiler_output.v1",
       skeleton_generation: "spec_compiler_output.v1",
       validate: "validator_feedback.v1",
+      student_verify: "student_verification_review.v1",
       review_patch: "validator_feedback.v1",
       debug: "debug_output.v1",
       doctor: "doctor_diagnosis.v1",

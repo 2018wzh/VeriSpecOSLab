@@ -106,7 +106,7 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
       return handlers.executeKbList(projectRoot);
 
     case "kb_search":
-      return handlers.executeKbSearch(command, projectRoot);
+      return handlers.executeKbSearch(command, context);
 
     case "kb_remove":
       return handlers.executeKbRemove(command, projectRoot);
