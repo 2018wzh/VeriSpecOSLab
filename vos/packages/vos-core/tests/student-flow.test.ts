@@ -5,7 +5,7 @@ import { join } from "node:path";
 import * as tar from "tar";
 import { executeCliInvocation } from "../src/main.ts";
 import { parseArgs } from "../src/cli.ts";
-import { verifyAuditChain } from "../src/audit/chain.ts";
+import { appendAuditEvent, verifyAuditChain } from "../src/audit/chain.ts";
 import { ensureHeadLedgerEntry } from "../src/repro/ledger.ts";
 
 const roots: string[] = [];
@@ -368,6 +368,13 @@ describe("student v2 workflow", () => {
       writeFileSync(join(root, "untracked.txt"), "must not enter the submission\n");
       expect((await invoke(root, "submit")).status).toBe("policy_blocked");
       rmSync(join(root, "untracked.txt"));
+      await appendAuditEvent(root, {
+        type: "redaction-regression",
+        authorization: "Bearer should-not-leak",
+        token: "tok_submission_secret_123456",
+        ANTHROPIC_AUTH_TOKEN: "opaque-provider-credential",
+        command: "probe --root C:\\Users\\student\\repo\\",
+      });
       const firstSubmit = await invoke(root, "submit");
       expect(firstSubmit).toMatchObject({
         status: "passed",
@@ -388,6 +395,15 @@ describe("student v2 workflow", () => {
       expect(entries.some((entry) => entry.startsWith("repo/build/"))).toBe(false);
       expect(entries.some((entry) => entry.endsWith("/.env") || entry === "repo/.env")).toBe(false);
       expect(entries.some((entry) => entry.endsWith("fs.img"))).toBe(false);
+      const extracted = join(root, ".vos", "submit-test-extracted");
+      mkdirSync(extracted, { recursive: true });
+      await tar.x({ file: archive, cwd: extracted });
+      const exportedAudit = readFileSync(join(extracted, "audit", "chain.jsonl"), "utf8");
+      for (const line of exportedAudit.split(/\r?\n/).filter(Boolean)) JSON.parse(line);
+      expect(exportedAudit).not.toContain("should-not-leak");
+      expect(exportedAudit).not.toContain("tok_submission_secret_123456");
+      expect(exportedAudit).not.toContain("opaque-provider-credential");
+      expect(exportedAudit).not.toContain("C:\\Users\\student");
       writeFileSync(join(root, "student-note.md"), "new committed state\n");
       git(root, ["add", "student-note.md"]);
       git(root, ["commit", "-m", "change commit after hidden verification"]);

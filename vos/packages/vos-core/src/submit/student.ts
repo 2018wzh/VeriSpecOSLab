@@ -44,9 +44,13 @@ export async function createStudentSubmitPack(params: { projectRoot: string; rep
   await mkdir(path.join(staging, "report"), { recursive: true });
   if (existsSync(reportSource)) {
     await mkdir(path.join(staging, "report"), { recursive: true });
+    const report = parseJsonForSubmission(
+      await readFile(reportSource, "utf8"),
+      path.relative(projectRoot, reportSource).replace(/\\/g, "/"),
+    );
     await writeFile(
       path.join(staging, "report", "report.json"),
-      redactSecrets(await readFile(reportSource, "utf8")),
+      `${JSON.stringify(redactJsonValue(report), null, 2)}\n`,
     );
   }
   const specHash = createHash("sha256").update(JSON.stringify(bundle.hashes)).digest("hex");
@@ -112,9 +116,9 @@ async function copyRedactedTree(source: string, target: string): Promise<void> {
 function redactAuditChain(text: string): string {
   let previous: string | null = null;
   const lines = text.split(/\r?\n/).filter(Boolean);
-  return `${lines.map((line) => {
-    const original = JSON.parse(line) as Record<string, unknown>;
-    const redacted = JSON.parse(redactSecrets(JSON.stringify(original))) as Record<string, unknown>;
+  return `${lines.map((line, index) => {
+    const original = parseJsonForSubmission(line, `audit/chain.jsonl:${index + 1}`) as Record<string, unknown>;
+    const redacted = redactJsonValue(original) as Record<string, unknown>;
     const sourceHash = typeof redacted.hash === "string" ? redacted.hash : undefined;
     redacted.previous_hash = previous;
     const unsigned = {
@@ -129,6 +133,40 @@ function redactAuditChain(text: string): string {
     previous = hash;
     return JSON.stringify(redacted);
   }).join("\n")}\n`;
+}
+
+function parseJsonForSubmission(text: string, source: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch (error) {
+    throw new CliError(`submission JSON is invalid: ${source}`, "validation_failed", {
+      reason: "invalid_submission_json",
+      source,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function redactJsonValue(value: unknown, key?: string): unknown {
+  if (typeof value === "string") {
+    if (key && isCredentialKey(key)) {
+      return "<redacted>";
+    }
+    return redactSecrets(value);
+  }
+  if (Array.isArray(value)) return value.map((entry) => redactJsonValue(entry));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .map(([entryKey, entryValue]) => [entryKey, redactJsonValue(entryValue, entryKey)]),
+    );
+  }
+  return value;
+}
+
+function isCredentialKey(key: string): boolean {
+  const normalized = key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+  return /(?:^|[_-])(?:api[_-]?key|auth(?:orization)?|token|secret|password|credential)(?:[_-]|$)/.test(normalized);
 }
 
 function redactSecrets(text: string): string {
