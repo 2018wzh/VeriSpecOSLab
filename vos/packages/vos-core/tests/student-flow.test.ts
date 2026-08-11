@@ -916,6 +916,51 @@ describe("student v2 workflow", () => {
       expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
     });
   }, 120_000);
+
+  test("squashes temporary Agent commits into one VOS implementation commit", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      const before = git(root, ["rev-parse", "HEAD"]).trim();
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+          writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 1;\n");
+          git(options.projectRoot, ["add", "src/memory.ts"]);
+          git(options.projectRoot, ["commit", "-m", "agent-created temporary commit"]);
+          return { content: "implemented", events: acceptedSubmitEvents("student_implementation_result.v1", implementationResult()) };
+        },
+      });
+
+      expect(result.status).toBe("passed");
+      expect(git(root, ["rev-list", "--count", `${before}..HEAD`]).trim()).toBe("1");
+      expect(git(root, ["log", "-1", "--pretty=%s"]).trim()).toBe("[vos][agent] Implement memory");
+      expect(git(root, ["log", "--format=%s", `${before}..HEAD`])).not.toContain("agent-created temporary commit");
+      expect(readFileSync(join(root, "src", "memory.ts"), "utf8")).toContain("allocate");
+    });
+  }, 120_000);
+
+  test("rejects an owns violation hidden inside an Agent commit", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      const before = git(root, ["rev-parse", "HEAD"]).trim();
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          writeFileSync(join(options.projectRoot, "outside.txt"), "committed outside owns\n");
+          git(options.projectRoot, ["add", "outside.txt"]);
+          git(options.projectRoot, ["commit", "-m", "hide owns violation in commit"]);
+          return { content: "implemented", events: acceptedSubmitEvents("student_implementation_result.v1", implementationResult()) };
+        },
+      });
+
+      expect(result.status).toBe("policy_blocked");
+      expect(git(root, ["rev-parse", "HEAD"]).trim()).toBe(before);
+      expect(existsSync(join(root, "outside.txt"))).toBe(false);
+    });
+  }, 120_000);
 });
 
 function makeRoot(): string {
