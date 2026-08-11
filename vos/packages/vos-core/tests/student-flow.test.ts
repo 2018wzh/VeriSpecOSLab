@@ -871,6 +871,83 @@ describe("student v2 workflow", () => {
     });
   }, 30_000);
 
+  test("returns authoritative gate owns violations to the same Agent thread", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      let turn = 0;
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          turn++;
+          mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+          writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 0;\n");
+          const proposal = implementationResult();
+          if (turn === 1) {
+            proposal.test_targets[0]!.args = ["-e", "require('node:fs').writeFileSync('outside.txt', 'gate side effect')"];
+          } else {
+            expect(options.threadId).toBe("gate-owns-repair-thread");
+            expect(options.task).toContain("authoritative validation rejected");
+            expect(options.task).toContain("outside.txt");
+            rmSync(join(options.projectRoot, "outside.txt"));
+          }
+          return {
+            content: "submitted",
+            threadId: "gate-owns-repair-thread",
+            events: [
+              { type: "model.usage", thread_id: "gate-owns-repair-thread", iteration: turn === 1 ? 45 : 2 },
+              ...acceptedSubmitEvents("student_implementation_result.v1", proposal).map((event) => ({ ...event, thread_id: "gate-owns-repair-thread", iteration: turn === 1 ? 45 : 2 })),
+            ],
+          };
+        },
+      });
+
+      expect(turn).toBe(2);
+      expect(result.status).toBe("passed");
+      expect(existsSync(join(root, "outside.txt"))).toBe(false);
+      expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
+    });
+  }, 30_000);
+
+  test("returns authoritative gate hidden-test writes to the same Agent thread", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      let turn = 0;
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          turn++;
+          mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+          mkdirSync(join(options.projectRoot, "tests", "memory"), { recursive: true });
+          writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 0;\n");
+          const proposal = implementationResult();
+          if (turn === 1) {
+            proposal.test_targets[0]!.args = ["-e", "require('node:fs').writeFileSync('tests/memory/hidden-output.ts', 'hidden gate side effect')"];
+          } else {
+            expect(options.threadId).toBe("gate-hidden-repair-thread");
+            expect(options.task).toContain("authoritative validation rejected");
+            expect(options.task).toContain("hidden-output.ts");
+            rmSync(join(options.projectRoot, "tests", "memory", "hidden-output.ts"));
+          }
+          return {
+            content: "submitted",
+            threadId: "gate-hidden-repair-thread",
+            events: [
+              { type: "model.usage", thread_id: "gate-hidden-repair-thread", iteration: turn === 1 ? 45 : 2 },
+              ...acceptedSubmitEvents("student_implementation_result.v1", proposal).map((event) => ({ ...event, thread_id: "gate-hidden-repair-thread", iteration: turn === 1 ? 45 : 2 })),
+            ],
+          };
+        },
+      });
+
+      expect(turn).toBe(2);
+      expect(result.status).toBe("passed");
+      expect(existsSync(join(root, "tests", "memory", "hidden-output.ts"))).toBe(false);
+      expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
+    });
+  }, 30_000);
+
   test("feeds malformed structured test targets back into the same Agent thread", async () => {
     const root = makeRoot();
     await withGitIdentity(async () => {

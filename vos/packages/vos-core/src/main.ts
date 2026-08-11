@@ -2484,6 +2484,30 @@ export async function executeAgentImplement(
                   evidence: await runner.collectEvidence(),
                   agent_result: agentResult.parsedResult,
                 };
+                if (validation.status === "passed") {
+                  const postGateChanged = await studentChangedPaths(worktree, baseHead);
+                  const postGateHiddenPaths = postGateChanged.filter(isStudentHiddenTestProjectPath);
+                  const postGateViolations = postGateChanged.filter((target) =>
+                    !(target === "vos.yaml" && projectedTargetIds.size > 0) && !isOwnedStudentPath(target, ownedPaths)
+                  );
+                  if (postGateHiddenPaths.length > 0) {
+                    validation = {
+                      status: "hidden_test_git_violation",
+                      message: "authoritative gates wrote local hidden-test files into the Git worktree",
+                      changed: postGateChanged,
+                      hidden_test_paths: postGateHiddenPaths,
+                      agent_result: agentResult.parsedResult,
+                    };
+                  } else if (postGateViolations.length > 0) {
+                    validation = {
+                      status: "owns_violation",
+                      message: "authoritative gates changed paths outside the allowed owns set",
+                      changed: postGateChanged,
+                      violations: postGateViolations,
+                      agent_result: agentResult.parsedResult,
+                    };
+                  }
+                }
               }
             }
           }
