@@ -83,8 +83,8 @@ export function createOpenAICompatibleChatClient(
 }
 
 async function normalizeCompatibleErrorResponses(
-  input: RequestInfo | URL,
-  init?: RequestInit,
+  input: Parameters<typeof fetch>[0],
+  init?: Parameters<typeof fetch>[1],
 ): Promise<Response> {
   const response = await fetch(input, init);
   if (response.ok || !response.headers.get("content-type")?.includes("application/json")) {
