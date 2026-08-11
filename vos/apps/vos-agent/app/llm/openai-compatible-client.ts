@@ -48,6 +48,7 @@ export function createOpenAICompatibleChatClient(
     apiKey: config.apiKey,
     baseURL: config.baseURL,
     defaultHeaders: config.extraHeaders,
+    fetch: normalizeCompatibleErrorResponses,
     ...(config.maxRetries !== undefined ? { maxRetries: config.maxRetries } : {}),
   });
   return {
@@ -79,6 +80,43 @@ export function createOpenAICompatibleChatClient(
       return response.choices[0].message;
     },
   };
+}
+
+async function normalizeCompatibleErrorResponses(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const response = await fetch(input, init);
+  if (response.ok || !response.headers.get("content-type")?.includes("application/json")) {
+    return response;
+  }
+
+  const payload = await response.clone().json().catch(() => undefined);
+  if (!isRecord(payload) || "error" in payload || !("detail" in payload)) {
+    return response;
+  }
+
+  const message = typeof payload.detail === "string"
+    ? payload.detail
+    : JSON.stringify(payload.detail);
+  if (!message) {
+    return response;
+  }
+
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  return Response.json(
+    { error: { message } },
+    {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    },
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function openAICompatibleChatBody(

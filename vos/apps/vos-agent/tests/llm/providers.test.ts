@@ -363,6 +363,42 @@ describe("createChatClientFromConfig", () => {
     }
   });
 
+  test("OpenAI-compatible provider preserves FastAPI error details", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch() {
+        return Response.json(
+          { detail: "daily credits exhausted" },
+          { status: 429 },
+        );
+      },
+    });
+
+    try {
+      const chat = createChatClientFromConfig({
+        defaultMode: "smart",
+        modes: { smart: { model: "llama" } },
+        tools: { disabled: [] },
+        openaiCompatible: {
+          apiKey: "fake",
+          baseURL: `http://127.0.0.1:${server.port}/v1`,
+          maxRetries: 0,
+          responseFormat: "json_object",
+          reasoningEffort: "off",
+          streamUsage: "off",
+          input: { text: true, image: false, pdf: false },
+        },
+      });
+
+      await expect(chat.chat({
+        ...emptyRequest("compat:llama"),
+        onEvent: () => {},
+      })).rejects.toThrow(/429 daily credits exhausted/);
+    } finally {
+      await server.stop(true);
+    }
+  });
+
   test("OpenAI-compatible provider can preserve or suppress response format", async () => {
     const bodies: unknown[] = [];
     const server = Bun.serve({
