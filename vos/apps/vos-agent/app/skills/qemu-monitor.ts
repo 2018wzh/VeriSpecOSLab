@@ -112,7 +112,7 @@ stack frames, locals, or spec obligations by itself. Use it to add machine-level
   mcpServers: [{
     name: "qemu-monitor",
     command: process.execPath,
-    args: [fileURLToPath(new URL("../main.ts", import.meta.url)), "internal", "qemu-monitor-mcp"],
+    args: [fileURLToPath(new URL("../mcp/qemu-monitor-entry.ts", import.meta.url))],
   }],
   allowedToolNames: QEMU_MONITOR_TOOL_NAMES,
 };

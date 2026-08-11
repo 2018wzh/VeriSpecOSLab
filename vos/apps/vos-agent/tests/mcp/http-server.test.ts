@@ -65,9 +65,7 @@ describe("HTTP server MCP server", () => {
 
 function callHttpServerMcp(messages: unknown[]): Array<any> {
   const proc = spawnSync(process.execPath, [
-    join(import.meta.dir, "..", "..", "app", "main.ts"),
-    "internal",
-    "http-server-mcp",
+    join(import.meta.dir, "..", "..", "app", "mcp", "http-server-entry.ts"),
   ], {
     input: `${messages.map((message) => JSON.stringify(message)).join("\n")}\n`,
     encoding: "utf8",
@@ -81,9 +79,7 @@ function startHttpServerMcp(): {
   close(): Promise<void>;
 } {
   const proc = spawn(process.execPath, [
-    join(import.meta.dir, "..", "..", "app", "main.ts"),
-    "internal",
-    "http-server-mcp",
+    join(import.meta.dir, "..", "..", "app", "mcp", "http-server-entry.ts"),
   ], {
     stdio: "pipe",
   });

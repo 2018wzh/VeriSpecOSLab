@@ -5,9 +5,7 @@ import { join } from "node:path";
 describe("QEMU monitor MCP server", () => {
   test("lists monitor tools", () => {
     const proc = spawnSync(process.execPath, [
-      join(import.meta.dir, "..", "..", "app", "main.ts"),
-      "internal",
-      "qemu-monitor-mcp",
+      join(import.meta.dir, "..", "..", "app", "mcp", "qemu-monitor-entry.ts"),
     ], {
       input: [
         JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
@@ -26,9 +24,7 @@ describe("QEMU monitor MCP server", () => {
 
   test("rejects non-readonly QMP and HMP commands as tool errors", () => {
     const proc = spawnSync(process.execPath, [
-      join(import.meta.dir, "..", "..", "app", "main.ts"),
-      "internal",
-      "qemu-monitor-mcp",
+      join(import.meta.dir, "..", "..", "app", "mcp", "qemu-monitor-entry.ts"),
     ], {
       input: [
         JSON.stringify({

@@ -22,7 +22,7 @@ export const visualizationSkill: BuiltInSkill = {
   mcpServers: [{
     name: "http-server",
     command: process.execPath,
-    args: [fileURLToPath(new URL("../main.ts", import.meta.url)), "internal", "http-server-mcp"],
+    args: [fileURLToPath(new URL("../mcp/http-server-entry.ts", import.meta.url))],
   }],
   allowedToolNames: [...VISUALIZATION_TOOL_NAMES],
 };
