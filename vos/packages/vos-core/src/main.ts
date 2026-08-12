@@ -3169,7 +3169,25 @@ async function isCommittedSpecPatch(projectRoot: string, patch: SpecPatchRecord,
   const commitSha = patch.commit_sha?.trim() || await inferSpecPatchCommit(projectRoot, patch.path);
   if (!commitSha) return false;
   const result = await runCommand({ command: ["git", "merge-base", "--is-ancestor", commitSha, "HEAD"], cwd: projectRoot });
-  return result.exitCode === 0;
+  if (result.exitCode !== 0) return false;
+  return !(await isSpecPatchConsumed(projectRoot, commitSha, patch.affected_modules));
+}
+
+async function isSpecPatchConsumed(projectRoot: string, patchCommit: string, affectedModules: readonly string[]): Promise<boolean> {
+  const result = await runCommand({
+    command: ["git", "log", "--format=%s", `${patchCommit}..HEAD`],
+    cwd: projectRoot,
+  });
+  if (result.exitCode !== 0) {
+    throw new CliError(`failed to inspect SpecPatch application history: ${result.stderr.trim() || result.stdout.trim()}`, "failed");
+  }
+  for (const subject of result.stdout.split(/\r?\n/)) {
+    const match = /^\[vos\]\[agent\] Implement (.+)$/.exec(subject.trim());
+    if (!match) continue;
+    const implementedModule = match[1]!;
+    if (affectedModules.some((affected) => affected === implementedModule || moduleMatches(affected, implementedModule))) return true;
+  }
+  return false;
 }
 
 async function inferSpecPatchCommit(projectRoot: string, patchPath: string | undefined): Promise<string | undefined> {

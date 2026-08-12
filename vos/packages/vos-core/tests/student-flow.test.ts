@@ -1063,6 +1063,27 @@ describe("student v2 workflow", () => {
       expect(result.status).toBe("passed");
       expect(readFileSync(join(root, "src", "shared.ts"), "utf8")).toContain("sharedValue");
       expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
+
+      const committedHead = git(root, ["rev-parse", "HEAD"]).trim();
+      const replay = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          writeFileSync(join(options.projectRoot, "src", "shared.ts"), "export const sharedValue = 2;\n");
+          return {
+            content: "attempted to reuse consumed shared ownership",
+            events: acceptedSubmitEvents("student_implementation_result.v1", implementationResult()),
+          };
+        },
+      });
+
+      expect(replay.status).toBe("policy_blocked");
+      expect(replay.details?.validation).toMatchObject({
+        status: "owns_violation",
+        violations: ["src/shared.ts"],
+      });
+      expect(git(root, ["rev-parse", "HEAD"]).trim()).toBe(committedHead);
+      expect(readFileSync(join(root, "src", "shared.ts"), "utf8")).toContain("sharedValue = 1");
+      expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
     });
   }, 30_000);
 

@@ -39,6 +39,8 @@ The Agent implementation worktree is a detached linked Git worktree. It protects
 
 Structured Agent results must be submitted through the declared runtime tool. A rejected schema or semantic submission is returned to the same model thread as a tool error, with the normal tools restored so the Agent can inspect, repair, and resubmit. Do not treat `failed`, `partial`, or `blocked` implementation payloads as successful completion, and do not bypass this loop by parsing prose.
 
+A committed SpecPatch grants cross-module `owns` only until the first landed Agent implementation for one of its affected modules. That implementation consumes the grant. Historical patches must not accumulate into a permanent writable-path union; a later cross-module semantic change requires a new handwritten and committed SpecPatch.
+
 ## Commit & Pull Request Guidelines
 
 Recent commits use bracketed scopes such as `[vos][cli] Simplify student workflow` and `[docs][spec] Document ModuleSpec v2`. Use the same pattern: `[area][component] Imperative summary`. This branch is pushed without creating or merging a PR. Describe the behavioral change, list tests run, note affected docs/specs, and call out generated `.vos/` artifacts or local-only files.
