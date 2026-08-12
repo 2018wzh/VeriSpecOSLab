@@ -15,8 +15,9 @@ export interface ContextCompactionOptions {
 export type ContextCompactionSetting = false | ContextCompactionOptions;
 
 export const DEFAULT_CONTEXT_COMPACTION_THRESHOLD = 0.8;
-export const DEFAULT_CONTEXT_COMPACTION_MAX_INPUT_TOKENS = 100_000;
+export const DEFAULT_CONTEXT_COMPACTION_MAX_INPUT_TOKENS = 60_000;
 export const DEFAULT_PROTECTED_MESSAGES = 8;
+const MAX_SUMMARY_CHUNK_CHARACTERS = 80_000;
 
 type Message = OpenAI.Chat.ChatCompletionMessageParam;
 type UserMessage = OpenAI.Chat.ChatCompletionUserMessageParam;
@@ -157,16 +158,47 @@ async function summarizeMessages(
   signal: AbortSignal | undefined,
 ): Promise<SummaryResult> {
   const usageEvents: ChatUsage[] = [];
+  const chunks = chunkTranscript(messages, MAX_SUMMARY_CHUNK_CHARACTERS);
+  const summaries: string[] = [];
+  for (let index = 0; index < chunks.length; index++) {
+    const response = await chat.chat({
+      model,
+      messages: [{
+        role: "user",
+        content: [
+          `Summarize chunk ${index + 1} of ${chunks.length} from an earlier VOS Agent conversation.`,
+          "Preserve decisions, constraints, file paths, commands, failing tests, completed edits, and unresolved tasks.",
+          "Do not infer success for work that was not verified.",
+          "",
+          chunks[index],
+        ].join("\n"),
+      }],
+      tools: [],
+      onUsage: (chatUsage) => {
+        usageEvents.push(chatUsage);
+      },
+      ...(signal ? { signal } : {}),
+    });
+    if (typeof response.content !== "string" || response.content.trim().length === 0) {
+      return { summary: undefined, usageEvents };
+    }
+    summaries.push(response.content.trim());
+  }
+
+  if (summaries.length === 1) {
+    return { summary: summaries[0], usageEvents };
+  }
+
   const response = await chat.chat({
     model,
     messages: [{
       role: "user",
       content: [
-        "Summarize this earlier VOS Agent conversation for continuation.",
-        "Preserve decisions, constraints, file paths, commands, failing tests, and unresolved tasks.",
-        "Do not include the most recent messages; they will be kept verbatim.",
+        "Merge these ordered chunk summaries into one continuation summary for a VOS Agent.",
+        "Preserve decisions, constraints, file paths, commands, failing tests, completed edits, and unresolved tasks.",
+        "Resolve repetition without dropping later corrections or claiming unverified success.",
         "",
-        formatTranscript(messages),
+        summaries.map((summary, index) => `## Chunk ${index + 1}\n${summary}`).join("\n\n"),
       ].join("\n"),
     }],
     tools: [],
@@ -184,10 +216,29 @@ async function summarizeMessages(
   };
 }
 
-function formatTranscript(messages: readonly Message[]): string {
-  return messages.map((message, index) =>
-    `## Message ${index + 1}: ${message.role}\n${formatMessage(message)}`
-  ).join("\n\n");
+function chunkTranscript(messages: readonly Message[], maxCharacters: number): string[] {
+  const chunks: string[] = [];
+  let current = "";
+  for (let index = 0; index < messages.length; index++) {
+    const formatted = `## Message ${index + 1}: ${messages[index]!.role}\n${formatMessage(messages[index]!)}`;
+    if (current.length > 0 && current.length + formatted.length + 2 > maxCharacters) {
+      chunks.push(current);
+      current = "";
+    }
+    if (formatted.length <= maxCharacters) {
+      current = current ? `${current}\n\n${formatted}` : formatted;
+      continue;
+    }
+    if (current) {
+      chunks.push(current);
+      current = "";
+    }
+    for (let offset = 0; offset < formatted.length; offset += maxCharacters) {
+      chunks.push(formatted.slice(offset, offset + maxCharacters));
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
 }
 
 function formatMessage(message: Message): string {

@@ -466,7 +466,7 @@ describe("runAgent", () => {
       }
       if (index === 1) {
         expect(request.tools).toEqual([]);
-        expect(String(request.messages[0]?.content)).toContain("Summarize this earlier VOS Agent conversation");
+        expect(String(request.messages[0]?.content)).toContain("from an earlier VOS Agent conversation");
         return textResponse("The first work step completed successfully.");
       }
       expect(request.tools.map((entry) => entry.function.name)).toEqual(["Work", "Submit"]);

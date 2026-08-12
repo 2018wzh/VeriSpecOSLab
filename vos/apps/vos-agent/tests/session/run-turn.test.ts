@@ -413,6 +413,46 @@ describe("runSessionTurn", () => {
     });
   });
 
+  test("summarizes oversized history in bounded chunks before merging", async () => {
+    const thread = store.create({ prompt: "seed", model: "unknown-compatible-model" });
+    thread.messages = [
+      { role: "user", content: `first-marker ${"A".repeat(90_000)}` },
+      { role: "assistant", content: `second-marker ${"B".repeat(90_000)}` },
+      { role: "user", content: "recent question" },
+      { role: "assistant", content: "recent answer" },
+    ];
+    thread.usage.byModel.push({
+      model: "unknown-compatible-model",
+      inputTokens: 70_000,
+      outputTokens: 1_000,
+      totalTokens: 71_000,
+    });
+    store.save(thread);
+
+    let summaryCalls = 0;
+    const chat = new CallbackChatClient((request) => {
+      if (request.tools.length === 0) {
+        summaryCalls++;
+        const content = String(request.messages[0]?.content);
+        expect(content.length).toBeLessThan(82_000);
+        return textResponse(`bounded summary ${summaryCalls}`);
+      }
+      return textResponse("continued after bounded compaction");
+    });
+
+    const result = await runSessionTurn({
+      chat,
+      store,
+      workspaceRoot: tmp,
+      threadId: thread.id,
+      prompt: "continue",
+      contextCompaction: { maxInputTokens: 60_000, protectLastMessages: 2 },
+    });
+
+    expect(summaryCalls).toBeGreaterThan(2);
+    expect(result.content).toBe("continued after bounded compaction");
+  });
+
   test("continues with the stored model and mode unless overridden", async () => {
     const first = await runSessionTurn({
       chat: new CallbackChatClient(() => textResponse("first")),
