@@ -2762,6 +2762,15 @@ function parseStudentTestTarget(raw: unknown, index: number, moduleId: string, s
       throw new AgentOutputError(`trace target ${raw.id} requires workload, oracle, timeout, and artifacts`);
     }
   }
+  const allowedKeys = new Set([
+    "id", "kind", "program", "args", "cwd", "env", "timeout", "verifies", "artifacts",
+    ...(raw.kind === "fuzz" ? ["seed", "cases", "reproduction_artifact"] : []),
+    ...(raw.kind === "trace" ? ["workload", "oracle"] : []),
+  ]);
+  const unknownKeys = Object.keys(raw).filter((key) => !allowedKeys.has(key));
+  if (unknownKeys.length > 0) {
+    throw new AgentOutputError(`test target ${raw.id} has unsupported field(s): ${unknownKeys.join(", ")}`);
+  }
   return raw as unknown as StudentTestTargetProposal;
 }
 
