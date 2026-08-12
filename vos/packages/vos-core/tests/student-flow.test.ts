@@ -1020,6 +1020,53 @@ describe("student v2 workflow", () => {
     });
   }, 30_000);
 
+  test("returns omitted ModuleSpec stable target IDs to the same Agent thread", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      const modulePath = join(root, "spec", "modules", "memory.yaml");
+      writeFileSync(modulePath, readFileSync(modulePath, "utf8").replace(
+        "properties: [allocated blocks are aligned]",
+        "properties: [memory_leak_contract observes that allocated blocks are aligned]",
+      ));
+      git(root, ["add", "spec/modules/memory.yaml"]);
+      git(root, ["commit", "-m", "declare stable memory target"]);
+
+      let turn = 0;
+      const result = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {
+        print: false,
+        agentRunner: async (options) => {
+          turn += 1;
+          mkdirSync(join(options.projectRoot, "src"), { recursive: true });
+          writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const allocate = () => 0;\n");
+          const proposal = implementationResult();
+          if (turn === 1) {
+            expect(options.task).toContain("memory_leak_contract");
+          } else {
+            expect(options.task).toContain("omitted declared stable target IDs");
+            proposal.test_targets.push({
+              ...proposal.test_targets[1]!,
+              id: "memory_leak_contract",
+            });
+          }
+          return {
+            content: "submitted declared targets",
+            threadId: "declared-target-repair-thread",
+            events: acceptedSubmitEvents("student_implementation_result.v1", proposal).map((event) => ({
+              ...event,
+              thread_id: "declared-target-repair-thread",
+              iteration: turn === 1 ? 45 : 2,
+            })),
+          };
+        },
+      });
+
+      expect(turn).toBe(2);
+      expect(result.status).toBe("passed");
+      expect(readFileSync(join(root, "vos.yaml"), "utf8")).toContain("memory_leak_contract:");
+    });
+  }, 120_000);
+
   test("extends implementation owns through a committed v2 SpecPatch", async () => {
     const root = makeRoot();
     await withGitIdentity(async () => {
@@ -1063,6 +1110,20 @@ describe("student v2 workflow", () => {
       expect(result.status).toBe("passed");
       expect(readFileSync(join(root, "src", "shared.ts"), "utf8")).toContain("sharedValue");
       expect(git(root, ["status", "--porcelain", "--untracked-files=all"]).trim()).toBe("");
+
+      const sharedResult = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "shared"], {
+        print: false,
+        agentRunner: async (options) => {
+          writeFileSync(join(options.projectRoot, "src", "memory.ts"), "export const memoryValue = 2;\n");
+          return {
+            content: "implemented remaining affected module",
+            events: acceptedSubmitEvents("student_implementation_result.v1", implementationResult("shared")),
+          };
+        },
+      });
+
+      expect(sharedResult.status).toBe("passed");
+      expect(readFileSync(join(root, "src", "memory.ts"), "utf8")).toContain("memoryValue = 2");
 
       const committedHead = git(root, ["rev-parse", "HEAD"]).trim();
       const replay = await executeCliInvocation(["bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory"], {

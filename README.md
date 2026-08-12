@@ -39,7 +39,7 @@ vos agent review design
 - `spec/patches/<patch>.yaml`：架构或跨模块语义变化的手写影响声明。
 - `vos.yaml`：工具链 ModuleSpec 的执行投影，只允许结构化 `program + args + cwd + env allowlist + timeout`、runner、测试 target、产物和稳定 Spec ID。QEMU runner 可用 `success_pattern` 与 `failure_pattern` 区分成功、故障和超时。知识库来源由 `vos kb` 命令管理。
 
-ModuleSpec 的 `level` 为 L1/L2/L3。缺少高等级字段只产生警告；`vos spec lint` 确定性检查 schema、引用、路径、等级、`owns` 和 `vos.yaml` 映射。`owns` 必须是仓库相对路径，并覆盖模块实现与测试。Agent 实现只能触及目标模块与尚未应用的已提交 SpecPatch 影响模块的 owns 并集；任一受影响模块的 Agent 实现落地后，该补丁不再为后续运行扩大写入范围。
+ModuleSpec 的 `level` 为 L1/L2/L3。缺少高等级字段只产生警告；`vos spec lint` 确定性检查 schema、引用、路径、等级、`owns` 和 `vos.yaml` 映射。`owns` 必须是仓库相对路径，并覆盖模块实现与测试。Agent 实现只能触及目标模块与尚未应用的已提交 SpecPatch 影响模块的 owns 并集；每个受影响模块各有一次实现授权，模块提交后只消费自己的授权，其余受影响模块仍可继续实现。ModuleSpec 中明确写出的稳定 target ID 必须由结构化结果完整提交。
 
 ## 公开命令
 

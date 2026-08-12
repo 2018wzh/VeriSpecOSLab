@@ -39,7 +39,7 @@ The Agent implementation worktree is a detached linked Git worktree. It protects
 
 Structured Agent results must be submitted through the declared runtime tool. A rejected schema or semantic submission is returned to the same model thread as a tool error, with the normal tools restored so the Agent can inspect, repair, and resubmit. Do not treat `failed`, `partial`, or `blocked` implementation payloads as successful completion, and do not bypass this loop by parsing prose.
 
-A committed SpecPatch grants cross-module `owns` only until the first landed Agent implementation for one of its affected modules. That implementation consumes the grant. Historical patches must not accumulate into a permanent writable-path union; a later cross-module semantic change requires a new handwritten and committed SpecPatch.
+A committed SpecPatch grants each affected module one cross-module `owns` implementation. Landing a module consumes that module's grant without preventing the remaining affected modules from being implemented. Historical patches must not accumulate into a permanent writable-path union; a later change to an already implemented module requires a new handwritten and committed SpecPatch. Stable target IDs declared in ModuleSpec property text or `check` fields are mandatory structured-result bindings, not optional suggestions.
 
 ## Commit & Pull Request Guidelines
 

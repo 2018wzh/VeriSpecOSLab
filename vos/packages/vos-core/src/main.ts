@@ -2342,6 +2342,7 @@ export async function executeAgentImplement(
   const specHash = hashString(JSON.stringify(bundle.hashes));
   const currentManifest = await readStudentManifest(projectRoot);
   const existingTargetIds = Object.keys(currentManifest.manifest.checks).sort();
+  const requiredTargetIds = studentDeclaredTargetIds(module, existingTargetIds);
   const worktree = await createStudentWorktree(projectRoot, evidence.run_id);
   let patch = "";
   let validation: Record<string, unknown> = {};
@@ -2356,6 +2357,7 @@ export async function executeAgentImplement(
     const initialPrompt = `Implement ModuleSpec ${module.id}. Work only within these owned paths: ${ownedPaths.join(", ")}. Generate the implementation plus concrete public, contract, fixed-seed bounded fuzz, bounded trace/oracle, and local hidden tests for this module. Test source paths must also be covered by owns. This is an implementation task, not a planning task: do not stop after describing a plan; write the owned files, run validation, and call submit_result. Read only the current project root: its Spec, vos.yaml, owned files, and public test framework. Reuse helpers under tests/public and do not reimplement them in generated tests. Do not inspect parent or sibling directories, other checkouts/worktrees, VOS implementation source, Git history, old Lab implementations/diffs, or previous .vos runs; the current Spec and the result contract below are the complete authority. Do not perform repo-wide schema searches or toolchain discovery. Do not edit vos.yaml: return structured test_targets and hidden_tests so VOS can validate and project them atomically. Existing test target IDs are immutable and MUST NOT be proposed again: ${JSON.stringify(existingTargetIds)}. Choose new module-prefixed IDs that do not collide with that list. Each test_targets entry is {id, kind, program, args, cwd, env, timeout, verifies, artifacts}; timeout is an integer number of milliseconds and must be at least 1000 (for example 60000 for 60 seconds); use env: [\"PATH\"] for every target whose program or script resolves host tools by name. Fuzz additionally requires seed, cases, reproduction_artifact; trace additionally requires workload and oracle. Each hidden_tests entry is {id, path, content, program, args, cwd, env, timeout, verifies, seed} with the same millisecond timeout rule, and args may use {hidden_test}; hidden tests that resolve host tools also require PATH in env. Every verifies list must include ${module.id}. Hidden test content is returned in the result and must not be written into Git. Each implementation or evidence-driven repair turn retains the Agent runtime's required hard ${implementationMaxIterations}-iteration maxIterations guard. Finish discovery by iteration 80, create the implementation and all four non-hidden test kinds by iteration 480, and run the local build plus proposed commands by iteration 760. Batch independent Read/Write/Bash calls in the same response. Do not call submit_result with failed, partial, or blocked status: those statuses are rejected as repairable tool errors and do not finish the run. Keep repairing within the same thread, verify that every proposed command path exists, and submit a complete passed result by the iteration-${implementationSubmissionCheckpoint} checkpoint. A rejected checkpoint restores the full tool set through iteration ${implementationLastRepairIteration}; iteration ${implementationMaxIterations} is reserved for the corrected structured resubmission. Do not spend more than ten iterations on one unchanged failure: fix its cause, use a simpler Spec-compliant design, or move to another independent required file before returning with new evidence. Do not spend iterations investigating harmless output formatting after the declared oracle passes. VOS will independently run the build and every existing and proposed non-hidden target before applying anything. Do not edit specs, .git, .vos, or worktrees.`;
     let taskPrompt = `${initialPrompt}\nImplement only operations and behavior explicitly declared by the target ModuleSpec. Do not implement another newly declared ModuleSpec even when a committed SpecPatch makes its owned paths writable; cross-module access exists only for the smallest integration edit required by this target. Scope every proposed test and hidden test to this target and already-implemented dependencies, never to a sibling module that has not landed yet. Do not add adjacent later-stage operations merely because a reference OS commonly includes them; choose the smallest complete composition that satisfies the current Spec. Prefer WriteFiles to create a related implementation or test-file batch in one tool call. A missing implementation or test file is not an external blocker: create it with the available tools and do not submit failed merely because owned work remains. Hidden-test content must be self-contained in each hidden_tests entry; hidden args may reference only {hidden_test} and scalar flags or seeds, so do not create or retain hidden-test source, driver, support, or oracle files in the Git worktree. Do not run git commit, amend, merge, rebase, reset, checkout, switch, or otherwise modify Git history; VOS owns the final atomic commit and deterministically squashes any accidental temporary-worktree commits. Keep disposable build intermediates under an owned ignored output directory; do not edit .gitignore.`;
     taskPrompt += `\nThe hard maxIterations value is ${implementationMaxIterations}. Iteration ${implementationSubmissionCheckpoint} is the structured submission checkpoint. If it is rejected, iterations ${implementationSubmissionCheckpoint + 1}-${implementationLastRepairIteration} restore the full tool set for repair and iteration ${implementationMaxIterations} requires the corrected submission.`;
+    taskPrompt += `\nThe structured result must propose every stable target ID declared by this ModuleSpec and not already present in vos.yaml: ${JSON.stringify(requiredTargetIds)}.`;
     let threadId: string | undefined;
     const projectedTargetIds = new Set<string>();
     while (true) {
@@ -2397,7 +2399,7 @@ export async function executeAgentImplement(
         });
       }
       try {
-        implementation = parseStudentImplementationPayload(agentResult.parsedResult, module.id, bundle);
+        implementation = parseStudentImplementationPayload(agentResult.parsedResult, module.id, bundle, requiredTargetIds);
       } catch (error) {
         validation = {
           status: "validation_failed",
@@ -2663,7 +2665,7 @@ function boundedRunnerFailure(result: Record<string, unknown>): Record<string, u
   };
 }
 
-function parseStudentImplementationPayload(value: unknown, moduleId: string, bundle: NormalizedSpecBundle): StudentImplementationPayload {
+function parseStudentImplementationPayload(value: unknown, moduleId: string, bundle: NormalizedSpecBundle, requiredTargetIds: readonly string[] = []): StudentImplementationPayload {
   if (!isRecord(value) || typeof value.status !== "string" || !Array.isArray(value.test_targets) || !Array.isArray(value.hidden_tests)) {
     throw new AgentOutputError("student implementation result must include test_targets and hidden_tests");
   }
@@ -2679,6 +2681,10 @@ function parseStudentImplementationPayload(value: unknown, moduleId: string, bun
   for (const target of testTargets) {
     if (targetIds.has(target.id)) throw new AgentOutputError(`duplicate proposed test target id: ${target.id}`);
     targetIds.add(target.id);
+  }
+  const missingDeclaredTargets = requiredTargetIds.filter((id) => !targetIds.has(id));
+  if (missingDeclaredTargets.length > 0) {
+    throw new AgentOutputError(`implementation result omitted declared stable target IDs: ${missingDeclaredTargets.join(", ")}`);
   }
   for (const kind of ["public", "contract", "fuzz", "trace"] as const) {
     if (!testTargets.some((target) => target.kind === kind)) throw new AgentOutputError(`implementation must propose at least one ${kind} target`);
@@ -2708,6 +2714,33 @@ function parseStudentImplementationPayload(value: unknown, moduleId: string, bun
   if (hiddenTests.length === 0) throw new AgentOutputError("implementation must generate at least one local hidden test");
   if (new Set(hiddenTests.map((item) => item.id)).size !== hiddenTests.length) throw new AgentOutputError("hidden test ids must be unique");
   return { status: value.status, test_targets: testTargets, hidden_tests: hiddenTests };
+}
+
+function studentDeclaredTargetIds(
+  module: NormalizedSpecBundle["normalized_modules"][number],
+  existingTargetIds: readonly string[],
+): string[] {
+  const existing = new Set(existingTargetIds);
+  const prefixes = [...new Set([module.id, module.module]
+    .map((value) => value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""))
+    .filter(Boolean)
+    .map((value) => `${value}_`))];
+  const declared = new Set<string>();
+  const collect = (value: string | undefined): void => {
+    if (!value) return;
+    for (const token of value.match(/[a-z][a-z0-9_]*/g) ?? []) {
+      if (prefixes.some((prefix) => token.startsWith(prefix)) && !existing.has(token)) declared.add(token);
+    }
+  };
+  for (const property of [...module.properties, ...module.invariants]) {
+    collect(property.check);
+    collect(property.text);
+  }
+  for (const operation of module.operations) {
+    for (const check of operation.public_tests) collect(check);
+    for (const text of operation.invariants_preserved) collect(text);
+  }
+  return [...declared].sort();
 }
 
 function parseStudentTestTarget(raw: unknown, index: number, moduleId: string, stableRefs: Set<string>): StudentTestTargetProposal {
@@ -3170,7 +3203,10 @@ async function isCommittedSpecPatch(projectRoot: string, patch: SpecPatchRecord,
   if (!commitSha) return false;
   const result = await runCommand({ command: ["git", "merge-base", "--is-ancestor", commitSha, "HEAD"], cwd: projectRoot });
   if (result.exitCode !== 0) return false;
-  return !(await isSpecPatchConsumed(projectRoot, commitSha, patch.affected_modules));
+  const matchingModules = patch.affected_modules.filter((affected) =>
+    modules.some((module) => Boolean(module && (affected === module || moduleMatches(affected, module))))
+  );
+  return !(await isSpecPatchConsumed(projectRoot, commitSha, matchingModules));
 }
 
 async function isSpecPatchConsumed(projectRoot: string, patchCommit: string, affectedModules: readonly string[]): Promise<boolean> {
