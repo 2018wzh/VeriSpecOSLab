@@ -203,32 +203,19 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
     throwIfAborted(signal);
-    const finalSubmissionTurn = iteration === maxIterations
-      && requiredCompletionTool
-      && !completionToolAccepted;
-    const submissionPhase = Boolean(finalSubmissionTurn);
-    const completionRepairTurn = completionRepairPending && !submissionPhase;
+    const completionRepairTurn = completionRepairPending;
     if (completionRepairTurn) completionRepairPending = false;
     if (completionRepairTurn && requiredCompletionTool) {
       messages.push({
         role: "user",
-        content: `The previous ${requiredCompletionTool} call was rejected. Continue correcting the implementation or structured payload with the full allowed tool set. Preserve the validation error exactly and do not abandon the task. You may use the remaining repair turns; VOS reserves the final iteration for a required corrected resubmission.`,
-      });
-    }
-    if (submissionPhase) {
-      messages.push({
-        role: "user",
-        content: `This is the final allowed iteration. Call ${requiredCompletionTool} now with the corrected result supported by the completed work. Do not call any other tool.`,
+        content: `The previous ${requiredCompletionTool} call was rejected. Continue correcting the implementation or structured payload with the full allowed tool set. Preserve the validation error exactly and do not abandon the task. Submit again as soon as the corrected work is complete.`,
       });
     }
     const message = await chat.chat({
       model,
       reasoningEffort,
       messages,
-      tools: submissionPhase
-        ? tools.filter((tool) => tool.function.name === requiredCompletionTool)
-        : tools,
-      ...(submissionPhase && requiredCompletionTool ? { requiredTool: requiredCompletionTool } : {}),
+      tools,
       responseFormat,
       ...(signal ? { signal } : {}),
       ...(streamAssistant && onEvent
@@ -270,20 +257,10 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       return { content: message.content, messages, iterations: iteration };
     }
 
-    if (iteration === maxIterations) {
-      if (!requiredCompletionTool) {
-        throw new Error(
-          `agent loop reached max iterations (${maxIterations}) before tool calls could be completed`,
-        );
-      }
-      const completionCalls = toolCalls.filter((call) =>
-        call.type === "function" && call.function.name === requiredCompletionTool
+    if (iteration === maxIterations && !requiredCompletionTool) {
+      throw new Error(
+        `agent loop reached max iterations (${maxIterations}) before tool calls could be completed`,
       );
-      if (completionCalls.length === 0) {
-        throw new Error(
-          `agent loop reached max iterations (${maxIterations}) before tool calls could be completed`,
-        );
-      }
     }
 
     for (const call of toolCalls) {
@@ -323,8 +300,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       return { content: message.content, messages, iterations: iteration };
     }
     if (iteration === maxIterations) {
-      await onEvent?.({ type: "agent.done", iteration, content: message.content });
-      return { content: message.content, messages, iterations: iteration };
+      throw new Error(
+        `agent loop reached max iterations (${maxIterations}) without an accepted required completion tool result from ${requiredCompletionTool}`,
+      );
     }
   }
   throw new Error(`agent loop exceeded max iterations (${maxIterations})`);

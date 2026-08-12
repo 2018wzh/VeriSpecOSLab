@@ -188,10 +188,10 @@ Full test guide: [docs/testing.md](docs/testing.md).
   actually ran it.
 - The agent loop has `maxIterations` (default 50). Student implementation
   tasks set a 1000-iteration hard limit at the `vos-core` call site. There is no
-  fixed first-submission checkpoint: the structured completion tool remains
-  available on every normal turn, rejected payloads restore the full repair
-  tools in the same thread, and only iteration 1000 forces a corrected
-  submission. Do not remove the final guard.
+  fixed submission checkpoint: the structured completion tool and normal
+  allowed tools remain available on every turn, and rejected payloads restore
+  the full repair tools in the same thread. Reaching the limit without an
+  accepted submission fails the run. Do not remove the runaway-loop guard.
 - Disposable implementation worktrees use the original student project as the
   Agent configuration root. Keep `.vos/config.toml` and `.env` out of the
   worktree; pass the resolved provider, model, endpoint, and credential mapping

@@ -232,7 +232,7 @@ describe("runAgent", () => {
     expect(calls).toEqual([]);
   });
 
-  test("uses the final iteration for the required completion tool", async () => {
+  test("accepts the required completion tool on the last available iteration", async () => {
     const { tool, calls } = recordingTool("Submit", ["accepted"]);
     const chat = new ScriptedChatClient([
       toolCallResponse([{ name: "Submit", args: { status: "done" } }]),
@@ -249,11 +249,8 @@ describe("runAgent", () => {
     expect(result.iterations).toBe(1);
     expect(calls).toHaveLength(1);
     expect(chat.requests[0].tools.map((entry) => entry.function.name)).toEqual(["Submit"]);
-    expect(chat.requests[0].requiredTool).toBe("Submit");
-    expect(chat.requests[0].messages.at(-1)).toMatchObject({
-      role: "user",
-      content: expect.stringContaining("final allowed iteration"),
-    });
+    expect(chat.requests[0].requiredTool).toBeUndefined();
+    expect(chat.requests[0].messages.at(-1)).toMatchObject({ role: "user", content: "implement" });
   });
 
   test("keeps normal tools available until the model submits completed work", async () => {
@@ -308,7 +305,7 @@ describe("runAgent", () => {
     });
   }
 
-  test("reserves the final iteration to correct a rejected completion payload", async () => {
+  test("allows a corrected completion payload on the last available iteration", async () => {
     const { tool, calls } = recordingTool("Submit", ["validation error: seed must be integer", "accepted"]);
     const chat = new ScriptedChatClient([
       toolCallResponse([{ name: "Submit", args: { seed: "42" } }]),
@@ -327,7 +324,7 @@ describe("runAgent", () => {
     expect(calls).toHaveLength(2);
     expect(chat.requests[1].messages.at(-1)).toMatchObject({
       role: "user",
-      content: expect.stringContaining("final allowed iteration"),
+      content: expect.stringContaining("previous Submit call was rejected"),
     });
   });
 
@@ -356,7 +353,7 @@ describe("runAgent", () => {
       role: "user",
       content: expect.stringContaining("previous Submit call was rejected"),
     });
-    expect(chat.requests[2].tools.map((entry) => entry.function.name)).toEqual(["Submit"]);
+    expect(chat.requests[2].tools.map((entry) => entry.function.name)).toEqual(["Write", "Submit"]);
   });
 
   test("keeps all intervening turns available for repair before final resubmission", async () => {
@@ -383,8 +380,8 @@ describe("runAgent", () => {
     expect(writes).toHaveLength(3);
     expect(chat.requests[2].requiredTool).toBeUndefined();
     expect(chat.requests[3].requiredTool).toBeUndefined();
-    expect(chat.requests[4].requiredTool).toBe("Submit");
-    expect(chat.requests[4].tools.map((entry) => entry.function.name)).toEqual(["Submit"]);
+    expect(chat.requests[4].requiredTool).toBeUndefined();
+    expect(chat.requests[4].tools.map((entry) => entry.function.name)).toEqual(["Write", "Submit"]);
   });
 
   test("allows multiple full-tool repair turns before a corrected submission", async () => {
@@ -434,6 +431,27 @@ describe("runAgent", () => {
     expect(result.iterations).toBe(1);
     expect(submissions).toHaveLength(1);
     expect(writes).toHaveLength(1);
+  });
+
+  test("fails at maxIterations when no required completion result is accepted", async () => {
+    const { tool: workTool, calls: workCalls } = recordingTool("Work", ["OK"]);
+    const { tool: submitTool } = recordingTool("Submit", []);
+    const chat = new ScriptedChatClient([
+      toolCallResponse([{ name: "Work", args: {} }]),
+    ]);
+
+    await expect(runAgent({
+      model: TEST_MODEL,
+      chat,
+      registry: new ToolRegistry([workTool, submitTool]),
+      prompt: "implement",
+      maxIterations: 1,
+      requiredCompletionTool: "Submit",
+    })).rejects.toThrow(/without an accepted required completion tool result/);
+
+    expect(workCalls).toHaveLength(1);
+    expect(chat.requests[0].tools.map((entry) => entry.function.name)).toEqual(["Work", "Submit"]);
+    expect(chat.requests[0].requiredTool).toBeUndefined();
   });
 
   test("prepends an optional system prompt", async () => {

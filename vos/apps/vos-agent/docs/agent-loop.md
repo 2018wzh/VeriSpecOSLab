@@ -92,6 +92,13 @@ runaway loops. If reached, the loop throws — the caller should treat
 this as a configuration or prompt issue, not a user-recoverable
 state.
 
+When a caller declares `requiredCompletionTool`, that structured tool stays
+available together with the other allowed tools on every iteration. There is
+no fixed submission checkpoint and no submission-only final iteration. A
+rejected payload is returned to the same model thread as tool output so the
+model can repair the work and resubmit. The loop succeeds only after the tool
+accepts a result; exhausting `maxIterations` without acceptance fails.
+
 ## Invariants the loop guarantees
 
 1. Every `assistant` message returned by `chat()` is appended to the
