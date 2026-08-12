@@ -3375,6 +3375,10 @@ async function restoreStudentImplementationRecovery(params: {
   try {
     const apply = await runCommand({ command: ["git", "apply", "--whitespace=nowarn", "-"], cwd: worktree, stdin: raw.patch });
     if (apply.exitCode !== 0) throw new CliError(apply.stderr.trim() || "recovery patch did not apply", "validation_failed", { run_id: params.runId });
+    // A previous run may have reached VOS-owned target projection before it
+    // failed. Recovery never trusts or reuses that manifest mutation: the
+    // resumed model must submit targets again and VOS projects them atomically.
+    await runStudentGit(worktree, ["restore", "--source", params.baseHead, "--", "vos.yaml"]);
     const changed = await studentChangedPaths(worktree, params.baseHead);
     const violations = changed.filter((target) => target !== "vos.yaml" && !isOwnedStudentPath(target, params.ownedPaths));
     if (violations.length > 0) {
