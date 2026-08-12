@@ -182,6 +182,9 @@ export class StarsTuiInteractiveView implements InteractiveView {
       case "model.usage":
         this.appendTranscript({ type: "usage", text: formatModelUsage(event) });
         break;
+      case "model.request":
+        this.busy = event.phase === "started";
+        break;
       case "agent.done":
         this.busy = false;
         this.refreshActiveTools();

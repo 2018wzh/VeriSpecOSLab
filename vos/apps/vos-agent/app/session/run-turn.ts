@@ -204,6 +204,15 @@ export async function runSessionTurn(
         });
       } else if (event.type === "model.usage") {
         await recordModelUsage(event.iteration, event.model, event.usage);
+      } else if (event.type === "model.request") {
+        await onEvent?.({
+          type: "model.request",
+          thread_id: thread.id,
+          iteration: event.iteration,
+          model: event.model,
+          phase: event.phase,
+          ...(event.elapsedMs === undefined ? {} : { elapsedMs: event.elapsedMs }),
+        });
       } else if (event.type === "context.compacted") {
         await onEvent?.({
           type: "context.compacted",

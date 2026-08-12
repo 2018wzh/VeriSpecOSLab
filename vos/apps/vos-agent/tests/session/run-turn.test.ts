@@ -92,6 +92,8 @@ describe("runSessionTurn", () => {
     ]);
     expect(events).toEqual([
       "thread.created",
+      "model.request",
+      "model.request",
       "assistant.message",
       "agent.done",
       "thread.saved",
@@ -126,8 +128,10 @@ describe("runSessionTurn", () => {
     });
     expect(events).toEqual([
       "thread.created",
+      "model.request",
       "delta:stream",
       "delta:ing",
+      "model.request",
       "assistant.message",
       "agent.done",
       "thread.saved",

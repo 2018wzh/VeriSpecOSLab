@@ -577,9 +577,13 @@ describe("runAgent", () => {
     });
 
     expect(events).toEqual([
+      "model.request",
+      "model.request",
       "assistant.message",
       "tool.call",
       "tool.result",
+      "model.request",
+      "model.request",
       "assistant.message",
       "agent.done",
     ]);
@@ -608,11 +612,36 @@ describe("runAgent", () => {
     });
 
     expect(events).toEqual([
+      "model.request",
       "delta:he",
       "delta:llo",
+      "model.request",
       "assistant.message",
       "agent.done",
     ]);
+  });
+
+  test("times out an unresponsive provider request and records its lifecycle", async () => {
+    const chat = new CallbackChatClient(async (request) => {
+      await new Promise<void>((_resolve, reject) => {
+        request.signal?.addEventListener("abort", () => reject(request.signal?.reason), { once: true });
+      });
+      return textResponse("unreachable");
+    });
+    const phases: string[] = [];
+
+    await expect(runAgent({
+      model: TEST_MODEL,
+      chat,
+      registry: new ToolRegistry(),
+      prompt: "go",
+      requestTimeoutMs: 20,
+      onEvent(event) {
+        if (event.type === "model.request") phases.push(event.phase);
+      },
+    })).rejects.toThrow("model provider request timed out after 20ms");
+
+    expect(phases).toEqual(["started", "timed_out"]);
   });
 
   test("does not request provider streaming unless explicitly enabled", async () => {
@@ -697,7 +726,8 @@ describe("runAgent", () => {
       signal: controller.signal,
     });
 
-    expect(seenChatSignal).toBe(controller.signal);
+    expect(seenChatSignal).toBeDefined();
+    expect(seenChatSignal?.aborted).toBe(false);
     expect(seenToolSignal).toBe(controller.signal);
   });
 

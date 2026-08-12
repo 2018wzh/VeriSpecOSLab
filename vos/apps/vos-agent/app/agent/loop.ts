@@ -116,6 +116,8 @@ export interface RunAgentOptions {
   signal?: AbortSignal;
   /** Context-usage driven transcript compaction. Enabled by default. */
   contextCompaction?: ContextCompactionSetting;
+  /** Hard ceiling for one provider round-trip, not for the whole agent run. */
+  requestTimeoutMs?: number;
 }
 
 export type AgentEvent =
@@ -146,6 +148,13 @@ export type AgentEvent =
       iteration: number;
       model: string;
       usage: ChatUsage;
+    }
+  | {
+      type: "model.request";
+      iteration: number;
+      model: string;
+      phase: "started" | "completed" | "timed_out";
+      elapsedMs?: number;
     }
   | {
       type: "context.compacted";
@@ -190,11 +199,15 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     onEvent,
     signal,
     contextCompaction,
+    requestTimeoutMs = 300_000,
   } = opts;
   if (!Number.isInteger(maxIterations) || maxIterations < 1) {
     throw new Error(
       `maxIterations must be a positive integer, got ${maxIterations}`,
     );
+  }
+  if (!Number.isInteger(requestTimeoutMs) || requestTimeoutMs < 1) {
+    throw new Error(`requestTimeoutMs must be a positive integer, got ${requestTimeoutMs}`);
   }
   throwIfAborted(signal);
 
@@ -263,26 +276,43 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         content: `The previous ${requiredCompletionTool} call was rejected. Continue correcting the implementation or structured payload with the full allowed tool set. Preserve the validation error exactly and do not abandon the task. Submit again as soon as the corrected work is complete.`,
       });
     }
-    const message = await chat.chat({
+    const requestStartedAt = Date.now();
+    await onEvent?.({ type: "model.request", iteration, model, phase: "started" });
+    let message: OpenAI.Chat.ChatCompletionMessage;
+    try {
+      message = await chatWithTimeout(chat, {
+        model,
+        reasoningEffort,
+        messages,
+        tools,
+        responseFormat,
+        ...(streamAssistant && onEvent
+          ? {
+              onEvent: async (event) => {
+                if (event.type === "text.delta" && event.delta.length > 0) {
+                  await onEvent({ type: "assistant.delta", iteration, delta: event.delta });
+                }
+              },
+            }
+          : {}),
+        onUsage: async (usage) => {
+          lastInputTokens = usage.inputTokens ?? lastInputTokens;
+          await onEvent?.({ type: "model.usage", iteration, model, usage });
+        },
+      }, signal, requestTimeoutMs);
+    } catch (error) {
+      const elapsedMs = Date.now() - requestStartedAt;
+      if (isProviderRequestTimeout(error)) {
+        await onEvent?.({ type: "model.request", iteration, model, phase: "timed_out", elapsedMs });
+      }
+      throw error;
+    }
+    await onEvent?.({
+      type: "model.request",
+      iteration,
       model,
-      reasoningEffort,
-      messages,
-      tools,
-      responseFormat,
-      ...(signal ? { signal } : {}),
-      ...(streamAssistant && onEvent
-        ? {
-            onEvent: async (event) => {
-              if (event.type === "text.delta" && event.delta.length > 0) {
-                await onEvent({ type: "assistant.delta", iteration, delta: event.delta });
-              }
-            },
-          }
-        : {}),
-      onUsage: async (usage) => {
-        lastInputTokens = usage.inputTokens ?? lastInputTokens;
-        await onEvent?.({ type: "model.usage", iteration, model, usage });
-      },
+      phase: "completed",
+      elapsedMs: Date.now() - requestStartedAt,
     });
     messages.push(message);
     await onEvent?.({ type: "assistant.message", iteration, message });
@@ -355,6 +385,35 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     }
   }
   throw new Error(`agent loop exceeded max iterations (${maxIterations})`);
+}
+
+const PROVIDER_REQUEST_TIMEOUT = Symbol("provider-request-timeout");
+
+async function chatWithTimeout(
+  chat: ChatClient,
+  request: Omit<ChatRequest, "signal">,
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+): Promise<OpenAI.Chat.ChatCompletionMessage> {
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timer = setTimeout(() => controller.abort(PROVIDER_REQUEST_TIMEOUT), timeoutMs);
+  try {
+    return await chat.chat({ ...request, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.reason === PROVIDER_REQUEST_TIMEOUT) {
+      throw new Error(`model provider request timed out after ${timeoutMs}ms`, { cause: error });
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", abortFromCaller);
+  }
+}
+
+function isProviderRequestTimeout(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith("model provider request timed out after ");
 }
 
 function isAcceptedCompletionResult(result: string): boolean {

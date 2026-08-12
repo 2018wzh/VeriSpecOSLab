@@ -129,6 +129,11 @@ export function renderSessionEvent(
     return [formatModelUsage(event)];
   }
 
+  if (event.type === "model.request") {
+    const elapsed = event.elapsedMs === undefined ? "" : ` after ${event.elapsedMs}ms`;
+    return [`model request ${event.phase} (iteration ${event.iteration})${elapsed}`];
+  }
+
   if (event.type === "agent.done") {
     return [`turn complete after ${event.iteration} iteration(s)`];
   }

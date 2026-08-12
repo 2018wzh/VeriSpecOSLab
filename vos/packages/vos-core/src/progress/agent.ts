@@ -93,6 +93,19 @@ export function progressUpdateFromAgentEvent(
     }
     return { stage: fallbackStage, status: "running", message: "agent reasoning" };
   }
+  if (type === "model.request") {
+    const phase = readString(event.phase);
+    const iteration = typeof event.iteration === "number" ? event.iteration : undefined;
+    if (phase === "timed_out") {
+      return { stage: fallbackStage, status: "blocked", message: `model request${iteration ? ` ${iteration}` : ""} timed out` };
+    }
+    if (phase === "started") {
+      return { stage: fallbackStage, status: "running", message: `waiting for model${iteration ? ` (iteration ${iteration})` : ""}` };
+    }
+    if (phase === "completed") {
+      return { stage: fallbackStage, status: "running", message: `model response received${iteration ? ` (iteration ${iteration})` : ""}` };
+    }
+  }
   if (type === "tool.call") {
     const name = readString(event.name);
     if (name === PROGRESS_MCP_TOOL_NAME) {

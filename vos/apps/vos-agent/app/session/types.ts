@@ -137,6 +137,14 @@ export type SessionEvent =
       iteration: number;
     } & ModelUsageEvent)
   | {
+      type: "model.request";
+      thread_id: string;
+      iteration: number;
+      model: string;
+      phase: "started" | "completed" | "timed_out";
+      elapsedMs?: number;
+    }
+  | {
       type: "context.compacted";
       thread_id: string;
       iteration: number;
