@@ -149,21 +149,23 @@ vos agent <subcommand>
 
 Command responsibilities:
 
-- `vos agent context` and `vos agent log` are deterministic and should not
-  call the model.
-- `vos agent plan`, `vos agent generate`, and `vos agent debug` use
-  versioned fixed prompts and schema-checked outputs.
-- `vos agent generate` returns a patch proposal by default; it does not
-  apply files directly.
-- `vos agent apply-patch` is gated by policy, spec binding, allowed paths,
-  impact analysis, and the minimum validation DAG.
+- `vos agent ask` discusses concepts and trade-offs without changing project
+  files.
+- `vos agent review` runs deterministic lint first and then returns
+  schema-checked Spec findings without changing the project.
+- `vos agent debug` and `vos agent verify` are read-only diagnostic roles.
+- `vos agent implement <module>` is the only student code-generation entry.
+  It writes in a detached worktree, submits a structured implementation and
+  test-target result, and lands only after deterministic ownership and gate
+  checks pass.
 
-Course mode must not expose free `Bash`, `Write`, or `Edit` tools to the
-model. Hidden tests, staff-only rubrics, and other students' code must not
-enter the `ContextBundle`.
-When `vos-cli` calls `vos-agent/headless` for `agent plan`, `agent generate`,
-or `agent debug`, it enables `courseMode` and passes `.vos/policy.yaml`
-`allowed_commands` as the `Vos` tool whitelist.
+All student profiles may use `Bash` for evidence collection. Read-only roles
+must not change project files; VOS checks the Git tree before and after each
+run. The implementation profile may also use `Write` and `Edit`, but only in
+its disposable worktree. These prompt and Git checks are not a host security
+boundary: commands inherit the current user, network, credentials, and access
+to files outside the repository. Hidden tests, staff-only rubrics, and other
+students' code must not enter the projected task context.
 
 Interactive slash commands:
 
@@ -195,10 +197,11 @@ mode:
 All expected tool failures are returned as strings so the model can
 repair its next step instead of crashing the loop.
 
-Course-runtime mode should expose a narrower registry: read-only context
-tools plus a policy-checked `Vos` tool. File writes and shell execution
-must go through `vos agent apply-patch` and runtime validation, not direct
-model tool calls.
+Course-runtime mode selects tools from the fixed task profile. Read-only
+profiles retain `Bash` but are checked for project-tree changes. Implementation
+runs receive write tools only inside a detached worktree; their structured
+result is still subject to deterministic schema, owns, HEAD, build, and test
+validation before VOS creates the final commit.
 
 ## Layout
 

@@ -274,13 +274,13 @@ const TOOL_PROFILE_TOOLS: Record<ToolProfile, readonly string[]> = {
 };
 
 const TOOL_PROFILE_VOS_COMMANDS: Record<ToolProfile, readonly string[]> = {
-  "readonly-routing": ["help", "spec lint", "arch lint"],
-  "readonly-spec": ["spec lint", "arch lint"],
-  "readonly-codegen": ["spec lint", "arch lint", "build", "verify public"],
-  "readonly-validation": ["spec lint", "arch lint", "build", "verify public", "run qemu"],
-  "readonly-diagnosis": ["spec lint", "build", "verify public", "run qemu"],
-  "student-implementation": ["spec lint", "arch lint", "build", "verify public", "run qemu"],
-  "readonly-debug": ["build", "verify public", "run qemu"],
+  "readonly-routing": ["help", "spec lint"],
+  "readonly-spec": ["spec lint"],
+  "readonly-codegen": ["spec lint", "build", "verify", "run qemu"],
+  "readonly-validation": ["spec lint", "build", "verify", "run qemu"],
+  "readonly-diagnosis": ["spec lint", "build", "verify", "run qemu"],
+  "student-implementation": ["spec lint", "build", "verify", "run qemu"],
+  "readonly-debug": ["build", "verify", "run qemu"],
   "readonly-doctor": ["spec lint", "build"],
   "readonly-reference": [],
 };
@@ -495,10 +495,9 @@ function commandIntent(command: string): string {
   const args = command.trim().replace(/^vos\s+/, "").split(/\s+/).filter(Boolean);
   if (args.length === 0) return "";
   if (args[0] === "spec" && args[1] === "lint") return "spec lint";
-  if (args[0] === "arch" && args[1] === "lint") return "arch lint";
   if (args[0] === "build") return "build";
   if (args[0] === "run" && args[1] === "qemu") return "run qemu";
-  if (args[0] === "verify" && args[1] === "public") return "verify public";
+  if (args[0] === "verify" && (args.length === 1 || args[1]?.startsWith("--"))) return "verify";
   if (args[0] === "help") return "help";
   return args.join(" ");
 }

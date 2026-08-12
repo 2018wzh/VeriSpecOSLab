@@ -57,7 +57,6 @@ export interface AgentTaskRequest {
   extraMcpServers?: readonly McpServerConfig[];
   structuredOutput?: boolean;
   requiredCompletionTool?: string;
-  completionReserveIterations?: number;
   toolPolicy?: ToolPolicy;
   chat?: ChatClient;
   env?: Record<string, string | undefined>;
@@ -279,7 +278,6 @@ export async function runAgentTask(
     requiredCompletionTool: structuredOutputEnabled
       ? structuredOutputTool.name
       : options.requiredCompletionTool,
-    completionReserveIterations: options.completionReserveIterations,
     streamAssistant: options.streamAssistant ?? false,
     signal: options.signal,
     onEvent: async (event) => {

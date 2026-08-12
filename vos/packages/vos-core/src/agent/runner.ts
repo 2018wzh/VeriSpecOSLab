@@ -70,7 +70,6 @@ export async function runAgentWithPrompt(params: {
   mode?: string;
   threadId?: string;
   maxIterations?: number;
-  completionReserveIterations?: number;
   disabledTools?: string[];
   courseMode?: boolean;
   toolPolicy?: ToolPolicy;
@@ -104,7 +103,6 @@ export async function runAgentWithPrompt(params: {
     mode: params.mode,
     threadId: params.threadId,
     maxIterations: params.maxIterations,
-    completionReserveIterations: params.completionReserveIterations,
     disabledTools: params.disabledTools,
     courseMode: params.courseMode,
     toolPolicy: params.toolPolicy,

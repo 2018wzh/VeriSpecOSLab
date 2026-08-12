@@ -256,7 +256,7 @@ describe("runAgent", () => {
     });
   });
 
-  test("starts a configured completion reserve with a required tool choice", async () => {
+  test("keeps normal tools available until the model submits completed work", async () => {
     const { tool, calls } = recordingTool("Submit", ["accepted"]);
     const chat = new ScriptedChatClient([
       toolCallResponse([{ name: "Write", args: { file_path: "x" } }]),
@@ -269,16 +269,44 @@ describe("runAgent", () => {
       registry: new ToolRegistry([writeTool, tool]),
       prompt: "implement",
       maxIterations: 4,
-      completionReserveIterations: 3,
       requiredCompletionTool: "Submit",
     });
 
     expect(result.iterations).toBe(2);
     expect(calls).toHaveLength(1);
     expect(chat.requests[0].requiredTool).toBeUndefined();
-    expect(chat.requests[1].requiredTool).toBe("Submit");
-    expect(chat.requests[1].tools.map((entry) => entry.function.name)).toEqual(["Submit"]);
+    expect(chat.requests[1].requiredTool).toBeUndefined();
+    expect(chat.requests[1].tools.map((entry) => entry.function.name)).toEqual(["Write", "Submit"]);
   });
+
+  for (const submitIteration of [20, 120, 500]) {
+    test(`accepts a state-driven structured submission at iteration ${submitIteration}`, async () => {
+      const { tool: workTool } = recordingTool("Work", Array.from({ length: submitIteration - 1 }, () => "OK"));
+      const { tool: submitTool, calls } = recordingTool("Submit", ["accepted"]);
+      const responses = Array.from({ length: submitIteration - 1 }, () =>
+        toolCallResponse([{ name: "Work", args: {} }])
+      );
+      responses.push(toolCallResponse([{ name: "Submit", args: { status: "passed" } }]));
+      const chat = new ScriptedChatClient(responses);
+
+      const result = await runAgent({
+        model: TEST_MODEL,
+        chat,
+        registry: new ToolRegistry([workTool, submitTool]),
+        prompt: "implement",
+        maxIterations: 1000,
+        requiredCompletionTool: "Submit",
+      });
+
+      expect(result.iterations).toBe(submitIteration);
+      expect(calls).toHaveLength(1);
+      expect(chat.requests[submitIteration - 1].requiredTool).toBeUndefined();
+      expect(chat.requests[submitIteration - 1].tools.map((entry) => entry.function.name)).toEqual([
+        "Work",
+        "Submit",
+      ]);
+    });
+  }
 
   test("reserves the final iteration to correct a rejected completion payload", async () => {
     const { tool, calls } = recordingTool("Submit", ["validation error: seed must be integer", "accepted"]);
@@ -317,7 +345,6 @@ describe("runAgent", () => {
       registry: new ToolRegistry([writeTool, submitTool]),
       prompt: "implement",
       maxIterations: 3,
-      completionReserveIterations: 3,
       requiredCompletionTool: "Submit",
     });
 
@@ -332,7 +359,7 @@ describe("runAgent", () => {
     expect(chat.requests[2].tools.map((entry) => entry.function.name)).toEqual(["Submit"]);
   });
 
-  test("keeps all intervening reserve turns available for repair before final resubmission", async () => {
+  test("keeps all intervening turns available for repair before final resubmission", async () => {
     const { tool: submitTool, calls: submissions } = recordingTool("Submit", ["validation error", "accepted"]);
     const { tool: writeTool, calls: writes } = recordingTool("Write", ["OK", "OK", "OK"]);
     const chat = new ScriptedChatClient([
@@ -348,7 +375,6 @@ describe("runAgent", () => {
       registry: new ToolRegistry([writeTool, submitTool]),
       prompt: "implement",
       maxIterations: 5,
-      completionReserveIterations: 4,
       requiredCompletionTool: "Submit",
     });
 
@@ -361,7 +387,7 @@ describe("runAgent", () => {
     expect(chat.requests[4].tools.map((entry) => entry.function.name)).toEqual(["Submit"]);
   });
 
-  test("allows multiple full-tool repair turns before the final submission reserve", async () => {
+  test("allows multiple full-tool repair turns before a corrected submission", async () => {
     const { tool: submitTool, calls: submissions } = recordingTool("Submit", ["validation error", "accepted"]);
     const { tool: writeTool, calls: writes } = recordingTool("Write", ["OK", "OK"]);
     const chat = new ScriptedChatClient([
@@ -376,7 +402,6 @@ describe("runAgent", () => {
       registry: new ToolRegistry([writeTool, submitTool]),
       prompt: "implement",
       maxIterations: 5,
-      completionReserveIterations: 2,
       requiredCompletionTool: "Submit",
     });
 

@@ -102,8 +102,6 @@ export interface RunAgentOptions {
   responseFormat?: unknown;
   /** Keep the turn open until this tool has been called at least once. */
   requiredCompletionTool?: string;
-  /** Number of trailing iterations in which VOS probes once for a structured submission and reserves the final turn for resubmission. */
-  completionReserveIterations?: number;
   /** Existing transcript to continue. Copied before mutation. */
   history?: OpenAI.Chat.ChatCompletionMessageParam[];
   /** When true, ask capable providers to emit assistant text deltas. */
@@ -174,7 +172,6 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     system,
     responseFormat,
     requiredCompletionTool,
-    completionReserveIterations = 2,
     history,
     streamAssistant = false,
     onEvent,
@@ -192,7 +189,6 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     throw new Error(`required completion tool is unavailable: ${requiredCompletionTool}`);
   }
   let completionToolAccepted = false;
-  let completionToolAttempted = false;
   let completionRepairPending = false;
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = history
     ? [...history]
@@ -210,11 +206,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     const finalSubmissionTurn = iteration === maxIterations
       && requiredCompletionTool
       && !completionToolAccepted;
-    const initialSubmissionTurn = iteration >= Math.max(1, maxIterations - completionReserveIterations + 1)
-      && requiredCompletionTool
-      && !completionToolAccepted
-      && !completionToolAttempted;
-    const submissionPhase = Boolean(finalSubmissionTurn || initialSubmissionTurn);
+    const submissionPhase = Boolean(finalSubmissionTurn);
     const completionRepairTurn = completionRepairPending && !submissionPhase;
     if (completionRepairTurn) completionRepairPending = false;
     if (completionRepairTurn && requiredCompletionTool) {
@@ -226,9 +218,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     if (submissionPhase) {
       messages.push({
         role: "user",
-        content: iteration === maxIterations
-          ? `This is the final allowed iteration. Call ${requiredCompletionTool} now with the corrected result supported by the completed work. Do not call any other tool.`
-          : `The submission checkpoint has started. Call ${requiredCompletionTool} now with the best complete result supported by the work already performed. Do not call any other tool. If validation rejects the payload, all intervening iterations restore the full tool set for repair and the final iteration requires a corrected resubmission.`,
+        content: `This is the final allowed iteration. Call ${requiredCompletionTool} now with the corrected result supported by the completed work. Do not call any other tool.`,
       });
     }
     const message = await chat.chat({
@@ -321,7 +311,6 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         content: result,
       });
       if (call.function.name === requiredCompletionTool) {
-        completionToolAttempted = true;
         if (isAcceptedCompletionResult(result)) {
           completionToolAccepted = true;
         } else {

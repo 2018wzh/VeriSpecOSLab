@@ -5,6 +5,7 @@ import {
   createProfileToolPolicy,
   publicAgentTaskProfile,
   resolveAgentTaskProfile,
+  resolveProfileVosCommands,
 } from "../../app/agent/profiles.ts";
 import { outputSchemaForId } from "../../app/agent/output-schemas.ts";
 import { resolveBuiltInSkills } from "../../app/skills/index.ts";
@@ -162,6 +163,27 @@ describe("agent task profiles", () => {
     expect(await allowed(policy, "Bash")).toBe(true);
     expect(await allowed(policy, "Vos", { command: "build" })).toBe(true);
     expect(await allowed(policy, "Vos", { command: "run qemu" })).toBe(true);
+  });
+
+  test("student profiles expose only current public VOS command intents", () => {
+    const implementation = resolveAgentTaskProfile({ taskKind: "implementation" });
+    expect(resolveProfileVosCommands(implementation, undefined)).toEqual([
+      "spec lint",
+      "build",
+      "verify",
+      "run qemu",
+    ]);
+    expect(resolveProfileVosCommands(implementation, [
+      "vos spec lint all",
+      "vos arch lint",
+      "vos verify public",
+      "vos verify",
+      "vos run qemu",
+    ])).toEqual([
+      "vos spec lint all",
+      "vos verify",
+      "vos run qemu",
+    ]);
   });
 
   test("every read-only and code-generation profile exposes Bash with an explicit read-only boundary", async () => {

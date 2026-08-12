@@ -154,7 +154,7 @@ const result = await runAgentTask({
   requestedScope: "agent.debug",
   task: "Explain why the latest QEMU run failed.",
   contextRefs: [".vos/runs/latest/manifest.json"],
-  allowedVosCommands: ["build", "verify public", "run qemu"],
+  allowedVosCommands: ["build", "verify", "run qemu"],
   courseMode: true,
 });
 
@@ -310,8 +310,8 @@ Interactive profile REPL behavior:
 
 ### `startReadonlyAgentDisplay(options)`
 
-Starts a display-only flow view for deterministic wrappers such as
-`vos agent plan -i` or `vos agent generate -i`. It does not run a model,
+Starts a display-only flow view for a deterministic wrapper around an Agent
+task. It does not run a model,
 read input, accept prompts, or execute slash commands. Callers push progress
 and session events into the returned handle:
 
@@ -320,10 +320,10 @@ import { startReadonlyAgentDisplay } from "vos-agent/headless";
 
 const display = startReadonlyAgentDisplay({
   projectRoot: "/path/to/project",
-  title: "agent plan -i",
+  title: "agent review",
 });
 
-display.progress({ stage: "agent plan", status: "running", message: "building context" });
+display.progress({ stage: "agent review", status: "running", message: "building context" });
 display.command("waiting for agent");
 display.close();
 ```
@@ -411,7 +411,7 @@ curl -s http://127.0.0.1:8787/api/v1/agent/tasks \
     "user_id": "student-demo",
     "task_kind": "debug",
     "task": "Explain the latest boot failure.",
-    "allowed_vos_commands": ["build", "verify public", "run qemu"]
+    "allowed_vos_commands": ["build", "verify", "run qemu"]
   }'
 ```
 
@@ -532,21 +532,23 @@ The frontend should not know or send VOS internal role names.
 
 Current command mapping:
 
-| CLI command          | Task kind |
-|----------------------|-----------|
-| `vos agent plan`     | `plan`    |
-| `vos agent generate` | `codegen` |
-| `vos agent debug`    | `debug`   |
+| CLI command                    | Task kind                |
+|--------------------------------|--------------------------|
+| `vos agent ask`                | `knowledgebase_qa`       |
+| `vos agent review`             | `spec_review`            |
+| `vos agent implement <module>` | `codegen`                |
+| `vos agent debug`              | `debug`                  |
+| `vos agent verify`             | `student_verify_review` |
 
-Finite commands may pass `-i` to show the same package-level flow in a
-readonly TUI. `vos agent ask -i` and no-argument `vos agent debug` keep their
-fixed-profile REPL behavior instead.
+`vos agent review -i` gives a complete first review and then keeps the fixed
+read-only profile open for follow-up questions. `vos agent ask -i` and
+no-argument `vos agent debug` likewise keep their fixed-profile REPL behavior.
 
 The deterministic CLI wrapper still owns:
 
 - `ContextBundle` construction.
 - Policy and allowed-path collection.
-- Patch application and validation gates.
+- Detached-worktree landing and validation gates.
 - Evidence and `AICollaborationLog` writes.
 
 The model never becomes the patch gate. It returns a structured proposal
@@ -560,9 +562,9 @@ course runs, `courseMode` defaults to `true`.
 
 Course mode:
 
-- Allows read/search tools plus task-approved `Vos` commands.
-- Hides direct `Write` and `Edit`.
-- Uses `Vos` instead of free shell execution.
+- Allows read/search tools, `Bash`, and task-approved `Vos` commands.
+- Hides direct `Write` and `Edit` from read-only profiles. The student
+  implementation profile receives them only in its detached worktree.
 - Intersects project policy commands with internal command intent.
 - Blocks recursive `vos agent ...` calls through the `Vos` tool.
 - Exposes built-in `project-context` MCP tools only as bounded read-only
@@ -573,10 +575,10 @@ Course mode:
 
 Examples:
 
-- `task_kind: "debug"` may use `build`, `verify public`, and `run qemu`
+- `task_kind: "debug"` may use `build`, `verify`, and `run qemu`
   if the project policy also allows those intents.
-- `task_kind: "codegen"` may use `spec lint`, `arch lint`, `build`,
-  and `verify public`.
+- `task_kind: "codegen"` may use `spec lint`, `build`, `verify`, and
+  `run qemu` according to the caller policy.
 - `task_kind: "explain_concept"` is reference-focused and does not
   expose `Vos` by default.
 
@@ -625,7 +627,7 @@ await runAgentTask({
   taskKind: "debug",
   task: logText,
   evidenceRefs: [logRef],
-  allowedVosCommands: ["build", "verify public", "run qemu"],
+  allowedVosCommands: ["build", "verify", "run qemu"],
 });
 ```
 
@@ -643,16 +645,16 @@ await runAgentTask({
 });
 ```
 
-### Spec-bound codegen
+### Spec-bound implementation task
 
 ```ts
 await runAgentTask({
   projectRoot,
   taskKind: "codegen",
-  task: "Generate the syscall stage patch proposal.",
+  task: "Implement the committed kernel/syscall ModuleSpec in this detached worktree.",
   context: contextBundle,
   allowedPaths: contextBundle.allowed_paths,
   policyFlags: contextBundle.policy_flags,
-  allowedVosCommands: ["spec lint", "arch lint", "build", "verify public"],
+  allowedVosCommands: ["spec lint", "build", "verify", "run qemu"],
 });
 ```
