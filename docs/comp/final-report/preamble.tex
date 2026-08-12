@@ -1,0 +1,127 @@
+\usepackage[a4paper,top=2.6cm,bottom=2.6cm,left=2.7cm,right=2.7cm,headheight=15pt]{geometry}
+\usepackage{fontspec}
+\usepackage{xeCJK}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{makecell}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{pifont}
+\usepackage{tcolorbox}
+\usepackage{xurl}
+\usepackage{hyperref}
+\usepackage{bookmark}
+
+\definecolor{VosNavy}{HTML}{17324D}
+\definecolor{VosBlue}{HTML}{2F6690}
+\definecolor{VosCyan}{HTML}{3A9FBF}
+\definecolor{VosGreen}{HTML}{2D7D5B}
+\definecolor{VosAmber}{HTML}{B7791F}
+\definecolor{VosRed}{HTML}{B23A48}
+\definecolor{VosInk}{HTML}{1F2933}
+\definecolor{VosMuted}{HTML}{5B6873}
+\definecolor{VosPaper}{HTML}{F5F8FA}
+\definecolor{VosLine}{HTML}{CFD8E3}
+\definecolor{CodeBg}{HTML}{F6F8FA}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=black,
+  urlcolor=blue!55!black,
+  pdftitle={VeriSpecOSLab 决赛技术报告},
+  pdfauthor={Glenda 团队},
+  pdfsubject={规格驱动的操作系统实验 AI 协作与证据平台},
+}
+
+\graphicspath{{build/figures/}{figures/}}
+
+\ctexset{
+  chapter={
+    format=\raggedright\bfseries\Huge,
+    name={第,章},
+    number=\chinese{chapter},
+    beforeskip=0pt,
+    afterskip=26pt,
+  },
+  section={format=\Large\bfseries},
+  subsection={format=\large\bfseries},
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small VeriSpecOSLab 技术报告}
+\fancyhead[R]{\small\leftmark}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\emergencystretch=2em
+\linespread{1.18}
+\setlist[itemize]{leftmargin=2em,itemsep=0.25em,topsep=0.35em}
+\setlist[enumerate]{leftmargin=2.25em,itemsep=0.25em,topsep=0.35em}
+\captionsetup{font=small,labelfont=bf,labelsep=quad}
+\setcounter{tocdepth}{2}
+\setcounter{secnumdepth}{3}
+
+\lstdefinestyle{vos}{
+  backgroundcolor=\color{black!3},
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  framerule=0.4pt,
+  rulecolor=\color{black!25},
+  keywordstyle=\bfseries,
+  commentstyle=\color{black!60},
+  stringstyle=\color{black},
+  numbers=none,
+  showstringspaces=false,
+  tabsize=2,
+  xleftmargin=0.6em,
+  xrightmargin=0.2em,
+  aboveskip=0.8em,
+  belowskip=0.8em,
+}
+\lstset{style=vos}
+
+\newtcolorbox{keybox}[1][核心结论]{
+  colback=black!2,
+  colframe=black!55,
+  coltitle=white,
+  fonttitle=\bfseries,
+  title=#1,
+  arc=1mm,
+  boxrule=0.7pt,
+}
+
+\newtcolorbox{evidencebox}[1][证据]{
+  colback=black!2,
+  colframe=black!55,
+  coltitle=white,
+  fonttitle=\bfseries,
+  title=#1,
+  arc=1mm,
+  boxrule=0.7pt,
+}
+
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\yes}{\textcolor{VosGreen}{\ding{51}}}
+\newcommand{\no}{\textcolor{VosRed}{\ding{55}}}
+\newcommand{\pending}{\textcolor{VosAmber}{\ding{115}}}
+\newcommand{\ReportVersion}{2026.08}
+\newcommand{\ReportDate}{2026 年 8 月}

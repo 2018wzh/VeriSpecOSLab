@@ -1,0 +1,69 @@
+\chapter{规格文件与字段速查}
+
+\section{学生项目最小树}
+
+\begin{lstlisting}[language={}]
+my-os/
+|-- .gitignore
+|-- vos.yaml
+`-- spec/
+    |-- design.yaml
+    |-- modules/
+    |   `-- toolchain.yaml
+    |-- interfaces/      # 按需
+    |-- goals/           # 可选
+    `-- patches/         # 手写语义变化
+\end{lstlisting}
+
+\code{vos init} 创建符合规格入口约定的最小文件树。学生随后根据课程目标填写 DesignSpec 和 ModuleSpec，并按需增加接口、扩展目标与跨模块修改说明。内核代码由这些设计与规格逐步展开。
+
+\section{字段矩阵}
+
+\begin{longtable}{@{}p{3.5cm}p{4cm}p{6.9cm}@{}}
+  \toprule
+  文档 & 必需核心字段 & 语义 \\
+  \midrule
+  \endfirsthead
+  \toprule
+  文档 & 必需核心字段 & 语义 \\
+  \midrule
+  \endhead
+  DesignSpec & system、machine、kernel、hardware\_port & 唯一系统设计。另有 required\_mechanisms、composition\_invariants（最多 3）和 non\_goals \\
+  ModuleSpec & id、module、level、purpose、owns & 接口、性质、错误和分级状态/并发契约。未知字段拒绝 \\
+  InterfaceSpec & id、name、boundary、operations & syscall、IPC、driver、ABI 或 other 跨边界操作 \\
+  GoalSpec & id、objective & 按需填写 metric/oracle 与 correctness。只放可验证的扩展目标 \\
+  SpecPatch & id、reason、changes & 手写架构/跨模块语义变化。可声明 new\_invariants \\
+  \code{vos.yaml} & version、build、runners、checks & \code{vos.project.v1} 课程运行配置。check 通过 verifies 关联 Spec ID \\
+  \bottomrule
+\end{longtable}
+
+\section{命令目标 schema}
+
+\begin{table}[htbp]
+  \centering
+  \begin{tabularx}{\textwidth}{p{3.2cm}p{2.4cm}X}
+    \toprule
+    字段 & 必需性 & 约束 \\
+    \midrule
+    program & 必需 & 非空可执行程序名，禁止填写 shell 片段 \\
+    args & 默认空 & 字符串数组，每个 argv 独立 \\
+    cwd & 可选 & 仓库相对路径，不得为绝对路径或包含 \code{..} 穿越 \\
+    env & 默认空 & 环境变量名白名单，不直接在 manifest 写秘密值 \\
+    timeout & 可选 & 正整数毫秒 \\
+    artifacts & build/runner 可选 & 仓库相对产物路径，不得穿越 \\
+    verifies & check 必需语义 & 稳定 Spec ID 列表，用于相关验证选择 \\
+    \makecell[l]{board/serial/\\workload} & hardware 可选 & 写入 evidence。敏感串口值导出时净化 \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\section{状态语义}
+
+\begin{description}
+  \item[passed] 确定性命令和 oracle 通过。不自动提升 hardware 人工状态。
+  \item[validation\_failed] schema、规格、构建或 check 未满足。
+  \item[policy\_blocked] clean HEAD、owns、凭据/策略或 HEAD 漂移门禁阻止操作。
+  \item[timed\_out] 命令到达超时。若已命中 ready oracle，启动子结论可单独记录。
+  \item[pending\_human\_review] 硬件自动记录完成，仍等待人工确认。
+  \item[non-submittable] 开发态 evidence 与 clean HEAD/归档条件不一致。
+\end{description}

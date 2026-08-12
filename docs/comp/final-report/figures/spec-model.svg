@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="800" viewBox="0 0 1400 800">
+  <defs>
+    <style>
+      .title{font:700 34px 'Noto Sans CJK SC','PingFang SC',sans-serif;fill:#17324D}
+      .h{font:700 22px 'Noto Sans CJK SC','PingFang SC',sans-serif;fill:#17324D}
+      .t{font:17px 'Noto Sans CJK SC','PingFang SC',sans-serif;fill:#334E68}
+      .s{font:14px 'Noto Sans CJK SC','PingFang SC',sans-serif;fill:#5B6873}
+      .box{fill:#F5F8FA;stroke:#2F6690;stroke-width:2.3;rx:15}
+      .core{fill:#EAF4FA;stroke:#17324D;stroke-width:3;rx:18}
+      .patch{fill:#FFF8E8;stroke:#B7791F;stroke-width:2.3;rx:15}
+      .exec{fill:#EFF9F4;stroke:#2D7D5B;stroke-width:2.3;rx:15}
+      .arrow{stroke:#2F6690;stroke-width:2.6;fill:none;marker-end:url(#arrow)}
+      .dash{stroke:#B7791F;stroke-width:2.6;fill:none;stroke-dasharray:8 6;marker-end:url(#amber)}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#2F6690"/></marker>
+    <marker id="amber" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#B7791F"/></marker>
+  </defs>
+  <rect width="1400" height="800" fill="white"/>
+  <text x="700" y="56" text-anchor="middle" class="title">五类规格与课程运行配置</text>
+
+  <rect x="510" y="105" width="380" height="180" class="core"/>
+  <text x="700" y="150" text-anchor="middle" class="h">spec/design.yaml</text>
+  <text x="700" y="183" text-anchor="middle" class="t">唯一 DesignSpec</text>
+  <text x="700" y="216" text-anchor="middle" class="s">系统目标 · 语言 · ISA · 内核组织 · QEMU</text>
+  <text x="700" y="242" text-anchor="middle" class="s">canonical board · 硬件移植 · 组合不变量（≤3）</text>
+
+  <rect x="70" y="360" width="285" height="190" class="box"/>
+  <text x="212" y="404" text-anchor="middle" class="h">modules/*.yaml</text>
+  <text x="212" y="440" text-anchor="middle" class="t">ModuleSpec L1 / L2 / L3</text>
+  <text x="212" y="474" text-anchor="middle" class="s">操作 · 性质 · 错误 · owns</text>
+  <text x="212" y="500" text-anchor="middle" class="s">状态 · 并发 · rely/guarantee · 算法意图</text>
+
+  <rect x="390" y="360" width="285" height="190" class="box"/>
+  <text x="532" y="404" text-anchor="middle" class="h">interfaces/*.yaml</text>
+  <text x="532" y="440" text-anchor="middle" class="t">InterfaceSpec</text>
+  <text x="532" y="474" text-anchor="middle" class="s">syscall · IPC · 驱动边界</text>
+  <text x="532" y="500" text-anchor="middle" class="s">用户/内核 ABI 与跨模块引用</text>
+
+  <rect x="710" y="360" width="285" height="190" class="box"/>
+  <text x="852" y="404" text-anchor="middle" class="h">goals/*.yaml</text>
+  <text x="852" y="440" text-anchor="middle" class="t">GoalSpec（按需）</text>
+  <text x="852" y="474" text-anchor="middle" class="s">性能 · 兼容性 · 形式化目标</text>
+  <text x="852" y="500" text-anchor="middle" class="s">不替代模块与接口契约</text>
+
+  <rect x="1030" y="360" width="300" height="190" class="patch"/>
+  <text x="1180" y="404" text-anchor="middle" class="h">patches/*.yaml</text>
+  <text x="1180" y="440" text-anchor="middle" class="t">SpecPatch（手写）</text>
+  <text x="1180" y="474" text-anchor="middle" class="s">架构或跨模块语义变化</text>
+  <text x="1180" y="500" text-anchor="middle" class="s">显式影响范围与验证检查</text>
+
+  <rect x="390" y="635" width="620" height="110" class="exec"/>
+  <text x="700" y="676" text-anchor="middle" class="h">vos.yaml：构建、QEMU、开发板与测试步骤</text>
+  <text x="700" y="710" text-anchor="middle" class="s">执行程序 · 参数 · 工作目录 · 环境变量 · 最长时间 · 产物 · 验收的 Spec ID</text>
+
+  <path d="M590 285 C510 320 300 320 230 352" class="arrow"/>
+  <path d="M650 285 C620 320 565 320 540 352" class="arrow"/>
+  <path d="M750 285 C790 320 825 320 845 352" class="arrow"/>
+  <path d="M810 285 C920 320 1080 320 1160 352" class="dash"/>
+  <path d="M212 550 C270 610 480 610 560 627" class="arrow"/>
+  <path d="M532 550 C550 600 620 610 650 627" class="arrow"/>
+  <path d="M1180 550 C1120 610 950 610 850 627" class="dash"/>
+
+  <text x="90" y="590" class="s">确定性检查：schema、引用、路径、等级与 owns</text>
+  <text x="1035" y="590" class="s">SpecPatch 扩展实施影响域，但必须已提交</text>
+</svg>

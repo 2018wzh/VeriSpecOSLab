@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1450" height="760" viewBox="0 0 1450 760">
+  <defs>
+    <style>
+      .title{font:700 34px 'Noto Sans CJK SC','PingFang SC',sans-serif;fill:#17324D}
+      .h{font:700 20px 'Noto Sans CJK SC','PingFang SC',sans-serif;fill:#17324D}
+      .t{font:16px 'Noto Sans CJK SC','PingFang SC',sans-serif;fill:#334E68}
+      .s{font:14px 'Noto Sans CJK SC','PingFang SC',sans-serif;fill:#5B6873}
+      .box{fill:#F5F8FA;stroke:#2F6690;stroke-width:2.3;rx:14}
+      .hash{fill:#EFF9F4;stroke:#2D7D5B;stroke-width:2.3;rx:14}
+      .submit{fill:#FFF8E8;stroke:#B7791F;stroke-width:2.3;rx:14}
+      .arrow{stroke:#2F6690;stroke-width:2.6;fill:none;marker-end:url(#arrow)}
+      .chain{stroke:#2D7D5B;stroke-width:3;fill:none;marker-end:url(#green)}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#2F6690"/></marker>
+    <marker id="green" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#2D7D5B"/></marker>
+  </defs>
+  <rect width="1450" height="760" fill="white"/>
+  <text x="725" y="55" text-anchor="middle" class="title">从命令执行到报告与提交</text>
+
+  <rect x="65" y="125" width="250" height="160" class="box"/>
+  <text x="190" y="168" text-anchor="middle" class="h">课程运行配置</text>
+  <text x="190" y="205" text-anchor="middle" class="t">程序、参数和工作目录</text>
+  <text x="190" y="235" text-anchor="middle" class="t">环境变量范围和最长时间</text>
+  <text x="190" y="264" text-anchor="middle" class="s">从 vos.yaml 读取</text>
+
+  <rect x="375" y="125" width="250" height="160" class="box"/>
+  <text x="500" y="168" text-anchor="middle" class="h">执行与判断</text>
+  <text x="500" y="205" text-anchor="middle" class="t">编译、测试、QEMU、开发板</text>
+  <text x="500" y="235" text-anchor="middle" class="t">输出、错误信息和产物</text>
+  <text x="500" y="264" text-anchor="middle" class="s">检查退出状态与约定输出</text>
+
+  <rect x="685" y="125" width="250" height="160" class="box"/>
+  <text x="810" y="168" text-anchor="middle" class="h">保存运行记录</text>
+  <text x="810" y="205" text-anchor="middle" class="t">运行事件与执行状态</text>
+  <text x="810" y="235" text-anchor="middle" class="t">命令、日志和产物</text>
+  <text x="810" y="264" text-anchor="middle" class="s">运行编号与代码版本</text>
+
+  <path d="M315 205 H367" class="arrow"/>
+  <path d="M625 205 H677" class="arrow"/>
+
+  <rect x="1010" y="105" width="375" height="200" class="hash"/>
+  <text x="1197" y="148" text-anchor="middle" class="h">连续哈希审计链</text>
+  <rect x="1042" y="184" width="85" height="68" rx="10" fill="white" stroke="#2D7D5B"/>
+  <rect x="1155" y="184" width="85" height="68" rx="10" fill="white" stroke="#2D7D5B"/>
+  <rect x="1268" y="184" width="85" height="68" rx="10" fill="white" stroke="#2D7D5B"/>
+  <text x="1084" y="214" text-anchor="middle" class="s">Rₙ₋₂</text>
+  <text x="1084" y="237" text-anchor="middle" class="s">摘要</text>
+  <text x="1197" y="214" text-anchor="middle" class="s">Rₙ₋₁</text>
+  <text x="1197" y="237" text-anchor="middle" class="s">衔接摘要</text>
+  <text x="1310" y="214" text-anchor="middle" class="s">Rₙ</text>
+  <text x="1310" y="237" text-anchor="middle" class="s">衔接摘要</text>
+  <path d="M1127 218 H1147" class="chain"/>
+  <path d="M1240 218 H1260" class="chain"/>
+  <path d="M935 205 H1002" class="chain"/>
+
+  <rect x="230" y="400" width="350" height="180" class="box"/>
+  <text x="405" y="445" text-anchor="middle" class="h">vos report</text>
+  <text x="405" y="483" text-anchor="middle" class="t">读取代码提交和规格编号</text>
+  <text x="405" y="513" text-anchor="middle" class="t">汇总测试、日志和运行记录</text>
+  <text x="405" y="545" text-anchor="middle" class="s">不调用模型，不改动项目代码</text>
+
+  <rect x="665" y="400" width="400" height="180" class="submit"/>
+  <text x="865" y="445" text-anchor="middle" class="h">vos submit</text>
+  <text x="865" y="483" text-anchor="middle" class="t">归档当前已提交代码</text>
+  <text x="865" y="513" text-anchor="middle" class="t">绑定代码、规格和配置摘要</text>
+  <text x="865" y="545" text-anchor="middle" class="s">检查审计链，遮蔽凭据与本机路径</text>
+
+  <rect x="1150" y="400" width="235" height="180" class="hash"/>
+  <text x="1267" y="445" text-anchor="middle" class="h">验收结论</text>
+  <text x="1267" y="483" text-anchor="middle" class="t">QEMU：自动检查</text>
+  <text x="1267" y="513" text-anchor="middle" class="t">开发板：等待复核</text>
+  <text x="1267" y="545" text-anchor="middle" class="s">人工复核</text>
+
+  <path d="M1197 305 C1120 355 520 345 435 392" class="chain"/>
+  <path d="M580 490 H657" class="arrow"/>
+  <path d="M1065 490 H1142" class="arrow"/>
+
+  <text x="725" y="665" text-anchor="middle" class="h">可提交结果要求运行记录完整、审计链有效、代码版本一致、项目文件均已提交</text>
+  <text x="725" y="700" text-anchor="middle" class="s">开发中的编译和运行可用于调试，正式验证需要先提交当前 Lab 的全部文件</text>
+</svg>

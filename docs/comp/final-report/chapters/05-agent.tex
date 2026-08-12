@@ -1,0 +1,96 @@
+\chapter{Agent 协作流程与实现}
+
+\section{公开角色与学生责任}
+
+学生通过一个 Agent Runtime 使用五个角色。角色名称直接对应实验任务，模型 Provider 和具体 profile 由项目配置与任务类型决定。
+
+\begin{table}[htbp]
+  \centering
+  \caption{学生可见 Agent 角色}
+  \label{tab:agent-roles}
+  \begin{tabularx}{\textwidth}{p{2.5cm}p{3.0cm}X}
+    \toprule
+    角色 & 项目权限 & 主要工作 \\
+    \midrule
+    ask & 只读问答 & 讨论体系结构、内核机制和课程资料，在使用知识库时给出来源 \\
+    review & 只读评审 & 先执行 lint，再检查目标规格、相关规格和测试映射 \\
+    implement & 临时工作树内写入 & 实现目标模块，生成测试并提交结构化结果 \\
+    debug & 只读诊断 & 阅读最近运行记录，说明根因、证据和修复方向 \\
+    verify & 只读检查 & 汇总公开测试、契约和 Spec ID 覆盖情况 \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\code{agent config} 是模型设置命令。它记录 Provider、模型、base URL 和凭据环境变量名。聊天模型与知识库 embedding 分别配置，课程可以独立选择两类服务。当前实现支持 Anthropic、OpenAI、DeepSeek、Ollama 等主流服务提供商，也可以接入第三方 API。
+
+\section{从问答到手写规格}
+
+学生设计阶段采用一条清晰循环：
+
+\begin{center}
+\textbf{讨论} $\rightarrow$ \textbf{学生手写 Spec} $\rightarrow$ \textbf{spec lint} $\rightarrow$ \textbf{agent review} $\rightarrow$ \textbf{学生修改并提交}
+\end{center}
+
+\code{agent ask} 提供概念解释和方案比较。\code{spec lint} 用确定性程序检查 schema、引用、路径、等级和验证映射。\code{agent review} 读取 lint 结果、目标规格、相关模块与 \code{verifies} 关系，返回可以定位到具体字段的评审意见。三个命令都保留学生文件原状。学生根据讨论和评审亲手修改规格，并决定何时形成 Git 提交。
+
+这条流程使 AI 参与设计讨论，同时让课程能够直接检查学生写下的系统方案、模块契约和接口选择。规格提交也成为后续实现的明确起点。
+
+\section{Provider 与结构化结果}
+
+Provider 层处理不同模型服务的请求协议、模型名称和凭据映射。角色 profile 定义任务提示、可用工具、读取范围和输出 schema。二者分离后，课程更换模型时仍然使用相同的 \code{owns}、测试字段和验证门禁。
+
+需要机器处理的结果通过 MCP 提交工具交付。工具先验证 JSON schema，再检查路径、Spec ID、测试类型和任务状态。验证错误会直接返回同一模型线程，模型可以继续读取文件、修改实现并重新提交。VOS 只采用通过工具验证的结构化结果。
+
+\section{实现事务}
+
+\code{vos agent implement <module>} 从已经提交的 ModuleSpec 开始。平台读取目标模块的 \code{owns}，再合并已提交 SpecPatch 声明的跨模块影响范围。图 \ref{fig:agent-transaction} 展示实现过程。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{agent-transaction.pdf}
+  \caption{Agent implement 的临时工作树与验证流程}
+  \label{fig:agent-transaction}
+\end{figure}
+
+实现通过条件可以写成：
+
+\begin{equation}
+  \begin{aligned}
+    land ={}& clean_{base} \land diff \subseteq P_{allowed} \land targets_{valid} \\
+            & {}\land build=pass \land checks_{module}=pass \land HEAD_{now}=HEAD_{base}
+  \end{aligned}
+\end{equation}
+
+平台在同一仓库中创建临时工作区，模型只在这个工作区内编写代码和测试。每轮完成后，VOS 通过 Git 检查实际修改的文件，确认它们都属于当前任务允许修改的范围。实现助手不能直接改写 \code{vos.yaml}，只能在返回结果中提出需要增加的测试任务。平台检查这些任务引用的规格、文件路径和执行命令后，再把通过检查的内容写入 \code{vos.yaml}。
+
+生成的代码通过编译、相关测试和修改范围检查后，平台在临时工作区创建一次 Git 提交，再把这次提交加入学生项目。提交中记录本次运行编号和规格摘要，学生可以从代码提交查到生成代码时采用的规格和验证结果。
+
+\section{实现与测试共同交付}
+
+实现助手的结果同时包含代码和五类测试材料：
+
+\begin{table}[htbp]
+  \centering
+  \caption{实现任务生成的测试材料}
+  \begin{tabularx}{\textwidth}{p{3.0cm}X}
+    \toprule
+    类型 & 课程用途 \\
+    \midrule
+    public & 检查学生和教师都能直接观察的功能行为 \\
+    contract & 检查 ModuleSpec、InterfaceSpec 中的前置条件、后置条件和错误行为 \\
+    fuzz & 使用固定 seed 和有限 cases 探索输入组合，并保存复现产物 \\
+    trace & 运行有界 workload，以明确 oracle 检查执行轨迹 \\
+    hidden & 作为本地补充验收材料，按模块与 Spec hash 保存，由 \code{verify --hidden} 执行 \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+每个测试目标都声明 program、args、cwd、env、timeout、verifies 和 artifacts。fuzz 额外记录 seed、cases 与 reproduction artifact。trace 额外记录 workload、oracle 和轨迹产物。平台在执行前检查命令输入和文件路径，再运行构建与全部目标。
+
+\section{同一线程中的验证修正}
+
+模型第一次提交的测试描述或实现可能因字段格式、文件路径、修改范围或编译测试未通过而收到诊断。运行时把相关错误信息返回同一 Agent 线程，并保留当前临时工作树。模型可以根据实际命令输出继续修正代码、测试与结构化结果。通过后的提交来自这一连续修正过程，相关事件一并进入本地审计记录。
+
+\section{只读角色}
+
+\code{agent debug} 读取最近一次失败运行的日志、命令和证据，给出根因、证据引用与修复方向。\code{agent verify} 汇总公开测试、契约和 Spec ID 覆盖。\code{agent review} 面向学生规格。\code{agent ask} 面向概念与课程资料。平台在这些角色运行前后检查 Git 状态，并在记录中保存会话与工具调用。

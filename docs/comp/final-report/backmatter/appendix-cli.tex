@@ -1,0 +1,73 @@
+\chapter{公开 CLI 契约}
+
+\section{安装与全局参数}
+
+当前支持的 CLI 安装方式是从本 checkout 链接：
+
+\begin{lstlisting}[language=bash]
+cd vos
+bun install --ignore-scripts
+cd apps/vos-cli
+bun link
+vos --help
+\end{lstlisting}
+
+全局参数包括 \code{--project-root}、\code{--json}、\code{--verbose} 和 \code{--progress}。\code{--json} 用于机器读取结果，\code{--verbose} 展示更完整运行细节。进度模式应根据 TTY/CI 使用，不能把动态终端控制码写入 JSON。
+
+\section{公开命令表}
+
+\begin{longtable}{p{5.9cm}p{8.5cm}}
+  \toprule
+  命令 & 语义 \\
+  \midrule
+  \endfirsthead
+  \toprule
+  命令 & 语义 \\
+  \midrule
+  \endhead
+  \code{vos init} & 在空项目创建最小规格文件、\code{.gitignore} 与初始提交，不生成内核骨架 \\
+  \code{vos doctor} & 检查项目、manifest、工具、配置和可执行入口，输出可行动诊断 \\
+  \code{vos spec lint [<目标>]} & 确定性检查 schema、引用、路径、等级与验证映射 \\
+  \code{vos agent config} & 设置、显示、检查或重置 Agent/embedding Provider 配置 \\
+  \code{vos agent ask [question]} & 结合当前项目与可选知识库回答课程和设计问题 \\
+  \code{vos agent review [<目标>] [-i]} & 只读评审学生手写的规格及其运行配置映射 \\
+  \code{vos agent implement <module>} & 在独立 worktree 生成实现和测试，通过检查后创建提交 \\
+  \code{vos agent debug} & 只读交互调试或基于运行 evidence 解释失败 \\
+  \code{vos agent verify} & 先执行确定性验证，再由只读助手检查证据与规格覆盖 \\
+  \code{vos kb add} & 添加本地、远程或 Git 来源，内容寻址并建立索引 \\
+  \code{vos kb list/search/remove/clear} & 管理和检索命令托管的知识来源 \\
+  \code{vos kb export-manifest} & 导出可复现来源清单 \\
+  \code{vos kb import-manifest <path>} & 按 revision/hash 导入来源清单 \\
+  \code{vos build} & 执行 \code{vos.yaml} 中记录的构建步骤并保存日志与产物 \\
+  \code{vos run qemu} & 执行结构化 QEMU target 并收集串口/产物证据 \\
+  \code{vos run hardware} & 执行硬件 target，结果固定等待人工复核 \\
+  \code{vos verify} & 执行规格检查、构建、公开测试、契约测试、固定种子 fuzz 和有限 trace 测试 \\
+  \code{vos report} & 从 commits、Spec ID、测试与 evidence 确定性生成报告 \\
+  \code{vos submit} & 验证 clean HEAD/audit/hash，净化并生成可复现提交归档 \\
+  \bottomrule
+\end{longtable}
+
+\section{学生主链示例}
+
+\begin{lstlisting}[language=bash]
+mkdir my-os && cd my-os
+git init
+vos init
+vos agent config
+vos doctor
+vos agent ask "Sv39 页表需要记录哪些不变量？"
+# 学生编写 spec/design.yaml 与 spec/modules/memory.yaml
+vos spec lint design
+vos spec lint kernel/memory
+vos agent review kernel/memory -i
+git add spec
+git commit -m "[spec][memory] Define virtual memory contract"
+vos agent implement kernel/memory
+vos build
+vos verify
+vos run qemu
+vos report
+vos submit
+\end{lstlisting}
+
+硬件实验按照 DesignSpec、\code{vos.yaml}、板卡和串口配置执行。平台保存镜像、串口日志、工作负载与提交版本，教学团队结合实际板卡现象完成复核。

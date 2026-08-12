@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="700" viewBox="0 0 1500 700">
+  <defs>
+    <style>
+      .title{font:700 34px 'Noto Sans CJK SC','PingFang SC',sans-serif;fill:#17324D}
+      .h{font:700 19px 'Noto Sans CJK SC','PingFang SC',sans-serif;fill:#17324D}
+      .s{font:14px 'Noto Sans CJK SC','PingFang SC',sans-serif;fill:#5B6873}
+      .box{fill:#F5F8FA;stroke:#2F6690;stroke-width:2.4;rx:15}
+      .gate{fill:#FFF8E8;stroke:#B7791F;stroke-width:2.4;rx:15}
+      .ok{fill:#EFF9F4;stroke:#2D7D5B;stroke-width:2.4;rx:15}
+      .fail{fill:#FFF2F2;stroke:#B23A48;stroke-width:2.4;rx:15}
+      .arrow{stroke:#2F6690;stroke-width:2.7;fill:none;marker-end:url(#arrow)}
+      .red{stroke:#B23A48;stroke-width:2.5;fill:none;marker-end:url(#red)}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#2F6690"/></marker>
+    <marker id="red" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#B23A48"/></marker>
+  </defs>
+  <rect width="1500" height="700" fill="white"/>
+  <text x="750" y="55" text-anchor="middle" class="title">Agent implement 的 Git 事务</text>
+
+  <rect x="55" y="150" width="175" height="130" class="gate"/>
+  <text x="142" y="190" text-anchor="middle" class="h">入口门禁</text>
+  <text x="142" y="224" text-anchor="middle" class="s">clean HEAD</text>
+  <text x="142" y="248" text-anchor="middle" class="s">目标模块存在</text>
+
+  <rect x="275" y="150" width="190" height="130" class="box"/>
+  <text x="370" y="190" text-anchor="middle" class="h">计算允许域</text>
+  <text x="370" y="224" text-anchor="middle" class="s">module.owns</text>
+  <text x="370" y="248" text-anchor="middle" class="s">+ committed SpecPatch</text>
+
+  <rect x="510" y="150" width="190" height="130" class="box"/>
+  <text x="605" y="190" text-anchor="middle" class="h">创建工作树</text>
+  <text x="605" y="224" text-anchor="middle" class="s">detached linked</text>
+  <text x="605" y="248" text-anchor="middle" class="s">worktree @ HEAD</text>
+
+  <rect x="745" y="150" width="190" height="130" class="box"/>
+  <text x="840" y="190" text-anchor="middle" class="h">模型执行</text>
+  <text x="840" y="224" text-anchor="middle" class="s">编写实现与测试</text>
+  <text x="840" y="248" text-anchor="middle" class="s">MCP 提交测试目标</text>
+
+  <rect x="980" y="150" width="190" height="130" class="gate"/>
+  <text x="1075" y="190" text-anchor="middle" class="h">确定性门禁</text>
+  <text x="1075" y="212" text-anchor="middle" class="s">diff ∈ owns</text>
+  <text x="1075" y="236" text-anchor="middle" class="s">target schema + build</text>
+  <text x="1075" y="260" text-anchor="middle" class="s">public / contract / fuzz / trace</text>
+
+  <rect x="1215" y="150" width="230" height="130" class="ok"/>
+  <text x="1330" y="190" text-anchor="middle" class="h">落地主工作树</text>
+  <text x="1330" y="218" text-anchor="middle" class="s">生成实现提交</text>
+  <text x="1330" y="242" text-anchor="middle" class="s">fast-forward + Run-ID</text>
+  <text x="1330" y="266" text-anchor="middle" class="s">+ Spec-Hash trailer</text>
+
+  <path d="M230 215 H267" class="arrow"/>
+  <path d="M465 215 H502" class="arrow"/>
+  <path d="M700 215 H737" class="arrow"/>
+  <path d="M935 215 H972" class="arrow"/>
+  <path d="M1170 215 H1207" class="arrow"/>
+
+  <rect x="505" y="430" width="665" height="140" class="fail"/>
+  <text x="837" y="470" text-anchor="middle" class="h" fill="#B23A48">任一门禁失败：拒绝落地并保留证据</text>
+  <text x="837" y="505" text-anchor="middle" class="s">主工作树未被失败补丁污染，临时工作树负责承载诊断和回滚</text>
+  <text x="837" y="534" text-anchor="middle" class="s">临时工作目录承载修改、构建与验证，学生当前目录保持稳定</text>
+  <path d="M1075 280 V421" class="red"/>
+
+  <rect x="175" y="615" width="1150" height="50" rx="12" fill="#17324D"/>
+  <text x="750" y="647" text-anchor="middle" font-family="'Noto Sans CJK SC','PingFang SC',sans-serif" font-size="17" fill="white">最终状态由补丁范围、测试目标、构建结果、验证结果与 Git 状态共同确定</text>
+</svg>

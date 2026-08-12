@@ -1,0 +1,43 @@
+\chapter{可复现知识库与引用机制}
+
+\section{知识来源为何也需要版本化}
+
+Agent 回答操作系统问题时，课程讲义、芯片手册、项目文档和外部资料会直接影响建议。如果只在提示词中写``参考某网页''，网页内容变化、Git 分支移动或本地文件被替换后，回答便无法复现。VeriSpecOSLab 把知识来源作为命令管理对象，通过 \code{vos kb add/list/search/remove/clear/export-manifest/import-manifest} 建立来源、内容和检索结果之间的对应。
+
+来源分为 course、project 和 external 三类，可来自本地路径、远程 URL 或 Git。每个来源具有稳定 ID、显示标题、内容地址和可选 stage scope。内容对象按 SHA-256 标识。Git 来源应固定 revision，远程来源在导入后以实际内容 hash 锁定。
+
+\section{摄取流水线}
+
+知识库添加操作包含以下阶段：
+
+\begin{enumerate}
+  \item 解析来源类型与访问位置，读取本地文件、下载远程对象或解析 Git 来源。
+  \item 计算原始内容 SHA-256，写入 \code{.vos/kb/objects/} 的内容寻址对象。
+  \item 根据文件类型抽取文本。实现覆盖纯文本/Markdown、HTML、PDF 和常见 Office 文档。
+  \item 依据标题和长度切分 chunk，保留 source ID、标题和 stage scope。
+  \item 若配置向量嵌入服务，调用对应的第三方 API，将文本转换为等维向量。
+  \item 将 chunk 元数据写入 SQLite，并通过 sqlite-vec 建立向量表。
+  \item 更新来源索引与 manifest，向统一进度 UI 报告读取、解析、切分和索引状态。
+\end{enumerate}
+
+向量维度在数据库首次创建时写入 metadata。更换 embedding Provider 或向量维度时，平台要求重建索引，使同一数据库中的向量始终来自一致的表示空间。
+
+\section{检索与引用}
+
+搜索结果 \code{KbSearchHit} 包含 chunk 内容、相似度和 \code{KbCitation}。Agent ask 注入 KB 时，回答必须能指向具体来源，单纯声称``根据知识库''不会被接受。引用可以进一步落到文件、URL、revision、content hash 和 chunk 标题，从而让学生回到原始上下文核查。
+
+embedding 配置与聊天 Agent 配置分离。\code{agent ask} 可以直接使用项目上下文，也可以在课程配置好 embedding 后检索知识库。独立配置使聊天模型和向量模型能够分别选择，并让 \code{doctor} 对两条链路分别检查。
+
+\section{manifest 导入导出}
+
+\code{export-manifest} 导出来源的逻辑清单，不导出凭据。\code{import-manifest} 按锁定信息重建来源。一个可复现 manifest 至少应包含来源 ID、kind、位置、revision（若适用）和 content hash。导入时如果实际内容与 hash 不符应拒绝，不能为了``方便''接受漂移内容。
+
+\section{资料授权与来源管理}
+
+教学团队在导入课程讲义、芯片手册、参考代码和外部资料时确认使用范围，并在来源清单中记录标题、位置、revision 和 content hash。使用远程模型或 embedding 服务时，课程可以按照资料政策选择相应 Provider。需要保留在本机的资料可以配合本地模型和离线索引使用。
+
+HTML、PDF 和 Office 文档在摄取阶段统一转换为文本对象，引用仍指向原始来源。知识库内容在 Agent 会话中作为参考资料使用，系统指令、课程规格和学生当前任务保持各自的优先级。
+
+\section{向量检索后端}
+
+向量检索使用 SQLite 与 sqlite-vec 保存 chunk 和 embedding。平台在初始化索引时记录扩展版本、向量维度和模型配置，并由 \code{vos doctor} 检查运行环境。source lock、内容对象和 manifest 与索引后端分离，因此课程资料可以在不同机器上按同一清单重新导入和建立索引。

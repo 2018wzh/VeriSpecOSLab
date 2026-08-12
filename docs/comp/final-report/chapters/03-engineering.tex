@@ -1,0 +1,38 @@
+\section{技术栈与代码规模}
+
+平台使用 TypeScript 和 Bun 实现。排除 \code{node\_modules} 后，\code{vos/} 下共有 338 个 TypeScript 文件、约 71,401 行，其中 127 个测试文件约 22,283 行，覆盖 CLI、Agent、共享包、Portal、Demo 和测试。
+
+\section{CLI 入口与命令执行}
+
+\code{vos-cli} 负责可执行入口和包契约。命令解析和类型化执行位于 \code{vos-core}，测试可以直接构造命令对象。课程部署从 \code{vos/apps/vos-cli} 执行 \code{bun link}，链接后的命令始终运行当前仓库中的代码，使开发、教学和复现使用同一版本。
+
+公开命令覆盖初始化与诊断、规格、Agent、知识库、构建、运行、验证、报告和提交。内部仍保留兼容类型与 Portal 命令解析测试，学生实际使用的命令以 \code{vos --help} 为准。
+
+\section{错误模型与进度事件}
+
+核心命令返回 \code{CommandOutcome} 和明确状态。验证失败、策略阻止执行、运行超时、用户取消和内部错误会在上层保持区分。进度界面根据 TTY、JSON、CI 和 \code{--progress} 选项决定是否渲染动态行。相同的底层进度也可以通过 MCP \code{report\_progress} 由 Agent 上报。
+
+结构化错误便于报告按真实原因汇总结果。例如，``工作树存在未提交改动''记为 \code{policy\_blocked}，不计作测试失败。``模型没有提交符合协议的结构化结果''属于 Agent 协议错误，也不计作内核构建失败。
+
+\section{配置解析与接口检查}
+
+规格、运行配置、Agent 配置、结果 schema 和 HTTP contract 默认拒绝未知字段。字段发生变化时，schema、测试和文档需要同步更新，拼写错误或版本差异会在解析阶段直接显示。\code{vos.yaml} 的版本结构、知识库来源、目标路径和 Agent 配置字段均有对应测试。
+
+配置中的凭据通过环境变量名引用，TOML 解析器负责检查字段和格式。Portal 与 Server 为每条 API 路由建立类型化 contract，并检查访问凭据和产物路径。
+
+\section{测试与构建组织}
+
+测试使用 Bun 内置 runner，并放在所属模块的测试目录中。测试覆盖以下层次：
+
+\begin{itemize}
+  \item schema 与 parser 单元测试，检查严格字段、YAML、TOML、路径和引用。
+  \item 流程约束测试，检查 clean HEAD、文件修改范围、SpecPatch、凭据与测试可见性。
+  \item 学生流程集成测试，覆盖初始化、手写规格检查与评审、临时实现目录、测试目标更新、构建、QEMU、验证、报告和提交。
+  \item Agent 协议测试，覆盖 Provider 配置、工具 profile、MCP 提交、循环上限和 TUI。
+  \item Portal 测试，覆盖接口契约、存储 adapter、鉴权和外部服务集成接口。
+  \item 课程历史审计，逐个标签检查提前出现的路径、ID、测试和术语。
+\end{itemize}
+
+PostgreSQL、Gitea、MinIO、OIDC、Docker 和真实模型分别具有独立的集成测试入口。fixture 与 fake runner 用于快速检查控制流程，配置相应服务后可以继续运行连通与端到端测试。
+
+workspace 的 \code{bun run build} 先检查应用引用关系，再分别构建 CLI、Agent、Demo 与 Portal。CLI 和 Agent 使用 Bun compile 生成本地可执行文件，Demo 和 Portal 使用 Vite 与 TypeScript。所有应用共同参加类型检查和构建。

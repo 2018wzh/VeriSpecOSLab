@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="820" viewBox="0 0 1400 820">
+  <defs>
+    <style>
+      .title{font:700 34px 'Noto Sans CJK SC','PingFang SC',sans-serif;fill:#17324D}
+      .h{font:700 23px 'Noto Sans CJK SC','PingFang SC',sans-serif;fill:#17324D}
+      .t{font:18px 'Noto Sans CJK SC','PingFang SC',sans-serif;fill:#334E68}
+      .s{font:15px 'Noto Sans CJK SC','PingFang SC',sans-serif;fill:#5B6873}
+      .box{fill:#F5F8FA;stroke:#2F6690;stroke-width:2.5;rx:16}
+      .green{fill:#EFF9F4;stroke:#2D7D5B;stroke-width:2.5;rx:16}
+      .amber{fill:#FFF8E8;stroke:#B7791F;stroke-width:2.5;rx:16}
+      .frozen{fill:#F7F7F7;stroke:#9AA6B2;stroke-width:2;stroke-dasharray:9 7;rx:16}
+      .arrow{stroke:#2F6690;stroke-width:3;fill:none;marker-end:url(#arrow)}
+      .thin{stroke:#7695AE;stroke-width:2;fill:none;marker-end:url(#arrow)}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#2F6690"/>
+    </marker>
+  </defs>
+  <rect width="1400" height="820" fill="white"/>
+  <text x="700" y="56" text-anchor="middle" class="title">VeriSpecOSLab 当前系统架构与学生主链</text>
+
+  <rect x="60" y="125" width="260" height="500" class="box"/>
+  <text x="190" y="170" text-anchor="middle" class="h">学生事实源</text>
+  <text x="88" y="218" class="t">DesignSpec</text>
+  <text x="88" y="260" class="t">ModuleSpec</text>
+  <text x="88" y="302" class="t">InterfaceSpec</text>
+  <text x="88" y="344" class="t">GoalSpec（按需）</text>
+  <text x="88" y="386" class="t">SpecPatch（手写）</text>
+  <line x1="88" y1="418" x2="290" y2="418" stroke="#CFD8E3"/>
+  <text x="88" y="460" class="t">实现代码与测试</text>
+  <text x="88" y="502" class="t">vos.yaml 运行配置</text>
+  <text x="88" y="550" class="s">规格决定允许修改的范围，</text>
+  <text x="88" y="575" class="s">运行配置声明程序、参数与环境。</text>
+
+  <rect x="390" y="125" width="270" height="500" class="green"/>
+  <text x="525" y="170" text-anchor="middle" class="h">vos CLI / Core</text>
+  <text x="420" y="220" class="t">初始化与诊断</text>
+  <text x="420" y="260" class="t">规格解析与检查</text>
+  <text x="420" y="300" class="t">Agent 角色路由</text>
+  <text x="420" y="340" class="t">构建与 Runner 编排</text>
+  <text x="420" y="380" class="t">证据、报告与提交</text>
+  <line x1="420" y1="416" x2="630" y2="416" stroke="#B9DCCB"/>
+  <text x="420" y="460" class="s">CLI 是薄入口，共享类型化逻辑</text>
+  <text x="420" y="486" class="s">位于 vos-core，执行原语位于</text>
+  <text x="420" y="512" class="s">vos-runtime。</text>
+
+  <rect x="730" y="125" width="270" height="225" class="box"/>
+  <text x="865" y="170" text-anchor="middle" class="h">Agent Runtime</text>
+  <text x="760" y="215" class="t">Provider 路由</text>
+  <text x="760" y="255" class="t">角色工具配置</text>
+  <text x="760" y="295" class="t">MCP 结构化结果</text>
+  <text x="760" y="326" class="s">问答 / 评审 / 实现 / 调试 / 验证</text>
+
+  <rect x="730" y="400" width="270" height="225" class="box"/>
+  <text x="865" y="445" text-anchor="middle" class="h">Runner 与 Evidence</text>
+  <text x="760" y="490" class="t">Host / QEMU / Hardware</text>
+  <text x="760" y="530" class="t">事件、日志、产物</text>
+  <text x="760" y="570" class="t">连续哈希审计链</text>
+  <text x="760" y="602" class="s">报告与归档均确定性生成</text>
+
+  <rect x="1070" y="125" width="270" height="225" class="amber"/>
+  <text x="1205" y="170" text-anchor="middle" class="h">验收环境</text>
+  <text x="1100" y="215" class="t">构建与公共测试</text>
+  <text x="1100" y="255" class="t">RISC-V QEMU</text>
+  <text x="1100" y="295" class="t">VisionFive 2 实机</text>
+  <text x="1100" y="326" class="s">硬件记录由教学团队复核</text>
+
+  <rect x="1070" y="400" width="270" height="225" class="frozen"/>
+  <text x="1205" y="445" text-anchor="middle" class="h" fill="#667582">Web 与演示应用</text>
+  <text x="1100" y="490" class="t">Portal API / Web / Worker</text>
+  <text x="1100" y="530" class="t">静态 Demo</text>
+  <text x="1100" y="575" class="s">保留 Portal API、Web UI、</text>
+  <text x="1100" y="600" class="s">worker 与独立静态 Demo。</text>
+
+  <path d="M320 375 H382" class="arrow"/>
+  <path d="M660 235 H722" class="arrow"/>
+  <path d="M660 500 H722" class="arrow"/>
+  <path d="M1000 238 H1062" class="arrow"/>
+  <path d="M1000 512 H1062" class="thin" stroke-dasharray="8 7"/>
+  <path d="M865 350 V392" class="arrow"/>
+
+  <rect x="60" y="690" width="1280" height="82" rx="14" fill="#17324D"/>
+  <text x="700" y="726" text-anchor="middle" font-family="'Noto Sans CJK SC','PingFang SC',sans-serif" font-size="20" font-weight="700" fill="white">主链：init → ask → 手写 Spec → lint/review → implement → verify → report/submit</text>
+  <text x="700" y="754" text-anchor="middle" font-family="'Noto Sans CJK SC','PingFang SC',sans-serif" font-size="15" fill="#D7E6F2">规格约束修改，结构化命令产生证据，clean HEAD 决定证据能否进入提交</text>
+</svg>

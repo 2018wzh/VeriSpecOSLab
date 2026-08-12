@@ -1,0 +1,121 @@
+\chapter{规格系统的原理与实现}
+
+\section{为什么需要规格层}
+
+操作系统实验通常从一句功能要求开始，例如增加系统调用、实现页分配器或接入块设备。学生真正开始编码前，还需要判断这项功能涉及哪些内核模块、对外表现应当是什么、哪些原有行为必须保持，以及用什么测试证明实现正确。这些决定如果只存在于临时讨论中，AI 容易把任务理解成单纯补全代码，学生和教师也很难在实验结束后解释修改依据。
+
+VeriSpecOSLab 要求学生在编码前把这些决定写入项目规格。总体设计说明记录系统采用的体系结构和内核组织。模块说明记录当前任务的职责、可修改范围、应保持的性质和验收方法。接口说明记录系统调用、驱动和其他跨模块交互。扩展目标与跨模块修改说明只在课程需要时添加。平台随后从这些内容中确定 AI 的实现范围和测试要求，学生也可以随着 Lab 推进逐步补充规格。图 \ref{fig:spec-model} 展示了五类规格在项目中的关系。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{spec-model.pdf}
+  \caption{五类规格与课程运行配置}
+  \label{fig:spec-model}
+\end{figure}
+
+\section{DesignSpec：总体设计说明}
+
+\code{spec/design.yaml} 由四个必需对象和三组列表组成：
+
+\begin{itemize}
+  \item \code{system}：系统名称、实现语言和 ISA。
+  \item \code{machine}：QEMU 和硬件相关结构化配置。
+  \item \code{kernel}：组织方式、执行模型、保护模型、通信模型和资源模型。
+  \item \code{hardware\_port}：目标板卡、启动、控制台和中断方案。
+  \item \code{required\_mechanisms}、\code{non\_goals} 与最多三个 \code{composition\_invariants}。
+\end{itemize}
+
+\code{vos init} 创建 DesignSpec 字段骨架。学生可以先用 \code{agent ask} 讨论不同方案，再亲手填写当前 Lab 涉及的内容。完成后执行 \code{vos spec lint design}，随后使用 \code{vos agent review design} 获取只读评审。学生根据评审修改文件并手动提交。这一流程让自然语言讨论服务于理解，最终设计仍由学生写入仓库。
+
+\section{ModuleSpec：分级模块契约}
+
+每个 \code{spec/modules/*.yaml} 包含稳定 \code{id}、模块名、等级、目的、至少一个 \code{owns} 路径，以及接口、性质和错误。等级控制需要表达的深度：
+
+\begin{table}[htbp]
+  \centering
+  \caption{ModuleSpec 分级语义}
+  \begin{tabularx}{\textwidth}{p{2cm}p{4cm}X}
+    \toprule
+    等级 & 重点字段 & 适用场景 \\
+    \midrule
+    L1 & purpose、owns、interface、properties、errors & 模块首次建立，先固定目标、边界和可观察性质 \\
+    L2 & state、preconditions、postconditions、invariants、dependencies & 模块进入功能实现，需要表达状态变换和依赖 \\
+    L3 & concurrency、rely、guarantee、algorithm\_intent & 并发、性能或关键算法阶段，需要说明环境假设和原子性 \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+缺少更高等级字段时，系统产生 warning 并允许课程继续推进。严格性体现在：未知字段被拒绝，ID 和路径必须稳定，\code{owns} 必须是仓库相对路径且不能穿越，操作、接口和 check 引用必须存在。分级机制避免``规格不完整就完全不能动手''，同时让教师能看见当前契约深度。
+
+\begin{lstlisting}[language={},caption={ModuleSpec 示例}]
+id: kernel/memory
+module: kernel/memory
+level: 3
+purpose: 管理物理页的分配、回收与唯一所有权
+owns: [kernel/memory.c, kernel/memory.h, tests/memory]
+interface:
+  - name: allocate
+    pre: [allocator_initialized]
+    post: [returned_page_owned_by_caller]
+    errors: [out_of_memory]
+properties:
+  - id: page_unique
+    text: 同一物理页不能同时分配给两个所有者
+    check: memory_page_unique
+errors: [out_of_memory]
+state: {free_pages: counter}
+invariants: [{id: freelist_unique, text: free list has no duplicate page}]
+concurrency: {lock: spinlock}
+rely: [callers_release_only_owned_pages]
+guarantee: [allocation_and_release_are_atomic]
+algorithm_intent: intrusive free list protected by one spinlock
+\end{lstlisting}
+
+\section{InterfaceSpec 与 GoalSpec}
+
+InterfaceSpec 只描述真正跨边界的接口，\code{boundary} 被限制为 syscall、IPC、driver、ABI 或 other。每个操作包含名称、可选输入输出、前后置条件、错误和性质。这样 syscall 的用户/内核约束不会隐没在某个实现模块的内部字段中。
+
+GoalSpec 用于记录当前 Lab 基础功能以外需要单独评价的扩展目标，例如降低调度延迟、提高文件系统吞吐量或支持新的用户程序。每项目标先在 \code{objective} 中说明预期结果，再在 \code{metric} 中写清测量指标和单位，在 \code{oracle} 中写明使用哪项实验、读取测试输出中的什么结果，以及满足什么条件才算达成。\code{correctness} 列出实现目标时必须继续满足的功能要求，例如优化页分配器后仍需通过内存回收和进程隔离测试。基线、目标值、工作负载、运行次数和统计方法保存在实验记录与测试数据中，相关测试通过 \code{vos.yaml} 关联 GoalSpec 的 ID。这样，``更快''需要落实为可复查的数值变化，``更稳定''也需要对应具体故障场景和重复测试。GoalSpec 按课程需要添加，不替代 ModuleSpec 中对模块基本功能和行为的说明。
+
+\section{SpecPatch：跨模块语义演进}
+
+局部实现不应借机修改架构。若确实需要跨模块或系统级语义变化，学生先手写 \code{spec/patches/*.yaml}，说明 \code{reason}、至少一项 \code{changes} 和可能的新不变量。只有已经提交的 SpecPatch 才能扩展实现 Agent 的允许修改域。
+
+其基本逻辑可以表示为：
+
+\begin{equation}
+  P_{allowed}(m) = owns(m) \cup \bigcup_{p \in committed\ patches} impact(p,m)
+\end{equation}
+
+平台结合变更文件、受影响模块/操作和相关 check 推导回归范围。跨模块修改由此留下``为什么改''、``影响什么''、``需要复查什么''的机器可读记录，commit message 不再承担唯一说明责任。
+
+\section{vos.yaml：课程运行配置}
+
+\code{vos.yaml} 记录课程项目怎样构建、怎样启动 QEMU 或开发板、怎样运行各类测试，以及运行后应保存哪些产物。schema 版本为 \code{vos.project.v1}。每个任务分别写明程序、参数、工作目录、允许传入的环境变量和最长运行时间。测试通过 \code{verifies} 关联稳定 Spec ID，教师可以从一个测试回到它验收的模块或接口。
+
+\begin{lstlisting}[language={},caption={结构化命令投影示例}]
+version: vos.project.v1
+build:
+  program: make
+  args: [all]
+  cwd: .
+  env: [RISCV]
+  timeout: 120000
+  artifacts: [kernel/kernel]
+runners:
+  qemu:
+    program: qemu-system-riscv64
+    args: [-machine, virt, -nographic, -kernel, kernel/kernel]
+    timeout: 30000
+checks:
+  usertests:
+    program: make
+    args: [qemu-usertests]
+    verifies: [kernel/process, kernel/memory, kernel/fs]
+\end{lstlisting}
+
+schema 拒绝绝对 cwd、\code{..} 穿越和绝对产物路径。若 program 是 QEMU system emulator，还要求包含 \code{-nographic}，以稳定串口证据面。运行时直接把 program/args 传给 Bun 子进程 API，不把 YAML 拼成 shell 字符串。
+
+\section{确定性规格检查}
+
+\code{vos spec lint} 执行 schema、稳定 ID、重复操作、依赖、接口引用、\code{owns} 和 \code{verifies} 检查。它给出可以定位到文件和字段的诊断。\code{agent review} 在 lint 结果之上阅读目标规格、相关模块和测试映射，帮助学生发现设计表达中的遗漏。实现完成后，\code{vos verify} 再通过实际构建和测试检查代码行为。

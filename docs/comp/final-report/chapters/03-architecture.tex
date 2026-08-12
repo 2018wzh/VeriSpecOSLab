@@ -1,0 +1,28 @@
+\chapter{系统架构与工程实现}
+
+\section{总体架构}
+
+图 \ref{fig:system-architecture} 展示系统架构。学生在自己的仓库中维护规格、实现代码、测试和课程运行配置。\code{vos-cli} 提供本地命令入口，\code{vos-core} 负责规格检查、Agent 调度、运行编排、证据记录、报告和提交，\code{vos-spec} 解析五类规格，\code{vos-runtime} 执行宿主、QEMU 与开发板任务，\code{vos-kb} 管理课程知识来源。\code{vos-agent} 在进程内运行角色化模型会话。Portal 与独立静态 Demo 作为已有应用继续维护和验证。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{system-architecture.pdf}
+  \caption{VeriSpecOSLab 当前系统架构与学生主链}
+  \label{fig:system-architecture}
+\end{figure}
+
+\section{学生主链的状态转换}
+
+\subsection{初始化与设计}
+
+开始一个 Lab 时，学生先用 \code{vos init} 创建实验所需的基本目录和配置，再通过 \code{agent ask} 讨论课程概念和设计选择。学生随后亲手写下系统采用的总体方案，以及当前模块负责什么、与哪些模块交互、准备怎样验收。平台检查这些说明是否完整一致，评审助手再指出需要补充或澄清的内容。学生理解并修改后，将规格提交到 Git，后续代码实现便以这份设计为依据。
+
+\subsection{规格与实现}
+
+学生完成设计说明并提交后，可以让实现助手处理当前模块。平台先从规格中确定本次 Lab 涉及的代码范围，再在与学生工作目录分开的临时目录中生成代码和配套测试。生成结果需要通过编译和多类测试，平台还会核对实际修改是否超出当前任务。代码范围和测试结果符合要求后，这次实现会作为一份独立提交加入学生仓库。学生由此得到一份与自己设计对应并经过实际验证的代码修改。
+
+\subsection{运行、验证与提交}
+
+开发过程中，学生可以随时编译系统、启动 QEMU 或连接开发板，根据运行现象继续调试。准备正式验收时，学生先把当前代码提交到 Git，平台再运行完整验证，并将代码版本、规格、实际命令、日志和测试结果对应起来。\code{vos report} 汇总这些实验记录，\code{vos submit} 打包同一版本的代码和材料。教师拿到提交后，可以从报告结论回到相应代码与运行过程进行复查。
+
+\input{chapters/03-engineering}

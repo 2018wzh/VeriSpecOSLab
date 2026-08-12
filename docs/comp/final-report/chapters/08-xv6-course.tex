@@ -1,0 +1,65 @@
+\chapter{xv6-spec 完整源码课程参考}
+
+\section{参考项目定位}
+
+\code{examples/xv6-spec} 是 VeriSpecOSLab 配套的完整源码课程案例。它以 MIT xv6-riscv 的教学内核思想为基础\cite{xv6-book}，加入项目规格、结构化工具链、课程标签审计和 VisionFive 2 移植。学生可以用同一套工程完成规格阅读、AI 协作实现、QEMU 验证、硬件运行、报告生成和提交归档。
+
+参考项目的 \code{main} 保存一条从 Lab 1 到 Lab 10 逐步展开的课程历史。每个标签都是可以独立检出的累计快照。Lab $N$ 的源码树只包含截至该阶段已经讲授的设计、规格、实现、测试和术语，便于教师按课程进度发布材料，也便于学生回到任一阶段复现。
+
+当前子模块包含 57 个 YAML 规格文件，以及 96 个 C 源码与汇编文件，源码约 19,545 行。这套案例同时覆盖内核实现、课程规格、运行配置和阶段审计，能够验证平台如何承载一门连续的操作系统实验课。
+
+\section{Lab 1--10 课程内容}
+
+\begin{longtable}{@{}p{1.4cm}p{7.3cm}p{6.0cm}@{}}
+  \caption{xv6-spec 课程阶段}\label{tab:xv6-labs}\\
+  \toprule
+  Lab & 累计主题 & 主要实现与验收内容 \\
+  \midrule
+  \endfirsthead
+  \toprule
+  Lab & 累计主题 & 主要实现与验收内容 \\
+  \midrule
+  \endhead
+  1 & 空项目、身份、RISC-V 与 GNU C & 建立最小工程、DesignSpec 和课程入口 \\
+  2 & QEMU 启动与串口输出 & 构建启动链并以串口 banner 验收 \\
+  3 & 页分配、对齐、耗尽与 Sv39 内核映射 & 检查物理内存管理和页表性质 \\
+  4 & trap、timer、PLIC 与 UART & 验证中断、异常和串口路径 \\
+  5 & 进程、trap-frame 与 syscall & 建立进程上下文和系统调用契约 \\
+  6 & virtio、buffer cache、log、inode 与 exec & 完成文件系统与程序装载 \\
+  7 & resource ABI、文件描述符、pipe 与 shell & 完成用户态资源接口和交互环境 \\
+  8 & 上游 xv6 可观察行为与完整 usertests & 以 \code{ALL TESTS PASSED} 验收完整软件行为 \\
+  9 & 将 xv6 移植到 VisionFive 2 开发板并实现四核启动 & 制作可由开发板启动的 SD 卡镜像，验证硬件信息读取、四核启动和真实板卡上的 usertests \\
+  10 & 汇总课程成果并生成提交材料 & 检查 Lab 1--9 的阶段内容，生成实验报告和包含代码、规格与验证结果的提交归档 \\
+  \bottomrule
+\end{longtable}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{course-history.pdf}
+  \caption{xv6-spec 从基础启动到硬件综合的累计课程历史}
+  \label{fig:course-history}
+\end{figure}
+
+\section{历史审计机制}
+
+\code{tools/course\_history\_audit.py} 以每个标签的完整 Git tree 为检查对象，核对允许路径、规格 ID、公开 check ID、术语和未来标识。例如 Lab 1 只保留最小项目和设计入口。Lab 8 包含完整 xv6 行为面。VisionFive、FDT、FIT、SDIO、GPT 和 hardware runner 从 Lab 9 开始进入课程。
+
+完整树审计可以发现提前进入早期阶段的实现文件、测试名称、占位符和文档术语。课程维护者修改任一阶段后，都可以重新运行同一脚本检查 Lab 1--10 的累计边界。本报告生成时，脚本输出为 \code{course history audit passed for Lab 1-10}。
+
+\section{QEMU 验收}
+
+参考项目使用 Bash、Perl、GNU make、RISC-V GNU 工具链和 \path{qemu-system-riscv64} 完成 QEMU 验收。\code{usertests\_all\_pass} 最长允许 900 秒，以覆盖文件系统测试。成功 oracle 是串口中的 \code{ALL TESTS PASSED}。
+
+Lab 8 的完整行为面还会记录 \code{test badwrite: OK} 等中间结果。平台将启动信号、测试过程和最终汇总保存在同一份运行证据中，教师可以检查系统是否完成整个测试序列。
+
+\section{VisionFive 2 移植实现}
+
+VisionFive 2 移植面向 JH7110 与 U74 平台。S-mode 内核位于 \code{0x40200000}，\code{a0} 保存启动 hart ID，\code{a1} 指向 FIT 中经过哈希校验的 DTB。内核从 DTB 读取 compatible、DRAM、reserved memory、中断和外设信息。启动 hart 完成初始化后，通过 SBI HSM 按设备树中的 hart 顺序启动三个 secondary hart。
+
+硬件构建固定引用 StarFive \code{VF2\_v3.8.2} DTB 和 vendored \code{libfdt v1.7.2}。流程校验来源 hash，生成同时包含 S-mode 内核与 DTB 的 SHA-256 FIT，再生成带 FAT 启动分区和 GPT \code{xv6fs} 分区的 SD 镜像。磁盘 GUID 由固定 namespace 和名称确定性派生，便于不同机器比较构建结果。
+
+板卡 Runner 通过 U-Boot 加载 \code{xv6.itb}，记录四个 U74 hart 的启动日志并运行完整 usertests。结果包含板卡别名、串口设备、工作负载、提交版本和脱敏后的日志 hash。教学团队根据这些材料复核板卡身份、镜像对应关系、四核启动和完整测试结果。
+
+\section{教学价值}
+
+xv6 是一个为教学而简化的多核 RISC-V Unix-like 内核\cite{xv6-book}。VeriSpecOSLab 在完整源码之上补充可追溯的学习过程。学生能看到 DesignSpec 如何随课程演进，ModuleSpec 如何从 L1 发展到 L3，InterfaceSpec 如何表达 syscall 和 driver 边界，SpecPatch 如何记录文件系统、资源 ABI 和硬件移植的跨模块影响，最终再由同一组 Spec ID 驱动验证和报告。

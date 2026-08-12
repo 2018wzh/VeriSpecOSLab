@@ -1,0 +1,72 @@
+\chapter{构建、验证与报告复现}
+
+\section{平台依赖与验证}
+
+\begin{lstlisting}[language=bash]
+cd /path/to/VeriSpecOSLab/vos
+bun install --ignore-scripts
+bun run typecheck
+bun run test
+bun run build
+\end{lstlisting}
+
+平台测试也可以按组件运行。进入 \code{vos/packages/<pkg>} 或 \code{vos/apps/<app>} 后执行 \code{bun test}，即可把测试结果对应到具体实现模块。第 10 章列出了本报告使用的组件级通过项。
+
+\section{xv6 课程历史审计}
+
+\begin{lstlisting}[language=bash]
+cd /path/to/VeriSpecOSLab/examples/xv6-spec
+python3 tools/course_history_audit.py
+\end{lstlisting}
+
+期望输出为 \code{course history audit passed for Lab 1-10}。随后可继续运行 QEMU 与开发板实验，分别验证软件行为和硬件运行记录。
+
+\section{xv6 QEMU 复现}
+
+安装 Bash、Perl、GNU make、RISC-V GNU 工具链和 \code{qemu-system-riscv64} 后，在已链接 \code{vos} 的环境执行：
+
+\begin{lstlisting}[language=bash]
+cd examples/xv6-spec
+vos spec lint all
+vos doctor
+vos build
+vos run qemu
+vos verify
+\end{lstlisting}
+
+完整 usertests 目标最长允许 900 秒，成功必须观察串口最终 \code{ALL TESTS PASSED}。记录工具链版本、QEMU 版本、Git HEAD、Spec/config hash 与 evidence 路径。
+
+\section{VisionFive 2 开发板复现}
+
+\begin{lstlisting}[language=bash]
+cd examples/xv6-spec
+make vf2-image
+make vf2-image-check
+python3 -m pip install --requirement requirements-hardware.txt
+VOS_VF2_BOARD_ALIAS=visionfive2-v1.3b \
+VOS_VF2_SERIAL_PORT=/dev/ttyUSB0 \
+vos run hardware
+\end{lstlisting}
+
+实验使用 VisionFive 2 v1.3B、3.3V USB-UART 和可写 SD 卡。运行记录包含 U-Boot FIT、四个 U74 hart、完整 usertests 和脱敏日志 hash，教学团队完成复核后将结论与记录一起归档。
+
+\section{技术报告构建}
+
+依赖 XeLaTeX、latexmk、GNU/兼容 make 和 librsvg：
+
+\begin{lstlisting}[language=bash]
+cd docs/comp/final-report
+make
+\end{lstlisting}
+
+构建过程把 \code{figures/*.svg} 转为 \code{build/figures/*.pdf}，运行 XeLaTeX 直到交叉引用稳定，并复制最终文件到：
+
+\begin{center}
+\code{output/pdf/VeriSpecOSLab-final-technical-report.pdf}
+\end{center}
+
+视觉验收应把每页渲染为图片，检查标题、中文字体、长表格分页、代码溢出、SVG 文字、目录页码、引用和空白页。每次修改后都重新生成全量页面，TeX 编译返回码只作为基础检查。
+
+\section{版本对应方法}
+
+报告第 9--10 章记录主仓库 HEAD、xv6-spec 子模块 SHA、代码规模和验证数字。复现时先检出这两个版本，再执行本附录中的平台构建、课程历史审计、QEMU、开发板和报告构建命令。生成的日志与 PDF 可以通过代码版本、Spec/config hash 和文件 hash 与报告快照对应。

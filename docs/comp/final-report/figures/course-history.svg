@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="650" viewBox="0 0 1500 650">
+  <defs>
+    <style>
+      .title{font:700 34px 'Noto Sans CJK SC','PingFang SC',sans-serif;fill:#17324D}
+      .h{font:700 18px 'Noto Sans CJK SC','PingFang SC',sans-serif;fill:#17324D}
+      .s{font:14px 'Noto Sans CJK SC','PingFang SC',sans-serif;fill:#5B6873}
+      .done{fill:#EFF9F4;stroke:#2D7D5B;stroke-width:2.3;rx:13}
+      .hardware{fill:#FFF8E8;stroke:#B7791F;stroke-width:2.3;rx:13}
+      .review{fill:#EFF9F4;stroke:#2D7D5B;stroke-width:2.3;rx:13}
+      .line{stroke:#2F6690;stroke-width:4;fill:none;marker-end:url(#arrow)}
+      .dash{stroke:#B7791F;stroke-width:3;fill:none;stroke-dasharray:9 7;marker-end:url(#amber)}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#2F6690"/></marker>
+    <marker id="amber" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#B7791F"/></marker>
+  </defs>
+  <rect width="1500" height="650" fill="white"/>
+  <text x="750" y="56" text-anchor="middle" class="title">xv6-spec 从基础启动到硬件综合的累计课程历史</text>
+  <path d="M100 260 H1375" class="line"/>
+
+  <g>
+    <rect x="70" y="175" width="115" height="150" class="done"/>
+    <text x="127" y="220" text-anchor="middle" class="h">Lab 1</text><text x="127" y="252" text-anchor="middle" class="s">最小工程</text><text x="127" y="288" text-anchor="middle" class="s">设计入口</text>
+    <rect x="200" y="175" width="115" height="150" class="done"/>
+    <text x="257" y="220" text-anchor="middle" class="h">Lab 2</text><text x="257" y="252" text-anchor="middle" class="s">QEMU</text><text x="257" y="288" text-anchor="middle" class="s">串口启动</text>
+    <rect x="330" y="175" width="115" height="150" class="done"/>
+    <text x="387" y="220" text-anchor="middle" class="h">Lab 3</text><text x="387" y="252" text-anchor="middle" class="s">内存</text><text x="387" y="288" text-anchor="middle" class="s">页表</text>
+    <rect x="460" y="175" width="115" height="150" class="done"/>
+    <text x="517" y="220" text-anchor="middle" class="h">Lab 4</text><text x="517" y="252" text-anchor="middle" class="s">异常</text><text x="517" y="288" text-anchor="middle" class="s">中断</text>
+    <rect x="590" y="175" width="115" height="150" class="done"/>
+    <text x="647" y="220" text-anchor="middle" class="h">Lab 5</text><text x="647" y="252" text-anchor="middle" class="s">进程</text><text x="647" y="288" text-anchor="middle" class="s">系统调用</text>
+    <rect x="720" y="175" width="115" height="150" class="done"/>
+    <text x="777" y="220" text-anchor="middle" class="h">Lab 6</text><text x="777" y="252" text-anchor="middle" class="s">文件系统</text><text x="777" y="288" text-anchor="middle" class="s">程序装载</text>
+    <rect x="850" y="175" width="115" height="150" class="done"/>
+    <text x="907" y="220" text-anchor="middle" class="h">Lab 7</text><text x="907" y="252" text-anchor="middle" class="s">资源 ABI</text><text x="907" y="288" text-anchor="middle" class="s">Shell</text>
+    <rect x="980" y="175" width="115" height="150" class="done"/>
+    <text x="1037" y="220" text-anchor="middle" class="h">Lab 8</text><text x="1037" y="252" text-anchor="middle" class="s">完整行为</text><text x="1037" y="288" text-anchor="middle" class="s">usertests</text>
+    <rect x="1110" y="175" width="115" height="150" class="hardware"/>
+    <text x="1167" y="220" text-anchor="middle" class="h">Lab 9</text><text x="1167" y="252" text-anchor="middle" class="s">硬件适配</text><text x="1167" y="288" text-anchor="middle" class="s">VF2</text>
+    <rect x="1240" y="175" width="115" height="150" class="hardware"/>
+    <text x="1297" y="220" text-anchor="middle" class="h">Lab 10</text><text x="1297" y="252" text-anchor="middle" class="s">系统综合</text><text x="1297" y="288" text-anchor="middle" class="s">报告提交</text>
+  </g>
+
+  <rect x="945" y="410" width="470" height="150" class="review"/>
+  <text x="1180" y="452" text-anchor="middle" class="h" fill="#2D7D5B">VisionFive 2 实验记录</text>
+  <text x="1180" y="488" text-anchor="middle" class="s">四 hart 启动 · 完整 usertests · 串口日志</text>
+  <text x="1180" y="518" text-anchor="middle" class="s">镜像与提交对应 · 产物哈希 · 板卡信息</text>
+  <text x="1180" y="545" text-anchor="middle" class="s">自动运行记录与教学团队复核共同归档</text>
+  <path d="M1232 325 C1232 360 1180 375 1180 402" class="dash"/>
+
+  <rect x="90" y="420" width="690" height="120" rx="14" fill="#F5F8FA" stroke="#2F6690" stroke-width="2"/>
+  <text x="435" y="458" text-anchor="middle" class="h">课程历史审计</text>
+  <text x="435" y="493" text-anchor="middle" class="s">每个标签是截至该实验的累计快照，脚本核对路径、标识、测试和课程术语</text>
+  <text x="435" y="520" text-anchor="middle" class="s">tools/course_history_audit.py 对 Lab 1--10 逐标签检查边界</text>
+</svg>

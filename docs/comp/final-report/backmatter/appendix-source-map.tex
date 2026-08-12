@@ -1,0 +1,34 @@
+\chapter{报告结论与源码位置映射}
+
+下表帮助评委和维护者从报告结论快速定位当前实现。行号会随开发变化，因此以文件与符号名为稳定索引。
+
+\begin{longtable}{@{}p{3.7cm}p{5.2cm}p{5.1cm}@{}}
+  \toprule
+  结论 & 源码/文档 & 关键符号或内容 \\
+  \midrule
+  \endfirsthead
+  \toprule
+  结论 & 源码/文档 & 关键符号或内容 \\
+  \midrule
+  \endhead
+  五类规格 schema & \path{vos/packages/vos-spec/src/schemas.ts} & \code{designSpecSchema}、\code{moduleV2Schema}、\code{interfaceSpecSchema}、\code{goalV2Schema}、\code{specPatchV2Schema} \\
+  规格规范化与影响分析 & \path{vos/packages/vos-spec/src/index.ts} & bundle、diagnostics、SpecPatch impact、test matrix \\
+  公开命令与学生主链 & \path{README.md}。\path{vos/packages/vos-core/src/cli.ts} & \code{vos --help}、parseArgs \\
+  学生手写规格与检查 & \path{vos/packages/vos-core/src/main.ts} & \code{executeSpecLint}、\code{executeAgentAsk}、\code{executeAgentReview} \\
+  implement worktree 事务 & \path{vos/packages/vos-core/src/main.ts} & \code{executeAgentImplement}、test targets、owns、Spec-Hash \\
+  Agent profile 与权限 & \path{vos/apps/vos-agent/app/agent/profiles.ts} & \code{PROFILE\_CONFIGS}、toolProfile、outputSchema \\
+  Provider/会话/工具循环 & \path{vos/apps/vos-agent/app/} & config、providers、agent loop、MCP、TUI \\
+  结构化学生 Runner & \path{vos/packages/vos-runtime/src/index.ts} & \code{ManifestRunner}、\code{HostRunner}、\code{QemuRunner}、\code{HardwareRunner} \\
+  连续哈希审计链 & \path{vos/packages/vos-core/src/audit/chain.ts} & \code{appendAuditEvent}、\code{verifyAuditChain} \\
+  evidence manifest/events & \path{vos/packages/vos-core/src/evidence/} & \code{EvidenceWriter}、RunEvent、RunManifest \\
+  report 与 submit & \path{vos/packages/vos-core/src/main.ts}。\path{vos/packages/vos-core/src/submit/student.ts} & \code{executeReportGenerate}、\code{executeSubmitPack}、archive hash \\
+  知识库 & \path{vos/packages/vos-kb/src/index.ts} & source/object/chunk、embedding、sqlite-vec、citation \\
+  HTTP 保留面 & \path{vos/packages/vos-server/src/index.ts} & typed endpoints、bearer token、artifact traversal gate \\
+  暑期试讲与课程调整 & 团队试讲记录。Git 提交记录。\path{docs/manual/book/ch01-overview-design.md}。\path{docs/manual/labs/lab1-seed.md} & 使用不便、前置知识、大型项目开发经验与对应调整 \\
+  试讲后的平台改造 & \path{vos/packages/vos-core/src/main.ts}。\path{vos/packages/vos-spec/src/schemas.ts}。\path{vos/packages/vos-runtime/src/index.ts} & 手写规格、只读评审、实现事务与确定性运行 \\
+  xv6 课程状态 & \path{examples/xv6-spec/README.md} & Lab 1--10 状态、QEMU 与 VF2 门禁 \\
+  课程历史审计 & \path{examples/xv6-spec/tools/course_history_audit.py} & 路径/ID/check/未来术语规则 \\
+  VF2 来源与 Runner & \path{examples/xv6-spec/hardware/visionfive2/sources.lock}。\path{examples/xv6-spec/tools/vf2_hardware_runner.py} & DTB hash、libfdt revision、四 hart、usertests \\
+  平台总体说明 & \path{README.md}。\path{docs/design/toolchain/README.md} & 本地学生流程、Portal 与 Demo \\
+  \bottomrule
+\end{longtable}

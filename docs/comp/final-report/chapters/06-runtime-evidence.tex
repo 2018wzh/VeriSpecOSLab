@@ -1,0 +1,146 @@
+\chapter{运行、验证与提交}
+
+\section{结构化命令执行}
+
+学生在 \code{vos.yaml} 中填写项目的编译命令、QEMU 启动方式、开发板运行方式和各项测试。\code{vos-spec} 首先使用 \code{projectManifestSchema} 解析这份文件，拒绝未知字段、绝对工作目录、目录穿越和不合法的产物路径。解析通过后，\code{vos-runtime} 中的 \code{ManifestRunner} 将每项任务转换为统一的命令对象：
+
+\begin{equation}
+  C = (program, args, cwd, env, timeout, artifacts)
+\end{equation}
+
+表 \ref{tab:runtime-command} 给出各字段在执行阶段的含义。运行时以 \code{ManifestRunner} 实现公共流程。普通测试、QEMU 和开发板分别由三个轻量子类选择对应配置，最终都调用同一个命令执行函数。
+
+\begin{table}[H]
+  \centering
+  \caption{结构化命令字段与运行时处理}
+  \label{tab:runtime-command}
+  \begin{tabularx}{\textwidth}{p{2.6cm}p{4.1cm}X}
+    \toprule
+    字段 & 含义 & 运行时处理 \\
+    \midrule
+    \code{program}、\code{args} & 可执行程序与参数数组 & 作为独立参数传给 \code{Bun.spawn} \\
+    \code{cwd} & 相对项目根目录的工作目录 & 解析为绝对路径后再次检查是否仍在项目内 \\
+    \code{env} & 可以继承的环境变量名称 & 只复制清单中实际存在的变量，并加入 \code{VOS\_PROJECT\_ROOT} \\
+    \code{timeout} & 最长运行时间，单位为毫秒 & 到时终止整个进程组 \\
+    \code{artifacts} & 任务应产生的文件 & 作为运行结果的一部分保存，供报告和提交检查 \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+进程通过 \code{Bun.spawn([program, ...args])} 启动，标准输出和错误输出由两个异步读取器同时采集。类 Unix 系统中的任务以独立进程组运行。任务超时或输出已经满足停止条件时，平台先向进程组发送 \code{SIGTERM}，一秒后仍未退出则发送 \code{SIGKILL}。这样可以同时结束 QEMU 及其子进程，避免只终止父进程后留下后台任务。执行函数最终返回退出码、两路输出、耗时、超时状态和输出判定结果。
+
+\section{运行结果与 Git 状态}
+
+一次编译产生 \code{BuildEvidence}，其中包含任务名、\code{passed}/\code{failed}/\code{timed\_out} 状态、退出码、标准输出、错误输出、耗时、产物路径和是否可以用于提交。QEMU 与开发板运行使用 \code{RunEvidence}，在前述字段之外增加运行环境类型、人工复核状态，以及可选的板卡、串口和工作负载信息。开发板记录还保存运行时的 Git 提交号。
+
+学生可以在尚未提交修改时执行 \code{vos build}、\code{vos run qemu} 和开发阶段的 \code{vos run hardware}。这些命令仍然保存完整结果，但 \code{submittable} 被设为 \code{false}。正式验证使用当前 Git 提交作为代码基线。运行时分别执行：
+
+\begin{lstlisting}[language={},caption={项目改动检查所使用的 Git 查询}]
+git diff --name-only HEAD
+git ls-files --others --exclude-standard
+\end{lstlisting}
+
+第一个查询覆盖已跟踪文件相对于当前提交的变化，第二个查询补充未跟踪且未被 \code{.gitignore} 排除的文件。平台生成的 \code{.vos/} 运行目录不计入项目改动。设两项查询合并并排除 \code{.vos/} 后的集合为 $\Delta_{project}$，则：
+
+\begin{equation}
+  cleanHead = (\Delta_{project} = \varnothing)
+\end{equation}
+
+\code{ManifestRunner.collectEvidence} 将一次编译和随后运行的测试组合成 \code{EvidenceBundle}。其可提交条件可以写为：
+
+\begin{equation}
+  \begin{aligned}
+    submittable ={}& cleanHead \land hasEvidence \land buildPassed \\
+    &{}\land \bigwedge_{r \in runs}(r.status=passed) \\
+    &{}\land \bigwedge_{r \in runs}r.submittable
+  \end{aligned}
+\end{equation}
+
+\code{vos verify} 在读取规格后先检查 DesignSpec、ModuleSpec 和 \code{vos.yaml} 中的测试映射。存在阻断性诊断时不启动编译。规格检查通过后，平台先编译项目，编译成功才依次运行 \code{checks} 中的目标。普通验证全部通过且 $cleanHead=true$ 后，\code{vos verify --hidden} 才会继续执行与当前规格绑定的本地补充测试。
+
+\section{运行记录的组织}
+
+CLI 每执行一次命令都会创建一个 \code{EvidenceWriter}。运行编号由时间戳和随机后缀组成，并经过字符集与长度检查。相关文件按下列结构保存在本地：
+
+\begin{lstlisting}[language={},caption={本地运行记录目录}]
+.vos/
+  runs/<run-id>/
+    manifest.json
+    events.jsonl
+    artifacts/
+  index/evidence.json
+  audit/chain.jsonl
+\end{lstlisting}
+
+\code{manifest.json} 保存命令与参数、开始和结束时间、Git 提交、父提交、规格摘要、运行配置版本、输入输出文件、已执行测试、运行状态、产物和其他记录引用。命令刚开始时，manifest 的状态为 \code{partial}。命令完成后，\code{finalize} 写入最终状态和结束时间，再把运行编号、命令、状态、manifest 路径和时间范围加入 \code{.vos/index/evidence.json}。进程意外中断时留下的 \code{partial} 状态不会被误认为通过。
+
+\code{events.jsonl} 记录 \code{run\_started}、节点开始与结束、进度变化和 \code{run\_finished} 等事件。日志、JSON 结果和报告通过 \code{addArtifact} 登记到 manifest。\code{vos report} 从运行索引读取已经完成的命令，因此报告中的验证状态来自实际执行记录，不需要模型重新总结日志。
+
+\section{连续哈希审计链}
+
+\code{EvidenceWriter.writeEvent} 在写入当前运行的 \code{events.jsonl} 后，还会调用 \code{appendAuditEvent}，把同一事件追加到 \code{.vos/audit/chain.jsonl}。审计记录包含序号、前一条记录的摘要、记录时间、事件和本条摘要：
+
+\begin{equation}
+  R_n=(sequence_n, previous\_hash_n, recorded\_at_n, event_n)
+\end{equation}
+
+\begin{equation}
+  h_n=SHA256(JSON(R_n)), \qquad previous\_hash_n=h_{n-1}
+\end{equation}
+
+第一条记录的 \code{previous\_hash} 为 \code{null}。实现使用固定字段顺序构造对象并对 \code{JSON.stringify} 的 UTF-8 字节计算 SHA-256。\code{verifyAuditChain} 逐行解析 JSON，同时检查 \code{sequence=index+1}、前序摘要与上一条记录一致，以及重新计算的摘要等于记录值。任何一项不满足都会返回首次断裂的序号和 \code{hash\_gap}。
+
+提交导出前还要对审计内容执行凭据和本机路径遮蔽。遮蔽会改变记录字节，因此平台按导出后的事件重新连接审计链并计算新摘要，同时用 \code{source\_hash} 保留原记录摘要。这样既能检查导出文件自身是否完整，也能保留它与本地原始记录之间的对应关系。图 \ref{fig:evidence-chain} 展示了命令、运行记录、报告和提交归档之间的关系。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{evidence-chain.pdf}
+  \caption{运行记录、报告与提交材料的关系}
+  \label{fig:evidence-chain}
+\end{figure}
+
+\section{QEMU 输出判定}
+
+QEMU 运行使用 \code{-nographic} 将内核串口接入标准输入输出\cite{qemu-system}。配置解析器要求 QEMU 目标声明两个串口判定字段。\code{success\_pattern} 描述成功输出，\code{failure\_pattern} 描述失败输出。普通编译和测试目标不能使用这两个字段。两个字段在加载配置时编译为正则表达式。
+
+执行期间，平台把标准输出和错误输出的新内容追加到同一缓冲区。每次收到数据都先匹配失败表达式，再匹配成功表达式。失败标记因此具有更高优先级。任一表达式匹配后，平台停止计时器并终止 QEMU 进程组。若配置了成功表达式但进程结束前始终没有匹配，结果记为 \code{missing}。最终状态按以下顺序计算：
+
+\begin{equation}
+  status =
+  \begin{cases}
+    timed\_out, & \text{超过最长运行时间} \\
+    failed, & \text{匹配失败标记或缺少成功标记} \\
+    passed, & \text{匹配成功标记或进程以 0 退出} \\
+    failed, & \text{其他情况}
+  \end{cases}
+\end{equation}
+
+这套顺序区分了进程退出、内核输出和超时三类事实。例如 QEMU 进程以 0 退出，但要求的 usertests 成功标记没有出现时，\code{missing} 仍会使结果失败。内核已经输出成功标记后，平台可以主动结束长期运行的 QEMU，而不会把主动终止产生的退出码覆盖为测试失败。
+
+\section{开发板记录与人工复核}
+
+\code{HardwareRunner} 复用相同的结构化命令执行器。其 \code{RunEvidence} 附加 \code{board}、\code{serial}、\code{workload} 和 \code{buildIdentity.commitSha}，分别记录目标板卡、串口、测试负载和运行时的代码提交。命令状态与人工验收状态是两个独立字段。即使脚本退出状态为 \code{passed}，\code{humanReview} 仍保持 \code{pending\_human\_review}。
+
+课程团队依据串口日志核对启动固件、设备树、中断控制器、SD 卡镜像和多核启动过程，并确认工作负载确实运行在记录的板卡和代码提交上。报告与提交清单继续保存人工复核状态，使 QEMU 自动结果、开发板脚本结果和人工验收结论不会混为同一个布尔值。
+
+\section{报告生成与提交归档}
+
+\code{vos report} 调用 \code{buildNormalizedSpecBundle} 重新解析当前规格和 \code{vos.yaml}，再读取当前 Git 提交、最近一百条提交记录和 \code{.vos/index/evidence.json}。生成的 \code{vos.report.v2} 包含 \code{commit\_sha}、\code{spec\_hash}、\code{config\_hash}、全部 Spec ID、测试目标、诊断信息和运行索引。报告可提交状态由下式确定：
+
+\begin{equation}
+  report.submittable = cleanHead \land \neg blockingDiagnostics \land verifiedRun
+\end{equation}
+
+其中 \code{verifiedRun} 要求运行索引中存在一条状态为 \code{passed} 且命令包含 \code{verify} 的记录。报告生成不调用模型，也不创建 Git 提交。
+
+\code{vos submit} 先重新生成报告，报告状态未通过时立即停止。随后，提交模块依次完成以下检查与归档操作：
+
+\begin{enumerate}[itemsep=0.2em,topsep=0.4em]
+  \item 使用 \code{git status --porcelain --untracked-files=all} 再次确认项目文件没有未提交变化。
+  \item 运行 \code{verifyAuditChain} 检查本地审计链。
+  \item 使用 \code{git archive HEAD} 提取当前提交，归档内容因此不包含工作目录中的额外文件。
+  \item 读取当前规格对应的补充测试 manifest 和最近验证结果，检查验证状态、\code{commit\_sha}、\code{spec\_hash}、\code{config\_hash} 与 \code{manifest\_hash} 是否全部匹配。
+  \item 遮蔽报告和审计记录中的凭据，将本机绝对路径替换为稳定名称，再写入提交清单。
+\end{enumerate}
+
+最终的 \code{vos.submit.v2} 清单记录代码及父提交、规格、配置和补充测试摘要、审计链头，以及归档大小和 SHA-256。压缩包包含 \code{repo/}、\code{audit/}、\code{report/}、\code{hidden-tests/} 与 \code{submit-manifest.json}，代码、规格、配置和验证结果由此绑定为同一次提交。
