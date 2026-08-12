@@ -464,14 +464,9 @@ describe("runAgent", () => {
         await request.onUsage?.({ inputTokens: 60, outputTokens: 5, totalTokens: 65 });
         return toolCallResponse([{ name: "Work", args: { step: 1 } }]);
       }
-      if (index === 1) {
-        expect(request.tools).toEqual([]);
-        expect(String(request.messages[0]?.content)).toContain("from an earlier VOS Agent conversation");
-        return textResponse("The first work step completed successfully.");
-      }
       expect(request.tools.map((entry) => entry.function.name)).toEqual(["Work", "Submit"]);
       expect(String(request.messages[0]?.content)).toContain("[Compacted conversation summary]");
-      expect(String(request.messages[0]?.content)).toContain("first work step completed");
+      expect(request.messages.some((message) => String(message.content).includes("first result"))).toBe(true);
       await request.onUsage?.({ inputTokens: 20, outputTokens: 5, totalTokens: 25 });
       return toolCallResponse([{ name: "Submit", args: { status: "passed" } }]);
     });
@@ -490,7 +485,7 @@ describe("runAgent", () => {
     });
 
     expect(result.iterations).toBe(2);
-    expect(chat.requests).toHaveLength(3);
+    expect(chat.requests).toHaveLength(2);
     expect(events).toContain("context.compacted");
   });
 

@@ -265,15 +265,7 @@ describe("runSessionTurn", () => {
     });
     store.save(thread);
 
-    const chat = new CallbackChatClient((request, index) => {
-      if (index === 0) {
-        expect(request.tools).toEqual([]);
-        expect(String(request.messages[0].content)).toContain("old question 1");
-        expect(String(request.messages[0].content)).toContain("old answer 2");
-        expect(String(request.messages[0].content)).not.toContain("recent question");
-        return textResponse("Older work established the project context.");
-      }
-
+    const chat = new CallbackChatClient((request) => {
       expect(request.messages.map((m) => m.role)).toEqual([
         "system",
         "user",
@@ -281,7 +273,8 @@ describe("runSessionTurn", () => {
         "user",
       ]);
       expect(String(request.messages[1].content)).toContain("[Compacted conversation summary]");
-      expect(String(request.messages[1].content)).toContain("Older work established the project context.");
+      expect(String(request.messages[1].content)).toContain("old question 1");
+      expect(String(request.messages[1].content)).toContain("old answer 2");
       expect(String(request.messages[1].content)).toContain("recent question");
       expect(request.messages[2]).toMatchObject({ role: "assistant", content: "recent answer" });
       expect(request.messages[3]).toMatchObject({ role: "user", content: "continue" });
@@ -304,7 +297,7 @@ describe("runSessionTurn", () => {
     expect(result.content).toBe("continued");
   });
 
-  test("omits image payloads from compaction summary prompts", async () => {
+  test("omits image payloads from deterministic compaction summaries", async () => {
     const imagePayload = "A".repeat(512);
     const thread = store.create({ prompt: "seed", model: "sonnet4.6" });
     thread.messages = [
@@ -328,14 +321,11 @@ describe("runSessionTurn", () => {
     });
     store.save(thread);
 
-    const chat = new CallbackChatClient((request, index) => {
-      if (index === 0) {
-        const summaryPrompt = String(request.messages[0].content);
-        expect(summaryPrompt).toContain("old image context");
-        expect(summaryPrompt).toContain("[Image omitted]");
-        expect(summaryPrompt).not.toContain(imagePayload);
-        return textResponse("Earlier work involved an image.");
-      }
+    const chat = new CallbackChatClient((request) => {
+      const compacted = String(request.messages[1]?.content);
+      expect(compacted).toContain("old image context");
+      expect(compacted).toContain("[Image omitted]");
+      expect(compacted).not.toContain(imagePayload);
       return textResponse("continued after image");
     });
 
@@ -351,7 +341,7 @@ describe("runSessionTurn", () => {
     expect(result.content).toBe("continued after image");
   });
 
-  test("tracks usage from compaction summary calls", async () => {
+  test("does not add model usage for deterministic compaction", async () => {
     const thread = store.create({ prompt: "seed", model: "sonnet4.6" });
     thread.messages = [
       { role: "user", content: "old question" },
@@ -375,11 +365,7 @@ describe("runSessionTurn", () => {
     };
     store.save(thread);
 
-    const chat = new CallbackChatClient(async (request, index) => {
-      if (index === 0) {
-        await request.onUsage?.({ inputTokens: 1_000, outputTokens: 100, totalTokens: 1_100 });
-        return textResponse("Summary of old work.");
-      }
+    const chat = new CallbackChatClient(async (request) => {
       await request.onUsage?.({ inputTokens: 20, outputTokens: 5, totalTokens: 25 });
       return textResponse("continued");
     });
@@ -399,21 +385,21 @@ describe("runSessionTurn", () => {
       },
     });
 
-    expect(usageEvents).toEqual([1_100, 25]);
+    expect(usageEvents).toEqual([25]);
     expect(result.thread.usage).toMatchObject({
-      inputTokens: 181_020,
-      outputTokens: 1_105,
-      totalTokens: 182_125,
+      inputTokens: 180_020,
+      outputTokens: 1_005,
+      totalTokens: 181_025,
     });
     expect(result.thread.usage.byModel[0]).toMatchObject({
       model: "sonnet4.6",
-      inputTokens: 181_020,
-      outputTokens: 1_105,
-      totalTokens: 182_125,
+      inputTokens: 180_020,
+      outputTokens: 1_005,
+      totalTokens: 181_025,
     });
   });
 
-  test("summarizes oversized history in bounded chunks before merging", async () => {
+  test("bounds oversized history locally without provider summary calls", async () => {
     const thread = store.create({ prompt: "seed", model: "unknown-compatible-model" });
     thread.messages = [
       { role: "user", content: `first-marker ${"A".repeat(90_000)}` },
@@ -429,14 +415,10 @@ describe("runSessionTurn", () => {
     });
     store.save(thread);
 
-    let summaryCalls = 0;
     const chat = new CallbackChatClient((request) => {
-      if (request.tools.length === 0) {
-        summaryCalls++;
-        const content = String(request.messages[0]?.content);
-        expect(content.length).toBeLessThan(82_000);
-        return textResponse(`bounded summary ${summaryCalls}`);
-      }
+      const compacted = String(request.messages[1]?.content);
+      expect(compacted.length).toBeLessThan(26_000);
+      expect(compacted).toContain("deterministic context compaction");
       return textResponse("continued after bounded compaction");
     });
 
@@ -449,7 +431,7 @@ describe("runSessionTurn", () => {
       contextCompaction: { maxInputTokens: 60_000, protectLastMessages: 2 },
     });
 
-    expect(summaryCalls).toBeGreaterThan(2);
+    expect(chat.requests).toHaveLength(1);
     expect(result.content).toBe("continued after bounded compaction");
   });
 

@@ -101,9 +101,10 @@ accepts a result; exhausting `maxIterations` without acceptance fails.
 
 Long runs compact their transcript from provider-reported context usage. Known
 models use the configured context-window ratio; unknown compatible models use
-a conservative 60,000 input-token threshold. Older history is summarized in
-bounded chunks and the chunk summaries are merged, so compaction does not send
-one near-window-sized request back to the provider. Compaction is state-driven, does not
+a conservative 60,000 input-token threshold. Older history is compacted
+locally with a bounded extractive summary; the original transcript remains in
+the audit log. Context maintenance therefore does not depend on an additional
+provider request. Compaction is state-driven, does not
 reserve an iteration, preserves the system prompt and recent tool exchange,
 and emits a `context.compacted` event with before/after message counts.
 

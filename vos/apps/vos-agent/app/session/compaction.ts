@@ -17,7 +17,8 @@ export type ContextCompactionSetting = false | ContextCompactionOptions;
 export const DEFAULT_CONTEXT_COMPACTION_THRESHOLD = 0.8;
 export const DEFAULT_CONTEXT_COMPACTION_MAX_INPUT_TOKENS = 60_000;
 export const DEFAULT_PROTECTED_MESSAGES = 8;
-const MAX_SUMMARY_CHUNK_CHARACTERS = 80_000;
+const MAX_EXTRACTED_SUMMARY_CHARACTERS = 24_000;
+const MAX_EXTRACTED_MESSAGE_CHARACTERS = 1_600;
 
 type Message = OpenAI.Chat.ChatCompletionMessageParam;
 type UserMessage = OpenAI.Chat.ChatCompletionUserMessageParam;
@@ -38,11 +39,6 @@ export interface CompactHistoryResult {
   usageEvents: ChatUsage[];
 }
 
-interface SummaryResult {
-  summary: string | undefined;
-  usageEvents: ChatUsage[];
-}
-
 export async function compactHistoryIfNeeded(
   input: CompactHistoryInput,
 ): Promise<CompactHistoryResult> {
@@ -60,12 +56,10 @@ export async function compactHistoryIfNeeded(
     return { compacted: false, messages: [...input.messages], usageEvents: [] };
   }
 
-  const { summary, usageEvents } = await summarizeMessages(
-    input.chat,
-    input.model,
-    older,
-    input.signal,
-  );
+  void input.chat;
+  void input.signal;
+  const summary = extractHistorySummary(older);
+  const usageEvents: ChatUsage[] = [];
   if (!summary) {
     return { compacted: false, messages: [...input.messages], usageEvents };
   }
@@ -151,94 +145,35 @@ function prependSummaryToUserContent(summary: string, content: UserContent): Use
   return [summaryPart, ...content];
 }
 
-async function summarizeMessages(
-  chat: ChatClient,
-  model: string,
-  messages: readonly Message[],
-  signal: AbortSignal | undefined,
-): Promise<SummaryResult> {
-  const usageEvents: ChatUsage[] = [];
-  const chunks = chunkTranscript(messages, MAX_SUMMARY_CHUNK_CHARACTERS);
-  const summaries: string[] = [];
-  for (let index = 0; index < chunks.length; index++) {
-    const response = await chat.chat({
-      model,
-      messages: [{
-        role: "user",
-        content: [
-          `Summarize chunk ${index + 1} of ${chunks.length} from an earlier VOS Agent conversation.`,
-          "Preserve decisions, constraints, file paths, commands, failing tests, completed edits, and unresolved tasks.",
-          "Do not infer success for work that was not verified.",
-          "",
-          chunks[index],
-        ].join("\n"),
-      }],
-      tools: [],
-      onUsage: (chatUsage) => {
-        usageEvents.push(chatUsage);
-      },
-      ...(signal ? { signal } : {}),
-    });
-    if (typeof response.content !== "string" || response.content.trim().length === 0) {
-      return { summary: undefined, usageEvents };
-    }
-    summaries.push(response.content.trim());
+function extractHistorySummary(messages: readonly Message[]): string | undefined {
+  const entries: string[] = [];
+  let remaining = MAX_EXTRACTED_SUMMARY_CHARACTERS;
+  for (let index = messages.length - 1; index >= 0 && remaining > 0; index--) {
+    const message = messages[index]!;
+    const formatted = `## Earlier message ${index + 1}: ${message.role}\n${formatMessage(message)}`;
+    const bounded = boundText(formatted, Math.min(MAX_EXTRACTED_MESSAGE_CHARACTERS, remaining));
+    entries.push(bounded);
+    remaining -= bounded.length + 2;
   }
-
-  if (summaries.length === 1) {
-    return { summary: summaries[0], usageEvents };
-  }
-
-  const response = await chat.chat({
-    model,
-    messages: [{
-      role: "user",
-      content: [
-        "Merge these ordered chunk summaries into one continuation summary for a VOS Agent.",
-        "Preserve decisions, constraints, file paths, commands, failing tests, completed edits, and unresolved tasks.",
-        "Resolve repetition without dropping later corrections or claiming unverified success.",
-        "",
-        summaries.map((summary, index) => `## Chunk ${index + 1}\n${summary}`).join("\n\n"),
-      ].join("\n"),
-    }],
-    tools: [],
-    onUsage: (chatUsage) => {
-      usageEvents.push(chatUsage);
-    },
-    ...(signal ? { signal } : {}),
-  });
-
-  return {
-    summary: typeof response.content === "string" && response.content.trim().length > 0
-      ? response.content.trim()
-      : undefined,
-    usageEvents,
-  };
+  if (entries.length === 0) return undefined;
+  entries.reverse();
+  const omitted = messages.length - entries.length;
+  return [
+    "Deterministic extractive summary. The original transcript remains in the audit log.",
+    "Treat only explicit tool results as evidence; do not infer success from plans or assistant prose.",
+    ...(omitted > 0 ? [`${omitted} oldest message(s) were omitted by the bounded context policy.`] : []),
+    "",
+    ...entries,
+  ].join("\n\n");
 }
 
-function chunkTranscript(messages: readonly Message[], maxCharacters: number): string[] {
-  const chunks: string[] = [];
-  let current = "";
-  for (let index = 0; index < messages.length; index++) {
-    const formatted = `## Message ${index + 1}: ${messages[index]!.role}\n${formatMessage(messages[index]!)}`;
-    if (current.length > 0 && current.length + formatted.length + 2 > maxCharacters) {
-      chunks.push(current);
-      current = "";
-    }
-    if (formatted.length <= maxCharacters) {
-      current = current ? `${current}\n\n${formatted}` : formatted;
-      continue;
-    }
-    if (current) {
-      chunks.push(current);
-      current = "";
-    }
-    for (let offset = 0; offset < formatted.length; offset += maxCharacters) {
-      chunks.push(formatted.slice(offset, offset + maxCharacters));
-    }
-  }
-  if (current) chunks.push(current);
-  return chunks;
+function boundText(value: string, limit: number): string {
+  if (value.length <= limit) return value;
+  const marker = "\n...[middle omitted by deterministic context compaction]...\n";
+  if (limit <= marker.length) return value.slice(0, limit);
+  const available = limit - marker.length;
+  const head = Math.ceil(available / 2);
+  return `${value.slice(0, head)}${marker}${value.slice(value.length - (available - head))}`;
 }
 
 function formatMessage(message: Message): string {
