@@ -2,6 +2,8 @@
 
 VeriSpecOSLab 是一个面向操作系统课程的 spec-first 实验工具链。学生只需维护设计、模块契约和实现代码，`vos` 负责把它们连接到构建、QEMU、硬件运行、公开验证和提交归档。
 
+决赛技术报告位于 `output/pdf/VeriSpecOSLab-final-techinal-report.pdf`
+
 ## 学生主链
 
 ```text
