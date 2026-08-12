@@ -486,6 +486,137 @@ describe("student v2 workflow", () => {
     });
   }, 30_000);
 
+  test("resumes VOS-projected test targets without discarding or duplicating them", async () => {
+    const root = makeRoot();
+    await withGitIdentity(async () => {
+      await prepareModuleProject(root);
+      const head = git(root, ["rev-parse", "HEAD"]).trim();
+      const runId = "interrupted-with-targets";
+      const recoveryRoot = join(root, ".vos", "runs", runId);
+      mkdirSync(join(recoveryRoot, "artifacts"), { recursive: true });
+      const recovered = join(root, ".vos", "recovery-source");
+      git(root, ["worktree", "add", "--detach", recovered, head]);
+      try {
+        mkdirSync(join(recovered, "src"), { recursive: true });
+        mkdirSync(join(recovered, "tests", "memory"), { recursive: true });
+        writeFileSync(join(recovered, "src", "memory.ts"), "export const allocate = () => 0;\n");
+        writeFileSync(join(recovered, "tests", "memory", "public.sh"), "#!/usr/bin/env sh\nexit 0\n");
+        writeFileSync(join(recovered, "tests", "memory", "contract.sh"), "#!/usr/bin/env sh\nexit 0\n");
+        writeFileSync(join(recovered, "tests", "memory", "fuzz.sh"), "#!/usr/bin/env sh\nexit 0\n");
+        writeFileSync(join(recovered, "tests", "memory", "trace.sh"), "#!/usr/bin/env sh\nexit 0\n");
+        const manifest = readFileSync(join(recovered, "vos.yaml"), "utf8") + [
+          "  memory_generated_public:",
+          "    program: bun",
+          "    args: [--version]",
+          "    cwd: .",
+          "    env: [PATH]",
+          "    timeout: 30000",
+          "    verifies: [memory]",
+          "    kind: public",
+          "    artifacts: []",
+          "  memory_generated_contract:",
+          "    program: bun",
+          "    args: [--version]",
+          "    cwd: .",
+          "    env: [PATH]",
+          "    timeout: 30000",
+          "    verifies: [memory]",
+          "    kind: contract",
+          "    artifacts: []",
+          "  memory_generated_fuzz:",
+          "    program: bun",
+          "    args: [--version]",
+          "    cwd: .",
+          "    env: [PATH]",
+          "    timeout: 30000",
+          "    verifies: [memory]",
+          "    kind: fuzz",
+          "    artifacts: []",
+          "    seed: 7",
+          "    cases: 32",
+          "    reproduction_artifact: .vos/fuzz/memory-min.txt",
+          "  memory_generated_trace:",
+          "    program: bun",
+          "    args: [--version]",
+          "    cwd: .",
+          "    env: [PATH]",
+          "    timeout: 30000",
+          "    verifies: [memory]",
+          "    kind: trace",
+          "    artifacts: [.vos/trace/memory.json]",
+          "    workload: memory-smoke",
+          "    oracle: memory behavior is preserved",
+          "",
+        ].join("\n");
+        writeFileSync(join(recovered, "vos.yaml"), manifest);
+        git(recovered, ["add", "-N", "src/memory.ts", "tests/memory/public.sh", "tests/memory/contract.sh", "tests/memory/fuzz.sh", "tests/memory/trace.sh"]);
+        const patch = git(recovered, ["diff", "--binary", head]);
+        writeFileSync(join(recoveryRoot, "artifacts", "student-implement.json"), JSON.stringify({
+          module: "memory",
+          base_head: head,
+          patch,
+        }));
+      } finally {
+        git(root, ["worktree", "remove", "--force", recovered]);
+      }
+
+      let calls = 0;
+      const result = await executeCliInvocation([
+        "bun", "vos", "--project-root", root, "--json", "agent", "implement", "memory", "--resume", runId,
+      ], {
+        print: false,
+        agentRunner: async (options) => {
+          calls++;
+          expect(readFileSync(join(options.projectRoot, "vos.yaml"), "utf8")).toContain("memory_generated_public");
+          expect(options.task).toContain("Treat the restored vos.yaml as the current base manifest");
+          const common = {
+            program: "bun",
+            cwd: ".",
+            env: ["PATH"],
+            timeout: 30_000,
+            verifies: ["memory"],
+            artifacts: [],
+          };
+          return {
+            content: "resumed",
+            events: acceptedSubmitEvents("student_implementation_result.v1", implementationResult("memory", [{
+              ...common,
+              id: "memory_generated_public",
+              kind: "public",
+              args: ["--version"],
+            }, {
+              ...common,
+              id: "memory_generated_contract",
+              kind: "contract",
+              args: ["--version"],
+            }, {
+              ...common,
+              id: "memory_generated_fuzz",
+              kind: "fuzz",
+              args: ["--version"],
+              seed: 7,
+              cases: 32,
+              reproduction_artifact: ".vos/fuzz/memory-min.txt",
+            }, {
+              ...common,
+              id: "memory_generated_trace",
+              kind: "trace",
+              args: ["--version"],
+              artifacts: [".vos/trace/memory.json"],
+              workload: "memory-smoke",
+              oracle: "memory behavior is preserved",
+            }])),
+          };
+        },
+      });
+      if (calls !== 1 || result.status !== "passed") throw new Error(JSON.stringify({ calls, status: result.status, message: result.message, details: result.details }));
+      expect(calls).toBe(1);
+      expect(result.status).toBe("passed", JSON.stringify(result.details));
+      expect(readFileSync(join(root, "vos.yaml"), "utf8")).toContain("memory_generated_public");
+      expect(readFileSync(join(root, "src", "memory.ts"), "utf8")).toContain("allocate");
+    });
+  }, 30_000);
+
   test("returns owns violations to the same Agent thread for repair", async () => {
     const root = makeRoot();
     await withGitIdentity(async () => {
@@ -1324,7 +1455,7 @@ function acceptedSubmitEvents(schemaId: string, result: unknown): Array<Record<s
   ];
 }
 
-function implementationResult(moduleId = "memory") {
+function implementationResult(moduleId = "memory", testTargets?: Array<Record<string, unknown>>) {
   const base = {
     program: "bun",
     args: ["--version"],
@@ -1338,7 +1469,7 @@ function implementationResult(moduleId = "memory") {
     status: "passed",
     changed_paths: [`src/${moduleId}.ts`],
     validations: ["build"],
-    test_targets: [
+    test_targets: testTargets ?? [
       { ...base, id: `generated-public-${moduleId}`, kind: "public" },
       { ...base, id: `generated-contract-${moduleId}`, kind: "contract" },
       { ...base, id: `generated-fuzz-${moduleId}`, kind: "fuzz", seed: 7, cases: 32, reproduction_artifact: `.vos/fuzz/${moduleId}-min.txt` },
