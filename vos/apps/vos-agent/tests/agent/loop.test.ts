@@ -3,6 +3,7 @@ import type OpenAI from "openai";
 import { runAgent } from "../../app/agent/loop.ts";
 import { ToolRegistry, type Tool } from "../../app/tools/types.ts";
 import {
+  CallbackChatClient,
   ScriptedChatClient,
   TEST_MODEL,
   textResponse,
@@ -452,6 +453,45 @@ describe("runAgent", () => {
     expect(workCalls).toHaveLength(1);
     expect(chat.requests[0].tools.map((entry) => entry.function.name)).toEqual(["Work", "Submit"]);
     expect(chat.requests[0].requiredTool).toBeUndefined();
+  });
+
+  test("compacts a long in-flight run from measured input usage instead of iteration count", async () => {
+    const { tool: workTool } = recordingTool("Work", ["first result", "second result"]);
+    const { tool: submitTool } = recordingTool("Submit", ["accepted"]);
+    const events: string[] = [];
+    const chat = new CallbackChatClient(async (request, index) => {
+      if (index === 0) {
+        await request.onUsage?.({ inputTokens: 60, outputTokens: 5, totalTokens: 65 });
+        return toolCallResponse([{ name: "Work", args: { step: 1 } }]);
+      }
+      if (index === 1) {
+        expect(request.tools).toEqual([]);
+        expect(String(request.messages[0]?.content)).toContain("Summarize this earlier VOS Agent conversation");
+        return textResponse("The first work step completed successfully.");
+      }
+      expect(request.tools.map((entry) => entry.function.name)).toEqual(["Work", "Submit"]);
+      expect(String(request.messages[0]?.content)).toContain("[Compacted conversation summary]");
+      expect(String(request.messages[0]?.content)).toContain("first work step completed");
+      await request.onUsage?.({ inputTokens: 20, outputTokens: 5, totalTokens: 25 });
+      return toolCallResponse([{ name: "Submit", args: { status: "passed" } }]);
+    });
+
+    const result = await runAgent({
+      model: TEST_MODEL,
+      chat,
+      registry: new ToolRegistry([workTool, submitTool]),
+      prompt: "implement",
+      maxIterations: 10,
+      requiredCompletionTool: "Submit",
+      contextCompaction: { maxInputTokens: 50, protectLastMessages: 1 },
+      onEvent: (event) => {
+        events.push(event.type);
+      },
+    });
+
+    expect(result.iterations).toBe(2);
+    expect(chat.requests).toHaveLength(3);
+    expect(events).toContain("context.compacted");
   });
 
   test("prepends an optional system prompt", async () => {

@@ -99,6 +99,12 @@ rejected payload is returned to the same model thread as tool output so the
 model can repair the work and resubmit. The loop succeeds only after the tool
 accepts a result; exhausting `maxIterations` without acceptance fails.
 
+Long runs compact their transcript from provider-reported context usage. Known
+models use the configured context-window ratio; unknown compatible models use
+a conservative input-token threshold. Compaction is state-driven, does not
+reserve an iteration, preserves the system prompt and recent tool exchange,
+and emits a `context.compacted` event with before/after message counts.
+
 ## Invariants the loop guarantees
 
 1. Every `assistant` message returned by `chat()` is appended to the

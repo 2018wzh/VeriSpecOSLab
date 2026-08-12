@@ -192,6 +192,9 @@ Full test guide: [docs/testing.md](docs/testing.md).
   allowed tools remain available on every turn, and rejected payloads restore
   the full repair tools in the same thread. Reaching the limit without an
   accepted submission fails the run. Do not remove the runaway-loop guard.
+- Long single-turn tasks compact in-flight history from provider-reported
+  context usage, not an iteration checkpoint. Preserve the system prompt,
+  recent tool exchange, usage accounting, and `context.compacted` audit event.
 - Disposable implementation worktrees use the original student project as the
   Agent configuration root. Keep `.vos/config.toml` and `.env` out of the
   worktree; pass the resolved provider, model, endpoint, and credential mapping

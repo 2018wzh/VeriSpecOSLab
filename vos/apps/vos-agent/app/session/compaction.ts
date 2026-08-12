@@ -6,6 +6,8 @@ import type { StoredThreadUsage } from "./types.ts";
 export interface ContextCompactionOptions {
   /** Compact when the last recorded context-window usage is greater than this value. */
   threshold?: number;
+  /** Fallback trigger for models without catalogued context-window metadata. */
+  maxInputTokens?: number;
   /** Number of most recent transcript messages to preserve verbatim. */
   protectLastMessages?: number;
 }
@@ -13,6 +15,7 @@ export interface ContextCompactionOptions {
 export type ContextCompactionSetting = false | ContextCompactionOptions;
 
 export const DEFAULT_CONTEXT_COMPACTION_THRESHOLD = 0.8;
+export const DEFAULT_CONTEXT_COMPACTION_MAX_INPUT_TOKENS = 100_000;
 export const DEFAULT_PROTECTED_MESSAGES = 8;
 
 type Message = OpenAI.Chat.ChatCompletionMessageParam;
@@ -44,7 +47,7 @@ export async function compactHistoryIfNeeded(
 ): Promise<CompactHistoryResult> {
   const options = resolveCompactionOptions(input.options);
   if (!options) return { compacted: false, messages: [...input.messages], usageEvents: [] };
-  if (!shouldCompact(input.model, input.usage, options.threshold)) {
+  if (!shouldCompact(input.model, input.usage, options.threshold, options.maxInputTokens)) {
     return { compacted: false, messages: [...input.messages], usageEvents: [] };
   }
 
@@ -80,6 +83,7 @@ function resolveCompactionOptions(
   if (setting === false) return undefined;
   return {
     threshold: setting?.threshold ?? DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
+    maxInputTokens: setting?.maxInputTokens ?? DEFAULT_CONTEXT_COMPACTION_MAX_INPUT_TOKENS,
     protectLastMessages: Math.max(
       1,
       Math.trunc(setting?.protectLastMessages ?? DEFAULT_PROTECTED_MESSAGES),
@@ -91,6 +95,7 @@ function shouldCompact(
   model: string,
   usage: StoredThreadUsage,
   threshold: number,
+  maxInputTokens: number,
 ): boolean {
   const normalizedModel = normalizeModelId(model);
   const modelUsage = usage.byModel.find((entry) =>
@@ -98,7 +103,8 @@ function shouldCompact(
   );
   const usageRatio = modelUsage?.lastContextWindowUsage
     ?? Math.max(0, ...usage.byModel.map((entry) => entry.lastContextWindowUsage ?? 0));
-  return usageRatio > threshold;
+  if (usageRatio > threshold) return true;
+  return (modelUsage?.inputTokens ?? 0) > maxInputTokens;
 }
 
 function splitProtectedMessages(

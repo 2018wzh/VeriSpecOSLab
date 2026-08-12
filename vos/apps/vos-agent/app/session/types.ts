@@ -137,6 +137,14 @@ export type SessionEvent =
       iteration: number;
     } & ModelUsageEvent)
   | {
+      type: "context.compacted";
+      thread_id: string;
+      iteration: number;
+      inputTokens: number;
+      beforeMessages: number;
+      afterMessages: number;
+    }
+  | {
       type: "agent.done";
       thread_id: string;
       iteration: number;

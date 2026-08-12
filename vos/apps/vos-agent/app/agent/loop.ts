@@ -2,6 +2,10 @@ import type OpenAI from "openai";
 import type { ReasoningEffort } from "../config.ts";
 import type { ToolRegistry } from "../tools/types.ts";
 import { throwIfAborted } from "../cancellation.ts";
+import {
+  compactHistoryIfNeeded,
+  type ContextCompactionSetting,
+} from "../session/compaction.ts";
 
 export interface ChatRequest {
   /** Model identifier for this turn. Drives routing in multi-provider setups. */
@@ -110,6 +114,8 @@ export interface RunAgentOptions {
   onEvent?: (event: AgentEvent) => void | Promise<void>;
   /** Optional cancellation signal for the whole agent run. */
   signal?: AbortSignal;
+  /** Context-usage driven transcript compaction. Enabled by default. */
+  contextCompaction?: ContextCompactionSetting;
 }
 
 export type AgentEvent =
@@ -140,6 +146,13 @@ export type AgentEvent =
       iteration: number;
       model: string;
       usage: ChatUsage;
+    }
+  | {
+      type: "context.compacted";
+      iteration: number;
+      inputTokens: number;
+      beforeMessages: number;
+      afterMessages: number;
     }
   | { type: "agent.done"; iteration: number; content: string | null };
 
@@ -176,6 +189,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     streamAssistant = false,
     onEvent,
     signal,
+    contextCompaction,
   } = opts;
   if (!Number.isInteger(maxIterations) || maxIterations < 1) {
     throw new Error(
@@ -190,9 +204,10 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
   }
   let completionToolAccepted = false;
   let completionRepairPending = false;
-  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = history
+  let messages: OpenAI.Chat.ChatCompletionMessageParam[] = history
     ? [...history]
     : [];
+  let lastInputTokens = 0;
   if (history && system) {
     throw new Error("system cannot be provided when continuing from history");
   }
@@ -203,6 +218,43 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
     throwIfAborted(signal);
+    if (lastInputTokens > 0) {
+      const systemPrefix = messages[0]?.role === "system" ? [messages[0]] : [];
+      const compactableMessages = systemPrefix.length > 0 ? messages.slice(1) : messages;
+      const compaction = await compactHistoryIfNeeded({
+        chat,
+        model,
+        messages: compactableMessages,
+        usage: {
+          inputTokens: lastInputTokens,
+          outputTokens: 0,
+          totalTokens: lastInputTokens,
+          byModel: [{
+            model,
+            inputTokens: lastInputTokens,
+            outputTokens: 0,
+            totalTokens: lastInputTokens,
+          }],
+        },
+        options: contextCompaction,
+        signal,
+      });
+      if (compaction.compacted) {
+        const beforeMessages = messages.length;
+        messages = [...systemPrefix, ...compaction.messages];
+        await onEvent?.({
+          type: "context.compacted",
+          iteration,
+          inputTokens: lastInputTokens,
+          beforeMessages,
+          afterMessages: messages.length,
+        });
+        lastInputTokens = 0;
+      }
+      for (const usage of compaction.usageEvents) {
+        await onEvent?.({ type: "model.usage", iteration, model, usage });
+      }
+    }
     const completionRepairTurn = completionRepairPending;
     if (completionRepairTurn) completionRepairPending = false;
     if (completionRepairTurn && requiredCompletionTool) {
@@ -227,13 +279,10 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
             },
           }
         : {}),
-      ...(onEvent
-        ? {
-            onUsage: async (usage) => {
-              await onEvent({ type: "model.usage", iteration, model, usage });
-            },
-          }
-        : {}),
+      onUsage: async (usage) => {
+        lastInputTokens = usage.inputTokens ?? lastInputTokens;
+        await onEvent?.({ type: "model.usage", iteration, model, usage });
+      },
     });
     messages.push(message);
     await onEvent?.({ type: "assistant.message", iteration, message });

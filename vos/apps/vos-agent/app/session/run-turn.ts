@@ -204,6 +204,15 @@ export async function runSessionTurn(
         });
       } else if (event.type === "model.usage") {
         await recordModelUsage(event.iteration, event.model, event.usage);
+      } else if (event.type === "context.compacted") {
+        await onEvent?.({
+          type: "context.compacted",
+          thread_id: thread.id,
+          iteration: event.iteration,
+          inputTokens: event.inputTokens,
+          beforeMessages: event.beforeMessages,
+          afterMessages: event.afterMessages,
+        });
       }
     };
     let history = threadId ? stripInstructionMessages(thread.messages) : undefined;
@@ -264,6 +273,7 @@ export async function runSessionTurn(
       streamAssistant,
       responseFormat: opts.responseFormat,
       requiredCompletionTool: opts.requiredCompletionTool,
+      contextCompaction: opts.contextCompaction,
       ...(historyForRun ? { history: historyForRun } : { system }),
       signal: opts.signal,
       onEvent: handleAgentEvent,
