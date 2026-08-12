@@ -8,21 +8,12 @@ import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import {
   agentSpecReviewSchema,
-  architectureSliceSchema,
-  compositionSchema,
   designSpecSchema,
-  goalSchema,
   goalV2Schema,
   interfaceSpecSchema,
   moduleV2Schema,
-  moduleSchema,
-  operationSchema,
-  publicMatrixSchema,
   projectManifestSchema,
-  seedSchema,
   specPatchV2Schema,
-  specPatchSchema,
-  timelineSchema,
 } from "./schemas.ts";
 import type {
   AgentSpecReview,
@@ -172,70 +163,6 @@ export async function buildNormalizedSpecBundle(params: {
           test_surfaces: doc.owns,
         });
         operations.push(...normalized.operations);
-      } else if (kind === "module") {
-        const doc = moduleSchema.parse(parsed);
-        modules.push({
-          id: doc.id,
-          module: doc.module,
-          stage: doc.stage,
-          path: rel,
-          purpose: doc.purpose,
-          related_slices: doc.related_slices,
-          related_adrs: doc.related_adrs,
-          test_surfaces: doc.test_surfaces,
-        });
-      } else if (kind === "operation") {
-        const doc = operationSchema.parse(parsed);
-        operations.push({
-          id: doc.id,
-          module: doc.module,
-          operation: doc.operation,
-          stage: doc.stage,
-          path: rel,
-          related_slice: doc.related_slice ?? undefined,
-          related_adr: doc.related_adr ?? undefined,
-          requires_modules: doc.depends_on.requires_modules,
-          requires_ops: doc.depends_on.requires_ops,
-          public_tests: doc.test_obligations.public,
-          generated_tests: doc.test_obligations.generated,
-          hidden_tags: doc.test_obligations.hidden_tags,
-          codegen_targets: doc.codegen.targets,
-          invariants_preserved: doc.invariants_preserved,
-          required_followup_checks: doc.codegen.required_followup_checks,
-        });
-      } else if (kind === "architecture_timeline") {
-        const doc = timelineSchema.parse(parsed);
-        for (const item of doc.timeline) {
-          if (!item.stage) continue;
-          stages.push({
-            stage: item.stage,
-            slice: item.slice,
-            title: item.title,
-            enabled_modules: item.enabled_modules,
-            validation_gate: item.validation_gate,
-          });
-        }
-      } else if (kind === "architecture_slice") {
-        const doc = architectureSliceSchema.parse(parsed);
-        slices.push({
-          id: doc.id,
-          stage: doc.stage,
-          path: rel,
-          enabled_modules: doc.enabled_modules,
-          validation_gate: doc.validation_gate,
-        });
-      } else if (kind === "adr") {
-        const id = typeof parsed.id === "string" ? parsed.id : path.basename(rel, path.extname(rel));
-        decisions.push({ id, path: rel });
-      } else if (kind === "composition") {
-        const doc = compositionSchema.parse(parsed);
-        compositions.push({
-          id: doc.id,
-          title: doc.title,
-          path: rel,
-          affected_modules: doc.affected_modules,
-          tests: unique(doc.cross_component_rules.flatMap((rule) => rule.tests)),
-        });
       } else if (kind === "interface") {
         const doc = interfaceSpecSchema.parse(parsed);
         const operationsForInterface = doc.operations.map((operation) => normalizeOperation(operation, doc.name, rel));
@@ -257,27 +184,6 @@ export async function buildNormalizedSpecBundle(params: {
           path: rel,
           evidence_required: [...doc.correctness, ...(doc.metric ? [doc.metric] : [])],
         });
-      } else if (kind === "goal") {
-        const doc = goalSchema.parse(parsed);
-        goals.push({
-          goal_id: doc.goal_id,
-          category: doc.category,
-          path: rel,
-          evidence_required: doc.evidence_required,
-        });
-      } else if (kind === "verification_public_matrix") {
-        const doc = publicMatrixSchema.parse(parsed);
-        publicRequirements.push(...doc.public_requirements.map((req) => ({
-          id: req.id,
-          related_specs: req.related_specs,
-          required_tests: req.required_tests,
-          required_artifacts: req.required_artifacts,
-        })));
-      } else if (kind === "architecture_seed") {
-        // v2: seed.yaml uses lenient schema — blank/TODO fields are allowed.
-        // Only report diagnostics for malformed values (wrong types), not missing fields.
-        const doc = seedSchema.parse(parsed);
-        seedDoc = doc as Record<string, unknown>;
       } else if (kind === "spec_patch" && isRecord(parsed) && Array.isArray(parsed.changes)) {
         const doc = specPatchV2Schema.parse(parsed);
         v2PatchPaths.add(rel);
@@ -291,28 +197,6 @@ export async function buildNormalizedSpecBundle(params: {
           affected_modules: doc.changes,
           affected_operations: [],
           required_regressions: [],
-        });
-      } else if (kind === "spec_patch") {
-        const doc = specPatchSchema.parse(parsed);
-        patchRecords.push({
-          id: doc.id,
-          stage: doc.stage,
-          title: doc.title,
-          kind: doc.kind,
-          path: rel,
-          commit_sha: doc.commit_sha ?? undefined,
-          parent_sha: doc.parent_sha ?? undefined,
-          spec_commit_sha: doc.spec_commit_sha ?? undefined,
-          affected_specs: doc.affected_specs,
-          affected_modules: doc.affected_modules,
-          affected_operations: doc.affected_operations,
-          required_regressions: doc.required_regressions,
-        });
-      } else if (kind === "toolchain") {
-        toolchainProfiles.push({
-          path: rel,
-          id: typeof parsed.id === "string" ? parsed.id : undefined,
-          includes: Array.isArray(parsed.includes) ? parsed.includes.filter(isString) : [],
         });
       }
     } catch (error) {
@@ -681,20 +565,20 @@ async function loadSpecPatchRecord(
   if (existsSync(absolute)) {
     const rel = normalizePath(path.relative(projectRoot, absolute));
     const raw = await readFile(absolute, "utf8");
-    const parsed = specPatchSchema.parse(parseYaml(raw));
+    const parsed = specPatchV2Schema.parse(parseYaml(raw));
     const patchRecord = {
       id: parsed.id,
-      stage: parsed.stage,
-      title: parsed.title,
-      kind: parsed.kind,
+      stage: "design",
+      title: parsed.reason,
+      kind: "module_change",
       path: rel,
-      commit_sha: parsed.commit_sha ?? undefined,
-      parent_sha: parsed.parent_sha ?? undefined,
-      spec_commit_sha: parsed.spec_commit_sha ?? undefined,
-      affected_specs: parsed.affected_specs,
-      affected_modules: parsed.affected_modules,
-      affected_operations: parsed.affected_operations,
-      required_regressions: parsed.required_regressions,
+      commit_sha: undefined,
+      parent_sha: undefined,
+      spec_commit_sha: undefined,
+      affected_specs: parsed.changes,
+      affected_modules: parsed.changes,
+      affected_operations: [],
+      required_regressions: [],
     };
     return { patch: patchRecord, metadataCommitSha: patchRecord.commit_sha };
   }
