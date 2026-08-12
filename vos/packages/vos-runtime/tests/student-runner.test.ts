@@ -23,12 +23,13 @@ describe("student QEMU runner", () => {
     expect(design).toContain("composition_invariants:");
     for (const relativePath of [
       "spec/modules/toolchain.yaml",
-      "spec/interfaces/kernel-console.yaml",
-      "spec/goals/xv6-core.yaml",
-      "spec/patches/lab5-process-syscall.yaml",
+      "spec/interfaces/kernel-file-abi.yaml",
+      "spec/modules/kernel/process.yaml",
+      "spec/patches/lab7-process-pipe-completion.yaml",
     ]) {
       expect(existsSync(join(xv6Root, relativePath))).toBe(true);
     }
+    expect(existsSync(join(xv6Root, "spec", "goals", "xv6-core.yaml"))).toBe(false);
     for (const ignoredPath of [".vos/", ".env", "build/", "fs.img"]) {
       expect(gitignore).toContain(ignoredPath);
     }
