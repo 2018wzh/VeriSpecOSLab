@@ -424,8 +424,16 @@ function parseCommand(tokens: string[], global: GlobalOptions): StudentCliComman
       const module = rest[1];
       if (!module || module.startsWith("-")) throw new Error("agent implement requires <module>");
       const tail = rest.slice(2);
-      if (tail.length > 0) throw new Error("agent implement accepts exactly one module");
-      return { kind: "agent_implement", module } satisfies AgentImplementCommand;
+      let resumeRunId: string | undefined;
+      for (let index = 0; index < tail.length; index++) {
+        if (tail[index] === "--resume") {
+          resumeRunId = tail[++index];
+          if (!resumeRunId || resumeRunId.startsWith("-")) throw new Error("agent implement --resume requires <run-id>");
+          continue;
+        }
+        throw new Error("agent implement accepts one module and optional --resume <run-id>");
+      }
+      return { kind: "agent_implement", module, resumeRunId } satisfies AgentImplementCommand;
     }
     if (second === "verify") {
       if (rest.length > 1) throw new Error("agent verify accepts no command-specific options");

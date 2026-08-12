@@ -290,6 +290,7 @@ export interface AgentDebugCommand extends BaseCommand {
 export interface AgentImplementCommand extends BaseCommand {
   kind: "agent_implement";
   module: string;
+  resumeRunId?: string;
   display?: boolean;
 }
 

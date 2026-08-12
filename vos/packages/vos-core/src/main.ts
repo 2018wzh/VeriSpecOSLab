@@ -2338,7 +2338,10 @@ export async function executeAgentImplement(
   const currentManifest = await readStudentManifest(projectRoot);
   const existingTargetIds = Object.keys(currentManifest.manifest.checks).sort();
   const requiredTargetIds = studentDeclaredTargetIds(module, existingTargetIds);
-  const worktree = await createStudentWorktree(projectRoot, evidence.run_id);
+  const resumedRun = command.resumeRunId
+    ? await restoreStudentImplementationRecovery({ projectRoot, runId: command.resumeRunId, moduleId: module.id, baseHead, specHash, ownedPaths })
+    : undefined;
+  const worktree = resumedRun?.worktree ?? await createStudentWorktree(projectRoot, evidence.run_id);
   let patch = "";
   let validation: Record<string, unknown> = {};
   let implementation: StudentImplementationPayload | undefined;
@@ -2349,6 +2352,9 @@ export async function executeAgentImplement(
   const commitMessage = `[vos][agent] Implement ${module.module}\n\nRun-ID: ${evidence.run_id}\nSpec-Hash: ${specHash}`;
   try {
     const progress = createAgentProgressParams(context, "agent implement");
+    const recoveryPrompt = resumedRun
+      ? `Resume interrupted VOS run ${resumedRun.runId}. Its patch was restored into this fresh detached worktree only after matching the same module, clean HEAD, Spec hash, and owns set. Inspect and retain valid owned changes, remove incomplete artifacts, rerun validation, and submit a corrected structured result. The restored patch is not accepted evidence and all normal gates below still apply.\n`
+      : "";
     const initialPrompt = `Implement ModuleSpec ${module.id}. Work only within these owned paths: ${ownedPaths.join(", ")}. Generate the implementation plus concrete public, contract, fixed-seed bounded fuzz, bounded trace/oracle, and local hidden tests for this module. Test source paths must also be covered by owns. This is an implementation task, not a planning task: do not stop after describing a plan; write the owned files, run validation, and call submit_result. Read only the current project root: its Spec, vos.yaml, owned files, and public test framework. Reuse helpers under tests/public and do not reimplement them in generated tests. Do not inspect parent or sibling directories, other checkouts/worktrees, VOS implementation source, Git history, old Lab implementations/diffs, or previous .vos runs; the current Spec and the result contract below are the complete authority. Do not perform repo-wide schema searches or toolchain discovery. Do not edit vos.yaml: return structured test_targets and hidden_tests so VOS can validate and project them atomically. Existing test target IDs are immutable and MUST NOT be proposed again: ${JSON.stringify(existingTargetIds)}. Choose new module-prefixed IDs that do not collide with that list. Each test_targets entry is {id, kind, program, args, cwd, env, timeout, verifies, artifacts}; timeout is an integer number of milliseconds and must be at least 1000 (for example 60000 for 60 seconds); use env: [\"PATH\"] for every target whose program or script resolves host tools by name. Fuzz additionally requires seed, cases, reproduction_artifact; trace additionally requires workload and oracle. Each hidden_tests entry is {id, path, content, program, args, cwd, env, timeout, verifies, seed} with the same millisecond timeout rule, and args may use {hidden_test}; hidden tests that resolve host tools also require PATH in env. Every verifies list must include ${module.id}. Hidden test content is returned in the result and must not be written into Git. Each implementation or evidence-driven repair turn retains the Agent runtime's required hard ${implementationMaxIterations}-iteration maxIterations guard. Batch independent Read/Write/Bash calls in the same response. As soon as the implementation and all required tests pass, verify that every proposed command path exists and call submit_result immediately; there is no intermediate iteration checkpoint. Do not repeat an unchanged successful validation or defer submission merely because iterations remain. Do not call submit_result with failed, partial, or blocked status: those statuses are rejected as repairable tool errors and do not finish the run. A rejected submission restores the full tool set in the same thread so you can repair files or payload fields and resubmit. No iteration is reserved exclusively for submission; maxIterations is only the hard runaway-loop ceiling, and reaching it without an accepted submission fails the run. Do not spend more than ten iterations on one unchanged failure: fix its cause, use a simpler Spec-compliant design, or move to another independent required file before returning with new evidence. Do not spend iterations investigating harmless output formatting after the declared oracle passes. VOS will independently run the build and every existing and proposed non-hidden target before applying anything. Do not edit specs, .git, .vos, or worktrees.`;
     let taskPrompt = `${initialPrompt}\nImplement only operations and behavior explicitly declared by the target ModuleSpec. Do not implement another newly declared ModuleSpec even when a committed SpecPatch makes its owned paths writable; cross-module access exists only for the smallest integration edit required by this target. Scope every proposed test and hidden test to this target and already-implemented dependencies, never to a sibling module that has not landed yet. Do not add adjacent later-stage operations merely because a reference OS commonly includes them; choose the smallest complete composition that satisfies the current Spec. Prefer WriteFiles to create a related implementation or test-file batch in one tool call. A missing implementation or test file is not an external blocker: create it with the available tools and do not submit failed merely because owned work remains. Hidden-test content must be self-contained in each hidden_tests entry; hidden args may reference only {hidden_test} and scalar flags or seeds, so do not create or retain hidden-test source, driver, support, or oracle files in the Git worktree. Do not run git commit, amend, merge, rebase, reset, checkout, switch, or otherwise modify Git history; VOS owns the final atomic commit and deterministically squashes any accidental temporary-worktree commits. Keep disposable build intermediates under an owned ignored output directory; do not edit .gitignore.`;
     taskPrompt += `\nThe hard maxIterations value is ${implementationMaxIterations}. There is no fixed submission iteration: submit as soon as the work is complete. Rejected submissions restore the full tool set. Reaching the limit without an accepted submission fails the run.`;
@@ -2363,7 +2369,7 @@ export async function executeAgentImplement(
       const agentResult = await runAgentWithPrompt({
         projectRoot: worktree,
         configurationRoot: projectRoot,
-        taskPrompt,
+        taskPrompt: `${recoveryPrompt}${taskPrompt}`,
         taskKind: "implementation",
         requestedScope: `implement:${module.id}`,
         context: studentSpecContext(bundle, module.id),
@@ -3332,6 +3338,53 @@ async function createStudentWorktree(projectRoot: string, id: string): Promise<s
   await mkdir(path.dirname(worktree), { recursive: true });
   await runStudentGit(projectRoot, ["worktree", "add", "--detach", worktree, "HEAD"]);
   return worktree;
+}
+
+async function restoreStudentImplementationRecovery(params: {
+  projectRoot: string;
+  runId: string;
+  moduleId: string;
+  baseHead: string;
+  specHash: string;
+  ownedPaths: readonly string[];
+}): Promise<{ runId: string; worktree: string }> {
+  if (!/^[A-Za-z0-9._-]+$/.test(params.runId)) {
+    throw new CliError("agent implement --resume run ID is invalid", "validation_failed", { run_id: params.runId });
+  }
+  const artifactPath = path.join(params.projectRoot, ".vos", "runs", params.runId, "artifacts", "student-implement.json");
+  if (!existsSync(artifactPath)) {
+    throw new CliError("agent implement --resume evidence was not found", "validation_failed", { run_id: params.runId });
+  }
+  const raw = JSON.parse(await readFile(artifactPath, "utf8")) as unknown;
+  if (!isRecord(raw) || raw.module !== params.moduleId || raw.base_head !== params.baseHead || typeof raw.patch !== "string" || !raw.patch.trim()) {
+    throw new CliError("agent implement --resume evidence does not match the current module and HEAD", "policy_blocked", {
+      run_id: params.runId,
+      module: params.moduleId,
+      base_head: params.baseHead,
+    });
+  }
+  const runManifestPath = path.join(params.projectRoot, ".vos", "runs", params.runId, "manifest.json");
+  const runManifest = existsSync(runManifestPath) ? JSON.parse(await readFile(runManifestPath, "utf8")) as unknown : undefined;
+  const recordedSpecHash = isRecord(runManifest) && typeof runManifest.spec_hash === "string"
+    ? runManifest.spec_hash
+    : undefined;
+  if (recordedSpecHash && recordedSpecHash !== params.specHash) {
+    throw new CliError("agent implement --resume Spec hash no longer matches", "policy_blocked", { run_id: params.runId });
+  }
+  const worktree = await createStudentWorktree(params.projectRoot, `resume-${params.runId}-${process.pid}`);
+  try {
+    const apply = await runCommand({ command: ["git", "apply", "--whitespace=nowarn", "-"], cwd: worktree, stdin: raw.patch });
+    if (apply.exitCode !== 0) throw new CliError(apply.stderr.trim() || "recovery patch did not apply", "validation_failed", { run_id: params.runId });
+    const changed = await studentChangedPaths(worktree, params.baseHead);
+    const violations = changed.filter((target) => target !== "vos.yaml" && !isOwnedStudentPath(target, params.ownedPaths));
+    if (violations.length > 0) {
+      throw new CliError("agent implement --resume patch exceeds the current owns set", "policy_blocked", { run_id: params.runId, violations });
+    }
+    return { runId: params.runId, worktree };
+  } catch (error) {
+    await removeStudentWorktree(params.projectRoot, worktree);
+    throw error;
+  }
 }
 
 async function removeStudentWorktree(projectRoot: string, worktree: string): Promise<void> {
@@ -5886,7 +5939,7 @@ export function commandToArray(command: CliCommand): string[] {
         ...(command.keepWorktree ? ["--keep-worktree"] : []),
       ];
     case "agent_implement":
-      return ["agent", "implement", command.module, ...(command.display ? ["--interactive"] : [])];
+      return ["agent", "implement", command.module, ...(command.resumeRunId ? ["--resume", command.resumeRunId] : []), ...(command.display ? ["--interactive"] : [])];
     case "agent_verify":
       return ["agent", "verify", ...(command.display ? ["--interactive"] : [])];
     case "agent_review":
@@ -6727,7 +6780,7 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
   "spec lint": helpBlock("spec lint [<Spec ID|path|design|all>]", ["Loads the complete project so cross-Spec references remain valid, then reports diagnostics relevant to the selected target. It never calls a model."], ["vos spec lint", "vos spec lint spec/modules/memory.yaml"]),
   "agent": helpBlock("agent config|implement|debug|verify|ask|review", ["config [--show|--check|--reset]", "implement <module>", "debug", "verify", "ask [question]", "review [<Spec ID|path|design|all>] [-i]"], ["vos agent config", "vos agent ask \"What is a syscall boundary?\"", "vos agent review design", "vos agent implement memory"]),
   "agent config": helpBlock("agent config [options]", ["No options: run the interactive setup wizard.", "--provider <anthropic|openai|openai-compatible|deepseek|ollama>", "--model <id>", "--base-url <url>", "--auth-env <name>", "--with-embedding | --without-embedding", "--embedding-provider <openai|openai-compatible>", "--embedding-model <id>", "--embedding-base-url <url>", "--embedding-auth-env <name>", "--show: show configuration without secret values", "--check: validate configuration and referenced credentials", "--reset: remove agent and embedding sections"], ["vos agent config", "vos agent config --check", "vos agent config --provider openai --model gpt-5 --auth-env OPENAI_API_KEY"]),
-  "agent implement": helpBlock("agent implement <module>", ["Requires clean HEAD and a committed ModuleSpec whose owns covers implementation and test paths. Generates implementation plus public, contract, fixed-seed fuzz, trace/oracle, and local hidden tests. VOS validates and atomically projects test targets into vos.yaml."], ["vos agent implement memory"]),
+  "agent implement": helpBlock("agent implement <module> [--resume <run-id>]", ["Requires clean HEAD and a committed ModuleSpec whose owns covers implementation and test paths. Generates implementation plus public, contract, fixed-seed fuzz, trace/oracle, and local hidden tests. VOS validates and atomically projects test targets into vos.yaml. --resume restores a failed run only when its module, HEAD, Spec hash, and owns set still match, then reruns every gate."], ["vos agent implement memory", "vos agent implement memory --resume 202608120845459-350b6984"]),
   "agent debug": helpBlock("agent debug", ["Read-only root-cause and evidence summary."], ["vos agent debug"]),
   "agent verify": helpBlock("agent verify", ["Runs deterministic public verification in a disposable worktree, then asks the read-only Validation Agent to review evidence and stable Spec ID coverage."], ["vos agent verify"]),
   "agent ask": helpBlock("agent ask [question]", ["Question answering only; omit the question or pass --interactive for a continuing conversation. It does not modify project files."], ["vos agent ask \"What is a syscall boundary?\"", "vos agent ask"]),

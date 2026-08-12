@@ -155,7 +155,9 @@ describe("student CLI contract", () => {
     expect(() => parseArgs(["bun", "vos", "verify", "public"]))
       .toThrow("accepts only --hidden");
     expect(() => parseArgs(["bun", "vos", "agent", "implement", "memory", "-i"]))
-      .toThrow("accepts exactly one module");
+      .toThrow("accepts one module and optional --resume");
+    expect(parseArgs(["bun", "vos", "agent", "implement", "memory", "--resume", "run-1"]).command)
+      .toEqual({ kind: "agent_implement", module: "memory", resumeRunId: "run-1" });
     expect(() => parseArgs(["bun", "vos", "agent", "debug", "--run", "run-1"]))
       .toThrow("accepts no command-specific options");
   });
