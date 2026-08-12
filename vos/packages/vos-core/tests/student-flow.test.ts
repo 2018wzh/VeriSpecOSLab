@@ -840,8 +840,9 @@ describe("student v2 workflow", () => {
           } else {
             rmSync(join(options.projectRoot, "tests", "memory", "transient.ts"));
             expect(options.threadId).toBe("repair-thread");
-            expect(options.maxIterations).toBe(1000);
+            expect(options.maxIterations).toBe(955);
             expect(options.task).toContain("authoritative validation rejected");
+            expect(options.task).toContain("955 iteration(s) remain");
             expect(options.task).toContain("Do not merely describe a known fix");
             expect(options.task).toContain("generated-public-memory");
           }

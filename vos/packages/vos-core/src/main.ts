@@ -2354,8 +2354,9 @@ export async function executeAgentImplement(
     taskPrompt += `\nThe hard maxIterations value is ${implementationMaxIterations}. There is no fixed submission iteration: submit as soon as the work is complete. Rejected submissions restore the full tool set. Reaching the limit without an accepted submission fails the run.`;
     taskPrompt += `\nThe structured result must propose every stable target ID declared by this ModuleSpec and not already present in vos.yaml: ${JSON.stringify(requiredTargetIds)}.`;
     let threadId: string | undefined;
+    let remainingIterations = implementationMaxIterations;
     const projectedTargetIds = new Set<string>();
-    while (true) {
+    while (remainingIterations > 0) {
       const manifestPath = path.join(worktree, "vos.yaml");
       const manifestBeforeAgent = await readFile(manifestPath, "utf8");
       const eventCountBeforeRun = implementationEvents.length;
@@ -2370,7 +2371,7 @@ export async function executeAgentImplement(
         requiredValidations: ["build", "public tests", "contract tests", "fixed-seed fuzz tests", "bounded trace/oracle tests"],
         courseMode: false,
         threadId,
-        maxIterations: implementationMaxIterations,
+        maxIterations: remainingIterations,
         resultSubmissionSchema: "student_implementation_result.v1",
         taskRunner: context.agentRunner,
         onEvent: async (event) => {
@@ -2380,7 +2381,8 @@ export async function executeAgentImplement(
       });
       if (implementationEvents.length === eventCountBeforeRun) implementationEvents.push(...agentResult.rawEvents);
       agentSubmission = agentResult.parsedResult;
-      const usedIterations = Math.max(1, agentResult.iterations);
+      const usedIterations = Math.min(remainingIterations, Math.max(1, agentResult.iterations));
+      remainingIterations -= usedIterations;
       threadId = agentResult.threadId ?? threadId;
       const manifestAfterAgent = await readFile(manifestPath, "utf8");
       if (manifestAfterAgent !== manifestBeforeAgent) {
@@ -2400,8 +2402,8 @@ export async function executeAgentImplement(
           message: errorMessage(error),
           agent_result: agentResult.parsedResult,
         };
-        if (usedIterations >= implementationMaxIterations || !threadId) break;
-        taskPrompt = `VOS rejected the structured implementation result before running gates. Preserve the current worktree. Use the available tools now to correct the result fields and any incomplete owned files, then run validation and resubmit status passed. Do not merely describe a known fix or immediately resubmit failed while iterations remain. This continuation keeps the same Agent thread and has the required ${implementationMaxIterations}-iteration maxIterations guard. Bounded validation evidence:\n${JSON.stringify(studentImplementationRepairSummary(validation), null, 2)}`;
+        if (remainingIterations === 0 || !threadId) break;
+        taskPrompt = `VOS rejected the structured implementation result before running gates. Preserve the current worktree. Use the available tools now to correct the result fields and any incomplete owned files, then run validation and resubmit status passed. Do not merely describe a known fix or immediately resubmit failed while iterations remain. This continuation keeps the same Agent thread and shares the original cumulative ${implementationMaxIterations}-iteration maxIterations guard; ${remainingIterations} iteration(s) remain. Bounded validation evidence:\n${JSON.stringify(studentImplementationRepairSummary(validation), null, 2)}`;
         continue;
       }
 
@@ -2509,8 +2511,8 @@ export async function executeAgentImplement(
           }
         }
       }
-      if (validation.status === "passed" || usedIterations >= implementationMaxIterations || !threadId) break;
-      taskPrompt = `VOS authoritative validation rejected the current implementation. Keep the existing projected test target IDs. Use the available tools now to inspect and correct the current worktree files, create every missing owned test file, run the failing commands, and resubmit status passed when every gate succeeds. A missing implementation or test file is not an external blocker. Do not merely describe a known fix or immediately resubmit failed while iterations remain. This continuation keeps the same Agent thread and has the required ${implementationMaxIterations}-iteration maxIterations guard. Bounded validation evidence:\n${JSON.stringify(studentImplementationRepairSummary(validation), null, 2)}`;
+      if (validation.status === "passed" || remainingIterations === 0 || !threadId) break;
+      taskPrompt = `VOS authoritative validation rejected the current implementation. Keep the existing projected test target IDs. Use the available tools now to inspect and correct the current worktree files, create every missing owned test file, run the failing commands, and resubmit status passed when every gate succeeds. A missing implementation or test file is not an external blocker. Do not merely describe a known fix or immediately resubmit failed while iterations remain. This continuation keeps the same Agent thread and shares the original cumulative ${implementationMaxIterations}-iteration maxIterations guard; ${remainingIterations} iteration(s) remain. Bounded validation evidence:\n${JSON.stringify(studentImplementationRepairSummary(validation), null, 2)}`;
     }
     if (validation.status === "passed") {
       if (!implementation) throw new CliError("implementation result disappeared before commit preparation", "failed");
