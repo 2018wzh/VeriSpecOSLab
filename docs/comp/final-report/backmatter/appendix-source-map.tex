@@ -15,7 +15,8 @@
   规格规范化与影响分析 & \path{vos/packages/vos-spec/src/index.ts} & bundle、diagnostics、SpecPatch impact、test matrix \\
   公开命令与学生主链 & \path{README.md}。\path{vos/packages/vos-core/src/cli.ts} & \code{vos --help}、parseArgs \\
   学生手写规格与检查 & \path{vos/packages/vos-core/src/main.ts} & \code{executeSpecLint}、\code{executeAgentAsk}、\code{executeAgentReview} \\
-  implement worktree 事务 & \path{vos/packages/vos-core/src/main.ts} & \code{executeAgentImplement}、test targets、owns、Spec-Hash \\
+  代码与测试生成流程 & \path{vos/packages/vos-core/src/main.ts}。\path{vos/apps/vos-agent/app/agent/output-schemas.ts} & \code{executeAgentImplement}、test targets、fuzz/trace fields、owns、Spec-Hash \\
+  插桩调试与验证复核 & \path{vos/packages/vos-core/src/runtime/debug-trace.ts}。\path{vos/packages/vos-core/src/main.ts}。\path{vos/apps/vos-agent/app/agent/profiles.ts} & \code{runAgentDebugTrace}、\code{executeAgentDebug}、\code{executeAgentVerify}、GDB adapter \\
   Agent profile 与权限 & \path{vos/apps/vos-agent/app/agent/profiles.ts} & \code{PROFILE\_CONFIGS}、toolProfile、outputSchema \\
   Provider/会话/工具循环 & \path{vos/apps/vos-agent/app/} & config、providers、agent loop、MCP、TUI \\
   结构化学生 Runner & \path{vos/packages/vos-runtime/src/index.ts} & \code{ManifestRunner}、\code{HostRunner}、\code{QemuRunner}、\code{HardwareRunner} \\
