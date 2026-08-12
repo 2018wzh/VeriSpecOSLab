@@ -82,8 +82,20 @@ describe("vos-server typed HTTP API", () => {
     expect(response.status).toBe(200);
     const spec = await response.json() as { paths: Record<string, unknown> };
     expect(spec.paths["/api/v1/build/runs"]).toBeTruthy();
+    expect(spec.paths["/api/v1/spec/lint"]).toBeTruthy();
+    expect(spec.paths["/api/v1/agent/implement-runs"]).toBeTruthy();
+    expect(spec.paths["/api/v1/agent/review-runs"]).toBeTruthy();
     expect(spec.paths["/api/v1/runs/{run_id}/events"]).toBeTruthy();
     expect(spec.paths["/api/v1/commands/runs"]).toBeUndefined();
+    for (const retired of [
+      "/api/v1/arch/lint",
+      "/api/v1/spec/normalize",
+      "/api/v1/agent/plan-runs",
+      "/api/v1/agent/generate-runs",
+      "/api/v1/agent/apply-patch-runs",
+    ]) {
+      expect(spec.paths[retired]).toBeUndefined();
+    }
   });
 
   test("protects every API route with a constant-time bearer token while leaving health public", async () => {

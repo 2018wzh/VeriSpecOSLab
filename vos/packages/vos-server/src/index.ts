@@ -13,7 +13,6 @@ import {
   type PortalClient,
   type PortalUserSummary,
   type PolicySnapshot,
-  type VerifyScope,
   type VosCommand,
 } from "vos-core";
 
@@ -85,47 +84,29 @@ const commonRunFields = {
   reason: z.string().optional(),
   agent_session_id: z.string().optional(),
 };
-const dryRunSchema = z.object({ dry_run: z.boolean().optional() }).strict();
 const pathSchema = z.object({ path: z.string().optional() }).strict();
 const runBaseSchema = z.object(commonRunFields).strict();
 
 const routes: RouteDef[] = [
   { method: "POST", path: "/api/v1/init", kind: "sync", schema: emptySchema, makeCommand: () => ({ kind: "init" }) },
   { method: "GET", path: "/api/v1/doctor", kind: "sync", schema: emptySchema, makeCommand: () => ({ kind: "doctor" }) },
-  { method: "GET", path: "/api/v1/stage", kind: "sync", schema: emptySchema, makeCommand: () => ({ kind: "stage_show" }) },
-  { method: "POST", path: "/api/v1/toolchain/lint", kind: "sync", schema: emptySchema, makeCommand: () => ({ kind: "toolchain_lint" }) },
-  { method: "POST", path: "/api/v1/spec/lint", kind: "sync", schema: pathSchema, makeCommand: (input) => ({ kind: "spec_lint", path: stringValue(input.path) }) },
-  { method: "POST", path: "/api/v1/spec/normalize", kind: "sync", schema: emptySchema, makeCommand: () => ({ kind: "spec_normalize" }) },
-  { method: "POST", path: "/api/v1/spec/check-consistency", kind: "sync", schema: emptySchema, makeCommand: () => ({ kind: "spec_check_consistency" }) },
-  { method: "POST", path: "/api/v1/spec/patch/lint", kind: "sync", schema: z.object({ patch_path: z.string().optional() }).strict(), makeCommand: (input) => ({ kind: "spec_patch_lint", patchPath: stringValue(input.patch_path) }) },
-  { method: "POST", path: "/api/v1/arch/lint", kind: "sync", schema: pathSchema, makeCommand: (input) => ({ kind: "arch_lint", path: stringValue(input.path) }) },
-  { method: "POST", path: "/api/v1/arch/compose", kind: "sync", schema: pathSchema, makeCommand: (input) => ({ kind: "arch_compose", path: stringValue(input.path) }) },
-  { method: "POST", path: "/api/v1/arch/derive-tests", kind: "sync", schema: pathSchema, makeCommand: (input) => ({ kind: "arch_derive_tests", path: stringValue(input.path) }) },
+  { method: "POST", path: "/api/v1/spec/lint", kind: "sync", schema: pathSchema, makeCommand: (input) => ({ kind: "spec_lint", target: stringValue(input.path) }) },
   { method: "GET", path: "/api/v1/kb/sources", kind: "sync", schema: emptySchema, makeCommand: () => ({ kind: "kb_list" }) },
   { method: "POST", path: "/api/v1/kb/search", kind: "sync", schema: z.object({ query: z.string().min(1) }).strict(), makeCommand: (input) => ({ kind: "kb_search", query: input.query as string }) },
   { method: "DELETE", path: "/api/v1/kb/sources/{id}", kind: "sync", schema: emptySchema, makeCommand: (_input, params) => ({ kind: "kb_remove", id: params.id }) },
   { method: "DELETE", path: "/api/v1/kb/sources", kind: "sync", schema: emptySchema, makeCommand: () => ({ kind: "kb_clear" }) },
   { method: "GET", path: "/api/v1/kb/manifest", kind: "sync", schema: emptySchema, makeCommand: () => ({ kind: "kb_export_manifest" }) },
   { method: "PUT", path: "/api/v1/kb/manifest", kind: "sync", schema: z.object({ manifest_path: z.string().min(1) }).strict(), makeCommand: (input) => ({ kind: "kb_import_manifest", manifestPath: input.manifest_path as string }) },
-  { method: "POST", path: "/api/v1/ledger/entries", kind: "sync", schema: z.object({ actor: z.enum(["human", "agent"]), intent: z.string(), spec_refs: z.array(z.string()).optional(), changed_targets: z.array(z.string()).optional() }).strict(), makeCommand: (input) => ({ kind: "ledger_record", actor: input.actor as "human" | "agent", intent: input.intent as string, specRefs: stringArray(input.spec_refs), changedTargets: stringArray(input.changed_targets) }) },
 
   { method: "POST", path: "/api/v1/build/runs", kind: "run", schema: z.object({ ...commonRunFields, dry_run: z.boolean().optional(), toolchain_path: z.string().optional(), variant: z.string().optional() }).strict(), makeCommand: (input) => ({ kind: "build", dryRun: bool(input.dry_run), toolchainPath: stringValue(input.toolchain_path), variant: stringValue(input.variant) }) },
-  { method: "POST", path: "/api/v1/build/generate-runs", kind: "run", schema: runBaseSchema, makeCommand: (input) => ({ kind: "build_generate", agentSession: stringValue(input.agent_session_id) }) },
   { method: "POST", path: "/api/v1/run/qemu-runs", kind: "run", schema: z.object({ ...commonRunFields, dry_run: z.boolean().optional(), timeout_ms: z.number().int().positive().optional(), ready_pattern: z.string().optional(), profile_id: z.string().optional(), case_id: z.string().optional(), list_profiles: z.boolean().optional(), list_cases: z.boolean().optional() }).strict(), makeCommand: (input) => ({ kind: "run_qemu", dryRun: bool(input.dry_run), timeoutMs: numberValue(input.timeout_ms), readyPattern: stringValue(input.ready_pattern), profileId: stringValue(input.profile_id), caseId: stringValue(input.case_id), listProfiles: bool(input.list_profiles), listCases: bool(input.list_cases) }) },
-  { method: "POST", path: "/api/v1/test/runs", kind: "run", schema: z.object({ ...commonRunFields, suites: z.array(z.string()).optional(), dry_run: z.boolean().optional() }).strict(), makeCommand: (input) => ({ kind: "test", suites: stringArray(input.suites), dryRun: bool(input.dry_run) }) },
-  { method: "POST", path: "/api/v1/verify/runs", kind: "run", schema: z.object({ ...commonRunFields, scope: z.enum(["public", "patch", "full", "invariant", "generated", "fuzz"]), target: z.string().optional(), dry_run: z.boolean().optional(), staff_policy: z.string().optional() }).strict(), makeCommand: (input) => ({ kind: "verify", scope: input.scope as VerifyScope, target: stringValue(input.target), dryRun: bool(input.dry_run), staffPolicy: stringValue(input.staff_policy) }) },
-  { method: "POST", path: "/api/v1/trace/syscall-runs", kind: "run", schema: z.object({ ...commonRunFields, timeout_ms: z.number().int().positive().optional(), dry_run: z.boolean().optional() }).strict(), makeCommand: (input) => ({ kind: "trace_syscall", timeoutMs: numberValue(input.timeout_ms), dryRun: bool(input.dry_run) }) },
-  { method: "POST", path: "/api/v1/debug/explain-log-runs", kind: "run", schema: z.object({ ...commonRunFields, log_path: z.string().optional() }).strict(), makeCommand: (input) => ({ kind: "debug_explain_log", logPath: stringValue(input.log_path) }) },
-  { method: "POST", path: "/api/v1/spec/patch/apply-runs", kind: "run", schema: z.object({ ...commonRunFields, patch_path: z.string().optional() }).strict(), makeCommand: (input) => ({ kind: "spec_patch_apply", patchPath: stringValue(input.patch_path), inputFromStdin: false }) },
+  { method: "POST", path: "/api/v1/verify/runs", kind: "run", schema: z.object({ ...commonRunFields, target: z.string().optional(), dry_run: z.boolean().optional(), hidden: z.boolean().optional() }).strict(), makeCommand: (input) => ({ kind: "verify", scope: "public", target: stringValue(input.target), dryRun: bool(input.dry_run), hidden: bool(input.hidden) }) },
   { method: "POST", path: "/api/v1/kb/add-runs", kind: "run", schema: z.object({ ...commonRunFields, source: z.string().min(1), source_kind: z.enum(["course", "project", "external"]).optional(), stage: z.string().optional(), title: z.string().optional(), recursive: z.boolean().optional(), manifest_path: z.string().optional() }).strict(), makeCommand: (input) => ({ kind: "kb_add", source: input.source as string, sourceKind: (input.source_kind as "course" | "project" | "external" | undefined) ?? "project", stage: stringValue(input.stage), title: stringValue(input.title), recursive: bool(input.recursive), manifestPath: stringValue(input.manifest_path) }) },
-  { method: "POST", path: "/api/v1/agent/context-runs", kind: "run", schema: z.object({ ...commonRunFields, scope: z.string().optional() }).strict(), makeCommand: (input) => ({ kind: "agent_context", scope: stringValue(input.scope) }) },
-  { method: "POST", path: "/api/v1/agent/plan-runs", kind: "run", schema: z.object({ ...commonRunFields, task: z.string().optional(), scope: z.string().optional() }).strict(), makeCommand: (input) => ({ kind: "agent_plan", task: stringValue(input.task), scope: stringValue(input.scope) }) },
   { method: "POST", path: "/api/v1/agent/ask-runs", kind: "run", schema: z.object({ ...commonRunFields, question: z.string().min(1), scope: z.string().optional() }).strict(), makeCommand: (input) => ({ kind: "agent_ask", question: input.question as string, scope: stringValue(input.scope), interactive: false }) },
-  { method: "POST", path: "/api/v1/agent/generate-runs", kind: "run", schema: z.object({ ...commonRunFields, task: z.string().optional(), target: z.string().optional(), apply: z.boolean().optional(), build: z.boolean().optional(), run: z.boolean().optional() }).strict(), makeCommand: (input) => ({ kind: "agent_generate", task: stringValue(input.task), target: stringValue(input.target), apply: bool(input.apply), build: bool(input.build), run: bool(input.run) }) },
-  { method: "POST", path: "/api/v1/agent/apply-patch-runs", kind: "run", schema: z.object({ ...commonRunFields, patch_file: z.string().optional(), require_spec: z.boolean().optional(), run_validation: z.boolean().optional() }).strict(), makeCommand: (input) => ({ kind: "agent_apply_patch", patchFile: stringValue(input.patch_file), requireSpec: input.require_spec !== false, runValidation: bool(input.run_validation) }) },
-  { method: "POST", path: "/api/v1/agent/validate-generated-runs", kind: "run", schema: z.object({ ...commonRunFields, target: z.string().min(1), patch_file: z.string().optional(), keep_worktree: z.boolean().optional() }).strict(), makeCommand: (input) => ({ kind: "agent_validate_generated", target: input.target as string, patchFile: stringValue(input.patch_file), keepWorktree: bool(input.keep_worktree) }) },
   { method: "POST", path: "/api/v1/agent/debug-runs", kind: "run", schema: z.object({ ...commonRunFields, log_path: z.string().optional(), run_id: z.string().optional(), keep_worktree: z.boolean().optional() }).strict(), makeCommand: (input) => ({ kind: "agent_debug", logPath: stringValue(input.log_path), runId: stringValue(input.run_id), keepWorktree: bool(input.keep_worktree) }) },
-  { method: "POST", path: "/api/v1/agent/log-runs", kind: "run", schema: z.object({ ...commonRunFields, append: z.boolean().optional(), input_path: z.string().optional() }).strict(), makeCommand: (input) => ({ kind: "agent_log", append: bool(input.append), inputPath: stringValue(input.input_path) }) },
+  { method: "POST", path: "/api/v1/agent/implement-runs", kind: "run", schema: z.object({ ...commonRunFields, module: z.string().min(1) }).strict(), makeCommand: (input) => ({ kind: "agent_implement", module: input.module as string }) },
+  { method: "POST", path: "/api/v1/agent/verify-runs", kind: "run", schema: runBaseSchema, makeCommand: () => ({ kind: "agent_verify" }) },
+  { method: "POST", path: "/api/v1/agent/review-runs", kind: "run", schema: z.object({ ...commonRunFields, target: z.string().optional() }).strict(), makeCommand: (input) => ({ kind: "agent_review", target: stringValue(input.target) }) },
   { method: "POST", path: "/api/v1/report/generate-runs", kind: "run", schema: z.object({ ...commonRunFields, stage: z.string().optional(), final: z.boolean().optional() }).strict(), makeCommand: (input) => ({ kind: "report_generate", stage: stringValue(input.stage), final: bool(input.final) }) },
   { method: "POST", path: "/api/v1/submit/pack-runs", kind: "run", schema: runBaseSchema, makeCommand: () => ({ kind: "submit_pack" }) },
 ];
