@@ -151,6 +151,8 @@ describe("runInteractive", () => {
     expect(view.statuses[0]?.threadId).toBeUndefined();
     expect(view.sessionEvents.map((event) => event.type)).toEqual([
       "thread.created",
+      "model.request",
+      "model.request",
       "assistant.message",
       "agent.done",
       "thread.saved",

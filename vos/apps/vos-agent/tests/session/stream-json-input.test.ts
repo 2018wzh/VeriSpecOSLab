@@ -104,11 +104,15 @@ describe("stream JSON input", () => {
     expect(prompts).toEqual(["first", "second"]);
     expect(eventTypes).toEqual([
       "thread.created",
+      "model.request",
+      "model.request",
       "assistant.message",
       "agent.done",
       "thread.saved",
       "done",
       "thread.loaded",
+      "model.request",
+      "model.request",
       "assistant.message",
       "agent.done",
       "thread.saved",
