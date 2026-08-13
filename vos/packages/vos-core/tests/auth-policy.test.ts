@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadAuthStore, removeToken, saveToken } from "../src/auth/store.ts";
 import type { PortalClient } from "../src/auth/portal-client.ts";
-import { executePortalPipeline } from "../src/main.ts";
-import { mergeEffectivePolicy } from "../src/policy/effective-policy.ts";
+import { executePortalPipeline, executeProjectBind, executeVosCommand } from "../src/main.ts";
+import { matchCommandIntent, mergeEffectivePolicy } from "../src/policy/effective-policy.ts";
 
 const tmpRoots: string[] = [];
 const previousAuthStore = process.env.VOS_AUTH_STORE;
@@ -22,7 +22,57 @@ afterEach(() => {
   }
 });
 
-describe("frozen Portal auth and policy internals", () => {
+describe("Portal auth and policy internals", () => {
+  test("binds a student-v2 project without changing its offline command path", async () => {
+    const projectRoot = makeTempPath("vos-bound-student");
+    mkdirSync(projectRoot, { recursive: true });
+    writeFileSync(join(projectRoot, "vos.yaml"), [
+      "version: vos.project.v1",
+      "build:",
+      "  program: bun",
+      "  args: [--version]",
+      "  cwd: .",
+      "  env: []",
+      "  timeout: 30000",
+      "  artifacts: []",
+      "runners: {}",
+      "checks: {}",
+      "",
+    ].join("\n"));
+    writeFileSync(join(projectRoot, ".gitignore"), ".vos/\n.env\n");
+    process.env.VOS_AUTH_STORE = makeTempPath("vos-bound-auth", ".json");
+    await saveToken({ portalUrl: "https://portal.example", token: "valid-token" });
+    const binding = {
+      version: "project-binding.v1" as const,
+      project_id: "project-1",
+      course_id: "course-1",
+      experiment_id: "experiment-1",
+      repo_url: "https://git.example/project-1.git",
+      member_ids: ["user-1"],
+      current_stage: {
+        id: "stage-1",
+        key: "boot",
+        name: "Boot",
+        sequence: 0,
+        status: "open" as const,
+        required_artifacts: [],
+        required_evidence: [],
+        manual_review_required: false,
+      },
+      policy_snapshot_ref: "policy-1",
+    };
+    const client: PortalClient = {
+      async getMe() { throw new Error("offline command must not contact Portal"); },
+      async getProjectPolicy() { throw new Error("offline command must not contact Portal"); },
+      async getProjectBinding() { return binding; },
+    };
+    await executeProjectBind({ kind: "project_bind", portalUrl: "https://portal.example", projectId: "project-1" }, { projectRoot, portalClient: client } as never);
+    expect(readFileSync(join(projectRoot, ".vos", "project.yaml"), "utf8")).toContain("current_stage: boot");
+    expect(readFileSync(join(projectRoot, ".gitignore"), "utf8")).toContain("!.vos/project.yaml");
+    const result = await executeVosCommand({ kind: "build", dryRun: true }, { projectRoot, portalClient: client });
+    expect(result.status).toBe("planned");
+  });
+
   test("stores Portal tokens outside the project and encrypts them at rest", async () => {
     const projectRoot = makeProject();
     const storePath = makeTempPath("vos-auth", ".json");
@@ -85,6 +135,11 @@ describe("frozen Portal auth and policy internals", () => {
     expect(effective.allowedCommands).toEqual(["verify public"]);
     expect(effective.allowedPaths).toEqual(["src/kernel"]);
     expect(effective.visibilityScope).toBe("agent-only");
+  });
+
+  test("maps explicit Portal pipeline commands to the server policy intents", () => {
+    expect(matchCommandIntent(["pipeline", "trigger", "--scope", "public"])).toBe("pipeline trigger");
+    expect(matchCommandIntent(["pipeline", "submit", "--stage", "lab9"])).toBe("pipeline submit");
   });
 
   test("downloads only authorized artifacts and reports verified local paths", async () => {

@@ -30,7 +30,7 @@ export VOS_PORTAL_PUBLIC_ORIGIN='https://portal.example.edu'
 ```sh
 docker compose --profile base --profile runner up -d
 docker compose --profile base run --rm migrate
-docker compose --profile base run --rm vos-portal seed
+VOS_PORTAL_ALLOW_SEED=1 docker compose --profile base run --rm vos-portal seed
 ```
 
 检查公开的 `https://portal.example.edu/healthz` 与 `/readyz`；Prometheus 从内部网络

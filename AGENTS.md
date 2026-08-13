@@ -37,6 +37,11 @@ The public student surface is intentionally small: `init`, `doctor`, determinist
 
 The Agent implementation worktree is a detached linked Git worktree. It protects the original tree from failed patches and ownership violations; it is not a process, network, credentials, or host-filesystem sandbox. Host commands inherit the current user and network by design. Keep this limitation explicit in code, tests, and docs.
 
+`vos portal bind` is the only student command that makes the online project binding durable: it
+tracks `.vos/project.yaml` by narrowing the `.vos/*` ignore rule and requires the student to
+commit that file. The binding metadata never changes the offline student-v2 command path; only
+the explicit `vos portal` namespace may contact Portal.
+
 Structured Agent results must be submitted through the declared runtime tool. A rejected schema or semantic submission is returned to the same model thread as a tool error, with the normal tools restored so the Agent can inspect, repair, and resubmit. Do not treat `failed`, `partial`, or `blocked` implementation payloads as successful completion, and do not bypass this loop by parsing prose.
 
 A committed SpecPatch grants each affected module one cross-module `owns` implementation. Landing a module consumes that module's grant without preventing the remaining affected modules from being implemented. Historical patches must not accumulate into a permanent writable-path union; a later change to an already implemented module requires a new handwritten and committed SpecPatch. Stable target IDs declared in ModuleSpec property text or `check` fields are mandatory structured-result bindings, not optional suggestions.

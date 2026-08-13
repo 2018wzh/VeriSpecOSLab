@@ -49,6 +49,12 @@ const STUDENT_ALLOWED_COMMANDS = [
   "run hardware",
   "verify",
   "verify public",
+  "pipeline trigger",
+  "pipeline status",
+  "pipeline watch",
+  "pipeline evidence",
+  "pipeline cancel",
+  "pipeline submit",
   "report",
   "submit",
 ] as const;
@@ -204,12 +210,15 @@ function ensureVosGitignore(projectRoot: string): void {
   const hasVos = lines.some((line) => line === ".vos/" || line === ".vos/*");
   const hasDotEnv = lines.some((line) => line === ".env");
 
-  if (hasVos && hasDotEnv) return;
+  const hasPortalConfigRule = lines.some((line) => line === "!.vos/project.yaml");
+  if (hasVos && hasDotEnv && hasPortalConfigRule) return;
 
   let content = existing;
   if (content && !content.endsWith("\n")) content += "\n";
 
-  if (!hasVos) content += ".vos/\n";
+  if (/^\.vos\/\s*$/m.test(content)) content = content.replace(/^\.vos\/\s*$/m, ".vos/*");
+  else if (!hasVos) content += ".vos/*\n";
+  if (!hasPortalConfigRule) content += "!.vos/project.yaml\n";
   if (!hasDotEnv) content += ".env\n";
 
   writeFileSync(gitignorePath, content);

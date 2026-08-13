@@ -16,7 +16,7 @@ Production 需要 `DATABASE_URL`：
 
 ```sh
 bun run --cwd apps/vos-portal migrate
-bun run --cwd apps/vos-portal seed
+VOS_PORTAL_ALLOW_SEED=1 bun run --cwd apps/vos-portal seed
 bun run --cwd apps/vos-portal serve
 ```
 
@@ -70,6 +70,27 @@ bun test packages/vos-core/tests/portal-device.integration.test.ts
 bun run --cwd apps/vos-portal test:teaching:connected
 bun run --cwd apps/vos-portal test:runner:connected
 ```
+
+### 真实 xv6 学生 CLI 闭环
+
+`xv6-course-connected.ts` 直接使用 typed client 验收 Lab 1–8 的真实历史；下面的脚本
+额外启动真实学生 CLI，覆盖设备授权、whoami、bind、push、public run、SSE watch、证据
+下载、权威 submit 和 status。它只接受已运行的 Compose 控制面，不创建 Demo 或本地执行
+替代品；测试账号和 Gitea 凭据只从环境变量读取：
+
+```sh
+export VOS_PORTAL_URL=https://portal.example.edu
+export VOS_PORTAL_PROJECT_ID=PROJECT_ID
+export VOS_GITEA_PUBLIC_ORIGIN=https://git.example.edu
+export VOS_GITEA_USERNAME=student
+export VOS_GITEA_TOKEN='temporary-test-token'
+bun run --cwd apps/vos-portal test:xv6:student-cli
+```
+
+省略 `VOS_PORTAL_TOKEN` 会让脚本通过真实 `/auth/login` 会话批准 CLI 设备码；设置它只适合
+重跑已经登录的故障诊断。脚本默认使用 `course/lab9-candidate` 和 `lab9`，因此结果必须是
+`candidate`，不能把容器/QEMU 结果升级为 complete。Lab 1–8 课程循环仍由真实历史脚本
+按顺序执行；Lab 9/10 还需要 VisionFive 2 四核实测和教师人工复核。
 
 项目供应的 PostgreSQL 测试覆盖并发幂等创建、五次失败后的终止调度、错误可见性和
 人工重试。Gitea 连接测试还会从模板生成真实私有仓库、配置协作者与 webhook、通过

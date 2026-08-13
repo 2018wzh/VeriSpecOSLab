@@ -415,7 +415,7 @@ function assertStudentCommandSurface(
   projectRoot: string,
   command: CliCommand,
 ): void {
-  if (isLegacyProject(projectRoot)) return;
+  if (isLegacyProject(projectRoot) && !existsSync(path.join(projectRoot, "vos.yaml"))) return;
   const removed = new Set<CliCommand["kind"]>([
     "stage_show",
     "stage_save",
@@ -509,6 +509,11 @@ function assertStudentCommandSurface(
   }
 }
 
+/** Student v2 is identified by the committed execution projection. */
+function isStudentV2Project(projectRoot: string): boolean {
+  return existsSync(path.join(projectRoot, "vos.yaml"));
+}
+
 /** Portal-bound workspaces keep their project metadata in an explicit integration boundary. */
 function isPortalBoundProject(projectRoot: string): boolean {
   const metadataPath = path.join(projectRoot, ".vos", "project.yaml");
@@ -522,10 +527,7 @@ function isPortalBoundProject(projectRoot: string): boolean {
 
 /** Explicit Portal metadata is isolated from the student-v2 projection. */
 function isLegacyProject(projectRoot: string): boolean {
-  return (
-    isPortalBoundProject(projectRoot) ||
-    existsSync(path.join(projectRoot, ".vos", "project.yaml"))
-  );
+  return !isStudentV2Project(projectRoot) && existsSync(path.join(projectRoot, ".vos", "project.yaml"));
 }
 
 export interface ExecuteVosCommandOptions {
@@ -859,9 +861,8 @@ async function resolveAuthContext(params: {
     };
   }
 
-  const project: { portal_url?: string; project_id?: string } = isLegacyProject(
-    params.projectRoot,
-  )
+  const portalCommand = params.command.kind === "portal_pipeline" || params.command.kind === "portal_submit";
+  const project: { portal_url?: string; project_id?: string } = portalCommand && isPortalBoundProject(params.projectRoot)
     ? await loadProjectConfig(params.projectRoot)
     : {};
   const portalUrl = params.serveBinding?.portalUrl ?? project.portal_url;
@@ -1318,13 +1319,14 @@ async function ensureStudentProjectFiles(projectRoot: string): Promise<void> {
   const existing = existsSync(gitignore)
     ? await readFile(gitignore, "utf8")
     : "";
-  const lines = existing.split(/\r?\n/).filter(Boolean);
-  const additions = [".vos/", ".env", "build/", "fs.img"];
+  const normalizedExisting = existing.replace(/^\.vos\/\s*$/m, ".vos/*");
+  const lines = normalizedExisting.split(/\r?\n/).filter(Boolean);
+  const additions = [".vos/*", "!.vos/project.yaml", ".env", "build/", "fs.img"];
   const missing = additions.filter((entry) => !lines.includes(entry));
   if (missing.length > 0)
     await writeFile(
       gitignore,
-      `${existing.replace(/\s*$/, "")}${existing.trim() ? "\n" : ""}${missing.join("\n")}\n`,
+      `${normalizedExisting.replace(/\s*$/, "")}${normalizedExisting.trim() ? "\n" : ""}${missing.join("\n")}\n`,
     );
 }
 
@@ -5454,8 +5456,7 @@ export async function executePortalPipeline(
   };
   if (command.action === "trigger") {
     const commitSha = assertPortalCleanHead(context.projectRoot);
-    const stage =
-      command.stageKey ?? (await currentStageForProject(context.projectRoot));
+    const stage = await resolvePortalStage(context.projectRoot, project.portal_url, project.project_id, stored.token, client, command.stageKey);
     const method = requireMethod(
       client.triggerPipeline?.bind(client),
       "pipeline trigger",
@@ -5615,19 +5616,28 @@ export async function executePortalSubmit(
     );
   const commitSha = assertPortalCleanHead(context.projectRoot);
   const configPath = path.join(context.projectRoot, "vos.yaml");
-  const manifestPath = path.join(context.projectRoot, ".vos", "toolchain.json");
-  if (!existsSync(configPath) || !existsSync(manifestPath))
+  const generatedManifestPath = path.join(
+    context.projectRoot,
+    ".vos",
+    "toolchain.json",
+  );
+  if (!existsSync(configPath))
     throw new CliError(
-      "portal submit requires committed vos.yaml and .vos/toolchain.json",
+      "portal submit requires committed vos.yaml",
       "validation_failed",
       { reason: "submission_inputs_missing" },
     );
+  // Student-v2 course repositories may intentionally keep only the committed
+  // vos.yaml projection. A generated toolchain manifest, when present, is the
+  // stronger input; otherwise the projection is the explicit manifest hash.
+  const manifestPath = existsSync(generatedManifestPath)
+    ? generatedManifestPath
+    : configPath;
   const bundle = await buildNormalizedSpecBundle({
     projectRoot: context.projectRoot,
   });
-  const stage =
-    command.stageKey ?? (await currentStageForProject(context.projectRoot));
   const client = context.portalClient ?? defaultPortalClient;
+  const stage = await resolvePortalStage(context.projectRoot, project.portal_url, project.project_id, token.token, client, command.stageKey);
   if (!client.createAssessmentSubmission)
     throw new CliError(
       "Portal client does not support authoritative submissions",
@@ -5674,6 +5684,22 @@ function assertBoundProject(
     );
 }
 
+async function resolvePortalStage(
+  projectRoot: string,
+  portalUrl: string,
+  projectId: string,
+  token: string,
+  client: PortalClient,
+  explicitStage?: string,
+): Promise<string> {
+  if (explicitStage) return explicitStage;
+  if (client.getProjectBinding) {
+    const binding = await client.getProjectBinding(portalUrl, token, projectId);
+    return binding.current_stage.key;
+  }
+  return currentStageForProject(projectRoot);
+}
+
 export async function executeProjectBind(
   command: ProjectBindCommand,
   context: ExecContext,
@@ -5704,12 +5730,8 @@ export async function executeProjectBind(
       { reason: "project_mismatch" },
     );
   const projectPath = path.join(context.projectRoot, ".vos", "project.yaml");
-  if (!existsSync(projectPath))
-    throw new CliError(
-      "project configuration missing, run `vos init` first",
-      "validation_failed",
-    );
-  let source = await readFile(projectPath, "utf8");
+  await mkdir(path.dirname(projectPath), { recursive: true });
+  let source = existsSync(projectPath) ? await readFile(projectPath, "utf8") : "spec_root: spec\n";
   const set = (key: string, value: string) => {
     const line = `${key}: ${value}`;
     source = new RegExp(`^${key}:.*$`, "m").test(source)
@@ -5718,6 +5740,18 @@ export async function executeProjectBind(
   };
   set("project_id", binding.project_id);
   set("portal_url", portalUrl);
+  set("current_stage", binding.current_stage.key);
+  set("spec_root", "spec");
+  const gitignorePath = path.join(context.projectRoot, ".gitignore");
+  if (existsSync(gitignorePath)) {
+    let gitignore = await readFile(gitignorePath, "utf8");
+    if (/^\.vos\/\s*$/m.test(gitignore)) {
+      gitignore = gitignore.replace(/^\.vos\/\s*$/m, ".vos/*\n!.vos/project.yaml");
+    } else if (!gitignore.split(/\r?\n/).includes("!.vos/project.yaml")) {
+      gitignore = `${gitignore.trimEnd()}\n!.vos/project.yaml\n`;
+    }
+    await writeFile(gitignorePath, gitignore);
+  }
   await writeFile(projectPath, source);
   return {
     status: "passed",
@@ -7460,9 +7494,7 @@ export async function executeAgentAsk(
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
-  const studentProject =
-    existsSync(path.join(projectRoot, "vos.yaml")) &&
-    !isLegacyProject(projectRoot);
+  const studentProject = isStudentV2Project(projectRoot);
   const readonlyBefore = studentProject
     ? await studentGitFingerprint(projectRoot)
     : undefined;
@@ -9035,6 +9067,13 @@ export function commandToArray(command: CliCommand): string[] {
           ? ["--out", command.outDir]
           : []),
         ...(command.reason ? ["--reason", command.reason] : []),
+      ];
+    case "portal_submit":
+      return [
+        "pipeline",
+        "submit",
+        ...(command.stageKey ? ["--stage", command.stageKey] : []),
+        ...(command.watch ? ["--watch"] : []),
       ];
     case "project_bind":
       return [

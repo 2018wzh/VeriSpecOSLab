@@ -1184,6 +1184,7 @@ export class PostgresPortalRepository {
         "pipeline watch",
         "pipeline evidence",
         "pipeline cancel",
+        "pipeline submit",
       ],
       allowed_paths: ["spec", "src", "kernel", "user", "tests", ".vos"],
       visibility:

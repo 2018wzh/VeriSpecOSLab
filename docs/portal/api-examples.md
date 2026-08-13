@@ -1,38 +1,34 @@
-# API Examples
+# Portal API examples
 
-Login:
+Use the CLI for normal student operations. The API example below is only for a local smoke
+check; keep the returned cookies in memory and never commit them.
 
-```powershell
-Invoke-RestMethod -Method Post `
-  -Uri http://127.0.0.1:8080/api/v1/auth/login `
-  -ContentType application/json `
-  -Body '{"username":"student","password":"student"}'
+```sh
+curl --fail-with-body --silent --show-error \\
+  --cookie-jar /tmp/vos-portal.cookies \\
+  --header 'content-type: application/json' \\
+  --header "x-idempotency-key: $(uuidgen)" \\
+  --data '{"username":"student","password":"student"}' \\
+  https://localhost:8443/api/v1/auth/login
 ```
 
-List projects:
+The student-facing connected flow is:
 
-```powershell
-Invoke-RestMethod `
-  -Uri http://127.0.0.1:8080/api/v1/projects `
-  -Headers @{ Authorization = "Bearer demo-student" }
+```sh
+vos portal login https://portal.example.edu
+vos portal whoami https://portal.example.edu
+vos portal bind https://portal.example.edu PROJECT_ID
+git add .vos/project.yaml .gitignore && git commit -m "[course][portal] Bind project"
+vos portal run --watch
+vos portal evidence RUN_ID --out .vos/downloads/RUN_ID
+vos portal submit --watch
 ```
 
-Upload evidence:
+Bearer tokens are accepted for automation, but never use a placeholder token and never print a
+real token in a log. Runner evidence is an internal typed endpoint, not a student upload API.
 
-```powershell
-Invoke-RestMethod -Method Post `
-  -Uri http://127.0.0.1:8080/api/v1/internal/evidence `
-  -ContentType application/json `
-  -Body '{
-    "project_id":"PROJECT_ID",
-    "commit_sha":"abc123",
-    "records":[{
-      "kind":"test",
-      "suite":"memory",
-      "case_name":"page_allocator_tests",
-      "result":"pass",
-      "metrics":{"seed":17}
-    }]
-  }'
+```sh
+curl --fail-with-body --silent --show-error \\
+  --cookie /tmp/vos-portal.cookies \\
+  https://localhost:8443/api/v1/auth/me
 ```
-

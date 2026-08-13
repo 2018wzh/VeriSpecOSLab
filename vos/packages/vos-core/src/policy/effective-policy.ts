@@ -56,6 +56,8 @@ export function assertCommandAllowed(command: string[], policy: EffectivePolicy,
 
 export function matchCommandIntent(command: readonly string[]): string {
   if (command.length === 0) return "";
+  if (command[0] === "pipeline" && command[1])
+    return `pipeline ${command[1] === "download" ? "evidence" : command[1]}`;
   if (command[0] === "spec" && command[1] === "lint") return "spec lint";
   if (command[0] === "spec" && command[1] === "normalize") return "spec normalize";
   if (command[0] === "spec" && command[1] === "check-consistency") return "spec check-consistency";

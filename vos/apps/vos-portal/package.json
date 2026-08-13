@@ -20,6 +20,7 @@
     "test:xv6:connected": "bun run scripts/xv6-course-connected.ts",
     "test:postgres": "bun test tests/postgres.integration.test.ts",
     "test:gitea": "bun test tests/gitea.integration.test.ts",
+    "test:xv6:student-cli": "bun run scripts/xv6-student-cli-connected.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
