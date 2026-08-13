@@ -306,7 +306,7 @@ export class OidcService {
     redirectUri: string,
     returnTo: string,
   ): Promise<URL> {
-    return this.startAuthorization(providerId, validatedRedirectUri(redirectUri), validatedReturnTo(returnTo), "oidc");
+    return this.startAuthorization(providerId, redirectUri, validatedReturnTo(returnTo), "oidc");
   }
 
   async startOAuth(
@@ -475,7 +475,7 @@ export class OidcService {
           method: "GET",
           redirect: "manual",
         })
-      : await fetch(endpoint, { headers });
+      : await fetch(endpoint, { headers, redirect: "error" });
     if (!response.ok) throw new Error(`OAuth userinfo request failed (${response.status})`);
     const value: unknown = await response.json();
     if (!value || typeof value !== "object" || Array.isArray(value))
