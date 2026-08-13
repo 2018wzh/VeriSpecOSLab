@@ -1,6 +1,6 @@
 # Student Runtime v2
 
-学生主链由一个进程内 Agent Runtime 和一个薄 Runner 契约组成。Portal/Demo 仍保留供现有构建和单测使用，但在本阶段冻结；HTTP/OpenAI-compatible 服务只作为 Portal 内部能力，学生 CLI 不提供 `agent serve`。
+学生主链由一个进程内 Agent Runtime 和一个薄 Runner 契约组成。Portal 是独立的生产教学控制面，负责课程、权限、远程测评、证据和评分；只有 `vos portal ...` 会访问它。静态 Demo 只用于离线界面预览，HTTP/OpenAI-compatible 服务仍是 Portal 内部能力，学生 CLI 不提供 `agent serve`。
 
 ## Runner
 

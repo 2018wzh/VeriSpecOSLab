@@ -90,7 +90,16 @@ bun run --cwd apps/vos-portal test:xv6:student-cli
 省略 `VOS_PORTAL_TOKEN` 会让脚本通过真实 `/auth/login` 会话批准 CLI 设备码；设置它只适合
 重跑已经登录的故障诊断。脚本默认使用 `course/lab9-candidate` 和 `lab9`，因此结果必须是
 `candidate`，不能把容器/QEMU 结果升级为 complete。Lab 1–8 课程循环仍由真实历史脚本
-按顺序执行；Lab 9/10 还需要 VisionFive 2 四核实测和教师人工复核。
+按顺序执行；若要逐标签验证真实学生 CLI（每个标签都执行 bind、push、run、evidence、submit
+和 status），使用同一套环境中的 Lab 1 起始项目：
+
+```sh
+bun run --cwd apps/vos-portal test:xv6:student-cli:course
+```
+
+该模式从课程 YAML 选择 `course/lab1-complete` 至 `course/lab8-complete`，每个阶段都等待
+Gitea commit ledger 后再发起测评，并在阶段推进后清理临时分支。Lab 9/10 还需要 VisionFive 2
+四核实测和教师人工复核；candidate 结果不会被脚本升级为 complete。
 
 项目供应的 PostgreSQL 测试覆盖并发幂等创建、五次失败后的终止调度、错误可见性和
 人工重试。Gitea 连接测试还会从模板生成真实私有仓库、配置协作者与 webhook、通过

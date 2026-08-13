@@ -1,6 +1,6 @@
 # Student workflow
 
-课程入口只保留一条本地循环：
+课程入口默认保留一条本地循环；在线教学通过显式的 `vos portal ...` 命令接入：
 
 ```text
 vos init → agent ask → 学生手写 Spec → lint/review → 手动提交
@@ -24,4 +24,4 @@ vos init → agent ask → 学生手写 Spec → lint/review → 手动提交
 
 linked worktree 只提供 Git 变更回滚，不提供进程、网络、凭据或宿主文件安全。Agent 默认可执行宿主命令并继承当前用户权限；本机参考 OS 对学生可读也是已接受的策略风险。KB、对话、工具调用、diff 和结果写入连续哈希 audit，导出时遮蔽凭据并替换绝对路径。
 
-Portal/Demo 的控制面、内部 HTTP 和静态 Demo 在本阶段冻结，只维持 typecheck/build/unit test，不扩展到学生主链。
+Portal 控制面、后台 Worker 和隔离 Runner 支持课程清单、远程测评、证据与评分；只有 `vos portal ...` 会联网。静态 Demo 仍是 localStorage 预览，不调用生产 API、模型、Gitea 或 Runner。

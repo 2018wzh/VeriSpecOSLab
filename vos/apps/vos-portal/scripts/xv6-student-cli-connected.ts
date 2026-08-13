@@ -1,7 +1,9 @@
-import { mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { HttpPortalClient } from "vos-core";
+import { CourseManifestV1Schema } from "vos-core/portal-contracts";
+import { parse } from "yaml";
 
 const portalUrl = required("VOS_PORTAL_URL").replace(/\/$/, "");
 const projectId = required("VOS_PORTAL_PROJECT_ID");
@@ -11,12 +13,26 @@ const source = path.resolve(
 );
 const sourceRef = process.env.VOS_XV6_STUDENT_REF ?? "course/lab9-candidate";
 const expectedStage = process.env.VOS_XV6_STUDENT_STAGE ?? "lab9";
+const courseManifest = CourseManifestV1Schema.parse(
+  parse(
+    await readFile(
+      path.join(import.meta.dirname, "../../../../courses/xv6-spec/course.yaml"),
+      "utf8",
+    ),
+  ),
+);
+const stages = (process.env.VOS_XV6_STUDENT_ALL === "1" || process.argv.includes("--all"))
+  ? courseManifest.stages.filter((stage) => stage.source_ref.endsWith("-complete"))
+  : [
+      courseManifest.stages.find((stage) => stage.key === expectedStage) ??
+        ({ key: expectedStage, source_ref: sourceRef } as (typeof courseManifest.stages)[number]),
+    ];
+if (stages.length === 0) throw new Error("xv6 course manifest has no complete stages");
 const giteaOrigin = process.env.VOS_GITEA_PUBLIC_ORIGIN?.replace(/\/$/, "");
 if (!giteaOrigin)
   throw new Error("VOS_GITEA_PUBLIC_ORIGIN is required for the student CLI simulation");
 
 const workspace = await mkdtemp(path.join(os.tmpdir(), "vos-xv6-student-cli-"));
-const checkout = path.join(workspace, "project");
 const authStore = path.join(workspace, "auth.json");
 const client = new HttpPortalClient();
 
@@ -26,108 +42,107 @@ try {
     ? { token: suppliedToken, cookies: "", csrf: "" }
     : await webLogin(portalUrl);
   const token = webSession.token;
-  const binding = await client.getProjectBinding(portalUrl, token, projectId);
-  if (binding.current_stage.key !== expectedStage)
-    throw new Error(
-      `project ${projectId} is at ${binding.current_stage.key}, expected ${expectedStage}`,
-    );
+  const cli = path.resolve(import.meta.dirname, "../../vos-cli/app/main.ts");
+  const env = {
+    ...process.env,
+    VOS_AUTH_STORE: authStore,
+    ...(process.env.VOS_PORTAL_TOKEN ? { VOS_PORTAL_TOKEN: process.env.VOS_PORTAL_TOKEN } : {}),
+    GIT_AUTHOR_NAME: "VOS Student",
+    GIT_AUTHOR_EMAIL: "student@vos.invalid",
+    GIT_COMMITTER_NAME: "VOS Student",
+    GIT_COMMITTER_EMAIL: "student@vos.invalid",
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_SSL_NO_VERIFY: process.env.GIT_SSL_NO_VERIFY ?? "1",
+  };
+  let authenticated = false;
+  const results: Array<Record<string, string | number>> = [];
+  for (const stage of stages) {
+    const binding = await client.getProjectBinding(portalUrl, token, projectId);
+    if (binding.current_stage.key !== stage.key)
+      throw new Error(
+        `project ${projectId} is at ${binding.current_stage.key}, expected ${stage.key}`,
+      );
+    const stageCheckout = path.join(workspace, stage.key);
+    let pushedBranch: string | undefined;
+    let remote: string | undefined;
+    let worktreeAdded = false;
+    try {
+      git(source, ["worktree", "add", "--detach", stageCheckout, stage.source_ref]);
+      worktreeAdded = true;
+      if (!authenticated) {
+        if (process.env.VOS_PORTAL_TOKEN?.trim())
+          await runCli(cli, stageCheckout, env, ["portal", "login", portalUrl]);
+        else
+          await runCliDeviceLogin(cli, stageCheckout, env, portalUrl, webSession);
+        authenticated = true;
+      }
+      await runCli(cli, stageCheckout, env, ["portal", "whoami", portalUrl]);
+      await runCli(cli, stageCheckout, env, ["portal", "bind", portalUrl, projectId]);
 
-  git(source, ["worktree", "add", "--detach", checkout, sourceRef]);
-  let pushedBranch: string | undefined;
-  let remote: string | undefined;
-  try {
-    const cli = path.resolve(import.meta.dirname, "../../vos-cli/app/main.ts");
-    const env = {
-      ...process.env,
-      VOS_AUTH_STORE: authStore,
-      ...(process.env.VOS_PORTAL_TOKEN ? { VOS_PORTAL_TOKEN: process.env.VOS_PORTAL_TOKEN } : {}),
-      GIT_AUTHOR_NAME: "VOS Student",
-      GIT_AUTHOR_EMAIL: "student@vos.invalid",
-      GIT_COMMITTER_NAME: "VOS Student",
-      GIT_COMMITTER_EMAIL: "student@vos.invalid",
-      GIT_TERMINAL_PROMPT: "0",
-      GIT_SSL_NO_VERIFY: process.env.GIT_SSL_NO_VERIFY ?? "1",
-    };
+      git(stageCheckout, ["add", ".gitignore", ".vos/project.yaml"]);
+      git(stageCheckout, ["commit", "-m", `[course][portal] Bind xv6 ${stage.key} project`]);
+      pushedBranch = `vos-student-${stage.key}-${crypto.randomUUID().slice(0, 8)}`;
+      remote = publicRepositoryUrl(binding.repo_url);
+      git(stageCheckout, ["remote", "set-url", "portal", remote]);
+      await push(stageCheckout, pushedBranch, env);
+      // Gitea's signed webhook is asynchronous; retry only the explicit ledger race.
+      await Bun.sleep(1_500);
 
-    if (process.env.VOS_PORTAL_TOKEN?.trim())
-      await runCli(cli, checkout, env, ["portal", "login", portalUrl]);
-    else
-      await runCliDeviceLogin(cli, checkout, env, portalUrl, webSession);
-    await runCli(cli, checkout, env, ["portal", "whoami", portalUrl]);
-    await runCli(cli, checkout, env, ["portal", "bind", portalUrl, projectId]);
-
-    git(checkout, ["add", ".gitignore", ".vos/project.yaml"]);
-    git(checkout, ["commit", "-m", "[course][portal] Bind xv6 student project"]);
-    pushedBranch = `vos-student-${crypto.randomUUID().slice(0, 8)}`;
-    remote = publicRepositoryUrl(binding.repo_url);
-    git(checkout, ["remote", "set-url", "portal", remote]);
-    await push(checkout, pushedBranch, env);
-    // Gitea's signed webhook is asynchronous; give the ledger projector a bounded
-    // window before the first remote run, then retry only its explicit lease race.
-    await Bun.sleep(1_500);
-
-    const publicRun = await runWithLedgerRetry(cli, checkout, env, [
-      "portal",
-      "run",
-      "--stage",
-      expectedStage,
-      "--watch",
-    ]);
-    const publicRunId = findRunId(publicRun);
-    const evidence = await runCli(cli, checkout, env, [
-      "portal",
-      "evidence",
-      publicRunId,
-      "--out",
-      ".vos/student-public-evidence",
-    ]);
-    const submission = await runCli(cli, checkout, env, [
-      "portal",
-      "submit",
-      "--stage",
-      expectedStage,
-    ]);
-    const submissionValue = parseJson(submission.stdout) as Record<string, unknown>;
-    const submissionDetails = submissionValue.details as Record<string, unknown>;
-    const submissionRecord = submissionDetails.submission as Record<string, unknown>;
-    const submissionId = String(submissionRecord.id ?? "");
-    const submissionRunId = String(submissionRecord.run_id ?? "");
-    if (!submissionId || !submissionRunId)
-      throw new Error("CLI submission response did not contain submission and run ids");
-    const status = await runCli(cli, checkout, env, [
-      "portal",
-      "status",
-      submissionRunId,
-      "--watch",
-    ]);
-    const parsedStatus = parseJson(status.stdout);
-    const terminal = nestedRunStatus(parsedStatus);
-    if (terminal !== "passed")
-      throw new Error(`authoritative student CLI run ended with ${terminal}`);
-    const finalSubmission = (await request(
-      portalUrl,
-      `/submissions/${encodeURIComponent(submissionId)}`,
-      { headers: { authorization: `Bearer ${token}` } },
-    ).then((response) => response.json())) as { status?: string };
-    if (finalSubmission.status !== "candidate")
-      throw new Error(`candidate course submission ended with ${finalSubmission.status ?? "unknown"}`);
-
-    console.log(JSON.stringify({
-      flow: ["portal login", "portal whoami", "portal bind", "portal run", "portal evidence", "portal submit", "portal status"],
-      project_id: projectId,
-      stage: expectedStage,
-      source_ref: sourceRef,
-      public_run_id: publicRunId,
-      submission_run_id: submissionRunId,
-      evidence_status: String((parseJson(evidence.stdout) as Record<string, unknown>).status ?? "unknown"),
-      submission_status: finalSubmission.status,
-      pushed_branch: pushedBranch,
-    }));
-  } finally {
-    if (pushedBranch && remote)
-      await deleteRemoteBranch(remote, pushedBranch);
-    git(source, ["worktree", "remove", "--force", checkout]);
+      const publicRun = await runWithLedgerRetry(cli, stageCheckout, env, [
+        "portal", "run", "--stage", stage.key, "--watch",
+      ]);
+      const publicRunId = findRunId(publicRun);
+      const evidence = await runCli(cli, stageCheckout, env, [
+        "portal", "evidence", publicRunId, "--out", `.vos/student-public-evidence/${stage.key}`,
+      ]);
+      const submission = await runCli(cli, stageCheckout, env, [
+        "portal", "submit", "--stage", stage.key,
+      ]);
+      const submissionValue = parseJson(submission.stdout) as Record<string, unknown>;
+      const submissionDetails = submissionValue.details as Record<string, unknown>;
+      const submissionRecord = submissionDetails.submission as Record<string, unknown>;
+      const submissionId = String(submissionRecord.id ?? "");
+      const submissionRunId = String(submissionRecord.run_id ?? "");
+      if (!submissionId || !submissionRunId)
+        throw new Error("CLI submission response did not contain submission and run ids");
+      const status = await runCli(cli, stageCheckout, env, [
+        "portal", "status", submissionRunId, "--watch",
+      ]);
+      const statusValue = parseJson(status.stdout);
+      const terminal = nestedRunStatus(statusValue);
+      if (terminal !== "passed")
+        throw new Error(`authoritative student CLI run ended with ${terminal}`);
+      const finalSubmission = (await request(
+        portalUrl,
+        `/submissions/${encodeURIComponent(submissionId)}`,
+        { headers: { authorization: `Bearer ${token}` } },
+      ).then((response) => response.json())) as { status?: string };
+      const expectedStatus = stage.source_ref.endsWith("-candidate") ? "candidate" : "complete";
+      if (finalSubmission.status !== expectedStatus)
+        throw new Error(
+          `${stage.source_ref} submission ended with ${finalSubmission.status ?? "unknown"}, expected ${expectedStatus}`,
+        );
+      results.push({
+        stage: stage.key,
+        source_ref: stage.source_ref,
+        public_run_id: publicRunId,
+        submission_run_id: submissionRunId,
+        evidence_status: String((parseJson(evidence.stdout) as Record<string, unknown>).status ?? "unknown"),
+        submission_status: finalSubmission.status,
+        pushed_branch: pushedBranch,
+      });
+    } finally {
+      if (pushedBranch && remote)
+        await deleteRemoteBranch(remote, pushedBranch);
+      if (worktreeAdded)
+        git(source, ["worktree", "remove", "--force", stageCheckout]);
+    }
   }
+  console.log(JSON.stringify({
+    flow: ["portal login", "portal whoami", "portal bind", "portal run", "portal evidence", "portal submit", "portal status"],
+    project_id: projectId,
+    stages: results,
+  }));
 } finally {
   await rm(workspace, { recursive: true, force: true });
 }
@@ -219,6 +234,7 @@ async function deleteRemoteBranch(remote: string, branch: string): Promise<void>
     `${giteaOrigin}/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository.replace(/\.git$/, ""))}/branches/${encodeURIComponent(branch)}`,
     { method: "DELETE", headers: { authorization: `token ${required("VOS_GITEA_TOKEN")}` } },
   );
+  if (response.status === 404) return;
   if (!response.ok)
     throw new Error(`Gitea test branch cleanup failed with HTTP ${response.status}`);
 }

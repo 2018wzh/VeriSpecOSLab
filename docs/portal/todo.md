@@ -48,6 +48,10 @@
 - [x] Complete OIDC provider integration and replay/issuer/audience/nonce verification.
 - [x] Execute a real PostgreSQL 100-student/100-project queue fixture with 20 concurrent isolated runner startups and an explicit readiness threshold.
 - [x] Execute PostgreSQL/MinIO backup-and-restore drill and full teaching-cycle E2E.
+- [x] Execute the real student CLI flow for `course/lab1-complete` through
+  `course/lab8-complete` and `course/lab9-candidate` (device login, bind, Gitea push,
+  public run, evidence, authoritative submit and SSE status); preserve the run ledger in
+  [the acceptance record](acceptance/xv6-student-cli-20260813.md).
 
 The connected teaching cycle covers enrollment, Gitea provisioning and push ledger, commit-bound design
 review and class operations projection, isolated public verification, MinIO evidence, persisted review, grade freeze/publish, appeal decision, course close,
