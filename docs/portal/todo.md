@@ -1,6 +1,6 @@
 # VOS Portal Delivery Status
 
-> 冻结快照：下面的勾选项记录 Portal 冻结前的实现与历史验收，不能据此声称当前学生 v2 主链仍接入 connected teaching loop。本阶段只重新验证 Portal/Demo 的 typecheck、build 和 unit test。
+> 历史快照：下面的勾选项记录既有实现与验收。当前发布状态以 connected Compose、真实 xv6-spec 测评和硬件/人工门禁记录为准；unit 或静态 Demo 不能替代这些证据。
 
 ## Implemented in the new application
 
@@ -14,7 +14,7 @@
 - [x] Core dashboard, evidence, pipeline, review, score adjustment, appeal and Q&A APIs.
 - [x] Commit-ledger-bound design revisions, auditable staff review state machine and interactive Production/Demo architecture workspace.
 - [x] Browser EventSource Q&A updates and persistent per-user notification acknowledgement UI/API.
-- [x] SKIP LOCKED worker lease and frozen typed runner-service invocation with no host fallback.
+- [x] SKIP LOCKED worker lease and typed runner-service invocation with no host fallback.
 - [x] Immutable course manifest dry-run/import/publish/rollback, grouped CSV enrollment and course-scoped project membership gates.
 - [x] Role-bound, expiring, bounded-use course invitation codes with hash-only Production persistence, one-time secret display, transactional redemption/audit, and versioned Demo persistence.
 - [x] Accessible course/project context enumeration and selection across API, Production transport, Demo adapter and shared shell; Q&A is explicitly bound to the selected project.
@@ -43,7 +43,7 @@
 - [x] Re-run the full connected Compose teaching cycle after migration 016, including Gitea push delivery, isolated runner execution, MinIO evidence, immutable grading and appeal closure.
 - [x] Verify real Gitea template provisioning/collaborator/webhook configuration and MinIO SigV4/checksum/metadata adapters.
 - [x] Verify a signed Gitea push delivery through Portal webhook ingestion, commit ledger update and member notification.
-- [x] Verify the frozen per-job Docker runner path: container isolation, checkout/runner network transition, resource limits, authenticated runner service, no-egress and cleanup through the restricted runtime adapter.
+- [x] Verify the per-job Docker runner path: container isolation, checkout/runner network transition, resource limits, authenticated runner service, no-egress and cleanup through the restricted runtime adapter.
 - [x] Run CLI device authorization, encrypted credential persistence, online `whoami`, logout and server-side revoke against HTTPS Portal and PostgreSQL.
 - [x] Complete OIDC provider integration and replay/issuer/audience/nonce verification.
 - [x] Execute a real PostgreSQL 100-student/100-project queue fixture with 20 concurrent isolated runner startups and an explicit readiness threshold.
@@ -63,7 +63,7 @@ and object retention GC. It is a Linux Docker Compose proof, not Kubernetes or m
 - [x] Complete English translation-key coverage for every route.
 - [x] Complete independent keyboard and WCAG 2.2 AA review. Automated browser checks cover semantic landmarks, role projection, notification Escape focus restoration and console health; final keyboard and assistive-technology acceptance was completed by human review.
 - [x] Re-run four-role browser E2E after the administrator model-control UI change, including role projection, notification keyboard dismissal/focus restoration, language switching, console health, and overflow checks at 1440×1024, 1366×768, tablet and phone viewports.
-- [x] Complete visual acceptance against the approved three-screen concepts by human review. The concept source images are not retained in this repository, so this acceptance is recorded as human evidence rather than an image-diff artifact.
+- [x] Complete visual acceptance against the repository-owned approved student and teacher concept baselines; automated screenshots cover desktop, laptop, tablet and mobile layouts.
 - [x] Rebuild Portal and runner production images from the integrity-checked official-registry lockfile at final HEAD.
 - [x] Rerun isolated PostgreSQL/MinIO backup and restore after migration 016, including manifest verification and restored-object SHA-256 comparison. Deleted object tombstones are excluded while live verified references remain fail-fast.
 

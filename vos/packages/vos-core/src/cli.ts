@@ -17,6 +17,12 @@ import type {
   KbRemoveCommand,
   KbSearchCommand,
   ParsedStudentInvocation,
+  PortalPipelineCommand,
+  PortalSubmitCommand,
+  ProjectBindCommand,
+  LoginCommand,
+  LogoutCommand,
+  WhoamiCommand,
   ReportGenerateCommand,
   RunQemuCommand,
   RunHardwareCommand,
@@ -146,6 +152,8 @@ function parseCommand(tokens: string[], global: GlobalOptions): StudentCliComman
   if (RETIRED_TOP_LEVEL_COMMANDS.has(command)) {
     throw new Error(`${command} was removed from the student CLI`);
   }
+
+  if(command==="portal")return parsePortalCommand(rest);
 
   if (command === "init") {
     if (rest.length > 0) throw new Error("vos init accepts no command-specific options");
@@ -469,6 +477,21 @@ function parseCommand(tokens: string[], global: GlobalOptions): StudentCliComman
 
   throw new Error(`unknown command: ${command}`);
 }
+
+function parsePortalCommand(args:string[]):StudentCliCommand{
+  const [action,...rest]=args;
+  if(action==="login"){if(rest.length!==1)throw new Error("vos portal login requires <url>");return{kind:"login",portalUrl:rest[0],tokenStdin:false} satisfies LoginCommand;}
+  if(action==="whoami"){if(rest.length!==1)throw new Error("vos portal whoami requires <url>");return{kind:"whoami",portalUrl:rest[0]} satisfies WhoamiCommand;}
+  if(action==="logout"){if(rest.length!==1)throw new Error("vos portal logout requires <url>");return{kind:"logout",portalUrl:rest[0]} satisfies LogoutCommand;}
+  if(action==="bind"){if(rest.length!==2||rest.some(value=>value.startsWith("-")))throw new Error("vos portal bind requires <url> <project-id>");return{kind:"project_bind",portalUrl:rest[0],projectId:rest[1]} satisfies ProjectBindCommand;}
+  if(action==="run"){const options=parsePortalOptions(rest,new Set(["--stage","--watch"]));return{kind:"portal_pipeline",action:"trigger",scope:"public",reason:"student requested public remote verification",stageKey:options.stage,watchAfter:options.watch} satisfies PortalPipelineCommand;}
+  if(action==="status"){const runId=rest[0];if(!runId||runId.startsWith("-"))throw new Error("vos portal status requires <run-id>");const options=parsePortalOptions(rest.slice(1),new Set(["--watch"]));return{kind:"portal_pipeline",action:options.watch?"watch":"status",runId} satisfies PortalPipelineCommand;}
+  if(action==="evidence"){const runId=rest[0];if(!runId||runId.startsWith("-"))throw new Error("vos portal evidence requires <run-id>");const options=parsePortalOptions(rest.slice(1),new Set(["--out"]));return{kind:"portal_pipeline",action:"download",runId,outDir:options.out} satisfies PortalPipelineCommand;}
+  if(action==="submit"){const options=parsePortalOptions(rest,new Set(["--stage","--watch"]));return{kind:"portal_submit",stageKey:options.stage,watch:options.watch} satisfies PortalSubmitCommand;}
+  throw new Error(`unknown portal subcommand: ${action??""}`);
+}
+
+function parsePortalOptions(args:string[],allowed:Set<string>):{stage?:string;out?:string;watch:boolean}{let stage:string|undefined;let out:string|undefined;let watch=false;for(let index=0;index<args.length;index++){const arg=args[index];if(!allowed.has(arg))throw new Error(`unknown portal option: ${arg}`);if(arg==="--watch"){watch=true;continue;}const value=args[++index];if(!value||value.startsWith("-"))throw new Error(`${arg} requires a value`);if(arg==="--stage")stage=value;else out=value;}return{stage,out,watch};}
 
 function parseAgentProvider(value: string): AgentConfigCommand["provider"] {
   const normalized = value.trim().toLowerCase();

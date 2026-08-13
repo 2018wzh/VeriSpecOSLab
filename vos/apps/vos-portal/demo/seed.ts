@@ -9,12 +9,13 @@ export const demoActors: Record<PortalActor["role"], PortalActor> = {
 };
 
 export function createDemoDashboard(role: PortalActor["role"] = "student"): PortalDashboard {
-  const stageNames = ["架构种子", "启动", "内存管理", "中断", "用户态", "文件系统", "综合评测"];
+  const stageNames = ["架构种子", "启动", "内存管理", "中断", "用户态", "文件系统", "并发", "综合评测", "四核候选", "课程候选"];
+  const stageKeys=["seed","boot","memory","interrupts","user","fs","concurrency","final","hardware-candidate","course-candidate"];
   const stages = stageNames.map((name, sequence) => ({
-    id: `stage-${sequence}`, key: ["seed", "boot", "memory", "interrupts", "user", "fs", "final"][sequence], name, sequence,
+    id: `stage-${sequence}`, key: stageKeys[sequence], name, sequence,
     status: sequence < 2 ? "passed" as const : sequence === 2 ? "review" as const : "locked" as const,
     required_artifacts: ["design", "implementation"], required_evidence: [{ suite: "public", case_name: "stage-gate", required_result: "pass" as const }],
-    manual_review_required: sequence === 2 || sequence === 6,
+    manual_review_required: sequence === 2 || sequence >= 8,
   }));
   const runs = [
     { id: "run-20260516-a1b2c3d", project_id: "project-xv6-group-3", commit_sha: "a1b2c3d".padEnd(40,"0"), stage_key: "memory", status: "failed" as const, passed: 18, total: 20, failure_class: "verification_failure", public_message: "页表解除映射行为与公开规范不一致。", created_at: created, finished_at: "2026-05-16T14:56:48.000Z" },

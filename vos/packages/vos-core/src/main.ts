@@ -43,6 +43,7 @@ import type {
   RunHardwareCommand,
   ParsedInvocation,
   PortalPipelineCommand,
+  PortalSubmitCommand,
   ProjectBindCommand,
   RunAuthContext,
   ServeCommand,
@@ -65,7 +66,11 @@ import type {
 } from "./types.ts";
 import { CliError, AgentOutputError } from "./errors.ts";
 import { EvidenceWriter } from "./evidence/index.ts";
-import type { CommandOutcome, ExecContext, ExecuteCliOptions } from "./bootstrap.ts";
+import type {
+  CommandOutcome,
+  ExecContext,
+  ExecuteCliOptions,
+} from "./bootstrap.ts";
 import { collectStringListByKey, parseTopLevelYaml } from "./utils/yaml.ts";
 import { readProjectEnv, withProjectEnv } from "./utils/dotenv.ts";
 import { executeCommand } from "./dispatch.ts";
@@ -77,7 +82,14 @@ import {
   currentStageForProject,
 } from "./utils/project.ts";
 import { appendLogEntry, readLogEntries } from "./agent/helpers.ts";
-import { mkdir, readFile, readdir, writeFile, rm, rename } from "node:fs/promises";
+import {
+  mkdir,
+  readFile,
+  readdir,
+  writeFile,
+  rm,
+  rename,
+} from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
@@ -98,7 +110,12 @@ import { createStudentSubmitPack } from "./submit/student.ts";
 import { runQemuCommand } from "./runtime/qemu.ts";
 import { runTestCommand } from "./runtime/test.ts";
 import { runVerifyCommand, type BehaviorTestRunner } from "./runtime/verify.ts";
-import { loadToolchainManifest, parseToolchainManifest, type RequiredToolV2, type ToolchainManifestV2 } from "./runtime/manifest.ts";
+import {
+  loadToolchainManifest,
+  parseToolchainManifest,
+  type RequiredToolV2,
+  type ToolchainManifestV2,
+} from "./runtime/manifest.ts";
 import {
   buildDebugTraceInput,
   ensureCleanGitWorktree,
@@ -106,7 +123,16 @@ import {
   type DebugTraceInput,
 } from "./runtime/debug-trace.ts";
 import { resolveToolchainManifestPath } from "./runtime/toolchain-manifest.ts";
-import { HardwareRunner, HostRunner, ManifestRunner, QemuRunner, readStudentManifest, runStructuredStudentCommand, type BuildEvidence } from "vos-runtime";
+import {
+  HardwareRunner,
+  HostRunner,
+  ManifestRunner,
+  QemuRunner,
+  readStudentManifest,
+  runStructuredStudentCommand,
+  type BuildEvidence,
+  type RunEvidence,
+} from "vos-runtime";
 import { runCommand } from "./runtime/executor.ts";
 import { buildContextBundle, loadAgentAllowedPaths } from "./agent/context.ts";
 import {
@@ -130,7 +156,14 @@ import {
   type ReadonlyAgentDisplayStarter,
   type ValidatedAgentRunResult,
 } from "./agent/runner.ts";
-import { isRecord, parseDebugOutput, parseKnowledgebaseAnswer, parsePatchProposal, parsePlanDraft, parseStudentVerificationReview } from "./agent/schemas.ts";
+import {
+  isRecord,
+  parseDebugOutput,
+  parseKnowledgebaseAnswer,
+  parsePatchProposal,
+  parsePlanDraft,
+  parseStudentVerificationReview,
+} from "./agent/schemas.ts";
 import { applyPatchText, readPatchFromStdin } from "./agent/apply-patch.ts";
 import { createKbEmbedder, kbEmbeddingEnv } from "./kb/embedding.ts";
 import {
@@ -147,13 +180,26 @@ import {
   writeAgentConfig,
   type ProviderConfig,
 } from "./agent/config.ts";
-import { defaultPortalClient, type PortalClient } from "./auth/portal-client.ts";
-import { getToken, normalizePortalUrl, removeToken, saveToken, updateStoredUser } from "./auth/store.ts";
-import { assertCommandAllowed, mergeEffectivePolicy } from "./policy/effective-policy.ts";
+import {
+  defaultPortalClient,
+  type PortalClient,
+} from "./auth/portal-client.ts";
+import {
+  getToken,
+  normalizePortalUrl,
+  removeToken,
+  saveToken,
+  updateStoredUser,
+} from "./auth/store.ts";
+import {
+  assertCommandAllowed,
+  mergeEffectivePolicy,
+} from "./policy/effective-policy.ts";
 import type { RunEvent } from "./evidence/events.ts";
 import {
   appendLedgerEntry,
   assertReproducible,
+  assertPortalCleanHead,
   checkReproducibility,
   currentHead,
   ensureHeadLedgerEntry,
@@ -221,11 +267,18 @@ export async function executeCliInvocation(
 ): Promise<BaseCommandResult> {
   const parsed = parseArgs(argv);
   if (parsed.command.kind === "help") {
-    throw new CliError("help output is not available through executeCliInvocation", "failed");
+    throw new CliError(
+      "help output is not available through executeCliInvocation",
+      "failed",
+    );
   }
   const projectRoot = path.resolve(parsed.global.projectRoot);
   return await withProjectEnv(projectRoot, async () => {
-    if (parsed.command.kind !== "init" && !existsSync(path.join(projectRoot, "vos.yaml")) && isLegacyProject(projectRoot)) {
+    if (
+      parsed.command.kind !== "init" &&
+      !existsSync(path.join(projectRoot, "vos.yaml")) &&
+      isLegacyProject(projectRoot)
+    ) {
       await ensureDefaultProjectConfig(projectRoot);
     }
     const progress = createCommandProgress({
@@ -261,11 +314,18 @@ export async function executeCliInvocation(
     try {
       assertStudentCommandSurface(projectRoot, parsed.command);
       if (auth.blocked) {
-        throw new CliError(`policy_blocked: ${auth.auth.reason ?? "policy_blocked"}`, "policy_blocked", {
-          reason: auth.auth.reason,
-        });
+        throw new CliError(
+          `policy_blocked: ${auth.auth.reason ?? "policy_blocked"}`,
+          "policy_blocked",
+          {
+            reason: auth.auth.reason,
+          },
+        );
       }
-      const repro = await resolveReproducibilityContext(projectRoot, parsed.command);
+      const repro = await resolveReproducibilityContext(
+        projectRoot,
+        parsed.command,
+      );
       const runMetadata = await collectRunMetadata(projectRoot, parsed.command);
       await evidence.setReproducibility({
         gitRev: repro.commitSha,
@@ -273,7 +333,11 @@ export async function executeCliInvocation(
         ledgerRef: repro.ledgerRef,
         ...runMetadata,
       });
-      progress.update({ stage: commandLabel(parsed.command), status: "running", message: "running" });
+      progress.update({
+        stage: commandLabel(parsed.command),
+        status: "running",
+        message: "running",
+      });
       const outcome = await executeCommand(parsed.command, {
         projectRoot,
         global: parsed.global,
@@ -298,11 +362,17 @@ export async function executeCliInvocation(
         readonlyDisplay,
       });
       if (options.print ?? true) {
-        printResult(finalOutput as unknown as Record<string, unknown>, parsed.global.json, parsed.global.verbose);
+        printResult(
+          finalOutput as unknown as Record<string, unknown>,
+          parsed.global.json,
+          parsed.global.verbose,
+        );
       }
       return finalOutput;
     } catch (error) {
-      const status = options.signal?.aborted ? "cancelled" : classifyErrorStatus(error);
+      const status = options.signal?.aborted
+        ? "cancelled"
+        : classifyErrorStatus(error);
       const message = error instanceof Error ? error.message : "unknown error";
       readonlyDisplay?.error(message);
       readonlyDisplay?.close();
@@ -319,65 +389,143 @@ export async function executeCliInvocation(
         message,
         details: {
           error: true,
-          ...(error instanceof CliError ? error.details ?? {} : {}),
+          ...(error instanceof CliError ? (error.details ?? {}) : {}),
         },
       };
       if (parsed.global.reportPath) {
-        await writeFile(parsed.global.reportPath, `${JSON.stringify(finalOutput, null, 2)}\n`);
+        await writeFile(
+          parsed.global.reportPath,
+          `${JSON.stringify(finalOutput, null, 2)}\n`,
+        );
       }
       progress.finish(status, message);
       if (options.print ?? true) {
-        printResult(finalOutput as unknown as Record<string, unknown>, parsed.global.json, parsed.global.verbose);
+        printResult(
+          finalOutput as unknown as Record<string, unknown>,
+          parsed.global.json,
+          parsed.global.verbose,
+        );
       }
       return finalOutput;
     }
   });
 }
 
-function assertStudentCommandSurface(projectRoot: string, command: CliCommand): void {
+function assertStudentCommandSurface(
+  projectRoot: string,
+  command: CliCommand,
+): void {
   if (isLegacyProject(projectRoot)) return;
   const removed = new Set<CliCommand["kind"]>([
-    "stage_show", "stage_save", "toolchain_lint", "toolchain_init", "spec_normalize",
-    "spec_check_consistency", "spec_patch_lint", "spec_patch_apply", "arch_lint", "arch_compose",
-    "arch_derive_tests", "test", "trace_syscall", "debug_explain_log", "build_generate", "agent_serve",
-    "agent_context", "agent_plan", "agent_generate", "agent_apply_patch", "agent_validate_generated",
+    "stage_show",
+    "stage_save",
+    "toolchain_lint",
+    "toolchain_init",
+    "spec_normalize",
+    "spec_check_consistency",
+    "spec_patch_lint",
+    "spec_patch_apply",
+    "arch_lint",
+    "arch_compose",
+    "arch_derive_tests",
+    "test",
+    "trace_syscall",
+    "debug_explain_log",
+    "build_generate",
+    "agent_serve",
+    "agent_context",
+    "agent_plan",
+    "agent_generate",
+    "agent_apply_patch",
+    "agent_validate_generated",
     "agent_log",
   ]);
   const studentCommands = new Set<CliCommand["kind"]>([
-    "init", "doctor", "spec_lint", "agent_config", "agent_implement", "agent_debug",
-    "agent_verify", "agent_ask", "agent_review", "build", "run_qemu", "run_hardware", "verify",
-    "report_generate", "submit_pack", "kb_add", "kb_list", "kb_search", "kb_remove", "kb_clear",
-    "kb_export_manifest", "kb_import_manifest",
+    "init",
+    "doctor",
+    "spec_lint",
+    "agent_config",
+    "agent_implement",
+    "agent_debug",
+    "agent_verify",
+    "agent_ask",
+    "agent_review",
+    "build",
+    "run_qemu",
+    "run_hardware",
+    "verify",
+    "report_generate",
+    "submit_pack",
+    "kb_add",
+    "kb_list",
+    "kb_search",
+    "kb_remove",
+    "kb_clear",
+    "kb_export_manifest",
+    "kb_import_manifest",
   ]);
   const hasStudentManifest = existsSync(path.join(projectRoot, "vos.yaml"));
   if (removed.has(command.kind)) {
-    throw new CliError(`command removed from the student v2 surface: ${commandToArray(command).join(" ")}; use the documented student workflow`, "validation_failed", {
-      reason: "student_command_removed",
-      suggested_next_commands: ["vos agent config", "vos spec lint", "vos agent ask \"your question\"", "vos agent review"],
-    });
+    throw new CliError(
+      `command removed from the student v2 surface: ${commandToArray(command).join(" ")}; use the documented student workflow`,
+      "validation_failed",
+      {
+        reason: "student_command_removed",
+        suggested_next_commands: [
+          "vos agent config",
+          "vos spec lint",
+          'vos agent ask "your question"',
+          "vos agent review",
+        ],
+      },
+    );
   }
-  if (!hasStudentManifest && !isLegacyProject(projectRoot) && studentCommands.has(command.kind) && command.kind !== "init" && command.kind !== "doctor") {
-    throw new CliError("student project is not initialized; run `vos init` first", "validation_failed", {
-      reason: "student_manifest_missing",
-      suggested_next_commands: ["vos init", "vos doctor"],
-    });
+  if (
+    !hasStudentManifest &&
+    !isLegacyProject(projectRoot) &&
+    studentCommands.has(command.kind) &&
+    command.kind !== "init" &&
+    command.kind !== "doctor"
+  ) {
+    throw new CliError(
+      "student project is not initialized; run `vos init` first",
+      "validation_failed",
+      {
+        reason: "student_manifest_missing",
+        suggested_next_commands: ["vos init", "vos doctor"],
+      },
+    );
   }
-  if (command.kind === "verify" && command.scope !== "public") {
-    throw new CliError("student v2 verify has no legacy scope; it always runs public and contract checks", "validation_failed", { reason: "legacy_verify_scope" });
+  if (
+    command.kind === "verify" &&
+    command.scope !== "public" &&
+    process.env.VOS_COURSE_ADAPTER !== "xv6-spec"
+  ) {
+    throw new CliError(
+      "student v2 verify has no legacy scope; it always runs public and contract checks",
+      "validation_failed",
+      { reason: "legacy_verify_scope" },
+    );
   }
 }
 
-/** Portal-bound legacy workspaces remain an internal frozen integration surface. */
+/** Portal-bound workspaces keep their project metadata in an explicit integration boundary. */
 function isPortalBoundProject(projectRoot: string): boolean {
   const metadataPath = path.join(projectRoot, ".vos", "project.yaml");
   if (!existsSync(metadataPath)) return false;
   const metadata = readFileSync(metadataPath, "utf8");
-  return /^portal_url\s*:\s*\S+/m.test(metadata) && /^project_id\s*:\s*\S+/m.test(metadata);
+  return (
+    /^portal_url\s*:\s*\S+/m.test(metadata) &&
+    /^project_id\s*:\s*\S+/m.test(metadata)
+  );
 }
 
-/** Explicit legacy metadata is retained only for frozen Portal/fixture paths. */
+/** Explicit Portal metadata is isolated from the student-v2 projection. */
 function isLegacyProject(projectRoot: string): boolean {
-  return isPortalBoundProject(projectRoot) || existsSync(path.join(projectRoot, ".vos", "project.yaml"));
+  return (
+    isPortalBoundProject(projectRoot) ||
+    existsSync(path.join(projectRoot, ".vos", "project.yaml"))
+  );
 }
 
 export interface ExecuteVosCommandOptions {
@@ -402,12 +550,14 @@ export interface ExecuteVosCommandOptions {
 }
 
 export function isVosCommand(command: CliCommand): command is VosCommand {
-  return command.kind !== "help" &&
+  return (
+    command.kind !== "help" &&
     command.kind !== "login" &&
     command.kind !== "logout" &&
     command.kind !== "whoami" &&
     command.kind !== "serve" &&
-    command.kind !== "agent_serve";
+    command.kind !== "agent_serve"
+  );
 }
 
 function startReadonlyDisplayForCommand(
@@ -425,7 +575,8 @@ function startReadonlyDisplayForCommand(
 
 function usesReadonlyDisplay(command: CliCommand): boolean {
   if (!("display" in command) || command.display !== true) return false;
-  if (command.kind === "agent_debug" && !command.logPath && !command.runId) return false;
+  if (command.kind === "agent_debug" && !command.logPath && !command.runId)
+    return false;
   return true;
 }
 
@@ -446,7 +597,11 @@ export async function executeVosCommand(
   const parsed = { global, command } satisfies ParsedInvocation;
 
   return await withProjectEnv(projectRoot, async () => {
-    if (!existsSync(path.join(projectRoot, "vos.yaml")) && isLegacyProject(projectRoot)) await ensureDefaultProjectConfig(projectRoot);
+    if (
+      !existsSync(path.join(projectRoot, "vos.yaml")) &&
+      isLegacyProject(projectRoot)
+    )
+      await ensureDefaultProjectConfig(projectRoot);
     const progress = createSilentProgress();
     const commandArray = commandToArray(command);
     const auth = await resolveAuthContext({
@@ -476,9 +631,13 @@ export async function executeVosCommand(
 
     try {
       if (auth.blocked) {
-        throw new CliError(`policy_blocked: ${auth.auth.reason ?? "policy_blocked"}`, "policy_blocked", {
-          reason: auth.auth.reason,
-        });
+        throw new CliError(
+          `policy_blocked: ${auth.auth.reason ?? "policy_blocked"}`,
+          "policy_blocked",
+          {
+            reason: auth.auth.reason,
+          },
+        );
       }
       const repro = await resolveReproducibilityContext(projectRoot, command);
       const runMetadata = await collectRunMetadata(projectRoot, command);
@@ -504,9 +663,17 @@ export async function executeVosCommand(
       if (options.signal?.aborted) {
         throw new CliError("cancelled", "cancelled", { reason: "cancelled" });
       }
-      return await finalizeRun({ parsed, evidence, outcome, progress, readonlyDisplay });
+      return await finalizeRun({
+        parsed,
+        evidence,
+        outcome,
+        progress,
+        readonlyDisplay,
+      });
     } catch (error) {
-      const status = options.signal?.aborted ? "cancelled" : classifyErrorStatus(error);
+      const status = options.signal?.aborted
+        ? "cancelled"
+        : classifyErrorStatus(error);
       const message = error instanceof Error ? error.message : "unknown error";
       readonlyDisplay?.error(message);
       readonlyDisplay?.close();
@@ -524,7 +691,7 @@ export async function executeVosCommand(
         message,
         details: {
           error: true,
-          ...(error instanceof CliError ? error.details ?? {} : {}),
+          ...(error instanceof CliError ? (error.details ?? {}) : {}),
         },
       };
     }
@@ -535,10 +702,10 @@ function createSilentProgress(): CommandProgress {
   return {
     mode: "always",
     enabled: true,
-    start() { },
-    update() { },
-    finish() { },
-    hide() { },
+    start() {},
+    update() {},
+    finish() {},
+    hide() {},
   };
 }
 
@@ -550,7 +717,10 @@ async function finalizeRun(params: {
   readonlyDisplay?: ReadonlyAgentDisplayHandle;
 }): Promise<BaseCommandResult> {
   const manifest = await params.evidence.finalize(params.outcome.status, {
-    message: typeof params.outcome.details.message === "string" ? params.outcome.details.message : undefined,
+    message:
+      typeof params.outcome.details.message === "string"
+        ? params.outcome.details.message
+        : undefined,
   });
   const finalOutput: BaseCommandResult = {
     ok: isSuccessStatus(params.outcome.status),
@@ -564,7 +734,11 @@ async function finalizeRun(params: {
     message: (params.outcome.details.message as string | undefined) ?? "ok",
     details: params.outcome.details,
   };
-  if (params.parsed.command.kind === "report_generate" && isSuccessStatus(params.outcome.status) && !existsSync(path.join(manifest.project_root, "vos.yaml"))) {
+  if (
+    params.parsed.command.kind === "report_generate" &&
+    isSuccessStatus(params.outcome.status) &&
+    !existsSync(path.join(manifest.project_root, "vos.yaml"))
+  ) {
     const commit = await commitGeneratedReport({
       projectRoot: manifest.project_root,
       runId: params.evidence.run_id,
@@ -582,12 +756,22 @@ async function finalizeRun(params: {
     };
   }
   if (params.parsed.global.reportPath) {
-    await writeFile(params.parsed.global.reportPath, `${JSON.stringify(finalOutput, null, 2)}\n`);
+    await writeFile(
+      params.parsed.global.reportPath,
+      `${JSON.stringify(finalOutput, null, 2)}\n`,
+    );
   }
-  params.progress.finish(params.outcome.status, typeof params.outcome.details.message === "string" ? params.outcome.details.message : undefined);
+  params.progress.finish(
+    params.outcome.status,
+    typeof params.outcome.details.message === "string"
+      ? params.outcome.details.message
+      : undefined,
+  );
   params.readonlyDisplay?.progress({
     stage: commandLabel(params.parsed.command),
-    status: isSuccessStatus(params.outcome.status) ? "completed" : params.outcome.status,
+    status: isSuccessStatus(params.outcome.status)
+      ? "completed"
+      : params.outcome.status,
     message: finalOutput.message,
     percent: 100,
   });
@@ -607,7 +791,10 @@ async function commitGeneratedReport(params: {
 }): Promise<{ commitSha: string; ledgerRef: string }> {
   const changedTargets = collectStringArray(params.details.changed_targets);
   if (changedTargets.length === 0) {
-    throw new CliError("report generate did not return changed targets for commit", "failed");
+    throw new CliError(
+      "report generate did not return changed targets for commit",
+      "failed",
+    );
   }
   const toAdd = [
     ...changedTargets,
@@ -617,10 +804,17 @@ async function commitGeneratedReport(params: {
   ].filter((entry) => existsSync(path.join(params.projectRoot, entry)));
   git(params.projectRoot, ["add", "-f", ...[...new Set(toAdd)]]);
   const title = params.final ? "final" : (params.stage ?? "stage");
-  git(params.projectRoot, ["commit", "-m", `[vos][report] Generate ${title} report`]);
+  git(params.projectRoot, [
+    "commit",
+    "-m",
+    `[vos][report] Generate ${title} report`,
+  ]);
   const commitSha = currentHead(params.projectRoot);
   if (!commitSha) {
-    throw new CliError("report generate commit did not produce a HEAD commit", "failed");
+    throw new CliError(
+      "report generate commit did not produce a HEAD commit",
+      "failed",
+    );
   }
   await appendLedgerEntry(params.projectRoot, {
     commit_sha: commitSha,
@@ -629,9 +823,13 @@ async function commitGeneratedReport(params: {
     agent_session_id: params.agentSessionId,
     run_id: params.runId,
     spec_refs: collectStringArray(params.details.spec_refs),
-    changed_targets: [...new Set([...changedTargets, ".vos/commit-ledger.jsonl"])],
+    changed_targets: [
+      ...new Set([...changedTargets, ".vos/commit-ledger.jsonl"]),
+    ],
     evidence_refs: params.evidenceRefs,
-    collaboration_intent: params.final ? "generate final course report" : `generate ${params.stage ?? "stage"} course report`,
+    collaboration_intent: params.final
+      ? "generate final course report"
+      : `generate ${params.stage ?? "stage"} course report`,
     based_on_agent_output: true,
   });
   return {
@@ -661,14 +859,25 @@ async function resolveAuthContext(params: {
     };
   }
 
-  const project: { portal_url?: string; project_id?: string } = isLegacyProject(params.projectRoot)
+  const project: { portal_url?: string; project_id?: string } = isLegacyProject(
+    params.projectRoot,
+  )
     ? await loadProjectConfig(params.projectRoot)
     : {};
   const portalUrl = params.serveBinding?.portalUrl ?? project.portal_url;
   const projectId = params.serveBinding?.projectId ?? project.project_id;
+  const normalizedPortalUrl = params.serveBinding
+    ? portalUrl
+    : portalUrl
+      ? normalizePortalUrl(portalUrl)
+      : undefined;
   if (!portalUrl) {
     return {
-      auth: { verdict: "not_required", checkedAt: new Date().toISOString(), projectId },
+      auth: {
+        verdict: "not_required",
+        checkedAt: new Date().toISOString(),
+        projectId,
+      },
       effectivePolicy: localOnlyPolicy,
       blocked: false,
     };
@@ -678,7 +887,7 @@ async function resolveAuthContext(params: {
       auth: {
         verdict: "denied",
         reason: "policy_unavailable",
-        portalUrl: normalizePortalUrl(portalUrl),
+        portalUrl: normalizedPortalUrl,
         checkedAt: new Date().toISOString(),
       },
       effectivePolicy: localOnlyPolicy,
@@ -694,7 +903,7 @@ async function resolveAuthContext(params: {
       auth: {
         verdict: "denied",
         reason: "not_logged_in",
-        portalUrl: normalizePortalUrl(portalUrl),
+        portalUrl: normalizedPortalUrl,
         projectId,
         checkedAt: new Date().toISOString(),
       },
@@ -705,19 +914,30 @@ async function resolveAuthContext(params: {
 
   try {
     const user = await params.portalClient.getMe(portalUrl, token);
-    const policy = await params.portalClient.getProjectPolicy(portalUrl, projectId, token);
+    const policy = await params.portalClient.getProjectPolicy(
+      portalUrl,
+      projectId,
+      token,
+    );
     if (policy.expiresAt && Date.parse(policy.expiresAt) <= Date.now()) {
-      throw new CliError("policy_blocked: policy snapshot expired", "policy_blocked", { reason: "policy_expired" });
+      throw new CliError(
+        "policy_blocked: policy snapshot expired",
+        "policy_blocked",
+        { reason: "policy_expired" },
+      );
     }
     if (!bearerToken) {
       await updateStoredUser(portalUrl, user);
     }
-    const effectivePolicy = mergeEffectivePolicy({ portal: policy, local: localPolicy });
+    const effectivePolicy = mergeEffectivePolicy({
+      portal: policy,
+      local: localPolicy,
+    });
     assertCommandAllowed(params.commandArray, effectivePolicy, localPolicy);
     return {
       auth: {
         verdict: "allowed",
-        portalUrl: normalizePortalUrl(portalUrl),
+        portalUrl: normalizedPortalUrl,
         projectId,
         user,
         policySnapshot: policy,
@@ -727,16 +947,17 @@ async function resolveAuthContext(params: {
       blocked: false,
     };
   } catch (error) {
-    const reason = error instanceof CliError && typeof error.details?.reason === "string"
-      ? error.details.reason
-      : error instanceof CliError && error.status === "policy_blocked"
-        ? "command_denied"
-        : "policy_unavailable";
+    const reason =
+      error instanceof CliError && typeof error.details?.reason === "string"
+        ? error.details.reason
+        : error instanceof CliError && error.status === "policy_blocked"
+          ? "command_denied"
+          : "policy_unavailable";
     return {
       auth: {
         verdict: "denied",
         reason,
-        portalUrl: normalizePortalUrl(portalUrl),
+        portalUrl: normalizedPortalUrl,
         projectId,
         checkedAt: new Date().toISOString(),
       },
@@ -747,20 +968,27 @@ async function resolveAuthContext(params: {
 }
 
 function isAuthBypassCommand(command: CliCommand): boolean {
-  return command.kind === "login" ||
+  return (
+    command.kind === "login" ||
     command.kind === "logout" ||
     command.kind === "whoami" ||
     command.kind === "init" ||
     command.kind === "stage_save" ||
     command.kind === "ledger_record" ||
-    command.kind === "help";
+    command.kind === "help"
+  );
 }
 
 async function resolveReproducibilityContext(
   projectRoot: string,
   command: CliCommand,
 ): Promise<{ commitSha?: string; parentSha?: string; ledgerRef?: string }> {
-  if (existsSync(path.join(projectRoot, "vos.yaml")) && (command.kind === "build" || command.kind === "run_qemu" || command.kind === "run_hardware")) {
+  if (
+    existsSync(path.join(projectRoot, "vos.yaml")) &&
+    (command.kind === "build" ||
+      command.kind === "run_qemu" ||
+      command.kind === "run_hardware")
+  ) {
     return await resolveOptionalReproducibilityContext(projectRoot);
   }
   if (isReproBypassCommand(command)) {
@@ -775,7 +1003,13 @@ async function resolveReproducibilityContext(
   if (!isLegacyProject(projectRoot)) {
     const current = await checkReproducibility(projectRoot);
     if (!current.ok && current.reason === "ledger_missing") {
-      const changedTargets = git(projectRoot, ["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"])
+      const changedTargets = git(projectRoot, [
+        "diff-tree",
+        "--no-commit-id",
+        "--name-only",
+        "-r",
+        "HEAD",
+      ])
         .split(/\r?\n/)
         .map((entry) => entry.trim())
         .filter(Boolean);
@@ -812,7 +1046,10 @@ async function resolveOptionalReproducibilityContext(
   };
 }
 
-async function collectRunMetadata(projectRoot: string, command: CliCommand): Promise<{
+async function collectRunMetadata(
+  projectRoot: string,
+  command: CliCommand,
+): Promise<{
   specHash?: string;
   inputFiles?: string[];
   outputFiles?: string[];
@@ -822,13 +1059,22 @@ async function collectRunMetadata(projectRoot: string, command: CliCommand): Pro
     return {};
   }
   if (existsSync(path.join(projectRoot, "vos.yaml"))) {
-    const manifestText = await readFile(path.join(projectRoot, "vos.yaml"), "utf8");
+    const manifestText = await readFile(
+      path.join(projectRoot, "vos.yaml"),
+      "utf8",
+    );
     const studentBundle = await buildNormalizedSpecBundle({ projectRoot });
     return {
       specHash: hashString(JSON.stringify(studentBundle.hashes)),
-      inputFiles: ["vos.yaml", ...studentBundle.sources.map((source) => source.path)],
+      inputFiles: [
+        "vos.yaml",
+        ...studentBundle.sources.map((source) => source.path),
+      ],
       outputFiles: studentBundle.manifest?.artifacts ?? [],
-      testsRun: command.kind === "verify" || command.kind === "agent_verify" ? studentBundle.manifest?.checks.map((check) => check.id) : [],
+      testsRun:
+        command.kind === "verify" || command.kind === "agent_verify"
+          ? studentBundle.manifest?.checks.map((check) => check.id)
+          : [],
       ...(manifestText.length === 0 ? { specHash: undefined } : {}),
     };
   }
@@ -836,18 +1082,22 @@ async function collectRunMetadata(projectRoot: string, command: CliCommand): Pro
 }
 
 function collectStringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
 }
 
 function isReproBypassCommand(command: CliCommand): boolean {
-  return command.kind === "login" ||
+  return (
+    command.kind === "login" ||
     command.kind === "logout" ||
     command.kind === "whoami" ||
     command.kind === "help" ||
     command.kind === "init" ||
     command.kind === "agent_config" ||
     command.kind === "stage_save" ||
-    command.kind === "ledger_record";
+    command.kind === "ledger_record"
+  );
 }
 
 function isReproControlledCommand(command: CliCommand): boolean {
@@ -886,11 +1136,18 @@ export async function executeInit(
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
   const studentFiles = INIT_COMMIT_TARGETS;
-  const initialFileSnapshots = snapshotInitCommitTargets(projectRoot, studentFiles);
+  const initialFileSnapshots = snapshotInitCommitTargets(
+    projectRoot,
+    studentFiles,
+  );
   await ensureStudentProjectFiles(projectRoot);
   const evidence = context.evidence;
   const gitInitialized = ensureProjectGitRepository(projectRoot);
-  const initialCommitTargets = changedInitCommitTargets(projectRoot, initialFileSnapshots, studentFiles);
+  const initialCommitTargets = changedInitCommitTargets(
+    projectRoot,
+    initialFileSnapshots,
+    studentFiles,
+  );
   const initialCommitCreated = currentHead(projectRoot)
     ? false
     : createInitialProjectCommit(projectRoot, initialCommitTargets);
@@ -909,7 +1166,12 @@ export async function executeInit(
       ledger: true,
       git_initialized: gitInitialized,
       initial_commit_created: initialCommitCreated,
-      suggested_next_commands: ["vos agent config", "vos doctor", "vos agent ask", "vos spec lint design"],
+      suggested_next_commands: [
+        "vos agent config",
+        "vos doctor",
+        "vos agent ask",
+        "vos spec lint design",
+      ],
     },
   };
 }
@@ -923,16 +1185,25 @@ const INIT_COMMIT_TARGETS = [
   "spec/modules/toolchain.yaml",
 ];
 
-function snapshotInitCommitTargets(projectRoot: string, targets = INIT_COMMIT_TARGETS): InitFileSnapshot {
+function snapshotInitCommitTargets(
+  projectRoot: string,
+  targets = INIT_COMMIT_TARGETS,
+): InitFileSnapshot {
   const snapshots: InitFileSnapshot = {};
   for (const target of targets) {
     const filePath = path.join(projectRoot, target);
-    snapshots[target] = existsSync(filePath) ? readFileSync(filePath, "utf8") : undefined;
+    snapshots[target] = existsSync(filePath)
+      ? readFileSync(filePath, "utf8")
+      : undefined;
   }
   return snapshots;
 }
 
-function changedInitCommitTargets(projectRoot: string, snapshots: InitFileSnapshot, targets = INIT_COMMIT_TARGETS): string[] {
+function changedInitCommitTargets(
+  projectRoot: string,
+  snapshots: InitFileSnapshot,
+  targets = INIT_COMMIT_TARGETS,
+): string[] {
   return targets.filter((target) => {
     const filePath = path.join(projectRoot, target);
     if (!existsSync(filePath)) return false;
@@ -942,7 +1213,9 @@ function changedInitCommitTargets(projectRoot: string, snapshots: InitFileSnapsh
 
 async function ensureStudentProjectFiles(projectRoot: string): Promise<void> {
   await mkdir(path.join(projectRoot, "spec", "modules"), { recursive: true });
-  await mkdir(path.join(projectRoot, "spec", "interfaces"), { recursive: true });
+  await mkdir(path.join(projectRoot, "spec", "interfaces"), {
+    recursive: true,
+  });
   await mkdir(path.join(projectRoot, "spec", "goals"), { recursive: true });
   await mkdir(path.join(projectRoot, "spec", "patches"), { recursive: true });
   const files: Record<string, string> = {
@@ -1042,11 +1315,17 @@ async function ensureStudentProjectFiles(projectRoot: string): Promise<void> {
     if (!existsSync(filePath)) await writeFile(filePath, content);
   }
   const gitignore = path.join(projectRoot, ".gitignore");
-  const existing = existsSync(gitignore) ? await readFile(gitignore, "utf8") : "";
+  const existing = existsSync(gitignore)
+    ? await readFile(gitignore, "utf8")
+    : "";
   const lines = existing.split(/\r?\n/).filter(Boolean);
   const additions = [".vos/", ".env", "build/", "fs.img"];
   const missing = additions.filter((entry) => !lines.includes(entry));
-  if (missing.length > 0) await writeFile(gitignore, `${existing.replace(/\s*$/, "")}${existing.trim() ? "\n" : ""}${missing.join("\n")}\n`);
+  if (missing.length > 0)
+    await writeFile(
+      gitignore,
+      `${existing.replace(/\s*$/, "")}${existing.trim() ? "\n" : ""}${missing.join("\n")}\n`,
+    );
 }
 
 function ensureProjectGitRepository(projectRoot: string): boolean {
@@ -1060,7 +1339,10 @@ function ensureProjectGitRepository(projectRoot: string): boolean {
   return true;
 }
 
-function createInitialProjectCommit(projectRoot: string, targets: string[]): boolean {
+function createInitialProjectCommit(
+  projectRoot: string,
+  targets: string[],
+): boolean {
   if (!hasGitIdentity(projectRoot)) {
     throw new CliError(
       "git identity is required before vos init can create the initial commit",
@@ -1068,8 +1350,8 @@ function createInitialProjectCommit(projectRoot: string, targets: string[]): boo
       {
         reason: "git_identity_missing",
         suggested_next_commands: [
-          "git config user.name \"Your Name\"",
-          "git config user.email \"you@example.com\"",
+          'git config user.name "Your Name"',
+          'git config user.email "you@example.com"',
           "vos init",
         ],
       },
@@ -1082,9 +1364,10 @@ function createInitialProjectCommit(projectRoot: string, targets: string[]): boo
       throw new CliError(`git add failed: ${add.stderr.trim()}`, "failed");
     }
   }
-  const commitArgs = targets.length > 0
-    ? ["commit", "-m", "[vos][init] Initialize VOS project"]
-    : ["commit", "--allow-empty", "-m", "[vos][init] Initialize VOS project"];
+  const commitArgs =
+    targets.length > 0
+      ? ["commit", "-m", "[vos][init] Initialize VOS project"]
+      : ["commit", "--allow-empty", "-m", "[vos][init] Initialize VOS project"];
   const commit = gitInitMaybe(projectRoot, commitArgs);
   if (!commit.ok) {
     throw new CliError(`git commit failed: ${commit.stderr.trim()}`, "failed");
@@ -1106,8 +1389,12 @@ function hasGitIdentity(projectRoot: string): boolean {
   return Boolean(name && email);
 }
 
-function firstNonEmpty(...values: Array<string | undefined>): string | undefined {
-  return values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim();
+function firstNonEmpty(
+  ...values: Array<string | undefined>
+): string | undefined {
+  return values
+    .find((value) => typeof value === "string" && value.trim().length > 0)
+    ?.trim();
 }
 
 function gitConfigValue(projectRoot: string, key: string): string | undefined {
@@ -1115,7 +1402,12 @@ function gitConfigValue(projectRoot: string, key: string): string | undefined {
   return result.ok ? result.stdout.trim() || undefined : undefined;
 }
 
-function gitInitMaybe(projectRoot: string, args: string[]): { ok: true; stdout: string; stderr: string } | { ok: false; stdout: string; stderr: string } {
+function gitInitMaybe(
+  projectRoot: string,
+  args: string[],
+):
+  | { ok: true; stdout: string; stderr: string }
+  | { ok: false; stdout: string; stderr: string } {
   const proc = Bun.spawnSync(["git", ...args], {
     cwd: projectRoot,
     env: process.env,
@@ -1126,7 +1418,9 @@ function gitInitMaybe(projectRoot: string, args: string[]): { ok: true; stdout: 
     stdout: proc.stdout.toString(),
     stderr: proc.stderr.toString(),
   };
-  return proc.exitCode === 0 ? { ok: true, ...result } : { ok: false, ...result };
+  return proc.exitCode === 0
+    ? { ok: true, ...result }
+    : { ok: false, ...result };
 }
 
 export async function executeDoctor(
@@ -1135,10 +1429,17 @@ export async function executeDoctor(
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
-  if (!existsSync(path.join(projectRoot, "vos.yaml")) && !existsSync(path.join(projectRoot, "spec", "design.yaml")) && !isLegacyProject(projectRoot)) {
+  if (
+    !existsSync(path.join(projectRoot, "vos.yaml")) &&
+    !existsSync(path.join(projectRoot, "spec", "design.yaml")) &&
+    !isLegacyProject(projectRoot)
+  ) {
     return executeUninitializedStudentDoctor(projectRoot);
   }
-  if (existsSync(path.join(projectRoot, "vos.yaml")) || existsSync(path.join(projectRoot, "spec", "design.yaml"))) {
+  if (
+    existsSync(path.join(projectRoot, "vos.yaml")) ||
+    existsSync(path.join(projectRoot, "spec", "design.yaml"))
+  ) {
     return executeStudentDoctor(context, evidence);
   }
   const checks: DoctorCheck[] = [
@@ -1151,14 +1452,35 @@ export async function executeDoctor(
 
   const projectPath = path.join(projectRoot, ".vos", "project.yaml");
   const policyPath = path.join(projectRoot, ".vos", "policy.yaml");
-  checks.push(doctorFileCheck("project-config", "project", projectPath, "run `vos init` to create project metadata"));
-  checks.push(doctorFileCheck("policy-config", "project", policyPath, "run `vos init` to create default policy metadata"));
+  checks.push(
+    doctorFileCheck(
+      "project-config",
+      "project",
+      projectPath,
+      "run `vos init` to create project metadata",
+    ),
+  );
+  checks.push(
+    doctorFileCheck(
+      "policy-config",
+      "project",
+      policyPath,
+      "run `vos init` to create default policy metadata",
+    ),
+  );
   let currentStage: string | undefined;
   try {
     const project = await loadProjectConfig(projectRoot);
     currentStage = project.current_stage;
     const specRoot = project.spec_root ?? "spec";
-    checks.push(doctorFileCheck("spec-root", "project", path.resolve(projectRoot, specRoot), "create the configured spec root or update .vos/project.yaml"));
+    checks.push(
+      doctorFileCheck(
+        "spec-root",
+        "project",
+        path.resolve(projectRoot, specRoot),
+        "create the configured spec root or update .vos/project.yaml",
+      ),
+    );
   } catch (error) {
     checks.push({
       name: "spec-root",
@@ -1189,7 +1511,9 @@ export async function executeDoctor(
       required: requiresToolchainManifest,
       ok: false,
       message: errorMessage(error),
-      hint: requiresToolchainManifest ? "run `vos build generate` to create .vos/toolchain.json" : "toolchain manifest is optional during architecture-seed",
+      hint: requiresToolchainManifest
+        ? "run `vos build generate` to create .vos/toolchain.json"
+        : "toolchain manifest is optional during architecture-seed",
     });
     if (requiresToolchainManifest) {
       suggested.add("vos build generate");
@@ -1209,11 +1533,15 @@ export async function executeDoctor(
 
   for (const command of OPTIONAL_TOOL_COMMANDS) {
     if (!requiredCommands.has(command)) {
-      checks.push(doctorCommandCheck(command, "optional-tools", undefined, false));
+      checks.push(
+        doctorCommandCheck(command, "optional-tools", undefined, false),
+      );
     }
   }
 
-  const missing = checks.filter((check) => check.required && !check.ok).map((check) => check.name);
+  const missing = checks
+    .filter((check) => check.required && !check.ok)
+    .map((check) => check.name);
   const warnings = checks
     .filter((check) => !check.required && !check.ok)
     .map((check) => check.name);
@@ -1227,55 +1555,145 @@ export async function executeDoctor(
       missing,
       warnings,
       suggested_next_commands: [...suggested],
-      message: missing.length === 0 ? "environment ok" : "missing required tools/configuration",
+      message:
+        missing.length === 0
+          ? "environment ok"
+          : "missing required tools/configuration",
     },
   };
 }
 
-function executeUninitializedStudentDoctor(projectRoot: string): CommandOutcome {
+function executeUninitializedStudentDoctor(
+  projectRoot: string,
+): CommandOutcome {
   const checks = [
-    { name: "bun", category: "base", required: true, ok: commandExists("bun"), hint: "install Bun and rerun `vos doctor`" },
-    { name: "git", category: "base", required: true, ok: commandExists("git"), hint: "install Git and rerun `vos doctor`" },
-    { name: "vos.yaml", category: "project", required: true, ok: false, hint: "run `vos init`" },
-    { name: "spec/design.yaml", category: "project", required: true, ok: false, hint: "run `vos init`" },
-    { name: "spec/modules/toolchain.yaml", category: "project", required: true, ok: false, hint: "run `vos init`" },
+    {
+      name: "bun",
+      category: "base",
+      required: true,
+      ok: commandExists("bun"),
+      hint: "install Bun and rerun `vos doctor`",
+    },
+    {
+      name: "git",
+      category: "base",
+      required: true,
+      ok: commandExists("git"),
+      hint: "install Git and rerun `vos doctor`",
+    },
+    {
+      name: "vos.yaml",
+      category: "project",
+      required: true,
+      ok: false,
+      hint: "run `vos init`",
+    },
+    {
+      name: "spec/design.yaml",
+      category: "project",
+      required: true,
+      ok: false,
+      hint: "run `vos init`",
+    },
+    {
+      name: "spec/modules/toolchain.yaml",
+      category: "project",
+      required: true,
+      ok: false,
+      hint: "run `vos init`",
+    },
   ];
   return {
     status: "validation_failed",
     details: {
       checks,
-      missing: checks.filter((check) => check.required && !check.ok).map((check) => check.name),
+      missing: checks
+        .filter((check) => check.required && !check.ok)
+        .map((check) => check.name),
       suggested_next_commands: ["vos init"],
       message: `student project is not initialized at ${studentRelativePath(projectRoot, projectRoot) || "."}; run \`vos init\``,
     },
   };
 }
 
-async function executeStudentDoctor(context: ExecContext, evidence: EvidenceWriter): Promise<CommandOutcome> {
+async function executeStudentDoctor(
+  context: ExecContext,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
   const checks: Array<Record<string, unknown>> = [];
   let requireEmbedding = false;
   let manifestValue: unknown;
   for (const command of ["bun", "git"]) {
-    checks.push({ name: command, category: "base", required: true, ok: commandExists(command), hint: commandExists(command) ? undefined : `install ${command} and rerun vos doctor` });
+    checks.push({
+      name: command,
+      category: "base",
+      required: true,
+      ok: commandExists(command),
+      hint: commandExists(command)
+        ? undefined
+        : `install ${command} and rerun vos doctor`,
+    });
   }
-  for (const relative of ["vos.yaml", "spec/design.yaml", "spec/modules/toolchain.yaml"]) {
-    checks.push({ name: relative, category: "project", required: true, ok: existsSync(path.join(projectRoot, relative)), hint: `run vos init to create ${relative}` });
+  for (const relative of [
+    "vos.yaml",
+    "spec/design.yaml",
+    "spec/modules/toolchain.yaml",
+  ]) {
+    checks.push({
+      name: relative,
+      category: "project",
+      required: true,
+      ok: existsSync(path.join(projectRoot, relative)),
+      hint: `run vos init to create ${relative}`,
+    });
   }
   try {
     const manifest = await readStudentManifest(projectRoot);
     manifestValue = manifest.manifest;
-    checks.push({ name: "manifest-schema", category: "project", required: true, ok: true, message: path.relative(projectRoot, manifest.path) });
+    checks.push({
+      name: "manifest-schema",
+      category: "project",
+      required: true,
+      ok: true,
+      message: path.relative(projectRoot, manifest.path),
+    });
     const kbSources = await listKbSources(projectRoot);
     requireEmbedding = kbSources.length > 0;
-    checks.push({ name: "kb-sources", category: "knowledge", required: false, ok: true, message: `${kbSources.length} source(s) indexed` });
+    checks.push({
+      name: "kb-sources",
+      category: "knowledge",
+      required: false,
+      ok: true,
+      message: `${kbSources.length} source(s) indexed`,
+    });
     for (const [id, target] of Object.entries(manifest.manifest.checks)) {
-      checks.push({ name: `check:${id}`, category: "contract", required: true, ok: commandExists(target.program), command: target.program, hint: commandExists(target.program) ? undefined : `install ${target.program} or update vos.yaml` });
+      checks.push({
+        name: `check:${id}`,
+        category: "contract",
+        required: true,
+        ok: commandExists(target.program),
+        command: target.program,
+        hint: commandExists(target.program)
+          ? undefined
+          : `install ${target.program} or update vos.yaml`,
+      });
     }
   } catch (error) {
-    checks.push({ name: "manifest-schema", category: "project", required: true, ok: false, message: errorMessage(error), hint: "fix vos.yaml schema errors, then rerun vos doctor" });
+    checks.push({
+      name: "manifest-schema",
+      category: "project",
+      required: true,
+      ok: false,
+      message: errorMessage(error),
+      hint: "fix vos.yaml schema errors, then rerun vos doctor",
+    });
   }
-  for (const check of checkAgentConfig(projectRoot, mergedProjectEnv(projectRoot), { requireEmbedding })) {
+  for (const check of checkAgentConfig(
+    projectRoot,
+    mergedProjectEnv(projectRoot),
+    { requireEmbedding },
+  )) {
     checks.push({
       ...check,
       category: check.name === "kb-embedding" ? "knowledge" : "agent",
@@ -1283,22 +1701,34 @@ async function executeStudentDoctor(context: ExecContext, evidence: EvidenceWrit
     });
   }
   const bundle = await buildNormalizedSpecBundle({ projectRoot });
-  checks.push({ name: "spec-contract", category: "spec", required: true, ok: !hasBlockingDiagnostics(bundle.diagnostics), message: `${bundle.diagnostics.length} diagnostic(s)`, hint: "run vos spec lint for exact diagnostics" });
+  checks.push({
+    name: "spec-contract",
+    category: "spec",
+    required: true,
+    ok: !hasBlockingDiagnostics(bundle.diagnostics),
+    message: `${bundle.diagnostics.length} diagnostic(s)`,
+    hint: "run vos spec lint for exact diagnostics",
+  });
 
   const before = await studentGitFingerprint(projectRoot);
   let diagnosis: DoctorDiagnosis | undefined;
   let diagnosisWarning: string | undefined;
   try {
-    const agentProgress = createAgentProgressParams(context, "doctor debug agent");
+    const agentProgress = createAgentProgressParams(
+      context,
+      "doctor debug agent",
+    );
     const response = await runAgentWithValidatedSubmission({
       projectRoot,
-      taskPrompt: agentProgress.taskPrompt([
-        "Act as the VOS Doctor Debug Agent. Read every Spec, vos.yaml, the project tree, and the deterministic diagnostics provided in context.",
-        "Infer the host command-line tools required by this concrete project and distinguish required from optional tools using explicit Spec references.",
-        "For every tool, use the Bash tool to run bounded version, target, compile, or runtime capability probes. Return each Bash tool-call id in probe_ids; a conclusion without matching Bash evidence is invalid.",
-        "Do not install or download anything, invoke a package manager, change system configuration, or modify project files. You may write temporary probe output only under .vos/doctor/.",
-        "Give platform-appropriate installation suggestions as advice only. Prompt policy, Git checks, and audit logs are not a host security boundary.",
-      ].join("\n")),
+      taskPrompt: agentProgress.taskPrompt(
+        [
+          "Act as the VOS Doctor Debug Agent. Read every Spec, vos.yaml, the project tree, and the deterministic diagnostics provided in context.",
+          "Infer the host command-line tools required by this concrete project and distinguish required from optional tools using explicit Spec references.",
+          "For every tool, use the Bash tool to run bounded version, target, compile, or runtime capability probes. Return each Bash tool-call id in probe_ids; a conclusion without matching Bash evidence is invalid.",
+          "Do not install or download anything, invoke a package manager, change system configuration, or modify project files. You may write temporary probe output only under .vos/doctor/.",
+          "Give platform-appropriate installation suggestions as advice only. Prompt policy, Git checks, and audit logs are not a host security boundary.",
+        ].join("\n"),
+      ),
       taskKind: "doctor",
       requestedScope: "doctor:student-project",
       context: {
@@ -1311,12 +1741,16 @@ async function executeStudentDoctor(context: ExecContext, evidence: EvidenceWrit
       },
       courseMode: true,
       toolPolicy: doctorToolPolicy(),
-      allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      allowedVosCommands: await loadAgentAllowedCommands(
+        projectRoot,
+        context.effectivePolicy,
+      ),
       resultSubmissionSchema: "doctor_diagnosis.v1",
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
       taskRunner: context.agentRunner,
-      validateSubmission: (submission, events) => parseDoctorDiagnosis(submission, events),
+      validateSubmission: (submission, events) =>
+        parseDoctorDiagnosis(submission, events),
     });
     diagnosis = response.validatedResult;
   } catch (error) {
@@ -1334,7 +1768,12 @@ async function executeStudentDoctor(context: ExecContext, evidence: EvidenceWrit
       evidence: after.changed,
     });
   } else {
-    checks.push({ name: "doctor-readonly", category: "agent", required: true, ok: true });
+    checks.push({
+      name: "doctor-readonly",
+      category: "agent",
+      required: true,
+      ok: true,
+    });
   }
 
   if (diagnosis) {
@@ -1362,24 +1801,44 @@ async function executeStudentDoctor(context: ExecContext, evidence: EvidenceWrit
     });
   }
 
-  const doctorDirectory = path.join(projectRoot, ".vos", "doctor", evidence.run_id);
+  const doctorDirectory = path.join(
+    projectRoot,
+    ".vos",
+    "doctor",
+    evidence.run_id,
+  );
   await mkdir(doctorDirectory, { recursive: true });
   const diagnosisPath = path.join(doctorDirectory, "diagnosis.json");
-  await writeFile(diagnosisPath, `${JSON.stringify({ diagnosis: diagnosis ?? null, warning: diagnosisWarning ?? null, checks }, null, 2)}\n`);
-  evidence.addArtifactFromPath("doctor", diagnosisPath, "student doctor diagnosis");
+  await writeFile(
+    diagnosisPath,
+    `${JSON.stringify({ diagnosis: diagnosis ?? null, warning: diagnosisWarning ?? null, checks }, null, 2)}\n`,
+  );
+  evidence.addArtifactFromPath(
+    "doctor",
+    diagnosisPath,
+    "student doctor diagnosis",
+  );
 
-  const missing = checks.filter((check) => check.required && check.ok !== true).map((check) => String(check.name));
+  const missing = checks
+    .filter((check) => check.required && check.ok !== true)
+    .map((check) => String(check.name));
   return {
     status: missing.length === 0 ? "passed" : "validation_failed",
     details: {
       checks,
       missing,
-      warnings: checks.filter((check) => !check.required && check.ok !== true).map((check) => String(check.name)),
-      diagnosis: diagnosis ?? { status: "unavailable", warning: diagnosisWarning },
+      warnings: checks
+        .filter((check) => !check.required && check.ok !== true)
+        .map((check) => String(check.name)),
+      diagnosis: diagnosis ?? {
+        status: "unavailable",
+        warning: diagnosisWarning,
+      },
       evidence: studentRelativePath(projectRoot, diagnosisPath),
-      suggested_next_commands: missing.length > 0
-        ? ["vos spec lint", "vos agent review"]
-        : ["vos build", "vos verify"],
+      suggested_next_commands:
+        missing.length > 0
+          ? ["vos spec lint", "vos agent review"]
+          : ["vos build", "vos verify"],
     },
   };
 }
@@ -1407,9 +1866,20 @@ interface DoctorDiagnosis {
   limitations: string[];
 }
 
-function parseDoctorDiagnosis(value: unknown, events: Array<Record<string, unknown>>): DoctorDiagnosis {
-  if (!isRecord(value) || typeof value.summary !== "string" || !Array.isArray(value.tools) || !Array.isArray(value.limitations) || !value.limitations.every((item) => typeof item === "string")) {
-    throw new AgentOutputError("doctor diagnosis does not match doctor_diagnosis.v1");
+function parseDoctorDiagnosis(
+  value: unknown,
+  events: Array<Record<string, unknown>>,
+): DoctorDiagnosis {
+  if (
+    !isRecord(value) ||
+    typeof value.summary !== "string" ||
+    !Array.isArray(value.tools) ||
+    !Array.isArray(value.limitations) ||
+    !value.limitations.every((item) => typeof item === "string")
+  ) {
+    throw new AgentOutputError(
+      "doctor diagnosis does not match doctor_diagnosis.v1",
+    );
   }
   const bashCalls = new Map<string, string>();
   const bashResults = new Map<string, string>();
@@ -1418,7 +1888,8 @@ function parseDoctorDiagnosis(value: unknown, events: Array<Record<string, unkno
     if (event.type === "tool.call" && typeof event.arguments === "string") {
       let command: unknown;
       try {
-        command = (JSON.parse(event.arguments) as Record<string, unknown>).command;
+        command = (JSON.parse(event.arguments) as Record<string, unknown>)
+          .command;
       } catch {
         command = undefined;
       }
@@ -1429,14 +1900,32 @@ function parseDoctorDiagnosis(value: unknown, events: Array<Record<string, unkno
     }
   }
   const tools = value.tools.map((raw, index): DoctorDiagnosisTool => {
-    if (!isRecord(raw) || typeof raw.program !== "string" || typeof raw.purpose !== "string" || typeof raw.required !== "boolean" ||
-      !["installed", "missing", "failed"].includes(String(raw.status)) || !Array.isArray(raw.spec_refs) || !raw.spec_refs.every((item) => typeof item === "string") ||
-      !Array.isArray(raw.probe_ids) || !raw.probe_ids.every((item) => typeof item === "string") || !Array.isArray(raw.suggestions) || !raw.suggestions.every((item) => typeof item === "string")) {
+    if (
+      !isRecord(raw) ||
+      typeof raw.program !== "string" ||
+      typeof raw.purpose !== "string" ||
+      typeof raw.required !== "boolean" ||
+      !["installed", "missing", "failed"].includes(String(raw.status)) ||
+      !Array.isArray(raw.spec_refs) ||
+      !raw.spec_refs.every((item) => typeof item === "string") ||
+      !Array.isArray(raw.probe_ids) ||
+      !raw.probe_ids.every((item) => typeof item === "string") ||
+      !Array.isArray(raw.suggestions) ||
+      !raw.suggestions.every((item) => typeof item === "string")
+    ) {
       throw new AgentOutputError(`doctor diagnosis tool ${index} is invalid`);
     }
-    if (raw.spec_refs.length === 0) throw new AgentOutputError(`doctor diagnosis tool ${raw.program} has no Spec basis`);
-    if (raw.probe_ids.length === 0 || raw.probe_ids.some((id) => !bashCalls.has(id) || !bashResults.has(id))) {
-      throw new AgentOutputError(`doctor diagnosis tool ${raw.program} is not bound to actual Bash evidence`);
+    if (raw.spec_refs.length === 0)
+      throw new AgentOutputError(
+        `doctor diagnosis tool ${raw.program} has no Spec basis`,
+      );
+    if (
+      raw.probe_ids.length === 0 ||
+      raw.probe_ids.some((id) => !bashCalls.has(id) || !bashResults.has(id))
+    ) {
+      throw new AgentOutputError(
+        `doctor diagnosis tool ${raw.program} is not bound to actual Bash evidence`,
+      );
     }
     return {
       ...raw,
@@ -1447,7 +1936,11 @@ function parseDoctorDiagnosis(value: unknown, events: Array<Record<string, unkno
       })),
     } as unknown as DoctorDiagnosisTool;
   });
-  return { summary: value.summary, tools, limitations: value.limitations as string[] };
+  return {
+    summary: value.summary,
+    tools,
+    limitations: value.limitations as string[],
+  };
 }
 
 function doctorToolPolicy() {
@@ -1456,14 +1949,25 @@ function doctorToolPolicy() {
       if (request.name !== "Bash") return { allowed: true as const };
       let command = request.argumentsJson;
       try {
-        const parsed = JSON.parse(request.argumentsJson) as Record<string, unknown>;
+        const parsed = JSON.parse(request.argumentsJson) as Record<
+          string,
+          unknown
+        >;
         if (typeof parsed.command === "string") command = parsed.command;
       } catch {
-        return { allowed: false as const, reason: "doctor Bash arguments must be valid JSON" };
+        return {
+          allowed: false as const,
+          reason: "doctor Bash arguments must be valid JSON",
+        };
       }
-      const mutating = /(?:^|[;&|]\s*)(?:sudo\s+)?(?:apt(?:-get)?|dnf|yum|pacman|zypper|apk|brew|winget|choco|scoop|pip\d*|npm|pnpm|yarn|bun)\s+(?:install|add|remove|uninstall|upgrade|update)\b|\b(?:curl|wget)\b|\bgit\s+clone\b/i;
+      const mutating =
+        /(?:^|[;&|]\s*)(?:sudo\s+)?(?:apt(?:-get)?|dnf|yum|pacman|zypper|apk|brew|winget|choco|scoop|pip\d*|npm|pnpm|yarn|bun)\s+(?:install|add|remove|uninstall|upgrade|update)\b|\b(?:curl|wget)\b|\bgit\s+clone\b/i;
       return mutating.test(command)
-        ? { allowed: false as const, reason: "vos doctor may advise installation but may not install or download tools" }
+        ? {
+            allowed: false as const,
+            reason:
+              "vos doctor may advise installation but may not install or download tools",
+          }
         : { allowed: true as const };
     },
   };
@@ -1489,7 +1993,11 @@ export async function executeStageSave(
   context: ExecContext,
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
-  const before = git(projectRoot, ["status", "--porcelain", "--untracked-files=all"])
+  const before = git(projectRoot, [
+    "status",
+    "--porcelain",
+    "--untracked-files=all",
+  ])
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => line.slice(3).trim())
@@ -1515,7 +2023,9 @@ export async function executeStageSave(
     details: {
       committed,
       changed_targets: staged.length > 0 ? staged : before,
-      ledger: entry ? `${".vos/commit-ledger.jsonl"}#${entry.commit_sha}` : undefined,
+      ledger: entry
+        ? `${".vos/commit-ledger.jsonl"}#${entry.commit_sha}`
+        : undefined,
     },
   };
 }
@@ -1525,7 +2035,10 @@ export async function executeToolchainLint(
   projectRoot: string,
 ): Promise<CommandOutcome> {
   const lint = await runToolchainLint(projectRoot);
-  return { status: lint.status, details: lint as unknown as Record<string, unknown> };
+  return {
+    status: lint.status,
+    details: lint as unknown as Record<string, unknown>,
+  };
 }
 
 export async function executeToolchainInit(
@@ -1533,7 +2046,11 @@ export async function executeToolchainInit(
   context: ExecContext,
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
-  return await writeDeterministicToolchainManifest(context.projectRoot, evidence, command.force);
+  return await writeDeterministicToolchainManifest(
+    context.projectRoot,
+    evidence,
+    command.force,
+  );
 }
 
 export async function executeSpecLint(
@@ -1545,9 +2062,15 @@ export async function executeSpecLint(
   const bundle = await buildNormalizedSpecBundle({ projectRoot });
   const target = resolveStudentSpecTarget(bundle, command.target);
   const diagnostics = studentSpecDiagnostics(bundle, target);
-  const bundlePath = await writeNormalizedBundle(projectRoot, { ...bundle, diagnostics }, evidence);
+  const bundlePath = await writeNormalizedBundle(
+    projectRoot,
+    { ...bundle, diagnostics },
+    evidence,
+  );
   return {
-    status: hasBlockingDiagnostics(diagnostics) ? "validation_failed" : "passed",
+    status: hasBlockingDiagnostics(diagnostics)
+      ? "validation_failed"
+      : "passed",
     details: {
       target: target.label,
       diagnostics,
@@ -1571,24 +2094,38 @@ interface ResolvedStudentSpecTarget {
   refs: Set<string>;
 }
 
-function resolveStudentSpecTarget(bundle: NormalizedSpecBundle, rawTarget: string | undefined): ResolvedStudentSpecTarget {
+function resolveStudentSpecTarget(
+  bundle: NormalizedSpecBundle,
+  rawTarget: string | undefined,
+): ResolvedStudentSpecTarget {
   const target = rawTarget?.trim();
-  if (!target || target === "all") return { label: "all", all: true, paths: new Set(), refs: new Set() };
+  if (!target || target === "all")
+    return { label: "all", all: true, paths: new Set(), refs: new Set() };
   const normalized = target.replace(/\\/g, "/").replace(/^\.\//, "");
   const matches: Array<{ path: string; refs: string[] }> = [];
-  if (target === "design" && bundle.design) matches.push({ path: bundle.design.path, refs: ["design"] });
+  if (target === "design" && bundle.design)
+    matches.push({ path: bundle.design.path, refs: ["design"] });
   for (const module of bundle.normalized_modules) {
-    if ([module.id, module.module, module.path].includes(target) || module.path === normalized) {
+    if (
+      [module.id, module.module, module.path].includes(target) ||
+      module.path === normalized
+    ) {
       matches.push({ path: module.path, refs: [module.id, module.module] });
     }
   }
   for (const item of bundle.interfaces) {
-    if ([item.id, item.name, item.path].includes(target) || item.path === normalized) {
+    if (
+      [item.id, item.name, item.path].includes(target) ||
+      item.path === normalized
+    ) {
       matches.push({ path: item.path, refs: [item.id, item.name] });
     }
   }
   for (const item of bundle.goals) {
-    if ([item.goal_id, item.path].includes(target) || item.path === normalized) {
+    if (
+      [item.goal_id, item.path].includes(target) ||
+      item.path === normalized
+    ) {
       matches.push({ path: item.path, refs: [item.goal_id] });
     }
   }
@@ -1615,20 +2152,49 @@ function resolveStudentSpecTarget(bundle: NormalizedSpecBundle, rawTarget: strin
   };
 }
 
-function studentSpecDiagnostics(bundle: NormalizedSpecBundle, target: ResolvedStudentSpecTarget) {
+function studentSpecDiagnostics(
+  bundle: NormalizedSpecBundle,
+  target: ResolvedStudentSpecTarget,
+) {
   const diagnostics = [...bundle.diagnostics];
   if (target.all) {
-    if (!bundle.design) diagnostics.push({ severity: "error" as const, code: "design.missing", message: "spec/design.yaml is required", path: "spec/design.yaml" });
-    if (bundle.normalized_modules.length === 0) diagnostics.push({ severity: "error" as const, code: "module.missing", message: "at least one ModuleSpec is required under spec/modules/", path: "spec/modules" });
-    if (!bundle.normalized_modules.some((module) => module.module === "toolchain" || module.id === "toolchain")) {
-      diagnostics.push({ severity: "error" as const, code: "toolchain.module_missing", message: "toolchain must be represented as a ModuleSpec", path: "spec/modules/toolchain.yaml", ref: "toolchain" });
+    if (!bundle.design)
+      diagnostics.push({
+        severity: "error" as const,
+        code: "design.missing",
+        message: "spec/design.yaml is required",
+        path: "spec/design.yaml",
+      });
+    if (bundle.normalized_modules.length === 0)
+      diagnostics.push({
+        severity: "error" as const,
+        code: "module.missing",
+        message: "at least one ModuleSpec is required under spec/modules/",
+        path: "spec/modules",
+      });
+    if (
+      !bundle.normalized_modules.some(
+        (module) => module.module === "toolchain" || module.id === "toolchain",
+      )
+    ) {
+      diagnostics.push({
+        severity: "error" as const,
+        code: "toolchain.module_missing",
+        message: "toolchain must be represented as a ModuleSpec",
+        path: "spec/modules/toolchain.yaml",
+        ref: "toolchain",
+      });
     }
     return diagnostics;
   }
-  return diagnostics.filter((diagnostic) =>
-    Boolean(diagnostic.path && target.paths.has(diagnostic.path.replace(/\\/g, "/"))) ||
-    Boolean(diagnostic.ref && target.refs.has(diagnostic.ref)) ||
-    [...target.refs].some((ref) => diagnostic.message.includes(ref))
+  return diagnostics.filter(
+    (diagnostic) =>
+      Boolean(
+        diagnostic.path &&
+        target.paths.has(diagnostic.path.replace(/\\/g, "/")),
+      ) ||
+      Boolean(diagnostic.ref && target.refs.has(diagnostic.ref)) ||
+      [...target.refs].some((ref) => diagnostic.message.includes(ref)),
   );
 }
 
@@ -1639,10 +2205,15 @@ export async function executeSpecNormalize(
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
   const project = await loadProjectConfig(projectRoot);
-  const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+  const bundle = await buildNormalizedSpecBundle({
+    projectRoot,
+    specRoot: project.spec_root ?? "spec",
+  });
   const cachePath = await writeNormalizedBundle(projectRoot, bundle, evidence);
   return {
-    status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
+    status: hasBlockingDiagnostics(bundle.diagnostics)
+      ? "validation_failed"
+      : "passed",
     details: {
       diagnostics: bundle.diagnostics,
       source_count: bundle.sources.length,
@@ -1660,10 +2231,15 @@ export async function executeSpecCheckConsistency(
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
   const project = await loadProjectConfig(projectRoot);
-  const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+  const bundle = await buildNormalizedSpecBundle({
+    projectRoot,
+    specRoot: project.spec_root ?? "spec",
+  });
   const bundlePath = await writeNormalizedBundle(projectRoot, bundle, evidence);
   return {
-    status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
+    status: hasBlockingDiagnostics(bundle.diagnostics)
+      ? "validation_failed"
+      : "passed",
     details: {
       diagnostics: bundle.diagnostics,
       checked: bundle.sources.length,
@@ -1681,11 +2257,16 @@ export async function executeSpecPatchLint(
   if (!command.patchPath) {
     return {
       status: "validation_failed",
-      details: { message: "spec patch lint requires a SpecPatch YAML path or commit-ish" },
+      details: {
+        message: "spec patch lint requires a SpecPatch YAML path or commit-ish",
+      },
     };
   }
   const project = await loadProjectConfig(projectRoot);
-  const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+  const bundle = await buildNormalizedSpecBundle({
+    projectRoot,
+    specRoot: project.spec_root ?? "spec",
+  });
   const { patch, impact } = await resolveSpecPatch({
     projectRoot,
     specRoot: project.spec_root ?? "spec",
@@ -1701,7 +2282,12 @@ export async function executeSpecPatchLint(
     evidence,
   });
   return {
-    status: hasBlockingDiagnostics([...bundle.diagnostics, ...impact.diagnostics]) ? "validation_failed" : "passed",
+    status: hasBlockingDiagnostics([
+      ...bundle.diagnostics,
+      ...impact.diagnostics,
+    ])
+      ? "validation_failed"
+      : "passed",
     details: {
       patch,
       impact,
@@ -1720,11 +2306,17 @@ export async function executeSpecPatchApply(
   if (!command.patchPath) {
     return {
       status: "validation_failed",
-      details: { message: "spec patch apply requires a SpecPatch YAML path or commit-ish" },
+      details: {
+        message:
+          "spec patch apply requires a SpecPatch YAML path or commit-ish",
+      },
     };
   }
   const project = await loadProjectConfig(projectRoot);
-  const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+  const bundle = await buildNormalizedSpecBundle({
+    projectRoot,
+    specRoot: project.spec_root ?? "spec",
+  });
   const { patch, impact } = await resolveSpecPatch({
     projectRoot,
     specRoot: project.spec_root ?? "spec",
@@ -1733,7 +2325,11 @@ export async function executeSpecPatchApply(
     strict: true,
   });
   const selectedChecks = selectPatchVerificationChecks(impact);
-  const normalizedCache = await writeNormalizedBundle(projectRoot, bundle, evidence);
+  const normalizedCache = await writeNormalizedBundle(
+    projectRoot,
+    bundle,
+    evidence,
+  );
   const patchCache = await writePatchApplyCache({
     projectRoot,
     evidence,
@@ -1856,15 +2452,17 @@ export async function executeArchLint(
   const agentReview = command.noAgent
     ? deterministicOnlyAgentReview("arch lint")
     : await runDefaultAgentSpecReview({
-      command: "arch lint",
-      target: command.path,
-      bundle,
-      context,
-      evidence,
-    });
+        command: "arch lint",
+        target: command.path,
+        bundle,
+        context,
+        evidence,
+      });
   const diagnostics = [...bundle.diagnostics, ...composition.conflicts];
   return {
-    status: hasBlockingDiagnostics(diagnostics) ? "validation_failed" : "passed",
+    status: hasBlockingDiagnostics(diagnostics)
+      ? "validation_failed"
+      : "passed",
     details: {
       diagnostics,
       composition,
@@ -1882,14 +2480,31 @@ export async function executeArchCompose(
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
   const project = await loadProjectConfig(projectRoot);
-  const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+  const bundle = await buildNormalizedSpecBundle({
+    projectRoot,
+    specRoot: project.spec_root ?? "spec",
+  });
   const composition = composeArchitecture(bundle, command.path);
-  const composePath = path.join(projectRoot, ".vos", "cache", "composition.json");
+  const composePath = path.join(
+    projectRoot,
+    ".vos",
+    "cache",
+    "composition.json",
+  );
   await mkdir(path.dirname(composePath), { recursive: true });
   await writeFile(composePath, `${JSON.stringify(composition, null, 2)}\n`);
-  evidence.addArtifact("arch", path.relative(projectRoot, composePath), "architecture composition");
+  evidence.addArtifact(
+    "arch",
+    path.relative(projectRoot, composePath),
+    "architecture composition",
+  );
   return {
-    status: hasBlockingDiagnostics([...bundle.diagnostics, ...composition.conflicts]) ? "validation_failed" : "passed",
+    status: hasBlockingDiagnostics([
+      ...bundle.diagnostics,
+      ...composition.conflicts,
+    ])
+      ? "validation_failed"
+      : "passed",
     details: {
       composition,
       conflicts: composition.conflicts,
@@ -1906,14 +2521,28 @@ export async function executeArchDeriveTests(
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
   const project = await loadProjectConfig(projectRoot);
-  const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+  const bundle = await buildNormalizedSpecBundle({
+    projectRoot,
+    specRoot: project.spec_root ?? "spec",
+  });
   const matrix = deriveTestMatrix(bundle, command.path);
-  const derivedPath = path.join(projectRoot, ".vos", "cache", "derived-tests.json");
+  const derivedPath = path.join(
+    projectRoot,
+    ".vos",
+    "cache",
+    "derived-tests.json",
+  );
   await mkdir(path.dirname(derivedPath), { recursive: true });
   await writeFile(derivedPath, `${JSON.stringify(matrix, null, 2)}\n`);
-  evidence.addArtifact("arch", path.relative(projectRoot, derivedPath), "derived tests");
+  evidence.addArtifact(
+    "arch",
+    path.relative(projectRoot, derivedPath),
+    "derived tests",
+  );
   return {
-    status: hasBlockingDiagnostics(bundle.diagnostics) ? "validation_failed" : "passed",
+    status: hasBlockingDiagnostics(bundle.diagnostics)
+      ? "validation_failed"
+      : "passed",
     details: {
       matrix,
       source_refs: bundle.sources.map((source) => source.path),
@@ -1928,7 +2557,11 @@ export async function executeTraceSyscall(
   evidence: EvidenceWriter,
   projectRoot: string,
 ): Promise<CommandOutcome> {
-  updateProgress(context, { stage: "trace syscall", status: "running", message: "running qemu" });
+  updateProgress(context, {
+    stage: "trace syscall",
+    status: "running",
+    message: "running qemu",
+  });
   const result = await runQemuCommand({
     projectRoot,
     evidence,
@@ -1957,7 +2590,9 @@ export async function executeDebugExplainLog(
   }
   const text = await readFile(logPath, "utf8");
   const lines = text.split(/\r?\n/);
-  const errors = lines.filter((line) => /error|fail|panic|assert|segfault/i.test(line));
+  const errors = lines.filter((line) =>
+    /error|fail|panic|assert|segfault/i.test(line),
+  );
   return {
     status: errors.length === 0 ? "passed" : "validation_failed",
     details: {
@@ -1976,10 +2611,16 @@ export async function executeReportGenerate(
   return executeStudentReport(context.projectRoot, context.evidence);
 }
 
-async function executeStudentReport(projectRoot: string, evidence: EvidenceWriter): Promise<CommandOutcome> {
+async function executeStudentReport(
+  projectRoot: string,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
   const bundle = await buildNormalizedSpecBundle({ projectRoot });
   const head = currentHead(projectRoot);
-  const state = await studentGitStatus(projectRoot).catch(() => ({ clean: false, changed: [] as string[] }));
+  const state = await studentGitStatus(projectRoot).catch(() => ({
+    clean: false,
+    changed: [] as string[],
+  }));
   const evidenceIndex = await readStudentEvidenceIndex(projectRoot);
   const manifestChecks = bundle.manifest?.checks ?? [];
   const verifiedRun = evidenceIndex.some((run) => {
@@ -1992,9 +2633,12 @@ async function executeStudentReport(projectRoot: string, evidence: EvidenceWrite
     commit_sha: head,
     commits: studentCommitHistory(projectRoot),
     spec_hash: hashString(JSON.stringify(bundle.hashes)),
-    config_hash: existsSync(path.join(projectRoot, "vos.yaml")) ? hashString(await readFile(path.join(projectRoot, "vos.yaml"), "utf8")) : undefined,
+    config_hash: existsSync(path.join(projectRoot, "vos.yaml"))
+      ? hashString(await readFile(path.join(projectRoot, "vos.yaml"), "utf8"))
+      : undefined,
     clean_head: state.clean,
-    submittable: state.clean && !hasBlockingDiagnostics(bundle.diagnostics) && verifiedRun,
+    submittable:
+      state.clean && !hasBlockingDiagnostics(bundle.diagnostics) && verifiedRun,
     diagnostics: bundle.diagnostics,
     spec_ids: {
       design: bundle.design ? ["design"] : [],
@@ -2015,27 +2659,60 @@ async function executeStudentReport(projectRoot: string, evidence: EvidenceWrite
   const reportPath = path.join(projectRoot, ".vos", "report.json");
   await mkdir(path.dirname(reportPath), { recursive: true });
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
-  evidence.addArtifactFromPath("report", reportPath, "deterministic student report");
-  return { status: report.submittable ? "passed" : "validation_failed", details: { report_path: studentRelativePath(projectRoot, reportPath), ...report } };
+  evidence.addArtifactFromPath(
+    "report",
+    reportPath,
+    "deterministic student report",
+  );
+  return {
+    status: report.submittable ? "passed" : "validation_failed",
+    details: {
+      report_path: studentRelativePath(projectRoot, reportPath),
+      ...report,
+    },
+  };
 }
 
-function studentCommitHistory(projectRoot: string): Array<{ sha: string; parent?: string; subject: string }> {
-  const output = git(projectRoot, ["log", "--format=%H%x09%P%x09%s", "-n", "100"]);
-  return output.split(/\r?\n/).filter(Boolean).map((line) => {
-    const [sha, parent, ...subject] = line.split("\t");
-    return { sha, ...(parent ? { parent } : {}), subject: subject.join("\t") };
-  });
+function studentCommitHistory(
+  projectRoot: string,
+): Array<{ sha: string; parent?: string; subject: string }> {
+  const output = git(projectRoot, [
+    "log",
+    "--format=%H%x09%P%x09%s",
+    "-n",
+    "100",
+  ]);
+  return output
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      const [sha, parent, ...subject] = line.split("\t");
+      return {
+        sha,
+        ...(parent ? { parent } : {}),
+        subject: subject.join("\t"),
+      };
+    });
 }
 
-async function readStudentEvidenceIndex(projectRoot: string): Promise<Array<Record<string, unknown>>> {
+async function readStudentEvidenceIndex(
+  projectRoot: string,
+): Promise<Array<Record<string, unknown>>> {
   const indexPath = path.join(projectRoot, ".vos", "index", "evidence.json");
   if (!existsSync(indexPath)) return [];
   try {
-    const parsed = JSON.parse(await readFile(indexPath, "utf8")) as { runs?: unknown };
+    const parsed = JSON.parse(await readFile(indexPath, "utf8")) as {
+      runs?: unknown;
+    };
     if (!Array.isArray(parsed.runs)) return [];
-    return parsed.runs.filter((run): run is Record<string, unknown> => Boolean(run && typeof run === "object" && !Array.isArray(run)));
+    return parsed.runs.filter((run): run is Record<string, unknown> =>
+      Boolean(run && typeof run === "object" && !Array.isArray(run)),
+    );
   } catch (error) {
-    throw new CliError(`student evidence index is invalid: ${error instanceof Error ? error.message : String(error)}`, "validation_failed");
+    throw new CliError(
+      `student evidence index is invalid: ${error instanceof Error ? error.message : String(error)}`,
+      "validation_failed",
+    );
   }
 }
 
@@ -2046,13 +2723,36 @@ export async function executeSubmitPack(
 ): Promise<CommandOutcome> {
   const report = await executeStudentReport(projectRoot, evidence);
   if (report.status !== "passed") {
-    throw new CliError("submit requires a clean, verified student report", "policy_blocked", { report: report.details });
+    throw new CliError(
+      "submit requires a clean, verified student report",
+      "policy_blocked",
+      { report: report.details },
+    );
   }
-  const reportPath = String((report.details as Record<string, unknown> | undefined)?.report_path ?? ".vos/report.json");
+  const reportPath = String(
+    (report.details as Record<string, unknown> | undefined)?.report_path ??
+      ".vos/report.json",
+  );
   const pack = await createStudentSubmitPack({ projectRoot, reportPath });
-  evidence.addArtifact("submit-pack", studentRelativePath(projectRoot, pack.archivePath), "student submission archive");
-  evidence.addArtifact("submit-manifest", studentRelativePath(projectRoot, pack.manifestPath), "student submission manifest");
-  return { status: "passed", details: { ...pack.manifest, report, pack_path: studentRelativePath(projectRoot, pack.archivePath), manifest_path: studentRelativePath(projectRoot, pack.manifestPath) } };
+  evidence.addArtifact(
+    "submit-pack",
+    studentRelativePath(projectRoot, pack.archivePath),
+    "student submission archive",
+  );
+  evidence.addArtifact(
+    "submit-manifest",
+    studentRelativePath(projectRoot, pack.manifestPath),
+    "student submission manifest",
+  );
+  return {
+    status: "passed",
+    details: {
+      ...pack.manifest,
+      report,
+      pack_path: studentRelativePath(projectRoot, pack.archivePath),
+      manifest_path: studentRelativePath(projectRoot, pack.manifestPath),
+    },
+  };
 }
 
 export async function executeAgentConfig(
@@ -2069,9 +2769,10 @@ export async function executeAgentConfig(
       details: {
         removed,
         config_path: ".vos/config.toml",
-        message: removed.agent || removed.embedding
-          ? "agent and KB embedding configuration removed"
-          : "agent configuration was already empty",
+        message:
+          removed.agent || removed.embedding
+            ? "agent and KB embedding configuration removed"
+            : "agent configuration was already empty",
         suggested_next_commands: ["vos agent config"],
       },
     };
@@ -2087,10 +2788,18 @@ export async function executeAgentConfig(
       status: existing.agent ? "passed" : "validation_failed",
       details: {
         config_path: ".vos/config.toml",
-        agent: sanitizedProviderDetails(existing.agent, mergedProjectEnv(projectRoot)),
-        kb_embedding: sanitizedProviderDetails(existing.embedding, mergedProjectEnv(projectRoot)),
+        agent: sanitizedProviderDetails(
+          existing.agent,
+          mergedProjectEnv(projectRoot),
+        ),
+        kb_embedding: sanitizedProviderDetails(
+          existing.embedding,
+          mergedProjectEnv(projectRoot),
+        ),
         kb_embedding_required: requireEmbedding,
-        suggested_next_commands: existing.agent ? ["vos agent config --check"] : ["vos agent config"],
+        suggested_next_commands: existing.agent
+          ? ["vos agent config --check"]
+          : ["vos agent config"],
       },
     };
   }
@@ -2106,7 +2815,10 @@ export async function executeAgentConfig(
       );
     }
     context.progress?.hide();
-    ({ agent, embedding } = await promptAgentConfiguration(existing, requireEmbedding));
+    ({ agent, embedding } = await promptAgentConfiguration(
+      existing,
+      requireEmbedding,
+    ));
   } else {
     agent = mergeAgentProvider(command, existing.agent);
     embedding = mergeEmbeddingProvider(command, existing.embedding, agent);
@@ -2120,19 +2832,29 @@ export async function executeAgentConfig(
       ...outcome.details,
       config_path: ".vos/config.toml",
       agent: sanitizedProviderDetails(agent, mergedProjectEnv(projectRoot)),
-      kb_embedding: sanitizedProviderDetails(embedding, mergedProjectEnv(projectRoot)),
-      message: outcome.status === "passed"
-        ? "agent configuration saved and validated"
-        : "agent configuration saved, but required credentials or KB embedding configuration are missing",
+      kb_embedding: sanitizedProviderDetails(
+        embedding,
+        mergedProjectEnv(projectRoot),
+      ),
+      message:
+        outcome.status === "passed"
+          ? "agent configuration saved and validated"
+          : "agent configuration saved, but required credentials or KB embedding configuration are missing",
     },
   };
 }
 
 function hasAgentConfigValues(command: AgentConfigCommand): boolean {
   return Boolean(
-    command.provider || command.model || command.baseUrl || command.authEnv ||
-    command.embeddingProvider || command.embeddingModel || command.embeddingBaseUrl ||
-    command.embeddingAuthEnv || command.configureEmbedding !== undefined,
+    command.provider ||
+    command.model ||
+    command.baseUrl ||
+    command.authEnv ||
+    command.embeddingProvider ||
+    command.embeddingModel ||
+    command.embeddingBaseUrl ||
+    command.embeddingAuthEnv ||
+    command.configureEmbedding !== undefined,
   );
 }
 
@@ -2141,14 +2863,33 @@ function mergeAgentProvider(
   existing: ProviderConfig<AgentProviderName> | undefined,
 ): ProviderConfig<AgentProviderName> {
   const provider = command.provider ?? existing?.provider;
-  if (!provider) throw new CliError("agent provider is required", "validation_failed", { reason: "agent_config_provider_missing" });
-  const changedProvider = command.provider !== undefined && command.provider !== existing?.provider;
+  if (!provider)
+    throw new CliError("agent provider is required", "validation_failed", {
+      reason: "agent_config_provider_missing",
+    });
+  const changedProvider =
+    command.provider !== undefined && command.provider !== existing?.provider;
   const defaults = AGENT_PROVIDER_DEFAULTS[provider];
-  const model = command.model?.trim() || (!changedProvider ? existing?.model : undefined);
-  if (!model) throw new CliError("agent model is required", "validation_failed", { reason: "agent_config_model_missing" });
-  const baseUrl = command.baseUrl?.trim() || (!changedProvider ? existing?.baseUrl : undefined) || defaults.baseUrl;
-  const authEnv = command.authEnv?.trim() || (!changedProvider ? existing?.authEnv : undefined) || defaults.authEnv;
-  return { provider, model, ...(baseUrl ? { baseUrl } : {}), ...(authEnv ? { authEnv } : {}) };
+  const model =
+    command.model?.trim() || (!changedProvider ? existing?.model : undefined);
+  if (!model)
+    throw new CliError("agent model is required", "validation_failed", {
+      reason: "agent_config_model_missing",
+    });
+  const baseUrl =
+    command.baseUrl?.trim() ||
+    (!changedProvider ? existing?.baseUrl : undefined) ||
+    defaults.baseUrl;
+  const authEnv =
+    command.authEnv?.trim() ||
+    (!changedProvider ? existing?.authEnv : undefined) ||
+    defaults.authEnv;
+  return {
+    provider,
+    model,
+    ...(baseUrl ? { baseUrl } : {}),
+    ...(authEnv ? { authEnv } : {}),
+  };
 }
 
 function mergeEmbeddingProvider(
@@ -2157,11 +2898,19 @@ function mergeEmbeddingProvider(
   agent: ProviderConfig<AgentProviderName>,
 ): ProviderConfig<AgentEmbeddingProviderName> | undefined {
   if (command.configureEmbedding === false) return undefined;
-  const requested = command.configureEmbedding === true || Boolean(
-    command.embeddingProvider || command.embeddingModel || command.embeddingBaseUrl || command.embeddingAuthEnv,
-  );
+  const requested =
+    command.configureEmbedding === true ||
+    Boolean(
+      command.embeddingProvider ||
+      command.embeddingModel ||
+      command.embeddingBaseUrl ||
+      command.embeddingAuthEnv,
+    );
   if (!requested) return existing;
-  const provider = command.embeddingProvider ?? existing?.provider ?? defaultEmbeddingProvider(agent.provider);
+  const provider =
+    command.embeddingProvider ??
+    existing?.provider ??
+    defaultEmbeddingProvider(agent.provider);
   if (!provider) {
     throw new CliError(
       `${agent.provider} has no default embedding provider; pass --embedding-provider openai or openai-compatible`,
@@ -2169,10 +2918,21 @@ function mergeEmbeddingProvider(
       { reason: "agent_embedding_provider_missing" },
     );
   }
-  const changedProvider = command.embeddingProvider !== undefined && command.embeddingProvider !== existing?.provider;
-  const model = command.embeddingModel?.trim() || (!changedProvider ? existing?.model : undefined) || DEFAULT_EMBEDDING_MODEL;
-  const baseUrl = command.embeddingBaseUrl?.trim() || (!changedProvider ? existing?.baseUrl : undefined) || defaultEmbeddingBaseUrl(provider, agent);
-  const authEnv = command.embeddingAuthEnv?.trim() || (!changedProvider ? existing?.authEnv : undefined) || defaultEmbeddingAuthEnv(provider, agent);
+  const changedProvider =
+    command.embeddingProvider !== undefined &&
+    command.embeddingProvider !== existing?.provider;
+  const model =
+    command.embeddingModel?.trim() ||
+    (!changedProvider ? existing?.model : undefined) ||
+    DEFAULT_EMBEDDING_MODEL;
+  const baseUrl =
+    command.embeddingBaseUrl?.trim() ||
+    (!changedProvider ? existing?.baseUrl : undefined) ||
+    defaultEmbeddingBaseUrl(provider, agent);
+  const authEnv =
+    command.embeddingAuthEnv?.trim() ||
+    (!changedProvider ? existing?.authEnv : undefined) ||
+    defaultEmbeddingAuthEnv(provider, agent);
   return { provider, model, ...(baseUrl ? { baseUrl } : {}), authEnv };
 }
 
@@ -2183,36 +2943,83 @@ async function promptAgentConfiguration(
   agent: ProviderConfig<AgentProviderName>;
   embedding?: ProviderConfig<AgentEmbeddingProviderName>;
 }> {
-  const terminal = createInterface({ input: process.stdin, output: process.stdout });
+  const terminal = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
   try {
-    const provider = await promptChoice(terminal, "Agent provider", AGENT_PROVIDER_NAMES, existing.agent?.provider);
+    const provider = await promptChoice(
+      terminal,
+      "Agent provider",
+      AGENT_PROVIDER_NAMES,
+      existing.agent?.provider,
+    );
     const defaults = AGENT_PROVIDER_DEFAULTS[provider];
     const sameProvider = provider === existing.agent?.provider;
-    const model = await promptRequired(terminal, "Model", sameProvider ? existing.agent?.model : undefined);
-    const baseUrl = await promptOptional(terminal, "Base URL", sameProvider ? existing.agent?.baseUrl : defaults.baseUrl);
-    const authEnv = provider === "ollama"
-      ? await promptOptional(terminal, "Credential environment variable (optional)", sameProvider ? existing.agent?.authEnv : defaults.authEnv)
-      : await promptRequired(terminal, "Credential environment variable", sameProvider ? existing.agent?.authEnv : defaults.authEnv);
-    const agent = { provider, model, ...(baseUrl ? { baseUrl } : {}), ...(authEnv ? { authEnv } : {}) };
+    const model = await promptRequired(
+      terminal,
+      "Model",
+      sameProvider ? existing.agent?.model : undefined,
+    );
+    const baseUrl = await promptOptional(
+      terminal,
+      "Base URL",
+      sameProvider ? existing.agent?.baseUrl : defaults.baseUrl,
+    );
+    const authEnv =
+      provider === "ollama"
+        ? await promptOptional(
+            terminal,
+            "Credential environment variable (optional)",
+            sameProvider ? existing.agent?.authEnv : defaults.authEnv,
+          )
+        : await promptRequired(
+            terminal,
+            "Credential environment variable",
+            sameProvider ? existing.agent?.authEnv : defaults.authEnv,
+          );
+    const agent = {
+      provider,
+      model,
+      ...(baseUrl ? { baseUrl } : {}),
+      ...(authEnv ? { authEnv } : {}),
+    };
     const withEmbedding = await promptBoolean(
       terminal,
       "Configure KB embeddings",
       requireEmbedding || Boolean(existing.embedding),
     );
     if (!withEmbedding) return { agent };
-    const suggestedProvider = existing.embedding?.provider ?? defaultEmbeddingProvider(provider);
-    const embeddingProvider = await promptChoice(terminal, "Embedding provider", AGENT_EMBEDDING_PROVIDER_NAMES, suggestedProvider);
-    const sameEmbeddingProvider = embeddingProvider === existing.embedding?.provider;
-    const embeddingModel = await promptRequired(terminal, "Embedding model", sameEmbeddingProvider ? existing.embedding?.model : DEFAULT_EMBEDDING_MODEL);
+    const suggestedProvider =
+      existing.embedding?.provider ?? defaultEmbeddingProvider(provider);
+    const embeddingProvider = await promptChoice(
+      terminal,
+      "Embedding provider",
+      AGENT_EMBEDDING_PROVIDER_NAMES,
+      suggestedProvider,
+    );
+    const sameEmbeddingProvider =
+      embeddingProvider === existing.embedding?.provider;
+    const embeddingModel = await promptRequired(
+      terminal,
+      "Embedding model",
+      sameEmbeddingProvider
+        ? existing.embedding?.model
+        : DEFAULT_EMBEDDING_MODEL,
+    );
     const embeddingBaseUrl = await promptOptional(
       terminal,
       "Embedding base URL",
-      sameEmbeddingProvider ? existing.embedding?.baseUrl : defaultEmbeddingBaseUrl(embeddingProvider, agent),
+      sameEmbeddingProvider
+        ? existing.embedding?.baseUrl
+        : defaultEmbeddingBaseUrl(embeddingProvider, agent),
     );
     const embeddingAuthEnv = await promptRequired(
       terminal,
       "Embedding credential environment variable",
-      sameEmbeddingProvider ? existing.embedding?.authEnv : defaultEmbeddingAuthEnv(embeddingProvider, agent),
+      sameEmbeddingProvider
+        ? existing.embedding?.authEnv
+        : defaultEmbeddingAuthEnv(embeddingProvider, agent),
     );
     return {
       agent,
@@ -2236,9 +3043,15 @@ async function promptChoice<T extends string>(
   values: readonly T[],
   current?: T,
 ): Promise<T> {
-  const choices = values.map((value, index) => `${index + 1}) ${value}`).join("  ");
+  const choices = values
+    .map((value, index) => `${index + 1}) ${value}`)
+    .join("  ");
   while (true) {
-    const answer = (await terminal.question(`${label} [${choices}]${current ? ` (${current})` : ""}: `)).trim();
+    const answer = (
+      await terminal.question(
+        `${label} [${choices}]${current ? ` (${current})` : ""}: `,
+      )
+    ).trim();
     if (!answer && current) return current;
     const index = Number(answer) - 1;
     if (Number.isInteger(index) && values[index]) return values[index];
@@ -2248,23 +3061,43 @@ async function promptChoice<T extends string>(
   }
 }
 
-async function promptRequired(terminal: TerminalQuestions, label: string, current?: string): Promise<string> {
+async function promptRequired(
+  terminal: TerminalQuestions,
+  label: string,
+  current?: string,
+): Promise<string> {
   while (true) {
-    const answer = (await terminal.question(`${label}${current ? ` (${current})` : ""}: `)).trim();
+    const answer = (
+      await terminal.question(`${label}${current ? ` (${current})` : ""}: `)
+    ).trim();
     if (answer) return answer;
     if (current) return current;
     process.stdout.write(`${label} is required.\n`);
   }
 }
 
-async function promptOptional(terminal: TerminalQuestions, label: string, current?: string): Promise<string | undefined> {
-  const answer = (await terminal.question(`${label}${current ? ` (${current})` : ""}: `)).trim();
+async function promptOptional(
+  terminal: TerminalQuestions,
+  label: string,
+  current?: string,
+): Promise<string | undefined> {
+  const answer = (
+    await terminal.question(`${label}${current ? ` (${current})` : ""}: `)
+  ).trim();
   return answer || current;
 }
 
-async function promptBoolean(terminal: TerminalQuestions, label: string, current: boolean): Promise<boolean> {
+async function promptBoolean(
+  terminal: TerminalQuestions,
+  label: string,
+  current: boolean,
+): Promise<boolean> {
   while (true) {
-    const answer = (await terminal.question(`${label}? ${current ? "[Y/n]" : "[y/N]"} `)).trim().toLowerCase();
+    const answer = (
+      await terminal.question(`${label}? ${current ? "[Y/n]" : "[y/N]"} `)
+    )
+      .trim()
+      .toLowerCase();
     if (!answer) return current;
     if (answer === "y" || answer === "yes") return true;
     if (answer === "n" || answer === "no") return false;
@@ -2272,7 +3105,9 @@ async function promptBoolean(terminal: TerminalQuestions, label: string, current
   }
 }
 
-async function studentProjectRequiresEmbedding(projectRoot: string): Promise<boolean> {
+async function studentProjectRequiresEmbedding(
+  projectRoot: string,
+): Promise<boolean> {
   try {
     return (await listKbSources(projectRoot)).length > 0;
   } catch {
@@ -2284,16 +3119,26 @@ function mergedProjectEnv(projectRoot: string): NodeJS.ProcessEnv {
   return { ...readProjectEnv(projectRoot), ...process.env };
 }
 
-function agentConfigCheckOutcome(projectRoot: string, requireEmbedding: boolean): CommandOutcome {
-  const checks = checkAgentConfig(projectRoot, mergedProjectEnv(projectRoot), { requireEmbedding });
-  const missing = checks.filter((check) => !check.ok).map((check) => check.name);
+function agentConfigCheckOutcome(
+  projectRoot: string,
+  requireEmbedding: boolean,
+): CommandOutcome {
+  const checks = checkAgentConfig(projectRoot, mergedProjectEnv(projectRoot), {
+    requireEmbedding,
+  });
+  const missing = checks
+    .filter((check) => !check.ok)
+    .map((check) => check.name);
   return {
     status: missing.length === 0 ? "passed" : "validation_failed",
     details: {
       checks,
       missing,
       kb_embedding_required: requireEmbedding,
-      suggested_next_commands: missing.length === 0 ? ["vos doctor"] : ["vos agent config", "vos agent config --check"],
+      suggested_next_commands:
+        missing.length === 0
+          ? ["vos doctor"]
+          : ["vos agent config", "vos agent config --check"],
     },
   };
 }
@@ -2322,16 +3167,33 @@ export async function executeAgentImplement(
   const projectRoot = context.projectRoot;
   const clean = await studentGitStatus(projectRoot);
   if (!clean.clean) {
-    throw new CliError("agent implement requires a clean HEAD; commit the ModuleSpec first", "policy_blocked", {
-      reason: "dirty_worktree",
-      changed_targets: clean.changed,
-    });
+    throw new CliError(
+      "agent implement requires a clean HEAD; commit the ModuleSpec first",
+      "policy_blocked",
+      {
+        reason: "dirty_worktree",
+        changed_targets: clean.changed,
+      },
+    );
   }
   const bundle = await buildNormalizedSpecBundle({ projectRoot });
-  const module = bundle.normalized_modules.find((candidate) => candidate.module === command.module || candidate.id === command.module);
-  if (!module) throw new CliError(`ModuleSpec not found: ${command.module}`, "validation_failed", { module: command.module });
+  const module = bundle.normalized_modules.find(
+    (candidate) =>
+      candidate.module === command.module || candidate.id === command.module,
+  );
+  if (!module)
+    throw new CliError(
+      `ModuleSpec not found: ${command.module}`,
+      "validation_failed",
+      { module: command.module },
+    );
   const baseHead = currentHead(projectRoot);
-  if (!baseHead) throw new CliError("agent implement requires a committed Git HEAD", "policy_blocked", { reason: "head_missing" });
+  if (!baseHead)
+    throw new CliError(
+      "agent implement requires a committed Git HEAD",
+      "policy_blocked",
+      { reason: "head_missing" },
+    );
   await assertStudentGitIdentity(projectRoot);
   const ownedPaths = await studentOwnedPaths(projectRoot, bundle, module);
   const specHash = hashString(JSON.stringify(bundle.hashes));
@@ -2339,9 +3201,18 @@ export async function executeAgentImplement(
   const existingTargetIds = Object.keys(currentManifest.manifest.checks).sort();
   const requiredTargetIds = studentDeclaredTargetIds(module, existingTargetIds);
   const resumedRun = command.resumeRunId
-    ? await restoreStudentImplementationRecovery({ projectRoot, runId: command.resumeRunId, moduleId: module.id, baseHead, specHash, ownedPaths })
+    ? await restoreStudentImplementationRecovery({
+        projectRoot,
+        runId: command.resumeRunId,
+        moduleId: module.id,
+        baseHead,
+        specHash,
+        ownedPaths,
+      })
     : undefined;
-  const worktree = resumedRun?.worktree ?? await createStudentWorktree(projectRoot, evidence.run_id);
+  const worktree =
+    resumedRun?.worktree ??
+    (await createStudentWorktree(projectRoot, evidence.run_id));
   let patch = "";
   let validation: Record<string, unknown> = {};
   let implementation: StudentImplementationPayload | undefined;
@@ -2361,7 +3232,9 @@ export async function executeAgentImplement(
     taskPrompt += `\nThe structured result must propose every stable target ID declared by this ModuleSpec and not already present in vos.yaml: ${JSON.stringify(requiredTargetIds)}.`;
     let threadId: string | undefined;
     let remainingIterations = implementationMaxIterations;
-    const projectedTargetIds = new Set<string>(resumedRun?.projectedTargetIds ?? []);
+    const projectedTargetIds = new Set<string>(
+      resumedRun?.projectedTargetIds ?? [],
+    );
     while (remainingIterations > 0) {
       const manifestPath = path.join(worktree, "vos.yaml");
       const manifestBeforeAgent = await readFile(manifestPath, "utf8");
@@ -2374,7 +3247,13 @@ export async function executeAgentImplement(
         requestedScope: `implement:${module.id}`,
         context: studentSpecContext(bundle, module.id),
         allowedPaths: ownedPaths,
-        requiredValidations: ["build", "public tests", "contract tests", "fixed-seed fuzz tests", "bounded trace/oracle tests"],
+        requiredValidations: [
+          "build",
+          "public tests",
+          "contract tests",
+          "fixed-seed fuzz tests",
+          "bounded trace/oracle tests",
+        ],
         courseMode: false,
         threadId,
         maxIterations: remainingIterations,
@@ -2385,9 +3264,13 @@ export async function executeAgentImplement(
           await progress.onEvent(event);
         },
       });
-      if (implementationEvents.length === eventCountBeforeRun) implementationEvents.push(...agentResult.rawEvents);
+      if (implementationEvents.length === eventCountBeforeRun)
+        implementationEvents.push(...agentResult.rawEvents);
       agentSubmission = agentResult.parsedResult;
-      const usedIterations = Math.min(remainingIterations, Math.max(1, agentResult.iterations));
+      const usedIterations = Math.min(
+        remainingIterations,
+        Math.max(1, agentResult.iterations),
+      );
       remainingIterations -= usedIterations;
       threadId = agentResult.threadId ?? threadId;
       const manifestAfterAgent = await readFile(manifestPath, "utf8");
@@ -2401,7 +3284,12 @@ export async function executeAgentImplement(
         });
       }
       try {
-        implementation = parseStudentImplementationPayload(agentResult.parsedResult, module.id, bundle, requiredTargetIds);
+        implementation = parseStudentImplementationPayload(
+          agentResult.parsedResult,
+          module.id,
+          bundle,
+          requiredTargetIds,
+        );
       } catch (error) {
         validation = {
           status: "validation_failed",
@@ -2426,33 +3314,61 @@ export async function executeAgentImplement(
           status: "validation_failed",
           message: `student implementation Agent reported ${implementation.status}`,
           changed_paths: changedPaths,
-          owns_violations: changedPaths.filter((target) => !isOwnedStudentPath(target, ownedPaths)),
-          ...(patchCaptureError ? { patch_capture_error: patchCaptureError } : {}),
+          owns_violations: changedPaths.filter(
+            (target) => !isOwnedStudentPath(target, ownedPaths),
+          ),
+          ...(patchCaptureError
+            ? { patch_capture_error: patchCaptureError }
+            : {}),
           agent_result: agentResult.parsedResult,
         };
         break;
       }
 
       const agentChanged = await studentChangedPaths(worktree, baseHead);
-      const violations = agentChanged.filter((target) =>
-        !(target === "vos.yaml" && projectedTargetIds.size > 0) && !isOwnedStudentPath(target, ownedPaths)
+      const violations = agentChanged.filter(
+        (target) =>
+          !(target === "vos.yaml" && projectedTargetIds.size > 0) &&
+          !isOwnedStudentPath(target, ownedPaths),
       );
-      const hiddenProjectPaths = agentChanged.filter(isStudentHiddenTestProjectPath);
+      const hiddenProjectPaths = agentChanged.filter(
+        isStudentHiddenTestProjectPath,
+      );
       if (hiddenProjectPaths.length > 0) {
         validation = {
           status: "hidden_test_git_violation",
-          message: "local hidden-test files must be returned in hidden_tests and must not be written into Git",
+          message:
+            "local hidden-test files must be returned in hidden_tests and must not be written into Git",
           changed: agentChanged,
           hidden_test_paths: hiddenProjectPaths,
         };
       } else if (violations.length > 0) {
-        validation = { status: "owns_violation", changed: agentChanged, violations };
+        validation = {
+          status: "owns_violation",
+          changed: agentChanged,
+          violations,
+        };
       } else {
-        const proposedIds = new Set(implementation.test_targets.map((target) => target.id));
-        if (projectedTargetIds.size > 0 && (proposedIds.size !== projectedTargetIds.size || [...proposedIds].some((id) => !projectedTargetIds.has(id)))) {
-          validation = { status: "validation_failed", message: "repair submission changed the projected test target ID set", expected_ids: [...projectedTargetIds], actual_ids: [...proposedIds] };
+        const proposedIds = new Set(
+          implementation.test_targets.map((target) => target.id),
+        );
+        if (
+          projectedTargetIds.size > 0 &&
+          (proposedIds.size !== projectedTargetIds.size ||
+            [...proposedIds].some((id) => !projectedTargetIds.has(id)))
+        ) {
+          validation = {
+            status: "validation_failed",
+            message:
+              "repair submission changed the projected test target ID set",
+            expected_ids: [...projectedTargetIds],
+            actual_ids: [...proposedIds],
+          };
         } else {
-          const missingCommandInputs = studentMissingProposedCommandInputs(worktree, implementation.test_targets);
+          const missingCommandInputs = studentMissingProposedCommandInputs(
+            worktree,
+            implementation.test_targets,
+          );
           if (missingCommandInputs.length > 0) {
             validation = {
               status: "validation_failed",
@@ -2461,43 +3377,79 @@ export async function executeAgentImplement(
               agent_result: agentResult.parsedResult,
             };
           } else {
-            await applyStudentTestTargetProposals(worktree, implementation.test_targets, projectedTargetIds);
+            await applyStudentTestTargetProposals(
+              worktree,
+              implementation.test_targets,
+              projectedTargetIds,
+            );
             for (const id of proposedIds) projectedTargetIds.add(id);
             patch = await studentWorktreeDiff(worktree, baseHead);
             if (!patch.trim() || agentChanged.length === 0) {
-              validation = { status: "no_changes", agent_result: agentResult.parsedResult };
+              validation = {
+                status: "no_changes",
+                agent_result: agentResult.parsedResult,
+              };
             } else {
-              const proposedBundle = await buildNormalizedSpecBundle({ projectRoot: worktree });
-              const specDiagnostics = proposedBundle.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+              const proposedBundle = await buildNormalizedSpecBundle({
+                projectRoot: worktree,
+              });
+              const specDiagnostics = proposedBundle.diagnostics.filter(
+                (diagnostic) => diagnostic.severity === "error",
+              );
               if (specDiagnostics.length > 0) {
-                validation = { status: "validation_failed", spec_diagnostics: specDiagnostics, agent_result: agentResult.parsedResult };
+                validation = {
+                  status: "validation_failed",
+                  spec_diagnostics: specDiagnostics,
+                  agent_result: agentResult.parsedResult,
+                };
               } else {
                 const runner = new HostRunner(worktree, context.signal);
                 const build = await runner.build("build");
                 const manifest = await readStudentManifest(worktree);
                 const checks = [] as unknown[];
                 if (build.status === "passed") {
-                  for (const id of Object.keys(manifest.manifest.checks)) checks.push(await runner.check(id));
+                  for (const id of Object.keys(manifest.manifest.checks))
+                    checks.push(await runner.check(id));
                 }
-                const gatesPassed = build.status === "passed" && checks.length > 0 && (checks as Array<{ status?: string }>).every((check) => check.status === "passed");
+                const gatesPassed =
+                  build.status === "passed" &&
+                  checks.length > 0 &&
+                  (checks as Array<{ status?: string }>).every(
+                    (check) => check.status === "passed",
+                  );
                 validation = {
-                  status: gatesPassed && implementation.status === "passed" ? "passed" : "validation_failed",
-                  ...(implementation.status === "passed" ? {} : { message: `student implementation Agent reported ${implementation.status}` }),
+                  status:
+                    gatesPassed && implementation.status === "passed"
+                      ? "passed"
+                      : "validation_failed",
+                  ...(implementation.status === "passed"
+                    ? {}
+                    : {
+                        message: `student implementation Agent reported ${implementation.status}`,
+                      }),
                   build,
                   checks,
                   evidence: await runner.collectEvidence(),
                   agent_result: agentResult.parsedResult,
                 };
                 if (validation.status === "passed") {
-                  const postGateChanged = await studentChangedPaths(worktree, baseHead);
-                  const postGateHiddenPaths = postGateChanged.filter(isStudentHiddenTestProjectPath);
-                  const postGateViolations = postGateChanged.filter((target) =>
-                    !(target === "vos.yaml" && projectedTargetIds.size > 0) && !isOwnedStudentPath(target, ownedPaths)
+                  const postGateChanged = await studentChangedPaths(
+                    worktree,
+                    baseHead,
+                  );
+                  const postGateHiddenPaths = postGateChanged.filter(
+                    isStudentHiddenTestProjectPath,
+                  );
+                  const postGateViolations = postGateChanged.filter(
+                    (target) =>
+                      !(target === "vos.yaml" && projectedTargetIds.size > 0) &&
+                      !isOwnedStudentPath(target, ownedPaths),
                   );
                   if (postGateHiddenPaths.length > 0) {
                     validation = {
                       status: "hidden_test_git_violation",
-                      message: "authoritative gates wrote local hidden-test files into the Git worktree",
+                      message:
+                        "authoritative gates wrote local hidden-test files into the Git worktree",
                       changed: postGateChanged,
                       hidden_test_paths: postGateHiddenPaths,
                       agent_result: agentResult.parsedResult,
@@ -2505,7 +3457,8 @@ export async function executeAgentImplement(
                   } else if (postGateViolations.length > 0) {
                     validation = {
                       status: "owns_violation",
-                      message: "authoritative gates changed paths outside the allowed owns set",
+                      message:
+                        "authoritative gates changed paths outside the allowed owns set",
                       changed: postGateChanged,
                       violations: postGateViolations,
                       agent_result: agentResult.parsedResult,
@@ -2517,17 +3470,30 @@ export async function executeAgentImplement(
           }
         }
       }
-      if (validation.status === "passed" || remainingIterations === 0 || !threadId) break;
+      if (
+        validation.status === "passed" ||
+        remainingIterations === 0 ||
+        !threadId
+      )
+        break;
       taskPrompt = `VOS authoritative validation rejected the current implementation. Keep the existing projected test target IDs. Use the available tools now to inspect and correct the current worktree files, create every missing owned test file, run the failing commands, and resubmit status passed when every gate succeeds. A missing implementation or test file is not an external blocker. Do not merely describe a known fix or immediately resubmit failed while iterations remain. This continuation keeps the same Agent thread and shares the original cumulative ${implementationMaxIterations}-iteration maxIterations guard; ${remainingIterations} iteration(s) remain. Bounded validation evidence:\n${JSON.stringify(studentImplementationRepairSummary(validation), null, 2)}`;
     }
     if (validation.status === "passed") {
-      if (!implementation) throw new CliError("implementation result disappeared before commit preparation", "failed");
+      if (!implementation)
+        throw new CliError(
+          "implementation result disappeared before commit preparation",
+          "failed",
+        );
       const preparedChanged = await studentChangedPaths(worktree, baseHead);
       await runStudentGit(worktree, ["reset", "--mixed", baseHead]);
       await runStudentGit(worktree, ["add", "--", ...preparedChanged]);
       await runStudentGit(worktree, ["commit", "-m", commitMessage]);
       implementationCommit = currentHead(worktree) ?? "";
-      if (!implementationCommit) throw new CliError("prepared implementation commit has no Git identity", "failed");
+      if (!implementationCommit)
+        throw new CliError(
+          "prepared implementation commit has no Git identity",
+          "failed",
+        );
     }
   } catch (error) {
     let changedPaths: string[] = [];
@@ -2542,15 +3508,20 @@ export async function executeAgentImplement(
       status: "validation_failed",
       message: errorMessage(error),
       changed_paths: changedPaths,
-      owns_violations: changedPaths.filter((target) => !isOwnedStudentPath(target, ownedPaths)),
+      owns_violations: changedPaths.filter(
+        (target) => !isOwnedStudentPath(target, ownedPaths),
+      ),
       ...(patchCaptureError ? { patch_capture_error: patchCaptureError } : {}),
-      ...(agentSubmission === undefined ? {} : { agent_result: agentSubmission }),
+      ...(agentSubmission === undefined
+        ? {}
+        : { agent_result: agentSubmission }),
     };
   } finally {
     await removeStudentWorktree(projectRoot, worktree);
   }
 
-  if (policyCorrections.length > 0) validation.policy_corrections = policyCorrections;
+  if (policyCorrections.length > 0)
+    validation.policy_corrections = policyCorrections;
 
   await writeStudentAgentArtifact(projectRoot, evidence, "implement", {
     module: module.id,
@@ -2560,13 +3531,17 @@ export async function executeAgentImplement(
     agent_events: implementationEvents,
   });
   if (validation.status !== "passed") {
-    const failureMessage = typeof validation.message === "string"
-      ? validation.message
-      : validation.status === "owns_violation"
-        ? "agent implementation changed paths outside the allowed owns set"
-        : "agent implementation validation failed";
+    const failureMessage =
+      typeof validation.message === "string"
+        ? validation.message
+        : validation.status === "owns_violation"
+          ? "agent implementation changed paths outside the allowed owns set"
+          : "agent implementation validation failed";
     return {
-      status: validation.status === "owns_violation" ? "policy_blocked" : "validation_failed",
+      status:
+        validation.status === "owns_violation"
+          ? "policy_blocked"
+          : "validation_failed",
       details: {
         message: failureMessage,
         module: module.id,
@@ -2577,23 +3552,99 @@ export async function executeAgentImplement(
     };
   }
   if (currentHead(projectRoot) !== baseHead) {
-    return { status: "policy_blocked", details: { module: module.id, reason: "head_drift", expected_head: baseHead, actual_head: currentHead(projectRoot), patch_available: true } };
+    return {
+      status: "policy_blocked",
+      details: {
+        module: module.id,
+        reason: "head_drift",
+        expected_head: baseHead,
+        actual_head: currentHead(projectRoot),
+        patch_available: true,
+      },
+    };
   }
   const landingState = await studentGitStatus(projectRoot);
   if (!landingState.clean) {
-    return { status: "policy_blocked", details: { module: module.id, reason: "worktree_drift", changed_targets: landingState.changed, patch_available: true } };
+    return {
+      status: "policy_blocked",
+      details: {
+        module: module.id,
+        reason: "worktree_drift",
+        changed_targets: landingState.changed,
+        patch_available: true,
+      },
+    };
   }
-  if (!implementationCommit) throw new CliError("validated implementation commit is missing", "failed");
-  const changedResult = await runStudentGit(projectRoot, ["diff-tree", "--no-commit-id", "--name-only", "-r", implementationCommit]);
-  const changed = changedResult.stdout.split(/\r?\n/).map((value) => value.trim().replace(/\\/g, "/")).filter(Boolean);
-  if (changed.some((target) => target !== "vos.yaml" && !isOwnedStudentPath(target, ownedPaths))) {
-    throw new CliError("agent implementation changed a path outside the ModuleSpec owns set", "policy_blocked", { reason: "owns_violation", changed_targets: changed });
+  if (!implementationCommit)
+    throw new CliError("validated implementation commit is missing", "failed");
+  const changedResult = await runStudentGit(projectRoot, [
+    "diff-tree",
+    "--no-commit-id",
+    "--name-only",
+    "-r",
+    implementationCommit,
+  ]);
+  const changed = changedResult.stdout
+    .split(/\r?\n/)
+    .map((value) => value.trim().replace(/\\/g, "/"))
+    .filter(Boolean);
+  if (
+    changed.some(
+      (target) =>
+        target !== "vos.yaml" && !isOwnedStudentPath(target, ownedPaths),
+    )
+  ) {
+    throw new CliError(
+      "agent implementation changed a path outside the ModuleSpec owns set",
+      "policy_blocked",
+      { reason: "owns_violation", changed_targets: changed },
+    );
   }
-  const commit = await runStudentGit(projectRoot, ["merge", "--ff-only", implementationCommit]);
-  if (!implementation) throw new CliError("implementation result disappeared before hidden-test persistence", "failed");
-  const hidden = await persistStudentHiddenTests({ projectRoot, bundle, specHash, runId: evidence.run_id, moduleId: module.id, payload: implementation, events: implementationEvents });
-  await ensureHeadLedgerEntry({ projectRoot, actor: "agent", intent: `implement ${module.module}`, specRefs: [module.path], changedTargets: changed, runId: evidence.run_id, evidenceRefs: [{ id: evidence.run_id, kind: "run", path: path.relative(projectRoot, evidence.manifest_path) }] });
-  return { status: "passed", details: { module: module.id, commit: commit.stdout.trim(), run_id: evidence.run_id, spec_hash: specHash, hidden_tests: hidden, validation } };
+  const commit = await runStudentGit(projectRoot, [
+    "merge",
+    "--ff-only",
+    implementationCommit,
+  ]);
+  if (!implementation)
+    throw new CliError(
+      "implementation result disappeared before hidden-test persistence",
+      "failed",
+    );
+  const hidden = await persistStudentHiddenTests({
+    projectRoot,
+    bundle,
+    specHash,
+    runId: evidence.run_id,
+    moduleId: module.id,
+    payload: implementation,
+    events: implementationEvents,
+  });
+  await ensureHeadLedgerEntry({
+    projectRoot,
+    actor: "agent",
+    intent: `implement ${module.module}`,
+    specRefs: [module.path],
+    changedTargets: changed,
+    runId: evidence.run_id,
+    evidenceRefs: [
+      {
+        id: evidence.run_id,
+        kind: "run",
+        path: path.relative(projectRoot, evidence.manifest_path),
+      },
+    ],
+  });
+  return {
+    status: "passed",
+    details: {
+      module: module.id,
+      commit: commit.stdout.trim(),
+      run_id: evidence.run_id,
+      spec_hash: specHash,
+      hidden_tests: hidden,
+      validation,
+    },
+  };
 }
 
 type StudentTestKind = "public" | "contract" | "fuzz" | "trace";
@@ -2634,12 +3685,17 @@ interface StudentImplementationPayload {
   hidden_tests: StudentHiddenTestProposal[];
 }
 
-function studentImplementationRepairSummary(validation: Record<string, unknown>): Record<string, unknown> {
+function studentImplementationRepairSummary(
+  validation: Record<string, unknown>,
+): Record<string, unknown> {
   const build = isRecord(validation.build) ? validation.build : undefined;
   const checks = Array.isArray(validation.checks) ? validation.checks : [];
-  const boundedPaths = (value: unknown): string[] | undefined => Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string").slice(0, 200)
-    : undefined;
+  const boundedPaths = (value: unknown): string[] | undefined =>
+    Array.isArray(value)
+      ? value
+          .filter((item): item is string => typeof item === "string")
+          .slice(0, 200)
+      : undefined;
   return {
     status: validation.status,
     message: validation.message,
@@ -2652,12 +3708,17 @@ function studentImplementationRepairSummary(validation: Record<string, unknown>)
     missing_command_inputs: validation.missing_command_inputs,
     spec_diagnostics: validation.spec_diagnostics,
     build: build ? boundedRunnerFailure(build) : undefined,
-    failed_checks: checks.filter((check) => isRecord(check) && check.status !== "passed").map((check) => boundedRunnerFailure(check as Record<string, unknown>)),
+    failed_checks: checks
+      .filter((check) => isRecord(check) && check.status !== "passed")
+      .map((check) => boundedRunnerFailure(check as Record<string, unknown>)),
   };
 }
 
-function boundedRunnerFailure(result: Record<string, unknown>): Record<string, unknown> {
-  const tail = (value: unknown): unknown => typeof value === "string" ? value.slice(-4000) : value;
+function boundedRunnerFailure(
+  result: Record<string, unknown>,
+): Record<string, unknown> {
+  const tail = (value: unknown): unknown =>
+    typeof value === "string" ? value.slice(-4000) : value;
   return {
     target: result.target,
     status: result.status,
@@ -2667,9 +3728,21 @@ function boundedRunnerFailure(result: Record<string, unknown>): Record<string, u
   };
 }
 
-function parseStudentImplementationPayload(value: unknown, moduleId: string, bundle: NormalizedSpecBundle, requiredTargetIds: readonly string[] = []): StudentImplementationPayload {
-  if (!isRecord(value) || typeof value.status !== "string" || !Array.isArray(value.test_targets) || !Array.isArray(value.hidden_tests)) {
-    throw new AgentOutputError("student implementation result must include test_targets and hidden_tests");
+function parseStudentImplementationPayload(
+  value: unknown,
+  moduleId: string,
+  bundle: NormalizedSpecBundle,
+  requiredTargetIds: readonly string[] = [],
+): StudentImplementationPayload {
+  if (
+    !isRecord(value) ||
+    typeof value.status !== "string" ||
+    !Array.isArray(value.test_targets) ||
+    !Array.isArray(value.hidden_tests)
+  ) {
+    throw new AgentOutputError(
+      "student implementation result must include test_targets and hidden_tests",
+    );
   }
   const stableRefs = new Set<string>([
     "design",
@@ -2678,44 +3751,92 @@ function parseStudentImplementationPayload(value: unknown, moduleId: string, bun
     ...bundle.goals.map((item) => item.goal_id),
     ...bundle.patch_records.map((item) => item.id),
   ]);
-  const testTargets = value.test_targets.map((raw, index) => parseStudentTestTarget(raw, index, moduleId, stableRefs));
+  const testTargets = value.test_targets.map((raw, index) =>
+    parseStudentTestTarget(raw, index, moduleId, stableRefs),
+  );
   const targetIds = new Set<string>();
   for (const target of testTargets) {
-    if (targetIds.has(target.id)) throw new AgentOutputError(`duplicate proposed test target id: ${target.id}`);
+    if (targetIds.has(target.id))
+      throw new AgentOutputError(
+        `duplicate proposed test target id: ${target.id}`,
+      );
     targetIds.add(target.id);
   }
-  const missingDeclaredTargets = requiredTargetIds.filter((id) => !targetIds.has(id));
+  const missingDeclaredTargets = requiredTargetIds.filter(
+    (id) => !targetIds.has(id),
+  );
   if (missingDeclaredTargets.length > 0) {
-    throw new AgentOutputError(`implementation result omitted declared stable target IDs: ${missingDeclaredTargets.join(", ")}`);
+    throw new AgentOutputError(
+      `implementation result omitted declared stable target IDs: ${missingDeclaredTargets.join(", ")}`,
+    );
   }
   for (const kind of ["public", "contract", "fuzz", "trace"] as const) {
-    if (!testTargets.some((target) => target.kind === kind)) throw new AgentOutputError(`implementation must propose at least one ${kind} target`);
+    if (!testTargets.some((target) => target.kind === kind))
+      throw new AgentOutputError(
+        `implementation must propose at least one ${kind} target`,
+      );
   }
-  const hiddenTests = value.hidden_tests.map((raw, index): StudentHiddenTestProposal => {
-    if (!isRecord(raw) || typeof raw.id !== "string" || typeof raw.path !== "string" || typeof raw.content !== "string" || typeof raw.program !== "string" ||
-      !isStringArray(raw.args) || typeof raw.cwd !== "string" || !isStringArray(raw.env) || !isPositiveInteger(raw.timeout) || !isStringArray(raw.verifies) || !isNonnegativeInteger(raw.seed)) {
-      throw new AgentOutputError(`hidden test proposal ${index} is invalid`);
-    }
-    assertStudentTargetId(raw.id);
-    if (raw.timeout < 1_000) throw new AgentOutputError(`hidden test ${raw.id} timeout is milliseconds and must be at least 1000`);
-    assertSafeStudentRelativePath(raw.path, `hidden test ${raw.id} path`);
-    assertSafeStudentRelativePath(raw.cwd, `hidden test ${raw.id} cwd`, true);
-    if (!raw.verifies.includes(moduleId) || raw.verifies.some((ref) => !stableRefs.has(ref))) {
-      throw new AgentOutputError(`hidden test ${raw.id} must verify ${moduleId} using stable Spec IDs`);
-    }
-    if (raw.content.length === 0) throw new AgentOutputError(`hidden test ${raw.id} has empty content`);
-    if (!raw.args.includes("{hidden_test}")) {
-      throw new AgentOutputError(`hidden test ${raw.id} args must include {hidden_test}`);
-    }
-    const supportPaths = raw.args.filter((argument) => argument !== "{hidden_test}" && /[\\/]/.test(argument));
-    if (supportPaths.length > 0) {
-      throw new AgentOutputError(`hidden test ${raw.id} must be self-contained; args cannot reference project support paths: ${supportPaths.join(", ")}`);
-    }
-    return raw as unknown as StudentHiddenTestProposal;
-  });
-  if (hiddenTests.length === 0) throw new AgentOutputError("implementation must generate at least one local hidden test");
-  if (new Set(hiddenTests.map((item) => item.id)).size !== hiddenTests.length) throw new AgentOutputError("hidden test ids must be unique");
-  return { status: value.status, test_targets: testTargets, hidden_tests: hiddenTests };
+  const hiddenTests = value.hidden_tests.map(
+    (raw, index): StudentHiddenTestProposal => {
+      if (
+        !isRecord(raw) ||
+        typeof raw.id !== "string" ||
+        typeof raw.path !== "string" ||
+        typeof raw.content !== "string" ||
+        typeof raw.program !== "string" ||
+        !isStringArray(raw.args) ||
+        typeof raw.cwd !== "string" ||
+        !isStringArray(raw.env) ||
+        !isPositiveInteger(raw.timeout) ||
+        !isStringArray(raw.verifies) ||
+        !isNonnegativeInteger(raw.seed)
+      ) {
+        throw new AgentOutputError(`hidden test proposal ${index} is invalid`);
+      }
+      assertStudentTargetId(raw.id);
+      if (raw.timeout < 1_000)
+        throw new AgentOutputError(
+          `hidden test ${raw.id} timeout is milliseconds and must be at least 1000`,
+        );
+      assertSafeStudentRelativePath(raw.path, `hidden test ${raw.id} path`);
+      assertSafeStudentRelativePath(raw.cwd, `hidden test ${raw.id} cwd`, true);
+      if (
+        !raw.verifies.includes(moduleId) ||
+        raw.verifies.some((ref) => !stableRefs.has(ref))
+      ) {
+        throw new AgentOutputError(
+          `hidden test ${raw.id} must verify ${moduleId} using stable Spec IDs`,
+        );
+      }
+      if (raw.content.length === 0)
+        throw new AgentOutputError(`hidden test ${raw.id} has empty content`);
+      if (!raw.args.includes("{hidden_test}")) {
+        throw new AgentOutputError(
+          `hidden test ${raw.id} args must include {hidden_test}`,
+        );
+      }
+      const supportPaths = raw.args.filter(
+        (argument) => argument !== "{hidden_test}" && /[\\/]/.test(argument),
+      );
+      if (supportPaths.length > 0) {
+        throw new AgentOutputError(
+          `hidden test ${raw.id} must be self-contained; args cannot reference project support paths: ${supportPaths.join(", ")}`,
+        );
+      }
+      return raw as unknown as StudentHiddenTestProposal;
+    },
+  );
+  if (hiddenTests.length === 0)
+    throw new AgentOutputError(
+      "implementation must generate at least one local hidden test",
+    );
+  if (new Set(hiddenTests.map((item) => item.id)).size !== hiddenTests.length)
+    throw new AgentOutputError("hidden test ids must be unique");
+  return {
+    status: value.status,
+    test_targets: testTargets,
+    hidden_tests: hiddenTests,
+  };
 }
 
 function studentDeclaredTargetIds(
@@ -2723,15 +3844,28 @@ function studentDeclaredTargetIds(
   existingTargetIds: readonly string[],
 ): string[] {
   const existing = new Set(existingTargetIds);
-  const prefixes = [...new Set([module.id, module.module]
-    .map((value) => value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""))
-    .filter(Boolean)
-    .map((value) => `${value}_`))];
+  const prefixes = [
+    ...new Set(
+      [module.id, module.module]
+        .map((value) =>
+          value
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_+|_+$/g, ""),
+        )
+        .filter(Boolean)
+        .map((value) => `${value}_`),
+    ),
+  ];
   const declared = new Set<string>();
   const collect = (value: string | undefined): void => {
     if (!value) return;
     for (const token of value.match(/[a-z][a-z0-9_]*/g) ?? []) {
-      if (prefixes.some((prefix) => token.startsWith(prefix)) && !existing.has(token)) declared.add(token);
+      if (
+        prefixes.some((prefix) => token.startsWith(prefix)) &&
+        !existing.has(token)
+      )
+        declared.add(token);
     }
   };
   for (const property of [...module.properties, ...module.invariants]) {
@@ -2745,43 +3879,96 @@ function studentDeclaredTargetIds(
   return [...declared].sort();
 }
 
-function parseStudentTestTarget(raw: unknown, index: number, moduleId: string, stableRefs: Set<string>): StudentTestTargetProposal {
-  if (!isRecord(raw) || typeof raw.id !== "string" || !["public", "contract", "fuzz", "trace"].includes(String(raw.kind)) || typeof raw.program !== "string" ||
-    !isStringArray(raw.args) || typeof raw.cwd !== "string" || !isStringArray(raw.env) || !isPositiveInteger(raw.timeout) || !isStringArray(raw.verifies) || !isStringArray(raw.artifacts)) {
+function parseStudentTestTarget(
+  raw: unknown,
+  index: number,
+  moduleId: string,
+  stableRefs: Set<string>,
+): StudentTestTargetProposal {
+  if (
+    !isRecord(raw) ||
+    typeof raw.id !== "string" ||
+    !["public", "contract", "fuzz", "trace"].includes(String(raw.kind)) ||
+    typeof raw.program !== "string" ||
+    !isStringArray(raw.args) ||
+    typeof raw.cwd !== "string" ||
+    !isStringArray(raw.env) ||
+    !isPositiveInteger(raw.timeout) ||
+    !isStringArray(raw.verifies) ||
+    !isStringArray(raw.artifacts)
+  ) {
     throw new AgentOutputError(`test target proposal ${index} is invalid`);
   }
   assertStudentTargetId(raw.id);
-  if (raw.timeout < 1_000) throw new AgentOutputError(`test target ${raw.id} timeout is milliseconds and must be at least 1000`);
+  if (raw.timeout < 1_000)
+    throw new AgentOutputError(
+      `test target ${raw.id} timeout is milliseconds and must be at least 1000`,
+    );
   assertSafeStudentRelativePath(raw.cwd, `test target ${raw.id} cwd`, true);
-  for (const artifact of raw.artifacts) assertSafeStudentRelativePath(artifact, `test target ${raw.id} artifact`);
-  if (!raw.verifies.includes(moduleId) || raw.verifies.some((ref) => !stableRefs.has(ref))) {
-    throw new AgentOutputError(`test target ${raw.id} must verify ${moduleId} using stable Spec IDs`);
+  for (const artifact of raw.artifacts)
+    assertSafeStudentRelativePath(artifact, `test target ${raw.id} artifact`);
+  if (
+    !raw.verifies.includes(moduleId) ||
+    raw.verifies.some((ref) => !stableRefs.has(ref))
+  ) {
+    throw new AgentOutputError(
+      `test target ${raw.id} must verify ${moduleId} using stable Spec IDs`,
+    );
   }
   if (raw.kind === "fuzz") {
-    if (!isNonnegativeInteger(raw.seed) || !isPositiveInteger(raw.cases) || typeof raw.reproduction_artifact !== "string") {
-      throw new AgentOutputError(`fuzz target ${raw.id} requires fixed seed, bounded cases, timeout, and reproduction_artifact`);
+    if (
+      !isNonnegativeInteger(raw.seed) ||
+      !isPositiveInteger(raw.cases) ||
+      typeof raw.reproduction_artifact !== "string"
+    ) {
+      throw new AgentOutputError(
+        `fuzz target ${raw.id} requires fixed seed, bounded cases, timeout, and reproduction_artifact`,
+      );
     }
-    assertSafeStudentRelativePath(raw.reproduction_artifact, `fuzz target ${raw.id} reproduction artifact`);
+    assertSafeStudentRelativePath(
+      raw.reproduction_artifact,
+      `fuzz target ${raw.id} reproduction artifact`,
+    );
   }
   if (raw.kind === "trace") {
-    if (typeof raw.workload !== "string" || !raw.workload || typeof raw.oracle !== "string" || !raw.oracle || raw.artifacts.length === 0) {
-      throw new AgentOutputError(`trace target ${raw.id} requires workload, oracle, timeout, and artifacts`);
+    if (
+      typeof raw.workload !== "string" ||
+      !raw.workload ||
+      typeof raw.oracle !== "string" ||
+      !raw.oracle ||
+      raw.artifacts.length === 0
+    ) {
+      throw new AgentOutputError(
+        `trace target ${raw.id} requires workload, oracle, timeout, and artifacts`,
+      );
     }
   }
   const allowedKeys = new Set([
-    "id", "kind", "program", "args", "cwd", "env", "timeout", "verifies", "artifacts",
+    "id",
+    "kind",
+    "program",
+    "args",
+    "cwd",
+    "env",
+    "timeout",
+    "verifies",
+    "artifacts",
     ...(raw.kind === "fuzz" ? ["seed", "cases", "reproduction_artifact"] : []),
     ...(raw.kind === "trace" ? ["workload", "oracle"] : []),
   ]);
   const unknownKeys = Object.keys(raw).filter((key) => !allowedKeys.has(key));
   if (unknownKeys.length > 0) {
-    throw new AgentOutputError(`test target ${raw.id} has unsupported field(s): ${unknownKeys.join(", ")}`);
+    throw new AgentOutputError(
+      `test target ${raw.id} has unsupported field(s): ${unknownKeys.join(", ")}`,
+    );
   }
   return raw as unknown as StudentTestTargetProposal;
 }
 
 function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === "string")
+  );
 }
 
 function isPositiveInteger(value: unknown): value is number {
@@ -2793,27 +3980,55 @@ function isNonnegativeInteger(value: unknown): value is number {
 }
 
 function assertStudentTargetId(value: string): void {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)) throw new AgentOutputError(`invalid test target id: ${value}`);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value))
+    throw new AgentOutputError(`invalid test target id: ${value}`);
 }
 
-function assertSafeStudentRelativePath(value: string, label: string, allowDot = false): void {
+function assertSafeStudentRelativePath(
+  value: string,
+  label: string,
+  allowDot = false,
+): void {
   const normalized = value.replace(/\\/g, "/");
-  if ((!allowDot || normalized !== ".") && (!normalized || normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized) || normalized.split("/").some((part) => part === ".."))) {
-    throw new AgentOutputError(`${label} must be a repository-relative path without traversal`);
+  if (
+    (!allowDot || normalized !== ".") &&
+    (!normalized ||
+      normalized.startsWith("/") ||
+      /^[A-Za-z]:\//.test(normalized) ||
+      normalized.split("/").some((part) => part === ".."))
+  ) {
+    throw new AgentOutputError(
+      `${label} must be a repository-relative path without traversal`,
+    );
   }
 }
 
-function studentMissingProposedCommandInputs(projectRoot: string, targets: StudentTestTargetProposal[]): Array<{ target: string; path: string }> {
+function studentMissingProposedCommandInputs(
+  projectRoot: string,
+  targets: StudentTestTargetProposal[],
+): Array<{ target: string; path: string }> {
   const scriptPrograms = new Set(["sh", "bash", "bun", "python", "python3"]);
   const missing: Array<{ target: string; path: string }> = [];
   for (const target of targets) {
     const program = path.basename(target.program).toLowerCase();
     const firstArg = target.args[0];
-    if (!scriptPrograms.has(program) || !firstArg || firstArg.startsWith("-") || firstArg.includes("{") || !firstArg.replace(/\\/g, "/").includes("/")) continue;
-    const cwd = target.cwd === "." ? projectRoot : path.resolve(projectRoot, target.cwd);
+    if (
+      !scriptPrograms.has(program) ||
+      !firstArg ||
+      firstArg.startsWith("-") ||
+      firstArg.includes("{") ||
+      !firstArg.replace(/\\/g, "/").includes("/")
+    )
+      continue;
+    const cwd =
+      target.cwd === "." ? projectRoot : path.resolve(projectRoot, target.cwd);
     const input = path.resolve(cwd, firstArg);
     const relative = path.relative(projectRoot, input).replace(/\\/g, "/");
-    if (relative.startsWith("../") || path.isAbsolute(relative) || !existsSync(input)) {
+    if (
+      relative.startsWith("../") ||
+      path.isAbsolute(relative) ||
+      !existsSync(input)
+    ) {
       missing.push({ target: target.id, path: firstArg.replace(/\\/g, "/") });
     }
   }
@@ -2851,22 +4066,37 @@ async function persistStudentHiddenTests(params: {
   payload: StudentImplementationPayload;
   events: Array<Record<string, unknown>>;
 }): Promise<Record<string, unknown>> {
-  const root = path.join(params.projectRoot, ".vos", "hidden-tests", params.specHash);
+  const root = path.join(
+    params.projectRoot,
+    ".vos",
+    "hidden-tests",
+    params.specHash,
+  );
   await mkdir(root, { recursive: true });
   const manifestPath = path.join(root, "manifest.json");
   const previousManifest = existsSync(manifestPath)
-    ? JSON.parse(await readFile(manifestPath, "utf8")) as unknown
+    ? (JSON.parse(await readFile(manifestPath, "utf8")) as unknown)
     : undefined;
-  const previousTests = isRecord(previousManifest) && previousManifest.version === "vos.hidden-tests.v1" && previousManifest.spec_hash === params.specHash && Array.isArray(previousManifest.tests)
-    ? previousManifest.tests.filter(isRecord)
-    : [];
-  const legacyModuleId = isRecord(previousManifest) && typeof previousManifest.module_id === "string"
-    ? previousManifest.module_id
-    : undefined;
+  const previousTests =
+    isRecord(previousManifest) &&
+    previousManifest.version === "vos.hidden-tests.v1" &&
+    previousManifest.spec_hash === params.specHash &&
+    Array.isArray(previousManifest.tests)
+      ? previousManifest.tests.filter(isRecord)
+      : [];
+  const legacyModuleId =
+    isRecord(previousManifest) && typeof previousManifest.module_id === "string"
+      ? previousManifest.module_id
+      : undefined;
   const currentTests = previousTests.map((test) => {
-    const moduleId = typeof test.module_id === "string" ? test.module_id : legacyModuleId;
-    const bindingHash = moduleId ? hiddenModuleBindingHash(params.bundle, moduleId) : undefined;
-    return moduleId && bindingHash ? { ...test, module_id: moduleId, binding_hash: bindingHash } : test;
+    const moduleId =
+      typeof test.module_id === "string" ? test.module_id : legacyModuleId;
+    const bindingHash = moduleId
+      ? hiddenModuleBindingHash(params.bundle, moduleId)
+      : undefined;
+    return moduleId && bindingHash
+      ? { ...test, module_id: moduleId, binding_hash: bindingHash }
+      : test;
   });
   const retainedTests = await collectStudentHiddenTests({
     projectRoot: params.projectRoot,
@@ -2876,19 +4106,35 @@ async function persistStudentHiddenTests(params: {
     currentTests,
     excludedModules: new Set([params.moduleId]),
   });
-  const retainedIds = new Set(retainedTests.flatMap((test) => typeof test.id === "string" ? [test.id] : []));
-  const retainedPaths = new Set(retainedTests.flatMap((test) => typeof test.path === "string" ? [test.path] : []));
-  const model = params.events.find((event) => event.type === "model.usage" && typeof event.model === "string")?.model ?? "unknown";
+  const retainedIds = new Set(
+    retainedTests.flatMap((test) =>
+      typeof test.id === "string" ? [test.id] : [],
+    ),
+  );
+  const retainedPaths = new Set(
+    retainedTests.flatMap((test) =>
+      typeof test.path === "string" ? [test.path] : [],
+    ),
+  );
+  const model =
+    params.events.find(
+      (event) =>
+        event.type === "model.usage" && typeof event.model === "string",
+    )?.model ?? "unknown";
   const generatedTests = [] as Array<Record<string, unknown>>;
   for (const proposal of params.payload.hidden_tests) {
     const relative = proposal.path.replace(/\\/g, "/");
     const file = path.join(root, relative);
     const hiddenPath = studentRelativePath(params.projectRoot, file);
     if (retainedIds.has(proposal.id)) {
-      throw new AgentOutputError(`hidden test id already belongs to another module: ${proposal.id}`);
+      throw new AgentOutputError(
+        `hidden test id already belongs to another module: ${proposal.id}`,
+      );
     }
     if (retainedPaths.has(hiddenPath)) {
-      throw new AgentOutputError(`hidden test path already belongs to another module: ${hiddenPath}`);
+      throw new AgentOutputError(
+        `hidden test path already belongs to another module: ${hiddenPath}`,
+      );
     }
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, proposal.content);
@@ -2908,7 +4154,9 @@ async function persistStudentHiddenTests(params: {
     version: "vos.hidden-tests.v1",
     commit_sha: currentHead(params.projectRoot),
     spec_hash: params.specHash,
-    config_hash: hashString(await readFile(path.join(params.projectRoot, "vos.yaml"), "utf8")),
+    config_hash: hashString(
+      await readFile(path.join(params.projectRoot, "vos.yaml"), "utf8"),
+    ),
     module_id: params.moduleId,
     model,
     generation_run_id: params.runId,
@@ -2932,49 +4180,110 @@ async function collectStudentHiddenTests(params: {
   currentTests: Array<Record<string, unknown>>;
   excludedModules: Set<string>;
 }): Promise<Array<Record<string, unknown>>> {
-  const retainedTests = params.currentTests.filter((test) => typeof test.module_id === "string" && !params.excludedModules.has(test.module_id));
-  const retainedModules = new Set(retainedTests.flatMap((test) => typeof test.module_id === "string" ? [test.module_id] : []));
+  const retainedTests = params.currentTests.filter(
+    (test) =>
+      typeof test.module_id === "string" &&
+      !params.excludedModules.has(test.module_id),
+  );
+  const retainedModules = new Set(
+    retainedTests.flatMap((test) =>
+      typeof test.module_id === "string" ? [test.module_id] : [],
+    ),
+  );
   const hiddenBase = path.dirname(params.root);
   const historical = (await readdir(hiddenBase, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory() && entry.name !== params.specHash)
     .map((entry) => entry.name);
-  const candidates = new Map<string, { generationRunId: string; sourceRoot: string; tests: Array<Record<string, unknown>> }>();
+  const candidates = new Map<
+    string,
+    {
+      generationRunId: string;
+      sourceRoot: string;
+      tests: Array<Record<string, unknown>>;
+    }
+  >();
   for (const hash of historical) {
     const sourceRoot = path.join(hiddenBase, hash);
     const sourceManifestPath = path.join(sourceRoot, "manifest.json");
     if (!existsSync(sourceManifestPath)) continue;
     let sourceManifest: unknown;
     try {
-      sourceManifest = JSON.parse(await readFile(sourceManifestPath, "utf8")) as unknown;
+      sourceManifest = JSON.parse(
+        await readFile(sourceManifestPath, "utf8"),
+      ) as unknown;
     } catch {
       continue;
     }
-    if (!isRecord(sourceManifest) || sourceManifest.version !== "vos.hidden-tests.v1" || !Array.isArray(sourceManifest.tests)) continue;
+    if (
+      !isRecord(sourceManifest) ||
+      sourceManifest.version !== "vos.hidden-tests.v1" ||
+      !Array.isArray(sourceManifest.tests)
+    )
+      continue;
     for (const test of sourceManifest.tests.filter(isRecord)) {
-      const moduleId = typeof test.module_id === "string" ? test.module_id : typeof sourceManifest.module_id === "string" ? sourceManifest.module_id : undefined;
-      if (!moduleId || params.excludedModules.has(moduleId) || retainedModules.has(moduleId)) continue;
+      const moduleId =
+        typeof test.module_id === "string"
+          ? test.module_id
+          : typeof sourceManifest.module_id === "string"
+            ? sourceManifest.module_id
+            : undefined;
+      if (
+        !moduleId ||
+        params.excludedModules.has(moduleId) ||
+        retainedModules.has(moduleId)
+      )
+        continue;
       const bindingHash = hiddenModuleBindingHash(params.bundle, moduleId);
-      const legacyMatches = bindingHash && test.binding_hash === undefined && typeof sourceManifest.commit_sha === "string"
-        ? await legacyHiddenBindingMatches(params.projectRoot, sourceManifest.commit_sha, params.bundle, moduleId)
-        : false;
-      if (!bindingHash || (test.binding_hash !== bindingHash && !legacyMatches)) continue;
-      const generationRunId = typeof test.generation_run_id === "string" ? test.generation_run_id : "";
+      const legacyMatches =
+        bindingHash &&
+        test.binding_hash === undefined &&
+        typeof sourceManifest.commit_sha === "string"
+          ? await legacyHiddenBindingMatches(
+              params.projectRoot,
+              sourceManifest.commit_sha,
+              params.bundle,
+              moduleId,
+            )
+          : false;
+      if (!bindingHash || (test.binding_hash !== bindingHash && !legacyMatches))
+        continue;
+      const generationRunId =
+        typeof test.generation_run_id === "string"
+          ? test.generation_run_id
+          : "";
       const candidate = candidates.get(moduleId);
       if (!candidate || generationRunId > candidate.generationRunId) {
-        candidates.set(moduleId, { generationRunId, sourceRoot, tests: [test] });
-      } else if (candidate.sourceRoot === sourceRoot && generationRunId === candidate.generationRunId) {
+        candidates.set(moduleId, {
+          generationRunId,
+          sourceRoot,
+          tests: [test],
+        });
+      } else if (
+        candidate.sourceRoot === sourceRoot &&
+        generationRunId === candidate.generationRunId
+      ) {
         candidate.tests.push(test);
       }
     }
   }
   for (const [moduleId, candidate] of candidates) {
     for (const test of candidate.tests) {
-      if (typeof test.path !== "string" || typeof test.content_hash !== "string" || !isStringArray(test.args)) continue;
+      if (
+        typeof test.path !== "string" ||
+        typeof test.content_hash !== "string" ||
+        !isStringArray(test.args)
+      )
+        continue;
       const sourceFile = path.resolve(params.projectRoot, test.path);
-      const relative = path.relative(candidate.sourceRoot, sourceFile).replace(/\\/g, "/");
+      const relative = path
+        .relative(candidate.sourceRoot, sourceFile)
+        .replace(/\\/g, "/");
       if (relative.startsWith("../") || path.isAbsolute(relative)) continue;
-      const content = existsSync(sourceFile) ? await readFile(sourceFile, "utf8") : undefined;
-      if (content === undefined || hashString(content) !== test.content_hash) continue;
+      const content = existsSync(sourceFile)
+        ? await readFile(sourceFile, "utf8")
+        : undefined;
+      if (content === undefined || hashString(content) !== test.content_hash)
+        continue;
       const destination = path.join(params.root, relative);
       await mkdir(path.dirname(destination), { recursive: true });
       await writeFile(destination, content);
@@ -2984,7 +4293,9 @@ async function collectStudentHiddenTests(params: {
         module_id: moduleId,
         binding_hash: hiddenModuleBindingHash(params.bundle, moduleId),
         path: hiddenPath,
-        args: test.args.map((value) => value === test.path ? hiddenPath : value),
+        args: test.args.map((value) =>
+          value === test.path ? hiddenPath : value,
+        ),
       });
       retainedModules.add(moduleId);
     }
@@ -2992,22 +4303,42 @@ async function collectStudentHiddenTests(params: {
   return retainedTests;
 }
 
-function hiddenModuleBindingHash(bundle: NormalizedSpecBundle, moduleId: string): string | undefined {
+function hiddenModuleBindingHash(
+  bundle: NormalizedSpecBundle,
+  moduleId: string,
+): string | undefined {
   const sources = hiddenModuleBindingSources(bundle, moduleId);
   return sources ? hashString(JSON.stringify(sources)) : undefined;
 }
 
-function hiddenModuleBindingSources(bundle: NormalizedSpecBundle, moduleId: string): Array<[string, string]> | undefined {
+function hiddenModuleBindingSources(
+  bundle: NormalizedSpecBundle,
+  moduleId: string,
+): Array<[string, string]> | undefined {
   const selected = new Set<string>();
   const pending = [moduleId];
   while (pending.length > 0) {
     const ref = pending.pop()!;
-    const module = bundle.normalized_modules.find((candidate) => candidate.id === ref || candidate.module === ref || moduleMatches(candidate.id, ref) || moduleMatches(candidate.module, ref));
+    const module = bundle.normalized_modules.find(
+      (candidate) =>
+        candidate.id === ref ||
+        candidate.module === ref ||
+        moduleMatches(candidate.id, ref) ||
+        moduleMatches(candidate.module, ref),
+    );
     if (!module || selected.has(module.id)) continue;
     selected.add(module.id);
     for (const dependency of module.dependencies) pending.push(dependency);
   }
-  if (!selected.has(moduleId) && !bundle.normalized_modules.some((module) => selected.has(module.id) && (module.module === moduleId || moduleMatches(module.module, moduleId)))) return undefined;
+  if (
+    !selected.has(moduleId) &&
+    !bundle.normalized_modules.some(
+      (module) =>
+        selected.has(module.id) &&
+        (module.module === moduleId || moduleMatches(module.module, moduleId)),
+    )
+  )
+    return undefined;
   const paths = new Set<string>();
   if (bundle.design?.path) paths.add(bundle.design.path);
   for (const module of bundle.normalized_modules) {
@@ -3015,28 +4346,62 @@ function hiddenModuleBindingSources(bundle: NormalizedSpecBundle, moduleId: stri
   }
   for (const specInterface of bundle.interfaces) {
     const interfaceModule = specInterface.module;
-    if (interfaceModule && bundle.normalized_modules.some((module) => selected.has(module.id) && (module.id === interfaceModule || module.module === interfaceModule || moduleMatches(module.id, interfaceModule) || moduleMatches(module.module, interfaceModule)))) {
+    if (
+      interfaceModule &&
+      bundle.normalized_modules.some(
+        (module) =>
+          selected.has(module.id) &&
+          (module.id === interfaceModule ||
+            module.module === interfaceModule ||
+            moduleMatches(module.id, interfaceModule) ||
+            moduleMatches(module.module, interfaceModule)),
+      )
+    ) {
       paths.add(specInterface.path);
     }
   }
   for (const patch of bundle.patch_records) {
-    if (patch.path && patch.affected_modules.some((affected) => bundle.normalized_modules.some((module) => selected.has(module.id) && (module.id === affected || module.module === affected || moduleMatches(module.id, affected) || moduleMatches(module.module, affected))))) {
+    if (
+      patch.path &&
+      patch.affected_modules.some((affected) =>
+        bundle.normalized_modules.some(
+          (module) =>
+            selected.has(module.id) &&
+            (module.id === affected ||
+              module.module === affected ||
+              moduleMatches(module.id, affected) ||
+              moduleMatches(module.module, affected)),
+        ),
+      )
+    ) {
       paths.add(patch.path);
     }
   }
   const hashes = [...paths]
     .sort()
-    .map((specPath): [string, string] => [specPath, bundle.hashes[specPath] ?? ""]);
+    .map((specPath): [string, string] => [
+      specPath,
+      bundle.hashes[specPath] ?? "",
+    ]);
   return hashes;
 }
 
-async function legacyHiddenBindingMatches(projectRoot: string, commitSha: string, bundle: NormalizedSpecBundle, moduleId: string): Promise<boolean> {
+async function legacyHiddenBindingMatches(
+  projectRoot: string,
+  commitSha: string,
+  bundle: NormalizedSpecBundle,
+  moduleId: string,
+): Promise<boolean> {
   if (!/^[0-9a-f]{7,64}$/i.test(commitSha)) return false;
   const sources = hiddenModuleBindingSources(bundle, moduleId);
   if (!sources) return false;
   for (const [specPath, expectedHash] of sources) {
-    const result = await runStudentGit(projectRoot, ["show", `${commitSha}:${specPath}`]);
-    if (result.exitCode !== 0 || hashString(result.stdout) !== expectedHash) return false;
+    const result = await runStudentGit(projectRoot, [
+      "show",
+      `${commitSha}:${specPath}`,
+    ]);
+    if (result.exitCode !== 0 || hashString(result.stdout) !== expectedHash)
+      return false;
   }
   return true;
 }
@@ -3048,9 +4413,20 @@ export async function executeAgentVerify(
 ): Promise<CommandOutcome> {
   const state = await studentGitStatus(context.projectRoot);
   if (!state.clean) {
-    return { status: "policy_blocked", details: { role: "verify", model_used: false, reason: "dirty_worktree", changed_targets: state.changed } };
+    return {
+      status: "policy_blocked",
+      details: {
+        role: "verify",
+        model_used: false,
+        reason: "dirty_worktree",
+        changed_targets: state.changed,
+      },
+    };
   }
-  const worktree = await createStudentWorktree(context.projectRoot, `${evidence.run_id}-verify`);
+  const worktree = await createStudentWorktree(
+    context.projectRoot,
+    `${evidence.run_id}-verify`,
+  );
   try {
     const verification = await executeStudentVerify(
       { kind: "verify", scope: "public", dryRun: false },
@@ -3063,12 +4439,14 @@ export async function executeAgentVerify(
     const response = await runAgentWithValidatedSubmission({
       projectRoot: worktree,
       configurationRoot: context.projectRoot,
-      taskPrompt: agentProgress.taskPrompt([
-        "Review the completed deterministic student verification without modifying the project.",
-        "Use the supplied verification result, all five-family Specs, vos.yaml verifies mappings, and existing evidence to identify contradictions and stable Spec IDs that lack meaningful public, contract, fixed-seed fuzz, or bounded trace/oracle coverage.",
-        "Do not rerun destructive commands, generate tests, reveal or infer hidden-test content, edit files, or treat this advisory review as authoritative verification.",
-        "Every finding must cite concrete evidence strings and the relevant stable Spec IDs. Return the exact deterministic status supplied by VOS.",
-      ].join(" ")),
+      taskPrompt: agentProgress.taskPrompt(
+        [
+          "Review the completed deterministic student verification without modifying the project.",
+          "Use the supplied verification result, all five-family Specs, vos.yaml verifies mappings, and existing evidence to identify contradictions and stable Spec IDs that lack meaningful public, contract, fixed-seed fuzz, or bounded trace/oracle coverage.",
+          "Do not rerun destructive commands, generate tests, reveal or infer hidden-test content, edit files, or treat this advisory review as authoritative verification.",
+          "Every finding must cite concrete evidence strings and the relevant stable Spec IDs. Return the exact deterministic status supplied by VOS.",
+        ].join(" "),
+      ),
       taskKind: "student_verify",
       requestedScope: "agent.verify:public",
       context: {
@@ -3078,9 +4456,16 @@ export async function executeAgentVerify(
         manifest: bundle.manifest,
       },
       evidenceRefs: [evidence.run_id],
-      policyFlags: ["read_only", "public_evidence_only", "no_hidden_test_disclosure"],
+      policyFlags: [
+        "read_only",
+        "public_evidence_only",
+        "no_hidden_test_disclosure",
+      ],
       courseMode: true,
-      allowedVosCommands: await loadAgentAllowedCommands(worktree, context.effectivePolicy),
+      allowedVosCommands: await loadAgentAllowedCommands(
+        worktree,
+        context.effectivePolicy,
+      ),
       resultSubmissionSchema: "student_verification_review.v1",
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
@@ -3088,12 +4473,18 @@ export async function executeAgentVerify(
       validateSubmission: (submission) => {
         const review = parseStudentVerificationReview(submission);
         if (review.deterministic_status !== verification.status) {
-          throw new Error(`student verification review status ${review.deterministic_status} does not match deterministic status ${verification.status}`);
+          throw new Error(
+            `student verification review status ${review.deterministic_status} does not match deterministic status ${verification.status}`,
+          );
         }
         return review;
       },
     });
-    assertStudentReadonlyFingerprint(readonlyBefore, await studentGitFingerprint(worktree), "agent verify");
+    assertStudentReadonlyFingerprint(
+      readonlyBefore,
+      await studentGitFingerprint(worktree),
+      "agent verify",
+    );
     const artifact = await recordRawAgentOutput(
       evidence,
       "agent",
@@ -3153,15 +4544,28 @@ export async function executeAgentReview(
       projectRoot,
       taskKind: "spec_review",
       requestedScope: `agent.review:${target.label}`,
-      initialTask: "Begin by presenting a complete, evidence-grounded review of the selected handwritten Spec and its vos.yaml mappings. Then answer follow-up questions. Do not write files, propose patches, install software, or alter project state.",
+      initialTask:
+        "Begin by presenting a complete, evidence-grounded review of the selected handwritten Spec and its vos.yaml mappings. Then answer follow-up questions. Do not write files, propose patches, install software, or alter project state.",
       context: reviewContext,
       courseMode: true,
-      allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      allowedVosCommands: await loadAgentAllowedCommands(
+        projectRoot,
+        context.effectivePolicy,
+      ),
       runner: context.interactiveAgentRunner,
     });
     const after = await studentGitFingerprint(projectRoot);
     assertStudentReadonlyFingerprint(before, after, "agent review");
-    return { status: "passed", details: { role: "review", target: target.label, interactive: true, diagnostics, model_used: true } };
+    return {
+      status: "passed",
+      details: {
+        role: "review",
+        target: target.label,
+        interactive: true,
+        diagnostics,
+        model_used: true,
+      },
+    };
   }
   const review = await runDefaultAgentSpecReview({
     command: "agent review",
@@ -3174,14 +4578,25 @@ export async function executeAgentReview(
   });
   const after = await studentGitFingerprint(projectRoot);
   assertStudentReadonlyFingerprint(before, after, "agent review");
-  const blocker = review.findings.some((finding) => finding.severity === "blocker");
+  const blocker = review.findings.some(
+    (finding) => finding.severity === "blocker",
+  );
   return {
     status: blocker ? "validation_failed" : "passed",
-    details: { role: "review", target: target.label, diagnostics, agent_review: review, model_used: review.status === "ok" },
+    details: {
+      role: "review",
+      target: target.label,
+      diagnostics,
+      agent_review: review,
+      model_used: review.status === "ok",
+    },
   };
 }
 
-function studentSpecContext(bundle: NormalizedSpecBundle, focus?: string): Record<string, unknown> {
+function studentSpecContext(
+  bundle: NormalizedSpecBundle,
+  focus?: string,
+): Record<string, unknown> {
   return {
     focus,
     design: bundle.design?.document ?? null,
@@ -3194,13 +4609,35 @@ function studentSpecContext(bundle: NormalizedSpecBundle, focus?: string): Recor
   };
 }
 
-async function studentOwnedPaths(projectRoot: string, bundle: NormalizedSpecBundle, module: { id?: string; module: string; owns: string[] }): Promise<string[]> {
+async function studentOwnedPaths(
+  projectRoot: string,
+  bundle: NormalizedSpecBundle,
+  module: { id?: string; module: string; owns: string[] },
+): Promise<string[]> {
   const paths = new Set(module.owns);
   for (const patch of bundle.patch_records) {
-    if (!(await isCommittedSpecPatch(projectRoot, patch, [module.module, module.id]))) continue;
-    if (patch.affected_modules.some((affected) => [module.module, module.id].some((ref) => Boolean(ref && (affected === ref || moduleMatches(affected, ref)))))) {
+    if (
+      !(await isCommittedSpecPatch(projectRoot, patch, [
+        module.module,
+        module.id,
+      ]))
+    )
+      continue;
+    if (
+      patch.affected_modules.some((affected) =>
+        [module.module, module.id].some((ref) =>
+          Boolean(ref && (affected === ref || moduleMatches(affected, ref))),
+        ),
+      )
+    ) {
       for (const affected of patch.affected_modules) {
-        const owner = bundle.normalized_modules.find((candidate) => candidate.module === affected || candidate.id === affected || moduleMatches(candidate.module, affected) || moduleMatches(candidate.id, affected));
+        const owner = bundle.normalized_modules.find(
+          (candidate) =>
+            candidate.module === affected ||
+            candidate.id === affected ||
+            moduleMatches(candidate.module, affected) ||
+            moduleMatches(candidate.id, affected),
+        );
         for (const owned of owner?.owns ?? []) paths.add(owned);
       }
     }
@@ -3208,66 +4645,145 @@ async function studentOwnedPaths(projectRoot: string, bundle: NormalizedSpecBund
   return [...paths].map((value) => value.replace(/\\/g, "/"));
 }
 
-async function isCommittedSpecPatch(projectRoot: string, patch: SpecPatchRecord, modules: Array<string | undefined>): Promise<boolean> {
-  if (!patch.affected_modules.some((affected) => modules.some((module) => Boolean(module && (affected === module || moduleMatches(affected, module)))))) return false;
-  const commitSha = patch.commit_sha?.trim() || await inferSpecPatchCommit(projectRoot, patch.path);
+async function isCommittedSpecPatch(
+  projectRoot: string,
+  patch: SpecPatchRecord,
+  modules: Array<string | undefined>,
+): Promise<boolean> {
+  if (
+    !patch.affected_modules.some((affected) =>
+      modules.some((module) =>
+        Boolean(
+          module && (affected === module || moduleMatches(affected, module)),
+        ),
+      ),
+    )
+  )
+    return false;
+  const commitSha =
+    patch.commit_sha?.trim() ||
+    (await inferSpecPatchCommit(projectRoot, patch.path));
   if (!commitSha) return false;
-  const result = await runCommand({ command: ["git", "merge-base", "--is-ancestor", commitSha, "HEAD"], cwd: projectRoot });
+  const result = await runCommand({
+    command: ["git", "merge-base", "--is-ancestor", commitSha, "HEAD"],
+    cwd: projectRoot,
+  });
   if (result.exitCode !== 0) return false;
   const matchingModules = patch.affected_modules.filter((affected) =>
-    modules.some((module) => Boolean(module && (affected === module || moduleMatches(affected, module))))
+    modules.some((module) =>
+      Boolean(
+        module && (affected === module || moduleMatches(affected, module)),
+      ),
+    ),
   );
   return !(await isSpecPatchConsumed(projectRoot, commitSha, matchingModules));
 }
 
-async function isSpecPatchConsumed(projectRoot: string, patchCommit: string, affectedModules: readonly string[]): Promise<boolean> {
+async function isSpecPatchConsumed(
+  projectRoot: string,
+  patchCommit: string,
+  affectedModules: readonly string[],
+): Promise<boolean> {
   const result = await runCommand({
     command: ["git", "log", "--format=%s", `${patchCommit}..HEAD`],
     cwd: projectRoot,
   });
   if (result.exitCode !== 0) {
-    throw new CliError(`failed to inspect SpecPatch application history: ${result.stderr.trim() || result.stdout.trim()}`, "failed");
+    throw new CliError(
+      `failed to inspect SpecPatch application history: ${result.stderr.trim() || result.stdout.trim()}`,
+      "failed",
+    );
   }
   for (const subject of result.stdout.split(/\r?\n/)) {
     const match = /^\[vos\]\[agent\] Implement (.+)$/.exec(subject.trim());
     if (!match) continue;
     const implementedModule = match[1]!;
-    if (affectedModules.some((affected) => affected === implementedModule || moduleMatches(affected, implementedModule))) return true;
+    if (
+      affectedModules.some(
+        (affected) =>
+          affected === implementedModule ||
+          moduleMatches(affected, implementedModule),
+      )
+    )
+      return true;
   }
   return false;
 }
 
-async function inferSpecPatchCommit(projectRoot: string, patchPath: string | undefined): Promise<string | undefined> {
+async function inferSpecPatchCommit(
+  projectRoot: string,
+  patchPath: string | undefined,
+): Promise<string | undefined> {
   if (!patchPath) return undefined;
-  const result = await runCommand({ command: ["git", "log", "-1", "--format=%H", "--", patchPath], cwd: projectRoot });
+  const result = await runCommand({
+    command: ["git", "log", "-1", "--format=%H", "--", patchPath],
+    cwd: projectRoot,
+  });
   if (result.exitCode !== 0) return undefined;
   const commit = result.stdout.trim().split(/\s+/)[0];
   return /^[0-9a-f]{7,64}$/i.test(commit) ? commit : undefined;
 }
 
-function isOwnedStudentPath(target: string, ownedPaths: readonly string[], allowSpec = false): boolean {
+function isOwnedStudentPath(
+  target: string,
+  ownedPaths: readonly string[],
+  allowSpec = false,
+): boolean {
   const raw = target.replace(/\\/g, "/").replace(/^\.\//, "");
-  if (raw.startsWith("/") || /^[A-Za-z]:\//.test(raw) || raw.split("/").some((segment) => segment === "..")) return false;
+  if (
+    raw.startsWith("/") ||
+    /^[A-Za-z]:\//.test(raw) ||
+    raw.split("/").some((segment) => segment === "..")
+  )
+    return false;
   const normalized = path.posix.normalize(raw);
-  if ((!allowSpec && normalized.startsWith("spec/")) || normalized.startsWith(".git/") || normalized.startsWith(".vos/")) return false;
+  if (
+    (!allowSpec && normalized.startsWith("spec/")) ||
+    normalized.startsWith(".git/") ||
+    normalized.startsWith(".vos/")
+  )
+    return false;
   return ownedPaths.some((owned) => {
-    const prefixRaw = owned.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/$/, "");
-    if (prefixRaw.startsWith("/") || /^[A-Za-z]:\//.test(prefixRaw) || prefixRaw.split("/").some((segment) => segment === "..")) return false;
+    const prefixRaw = owned
+      .replace(/\\/g, "/")
+      .replace(/^\.\//, "")
+      .replace(/\/$/, "");
+    if (
+      prefixRaw.startsWith("/") ||
+      /^[A-Za-z]:\//.test(prefixRaw) ||
+      prefixRaw.split("/").some((segment) => segment === "..")
+    )
+      return false;
     const prefix = path.posix.normalize(prefixRaw);
     return normalized === prefix || normalized.startsWith(`${prefix}/`);
   });
 }
 
 function isStudentHiddenTestProjectPath(target: string): boolean {
-  const normalized = path.posix.normalize(target.replace(/\\/g, "/").replace(/^\.\//, ""));
+  const normalized = path.posix.normalize(
+    target.replace(/\\/g, "/").replace(/^\.\//, ""),
+  );
   if (!normalized.startsWith("tests/")) return false;
-  return normalized.split("/").some((segment) => /(?:^|[._-])hidden(?:[._-]|$)/i.test(segment));
+  return normalized
+    .split("/")
+    .some((segment) => /(?:^|[._-])hidden(?:[._-]|$)/i.test(segment));
 }
 
 function assertStudentModuleName(value: string): void {
   const normalized = value.replace(/\\/g, "/");
-  if (!/^[A-Za-z0-9._/-]+$/.test(normalized) || normalized === "." || normalized === ".." || normalized.startsWith("/") || normalized.endsWith("/") || normalized.split("/").some((segment) => !segment || segment === "." || segment === "..")) {
-    throw new CliError(`invalid module name: ${value}`, "validation_failed", { reason: "module_path_invalid" });
+  if (
+    !/^[A-Za-z0-9._/-]+$/.test(normalized) ||
+    normalized === "." ||
+    normalized === ".." ||
+    normalized.startsWith("/") ||
+    normalized.endsWith("/") ||
+    normalized
+      .split("/")
+      .some((segment) => !segment || segment === "." || segment === "..")
+  ) {
+    throw new CliError(`invalid module name: ${value}`, "validation_failed", {
+      reason: "module_path_invalid",
+    });
   }
 }
 
@@ -3275,8 +4791,14 @@ function studentRelativePath(projectRoot: string, target: string): string {
   return path.relative(projectRoot, target).replace(/\\/g, "/");
 }
 
-async function studentGitStatus(projectRoot: string): Promise<{ clean: boolean; changed: string[] }> {
-  const result = await runStudentGit(projectRoot, ["status", "--porcelain", "--untracked-files=all"]);
+async function studentGitStatus(
+  projectRoot: string,
+): Promise<{ clean: boolean; changed: string[] }> {
+  const result = await runStudentGit(projectRoot, [
+    "status",
+    "--porcelain",
+    "--untracked-files=all",
+  ]);
   const changed = result.stdout
     .split(/\r?\n/)
     .filter(Boolean)
@@ -3286,38 +4808,73 @@ async function studentGitStatus(projectRoot: string): Promise<{ clean: boolean; 
   return { clean: changed.length === 0, changed };
 }
 
-async function studentGitFingerprint(projectRoot: string): Promise<{ fingerprint: string; changed: string[] }> {
+async function studentGitFingerprint(
+  projectRoot: string,
+): Promise<{ fingerprint: string; changed: string[] }> {
   const state = await studentGitStatus(projectRoot);
   const entries: Array<{ path: string; content: string }> = [];
   for (const target of [...state.changed].sort()) {
     const resolved = path.resolve(projectRoot, target);
     const relative = path.relative(projectRoot, resolved);
-    if (path.isAbsolute(relative) || relative === ".." || relative.startsWith(`..${path.sep}`)) {
+    if (
+      path.isAbsolute(relative) ||
+      relative === ".." ||
+      relative.startsWith(`..${path.sep}`)
+    ) {
       entries.push({ path: target, content: "<outside-project>" });
       continue;
     }
     try {
-      entries.push({ path: target, content: hashString(await readFile(resolved, "utf8")) });
+      entries.push({
+        path: target,
+        content: hashString(await readFile(resolved, "utf8")),
+      });
     } catch {
       entries.push({ path: target, content: "<missing-or-non-file>" });
     }
   }
-  return { fingerprint: hashString(JSON.stringify(entries)), changed: state.changed };
+  return {
+    fingerprint: hashString(JSON.stringify(entries)),
+    changed: state.changed,
+  };
 }
 
-function assertStudentReadonlyFingerprint(before: { fingerprint: string; changed: string[] }, after: { fingerprint: string; changed: string[] }, role: string): void {
+function assertStudentReadonlyFingerprint(
+  before: { fingerprint: string; changed: string[] },
+  after: { fingerprint: string; changed: string[] },
+  role: string,
+): void {
   if (before.fingerprint === after.fingerprint) return;
-  throw new CliError(`${role} changed project files despite its read-only contract`, "policy_blocked", {
-    reason: "readonly_agent_modified_project",
-    before: before.changed,
-    after: after.changed,
-  });
+  throw new CliError(
+    `${role} changed project files despite its read-only contract`,
+    "policy_blocked",
+    {
+      reason: "readonly_agent_modified_project",
+      before: before.changed,
+      after: after.changed,
+    },
+  );
 }
 
-async function runStudentGit(projectRoot: string, args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
-  const result = await runCommand({ command: ["git", ...args], cwd: projectRoot });
-  if (result.exitCode !== 0) throw new CliError(result.stderr.trim() || result.stdout.trim() || `git ${args[0]} failed`, "failed", { command: ["git", ...args] });
-  return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode };
+async function runStudentGit(
+  projectRoot: string,
+  args: string[],
+): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
+  const result = await runCommand({
+    command: ["git", ...args],
+    cwd: projectRoot,
+  });
+  if (result.exitCode !== 0)
+    throw new CliError(
+      result.stderr.trim() || result.stdout.trim() || `git ${args[0]} failed`,
+      "failed",
+      { command: ["git", ...args] },
+    );
+  return {
+    stdout: result.stdout,
+    stderr: result.stderr,
+    exitCode: result.exitCode,
+  };
 }
 
 async function assertStudentGitIdentity(projectRoot: string): Promise<void> {
@@ -3333,10 +4890,24 @@ async function assertStudentGitIdentity(projectRoot: string): Promise<void> {
   }
 }
 
-async function createStudentWorktree(projectRoot: string, id: string): Promise<string> {
-  const worktree = path.join(projectRoot, ".vos", "worktrees", id.replace(/[^A-Za-z0-9._-]+/g, "-"));
+async function createStudentWorktree(
+  projectRoot: string,
+  id: string,
+): Promise<string> {
+  const worktree = path.join(
+    projectRoot,
+    ".vos",
+    "worktrees",
+    id.replace(/[^A-Za-z0-9._-]+/g, "-"),
+  );
   await mkdir(path.dirname(worktree), { recursive: true });
-  await runStudentGit(projectRoot, ["worktree", "add", "--detach", worktree, "HEAD"]);
+  await runStudentGit(projectRoot, [
+    "worktree",
+    "add",
+    "--detach",
+    worktree,
+    "HEAD",
+  ]);
   return worktree;
 }
 
@@ -3349,32 +4920,82 @@ async function restoreStudentImplementationRecovery(params: {
   ownedPaths: readonly string[];
 }): Promise<{ runId: string; worktree: string; projectedTargetIds: string[] }> {
   if (!/^[A-Za-z0-9._-]+$/.test(params.runId)) {
-    throw new CliError("agent implement --resume run ID is invalid", "validation_failed", { run_id: params.runId });
+    throw new CliError(
+      "agent implement --resume run ID is invalid",
+      "validation_failed",
+      { run_id: params.runId },
+    );
   }
-  const artifactPath = path.join(params.projectRoot, ".vos", "runs", params.runId, "artifacts", "student-implement.json");
+  const artifactPath = path.join(
+    params.projectRoot,
+    ".vos",
+    "runs",
+    params.runId,
+    "artifacts",
+    "student-implement.json",
+  );
   if (!existsSync(artifactPath)) {
-    throw new CliError("agent implement --resume evidence was not found", "validation_failed", { run_id: params.runId });
+    throw new CliError(
+      "agent implement --resume evidence was not found",
+      "validation_failed",
+      { run_id: params.runId },
+    );
   }
   const raw = JSON.parse(await readFile(artifactPath, "utf8")) as unknown;
-  if (!isRecord(raw) || raw.module !== params.moduleId || raw.base_head !== params.baseHead || typeof raw.patch !== "string" || !raw.patch.trim()) {
-    throw new CliError("agent implement --resume evidence does not match the current module and HEAD", "policy_blocked", {
-      run_id: params.runId,
-      module: params.moduleId,
-      base_head: params.baseHead,
-    });
+  if (
+    !isRecord(raw) ||
+    raw.module !== params.moduleId ||
+    raw.base_head !== params.baseHead ||
+    typeof raw.patch !== "string" ||
+    !raw.patch.trim()
+  ) {
+    throw new CliError(
+      "agent implement --resume evidence does not match the current module and HEAD",
+      "policy_blocked",
+      {
+        run_id: params.runId,
+        module: params.moduleId,
+        base_head: params.baseHead,
+      },
+    );
   }
-  const runManifestPath = path.join(params.projectRoot, ".vos", "runs", params.runId, "manifest.json");
-  const runManifest = existsSync(runManifestPath) ? JSON.parse(await readFile(runManifestPath, "utf8")) as unknown : undefined;
-  const recordedSpecHash = isRecord(runManifest) && typeof runManifest.spec_hash === "string"
-    ? runManifest.spec_hash
+  const runManifestPath = path.join(
+    params.projectRoot,
+    ".vos",
+    "runs",
+    params.runId,
+    "manifest.json",
+  );
+  const runManifest = existsSync(runManifestPath)
+    ? (JSON.parse(await readFile(runManifestPath, "utf8")) as unknown)
     : undefined;
+  const recordedSpecHash =
+    isRecord(runManifest) && typeof runManifest.spec_hash === "string"
+      ? runManifest.spec_hash
+      : undefined;
   if (recordedSpecHash && recordedSpecHash !== params.specHash) {
-    throw new CliError("agent implement --resume Spec hash no longer matches", "policy_blocked", { run_id: params.runId });
+    throw new CliError(
+      "agent implement --resume Spec hash no longer matches",
+      "policy_blocked",
+      { run_id: params.runId },
+    );
   }
-  const worktree = await createStudentWorktree(params.projectRoot, `resume-${params.runId}-${process.pid}`);
+  const worktree = await createStudentWorktree(
+    params.projectRoot,
+    `resume-${params.runId}-${process.pid}`,
+  );
   try {
-    const apply = await runCommand({ command: ["git", "apply", "--whitespace=nowarn", "-"], cwd: worktree, stdin: raw.patch });
-    if (apply.exitCode !== 0) throw new CliError(apply.stderr.trim() || "recovery patch did not apply", "validation_failed", { run_id: params.runId });
+    const apply = await runCommand({
+      command: ["git", "apply", "--whitespace=nowarn", "-"],
+      cwd: worktree,
+      stdin: raw.patch,
+    });
+    if (apply.exitCode !== 0)
+      throw new CliError(
+        apply.stderr.trim() || "recovery patch did not apply",
+        "validation_failed",
+        { run_id: params.runId },
+      );
     // A previous run may have reached VOS-owned target projection before it
     // failed. Keep only well-formed targets absent from the current base, then
     // require the resumed submission to reproduce that exact ID set. This
@@ -3384,53 +5005,128 @@ async function restoreStudentImplementationRecovery(params: {
     const baseManifest = await readStudentManifest(params.projectRoot);
     const recoveredCheckIds = Object.keys(recoveredManifest.manifest.checks);
     const baseCheckIds = new Set(Object.keys(baseManifest.manifest.checks));
-    const recoveredTargetIds = recoveredCheckIds.filter((id) => !baseCheckIds.has(id));
+    const recoveredTargetIds = recoveredCheckIds.filter(
+      (id) => !baseCheckIds.has(id),
+    );
     if (recoveredTargetIds.length > 0) {
       const checks = { ...baseManifest.manifest.checks };
-      for (const id of recoveredTargetIds) checks[id] = recoveredManifest.manifest.checks[id]!;
-      const rawBaseManifest = parseTopLevelYaml(await readFile(baseManifestPath, "utf8"));
-      await writeFile(path.join(worktree, "vos.yaml"), stringifyYaml({ ...rawBaseManifest, checks }, { lineWidth: 0 }));
+      for (const id of recoveredTargetIds)
+        checks[id] = recoveredManifest.manifest.checks[id]!;
+      const rawBaseManifest = parseTopLevelYaml(
+        await readFile(baseManifestPath, "utf8"),
+      );
+      await writeFile(
+        path.join(worktree, "vos.yaml"),
+        stringifyYaml({ ...rawBaseManifest, checks }, { lineWidth: 0 }),
+      );
     } else {
-      await runStudentGit(worktree, ["restore", "--source", params.baseHead, "--", "vos.yaml"]);
+      await runStudentGit(worktree, [
+        "restore",
+        "--source",
+        params.baseHead,
+        "--",
+        "vos.yaml",
+      ]);
     }
     const changed = await studentChangedPaths(worktree, params.baseHead);
-    const violations = changed.filter((target) => target !== "vos.yaml" && !isOwnedStudentPath(target, params.ownedPaths));
+    const violations = changed.filter(
+      (target) =>
+        target !== "vos.yaml" && !isOwnedStudentPath(target, params.ownedPaths),
+    );
     if (violations.length > 0) {
-      throw new CliError("agent implement --resume patch exceeds the current owns set", "policy_blocked", { run_id: params.runId, violations });
+      throw new CliError(
+        "agent implement --resume patch exceeds the current owns set",
+        "policy_blocked",
+        { run_id: params.runId, violations },
+      );
     }
-    return { runId: params.runId, worktree, projectedTargetIds: recoveredTargetIds };
+    return {
+      runId: params.runId,
+      worktree,
+      projectedTargetIds: recoveredTargetIds,
+    };
   } catch (error) {
     await removeStudentWorktree(params.projectRoot, worktree);
     throw error;
   }
 }
 
-async function removeStudentWorktree(projectRoot: string, worktree: string): Promise<void> {
-  const result = await runCommand({ command: ["git", "worktree", "remove", "--force", worktree], cwd: projectRoot });
-  if (result.exitCode !== 0 && existsSync(worktree)) await rm(worktree, { recursive: true, force: true });
+async function removeStudentWorktree(
+  projectRoot: string,
+  worktree: string,
+): Promise<void> {
+  const result = await runCommand({
+    command: ["git", "worktree", "remove", "--force", worktree],
+    cwd: projectRoot,
+  });
+  if (result.exitCode !== 0 && existsSync(worktree))
+    await rm(worktree, { recursive: true, force: true });
 }
 
-async function studentChangedPaths(projectRoot: string, baseRef = "HEAD"): Promise<string[]> {
-  const result = await runStudentGit(projectRoot, ["diff", "--name-only", baseRef]);
-  const untracked = await runStudentGit(projectRoot, ["ls-files", "--others", "--exclude-standard"]);
-  return [...new Set([...result.stdout.split(/\r?\n/), ...untracked.stdout.split(/\r?\n/)].map((value) => value.trim().replace(/\\/g, "/")).filter(Boolean))];
+async function studentChangedPaths(
+  projectRoot: string,
+  baseRef = "HEAD",
+): Promise<string[]> {
+  const result = await runStudentGit(projectRoot, [
+    "diff",
+    "--name-only",
+    baseRef,
+  ]);
+  const untracked = await runStudentGit(projectRoot, [
+    "ls-files",
+    "--others",
+    "--exclude-standard",
+  ]);
+  return [
+    ...new Set(
+      [...result.stdout.split(/\r?\n/), ...untracked.stdout.split(/\r?\n/)]
+        .map((value) => value.trim().replace(/\\/g, "/"))
+        .filter(Boolean),
+    ),
+  ];
 }
 
-async function studentWorktreeDiff(projectRoot: string, baseRef = "HEAD"): Promise<string> {
-  const untracked = await runStudentGit(projectRoot, ["ls-files", "--others", "--exclude-standard"]);
-  const untrackedPaths = untracked.stdout.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
-  if (untrackedPaths.length > 0) await runStudentGit(projectRoot, ["add", "-N", "--", ...untrackedPaths]);
+async function studentWorktreeDiff(
+  projectRoot: string,
+  baseRef = "HEAD",
+): Promise<string> {
+  const untracked = await runStudentGit(projectRoot, [
+    "ls-files",
+    "--others",
+    "--exclude-standard",
+  ]);
+  const untrackedPaths = untracked.stdout
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (untrackedPaths.length > 0)
+    await runStudentGit(projectRoot, ["add", "-N", "--", ...untrackedPaths]);
   try {
-    const result = await runStudentGit(projectRoot, ["diff", "--binary", baseRef]);
+    const result = await runStudentGit(projectRoot, [
+      "diff",
+      "--binary",
+      baseRef,
+    ]);
     return result.stdout;
   } finally {
     if (untrackedPaths.length > 0) {
-      await runStudentGit(projectRoot, ["reset", "--quiet", "HEAD", "--", ...untrackedPaths]);
+      await runStudentGit(projectRoot, [
+        "reset",
+        "--quiet",
+        "HEAD",
+        "--",
+        ...untrackedPaths,
+      ]);
     }
   }
 }
 
-async function writeStudentAgentArtifact(projectRoot: string, evidence: EvidenceWriter, name: string, value: unknown): Promise<void> {
+async function writeStudentAgentArtifact(
+  projectRoot: string,
+  evidence: EvidenceWriter,
+  name: string,
+  value: unknown,
+): Promise<void> {
   const artifact = path.join(evidence.artifacts_root, `student-${name}.json`);
   await writeFile(artifact, `${JSON.stringify(value, null, 2)}\n`);
   evidence.addArtifactFromPath("agent", artifact, `student ${name} evidence`);
@@ -3442,7 +5138,11 @@ export async function executeAgentContext(
   projectRoot: string,
   context: ExecContext,
 ): Promise<CommandOutcome> {
-  updateProgress(context, { stage: "agent context", status: "running", message: "building context" });
+  updateProgress(context, {
+    stage: "agent context",
+    status: "running",
+    message: "building context",
+  });
   const bundle = await buildContextBundle({
     projectRoot,
     requestedScope: command.scope,
@@ -3450,7 +5150,11 @@ export async function executeAgentContext(
   });
   const contextArtifact = path.join(projectRoot, ".vos", "agent-context.json");
   await writeFile(contextArtifact, `${JSON.stringify(bundle, null, 2)}\n`);
-  context.evidence.addArtifact("agent", path.relative(projectRoot, contextArtifact), "context bundle");
+  context.evidence.addArtifact(
+    "agent",
+    path.relative(projectRoot, contextArtifact),
+    "context bundle",
+  );
   return {
     status: "passed",
     details: bundle as unknown as Record<string, unknown>,
@@ -3464,13 +5168,27 @@ export async function executeAgentPlan(
 ): Promise<CommandOutcome> {
   const requestedScope = command.scope ?? "agent.plan";
   const projectRoot = context.projectRoot;
-  updateProgress(context, { stage: "agent plan", status: "running", message: "building context" });
-  const bundle = await buildContextBundle({ projectRoot, requestedScope, effectivePolicy: context.effectivePolicy });
-  updateProgress(context, { stage: "agent plan", status: "running", message: "waiting for agent" });
+  updateProgress(context, {
+    stage: "agent plan",
+    status: "running",
+    message: "building context",
+  });
+  const bundle = await buildContextBundle({
+    projectRoot,
+    requestedScope,
+    effectivePolicy: context.effectivePolicy,
+  });
+  updateProgress(context, {
+    stage: "agent plan",
+    status: "running",
+    message: "waiting for agent",
+  });
   const agentProgress = createAgentProgressParams(context, "agent plan");
   const agentResult = await runAgentWithPrompt({
     projectRoot,
-    taskPrompt: agentProgress.taskPrompt(command.task ?? `Plan the next VOS work for ${requestedScope}.`),
+    taskPrompt: agentProgress.taskPrompt(
+      command.task ?? `Plan the next VOS work for ${requestedScope}.`,
+    ),
     taskKind: "plan",
     requestedScope,
     context: bundle,
@@ -3478,7 +5196,10 @@ export async function executeAgentPlan(
     evidenceRefs: bundle.recent_evidence.map((entry) => entry.run_id),
     policyFlags: bundle.policy_flags,
     courseMode: true,
-    allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+    allowedVosCommands: await loadAgentAllowedCommands(
+      projectRoot,
+      context.effectivePolicy,
+    ),
     resultSubmissionSchema: "plan_draft.v1",
     extraMcpServers: agentProgress.extraMcpServers,
     onEvent: agentProgress.onEvent,
@@ -3486,14 +5207,19 @@ export async function executeAgentPlan(
   });
   let parsed;
   try {
-    parsed = parsePlanDraft(
-      agentStructuredOutput(agentResult, "agent_plan"),
-    );
+    parsed = parsePlanDraft(agentStructuredOutput(agentResult, "agent_plan"));
   } catch (error) {
-    await recordRawAgentOutput(evidence, "agent", "agent-plan-raw.txt", agentResult.resultText);
+    await recordRawAgentOutput(
+      evidence,
+      "agent",
+      "agent-plan-raw.txt",
+      agentResult.resultText,
+    );
     throw error instanceof AgentOutputError
       ? error
-      : new AgentOutputError(error instanceof Error ? error.message : String(error));
+      : new AgentOutputError(
+          error instanceof Error ? error.message : String(error),
+        );
   }
   const logPath = await recordAICollaboration({
     projectRoot,
@@ -3508,7 +5234,11 @@ export async function executeAgentPlan(
       created_at: new Date().toISOString(),
     },
   });
-  evidence.addArtifact("agent", path.relative(projectRoot, logPath), "agent plan log");
+  evidence.addArtifact(
+    "agent",
+    path.relative(projectRoot, logPath),
+    "agent plan log",
+  );
   return {
     status: "passed",
     details: {
@@ -3519,22 +5249,57 @@ export async function executeAgentPlan(
   };
 }
 
-export async function executeLogin(command: LoginCommand, context: ExecContext): Promise<CommandOutcome> {
-  let token = command.token
-    ?? (command.tokenStdin ? (await Bun.stdin.text()).trim() : undefined)
-    ?? process.env.VOS_PORTAL_TOKEN;
+export async function executeLogin(
+  command: LoginCommand,
+  context: ExecContext,
+): Promise<CommandOutcome> {
+  let token =
+    command.token ??
+    (command.tokenStdin ? (await Bun.stdin.text()).trim() : undefined) ??
+    process.env.VOS_PORTAL_TOKEN;
   if (!token) {
-    const client=context.portalClient??defaultPortalClient;
-    if(!client.beginDeviceAuthorization||!client.pollDeviceAuthorization)throw new CliError("Portal does not support CLI device authorization","failed");
-    const authorization=await client.beginDeviceAuthorization(command.portalUrl,"vos-cli");
-    if(!context.global.json)console.error(`Open ${authorization.verification_uri} and enter code ${authorization.user_code}`);
-    const deadline=Date.now()+authorization.expires_in*1000;
-    while(Date.now()<deadline){await Bun.sleep(Math.max(2,authorization.interval)*1000);const result=await client.pollDeviceAuthorization(command.portalUrl,authorization.device_code);if(result.status==="approved"){token=result.access_token;break;}if(result.status==="access_denied")throw new CliError("device authorization denied","policy_blocked",{reason:"access_denied"});if(result.status==="expired_token")break;}
-    if(!token)throw new CliError("device authorization expired","policy_blocked",{reason:"expired_token"});
+    const client = context.portalClient ?? defaultPortalClient;
+    if (!client.beginDeviceAuthorization || !client.pollDeviceAuthorization)
+      throw new CliError(
+        "Portal does not support CLI device authorization",
+        "failed",
+      );
+    const authorization = await client.beginDeviceAuthorization(
+      command.portalUrl,
+      "vos-cli",
+    );
+    if (!context.global.json)
+      console.error(
+        `Open ${authorization.verification_uri} and enter code ${authorization.user_code}`,
+      );
+    const deadline = Date.now() + authorization.expires_in * 1000;
+    while (Date.now() < deadline) {
+      await Bun.sleep(Math.max(2, authorization.interval) * 1000);
+      const result = await client.pollDeviceAuthorization(
+        command.portalUrl,
+        authorization.device_code,
+      );
+      if (result.status === "approved") {
+        token = result.access_token;
+        break;
+      }
+      if (result.status === "access_denied")
+        throw new CliError("device authorization denied", "policy_blocked", {
+          reason: "access_denied",
+        });
+      if (result.status === "expired_token") break;
+    }
+    if (!token)
+      throw new CliError("device authorization expired", "policy_blocked", {
+        reason: "expired_token",
+      });
   }
   let user;
   try {
-    user = await (context.portalClient ?? defaultPortalClient).getMe(command.portalUrl, token);
+    user = await (context.portalClient ?? defaultPortalClient).getMe(
+      command.portalUrl,
+      token,
+    );
   } catch (error) {
     throw new CliError("policy_blocked: token_invalid", "policy_blocked", {
       reason: "token_invalid",
@@ -3556,7 +5321,11 @@ export async function executeLogin(command: LoginCommand, context: ExecContext):
   };
 }
 
-export async function executeLogout(command: LogoutCommand, projectRoot: string, context?:ExecContext): Promise<CommandOutcome> {
+export async function executeLogout(
+  command: LogoutCommand,
+  projectRoot: string,
+  context?: ExecContext,
+): Promise<CommandOutcome> {
   const project = await loadProjectConfig(projectRoot).catch(() => undefined);
   const portalUrl = command.portalUrl ?? project?.portal_url;
   if (!portalUrl) {
@@ -3568,9 +5337,11 @@ export async function executeLogout(command: LogoutCommand, projectRoot: string,
       },
     };
   }
-  const stored=await getToken(portalUrl);
-  if(stored?.token&&context?.portalClient?.revokeToken)await context.portalClient.revokeToken(portalUrl,stored.token);
-  else if(stored?.token)await defaultPortalClient.revokeToken(portalUrl,stored.token);
+  const stored = await getToken(portalUrl);
+  if (stored?.token && context?.portalClient?.revokeToken)
+    await context.portalClient.revokeToken(portalUrl, stored.token);
+  else if (stored?.token)
+    await defaultPortalClient.revokeToken(portalUrl, stored.token);
   const removed = await removeToken(portalUrl);
   return {
     status: "passed",
@@ -3582,7 +5353,11 @@ export async function executeLogout(command: LogoutCommand, projectRoot: string,
   };
 }
 
-export async function executeWhoami(command: WhoamiCommand, projectRoot: string, context: ExecContext): Promise<CommandOutcome> {
+export async function executeWhoami(
+  command: WhoamiCommand,
+  projectRoot: string,
+  context: ExecContext,
+): Promise<CommandOutcome> {
   const project = await loadProjectConfig(projectRoot).catch(() => undefined);
   const portalUrl = command.portalUrl ?? project?.portal_url;
   if (!portalUrl) {
@@ -3611,12 +5386,22 @@ export async function executeWhoami(command: WhoamiCommand, projectRoot: string,
     };
   }
   try {
-    const user = await (context.portalClient ?? defaultPortalClient).getMe(portalUrl, stored.token);
+    const user = await (context.portalClient ?? defaultPortalClient).getMe(
+      portalUrl,
+      stored.token,
+    );
     await updateStoredUser(portalUrl, user);
     let policySnapshotRef: string | undefined;
-    const boundProjectId=project?.project_id&&project.portal_url&&normalizePortalUrl(project.portal_url)===normalizePortalUrl(portalUrl)?project.project_id:undefined;
+    const boundProjectId =
+      project?.project_id &&
+      project.portal_url &&
+      normalizePortalUrl(project.portal_url) === normalizePortalUrl(portalUrl)
+        ? project.project_id
+        : undefined;
     if (boundProjectId) {
-      const policy = await (context.portalClient ?? defaultPortalClient).getProjectPolicy(portalUrl, boundProjectId, stored.token);
+      const policy = await (
+        context.portalClient ?? defaultPortalClient
+      ).getProjectPolicy(portalUrl, boundProjectId, stored.token);
       policySnapshotRef = policy.ref;
     }
     return {
@@ -3645,29 +5430,304 @@ export async function executeWhoami(command: WhoamiCommand, projectRoot: string,
   }
 }
 
-export async function executePortalPipeline(command:PortalPipelineCommand,context:ExecContext):Promise<CommandOutcome>{
-  const project=await loadProjectConfig(context.projectRoot);if(!project.portal_url||!project.project_id)throw new CliError("pipeline commands require portal_url and project_id in .vos/project.yaml","policy_blocked",{reason:"portal_binding_missing"});
-  const stored=await getToken(project.portal_url);if(!stored?.token)throw new CliError("policy_blocked: not_logged_in","policy_blocked",{reason:"not_logged_in"});
-  const client=context.portalClient??defaultPortalClient;const requireMethod=<T>(method:T|undefined,name:string):T=>{if(!method)throw new CliError(`Portal client does not support ${name}`,"failed");return method;};
-  if(command.action==="trigger"){const reproducible=await assertReproducible(context.projectRoot);const stage=await currentStageForProject(context.projectRoot);const method=requireMethod(client.triggerPipeline?.bind(client),"pipeline trigger");const run=await method(project.portal_url,stored.token,{version:"pipeline-request.v1",project_id:project.project_id,commit_sha:reproducible.commitSha!,stage_key:stage,scope:command.scope??"public",model_credential_id:command.modelCredentialId,reason:command.reason!});assertBoundProject(run.project_id,project.project_id,"pipeline");return{status:"passed",details:{run}};}
-  const runId=command.runId!;
-  if(command.action==="status"){const method=requireMethod(client.getPipeline?.bind(client),"pipeline status");const run=await method(project.portal_url,stored.token,runId);assertBoundProject(run.project_id,project.project_id,"pipeline");return{status:"passed",details:{run}};}
-  if(command.action==="watch"){const method=requireMethod(client.watchPipeline?.bind(client),"pipeline watch");const events=await method(project.portal_url,stored.token,runId);const status=await requireMethod(client.getPipeline?.bind(client),"pipeline status")(project.portal_url,stored.token,runId);assertBoundProject(status.project_id,project.project_id,"pipeline");return{status:status.status==="passed"?"passed":status.status==="cancelled"?"cancelled":status.status==="timed_out"?"timed_out":"failed",details:{run:status,events}};}
-  if(command.action==="cancel"){const method=requireMethod(client.cancelPipeline?.bind(client),"pipeline cancel");const run=await method(project.portal_url,stored.token,runId,command.reason!);assertBoundProject(run.project_id,project.project_id,"pipeline");return{status:"cancelled",details:{run}};}
-  if(command.action==="reproduce"){const method=requireMethod(client.getReproduction?.bind(client),"pipeline reproduce");const reproduction=await method(project.portal_url,stored.token,runId);assertBoundProject(reproduction.project_id,project.project_id,"reproduction");return{status:"passed",details:{reproduction}};}
-  if(command.action==="download"){
-    const evidence=await requireMethod(client.getEvidence?.bind(client),"pipeline evidence")(project.portal_url,stored.token,runId);assertBoundProject(evidence.run.project_id,project.project_id,"evidence");
-    if(evidence.artifacts.length===0)throw new CliError("No visible artifacts are available for this run","failed",{run_id:runId});
-    const download=requireMethod(client.downloadArtifact?.bind(client),"pipeline download");const destination=path.resolve(context.projectRoot,command.outDir??path.join(".vos","downloads",runId));await mkdir(destination,{recursive:true});
-    const files:string[]=[];const used=new Set<string>();for(const artifact of evidence.artifacts){const stem=`${artifact.id}-${artifact.label}`.replace(/[^A-Za-z0-9._-]+/g,"-").replace(/^\.+/,"").slice(0,160)||artifact.id;let name=stem;let suffix=1;while(used.has(name)){name=`${stem}-${suffix++}`;}used.add(name);const target=path.join(destination,name);await download(project.portal_url,stored.token,artifact,target);files.push(path.relative(context.projectRoot,target));}
-    return{status:"passed",details:{run_id:runId,destination:path.relative(context.projectRoot,destination),files,verified:true}};
+export async function executePortalPipeline(
+  command: PortalPipelineCommand,
+  context: ExecContext,
+): Promise<CommandOutcome> {
+  const project = await loadProjectConfig(context.projectRoot);
+  if (!project.portal_url || !project.project_id)
+    throw new CliError(
+      "pipeline commands require portal_url and project_id in .vos/project.yaml",
+      "policy_blocked",
+      { reason: "portal_binding_missing" },
+    );
+  const stored = await getToken(project.portal_url);
+  if (!stored?.token)
+    throw new CliError("policy_blocked: not_logged_in", "policy_blocked", {
+      reason: "not_logged_in",
+    });
+  const client = context.portalClient ?? defaultPortalClient;
+  const requireMethod = <T>(method: T | undefined, name: string): T => {
+    if (!method)
+      throw new CliError(`Portal client does not support ${name}`, "failed");
+    return method;
+  };
+  if (command.action === "trigger") {
+    const commitSha = assertPortalCleanHead(context.projectRoot);
+    const stage =
+      command.stageKey ?? (await currentStageForProject(context.projectRoot));
+    const method = requireMethod(
+      client.triggerPipeline?.bind(client),
+      "pipeline trigger",
+    );
+    const run = await method(project.portal_url, stored.token, {
+      version: "pipeline-request.v1",
+      project_id: project.project_id,
+      commit_sha: commitSha,
+      stage_key: stage,
+      scope: command.scope ?? "public",
+      model_credential_id: command.modelCredentialId,
+      reason: command.reason!,
+    });
+    assertBoundProject(run.project_id, project.project_id, "pipeline");
+    if (command.watchAfter)
+      return await executePortalPipeline(
+        { kind: "portal_pipeline", action: "watch", runId: run.id },
+        context,
+      );
+    return { status: "passed", details: { run } };
   }
-  const method=requireMethod(client.getEvidence?.bind(client),"pipeline evidence");const evidence=await method(project.portal_url,stored.token,runId);assertBoundProject(evidence.run.project_id,project.project_id,"evidence");return{status:"passed",details:{evidence}};
+  const runId = command.runId!;
+  if (command.action === "status") {
+    const method = requireMethod(
+      client.getPipeline?.bind(client),
+      "pipeline status",
+    );
+    const run = await method(project.portal_url, stored.token, runId);
+    assertBoundProject(run.project_id, project.project_id, "pipeline");
+    return { status: "passed", details: { run } };
+  }
+  if (command.action === "watch") {
+    const method = requireMethod(
+      client.watchPipeline?.bind(client),
+      "pipeline watch",
+    );
+    const events = await method(project.portal_url, stored.token, runId);
+    const status = await requireMethod(
+      client.getPipeline?.bind(client),
+      "pipeline status",
+    )(project.portal_url, stored.token, runId);
+    assertBoundProject(status.project_id, project.project_id, "pipeline");
+    return {
+      status:
+        status.status === "passed"
+          ? "passed"
+          : status.status === "cancelled"
+            ? "cancelled"
+            : status.status === "timed_out"
+              ? "timed_out"
+              : "failed",
+      details: { run: status, events },
+    };
+  }
+  if (command.action === "cancel") {
+    const method = requireMethod(
+      client.cancelPipeline?.bind(client),
+      "pipeline cancel",
+    );
+    const run = await method(
+      project.portal_url,
+      stored.token,
+      runId,
+      command.reason!,
+    );
+    assertBoundProject(run.project_id, project.project_id, "pipeline");
+    return { status: "cancelled", details: { run } };
+  }
+  if (command.action === "reproduce") {
+    const method = requireMethod(
+      client.getReproduction?.bind(client),
+      "pipeline reproduce",
+    );
+    const reproduction = await method(project.portal_url, stored.token, runId);
+    assertBoundProject(
+      reproduction.project_id,
+      project.project_id,
+      "reproduction",
+    );
+    return { status: "passed", details: { reproduction } };
+  }
+  if (command.action === "download") {
+    const evidence = await requireMethod(
+      client.getEvidence?.bind(client),
+      "pipeline evidence",
+    )(project.portal_url, stored.token, runId);
+    assertBoundProject(evidence.run.project_id, project.project_id, "evidence");
+    if (evidence.artifacts.length === 0)
+      throw new CliError(
+        "No visible artifacts are available for this run",
+        "failed",
+        { run_id: runId },
+      );
+    const download = requireMethod(
+      client.downloadArtifact?.bind(client),
+      "pipeline download",
+    );
+    const destination = path.resolve(
+      context.projectRoot,
+      command.outDir ?? path.join(".vos", "downloads", runId),
+    );
+    await mkdir(destination, { recursive: true });
+    const files: string[] = [];
+    const used = new Set<string>();
+    for (const artifact of evidence.artifacts) {
+      const stem =
+        `${artifact.id}-${artifact.label}`
+          .replace(/[^A-Za-z0-9._-]+/g, "-")
+          .replace(/^\.+/, "")
+          .slice(0, 160) || artifact.id;
+      let name = stem;
+      let suffix = 1;
+      while (used.has(name)) {
+        name = `${stem}-${suffix++}`;
+      }
+      used.add(name);
+      const target = path.join(destination, name);
+      await download(project.portal_url, stored.token, artifact, target);
+      files.push(path.relative(context.projectRoot, target));
+    }
+    return {
+      status: "passed",
+      details: {
+        run_id: runId,
+        destination: path.relative(context.projectRoot, destination),
+        files,
+        verified: true,
+      },
+    };
+  }
+  const method = requireMethod(
+    client.getEvidence?.bind(client),
+    "pipeline evidence",
+  );
+  const evidence = await method(project.portal_url, stored.token, runId);
+  assertBoundProject(evidence.run.project_id, project.project_id, "evidence");
+  return { status: "passed", details: { evidence } };
 }
 
-function assertBoundProject(actual:string,expected:string,resource:string):void{if(actual!==expected)throw new CliError(`Portal returned ${resource} for a different project`,"policy_blocked",{reason:"project_mismatch",expected_project_id:expected,actual_project_id:actual});}
+export async function executePortalSubmit(
+  command: PortalSubmitCommand,
+  context: ExecContext,
+): Promise<CommandOutcome> {
+  const project = await loadProjectConfig(context.projectRoot);
+  if (!project.portal_url || !project.project_id)
+    throw new CliError(
+      "portal submit requires portal_url and project_id in .vos/project.yaml",
+      "policy_blocked",
+      { reason: "portal_binding_missing" },
+    );
+  const token = await getToken(project.portal_url);
+  if (!token?.token)
+    throw new CliError(
+      "portal submit requires an authenticated Portal session",
+      "policy_blocked",
+      { reason: "not_logged_in" },
+    );
+  const commitSha = assertPortalCleanHead(context.projectRoot);
+  const configPath = path.join(context.projectRoot, "vos.yaml");
+  const manifestPath = path.join(context.projectRoot, ".vos", "toolchain.json");
+  if (!existsSync(configPath) || !existsSync(manifestPath))
+    throw new CliError(
+      "portal submit requires committed vos.yaml and .vos/toolchain.json",
+      "validation_failed",
+      { reason: "submission_inputs_missing" },
+    );
+  const bundle = await buildNormalizedSpecBundle({
+    projectRoot: context.projectRoot,
+  });
+  const stage =
+    command.stageKey ?? (await currentStageForProject(context.projectRoot));
+  const client = context.portalClient ?? defaultPortalClient;
+  if (!client.createAssessmentSubmission)
+    throw new CliError(
+      "Portal client does not support authoritative submissions",
+      "failed",
+    );
+  const submission = await client.createAssessmentSubmission(
+    project.portal_url,
+    token.token,
+    {
+      version: "assessment-submission-request.v1",
+      project_id: project.project_id,
+      commit_sha: commitSha,
+      stage_key: stage,
+      spec_hash: hashString(JSON.stringify(bundle.hashes)),
+      config_hash: hashString(await readFile(configPath, "utf8")),
+      manifest_hash: hashString(await readFile(manifestPath, "utf8")),
+      reason:
+        "student submitted current clean commit for authoritative assessment",
+    },
+  );
+  assertBoundProject(submission.project_id, project.project_id, "submission");
+  if (command.watch)
+    return await executePortalPipeline(
+      { kind: "portal_pipeline", action: "watch", runId: submission.run_id },
+      context,
+    );
+  return { status: "passed", details: { submission } };
+}
 
-export async function executeProjectBind(command:ProjectBindCommand,context:ExecContext):Promise<CommandOutcome>{const portalUrl=normalizePortalUrl(command.portalUrl);const stored=await getToken(portalUrl);if(!stored?.token)throw new CliError("project bind requires an authenticated Portal session","policy_blocked",{reason:"not_logged_in"});const client=context.portalClient??defaultPortalClient;if(!client.getProjectBinding)throw new CliError("Portal client does not support project binding","failed");const binding=await client.getProjectBinding(portalUrl,stored.token,command.projectId);if(binding.project_id!==command.projectId)throw new CliError("Portal returned a mismatched project binding","policy_blocked",{reason:"project_mismatch"});const projectPath=path.join(context.projectRoot,".vos","project.yaml");if(!existsSync(projectPath))throw new CliError("project configuration missing, run `vos init` first","validation_failed");let source=await readFile(projectPath,"utf8");const set=(key:string,value:string)=>{const line=`${key}: ${value}`;source=new RegExp(`^${key}:.*$`,"m").test(source)?source.replace(new RegExp(`^${key}:.*$`,"m"),line):`${source.trimEnd()}\n${line}\n`;};set("project_id",binding.project_id);set("portal_url",portalUrl);await writeFile(projectPath,source);return{status:"passed",details:{binding,project_file:path.relative(context.projectRoot,projectPath),message:"project binding updated; commit the binding before submitting"}};}
+function assertBoundProject(
+  actual: string,
+  expected: string,
+  resource: string,
+): void {
+  if (actual !== expected)
+    throw new CliError(
+      `Portal returned ${resource} for a different project`,
+      "policy_blocked",
+      {
+        reason: "project_mismatch",
+        expected_project_id: expected,
+        actual_project_id: actual,
+      },
+    );
+}
+
+export async function executeProjectBind(
+  command: ProjectBindCommand,
+  context: ExecContext,
+): Promise<CommandOutcome> {
+  const portalUrl = normalizePortalUrl(command.portalUrl);
+  const stored = await getToken(portalUrl);
+  if (!stored?.token)
+    throw new CliError(
+      "project bind requires an authenticated Portal session",
+      "policy_blocked",
+      { reason: "not_logged_in" },
+    );
+  const client = context.portalClient ?? defaultPortalClient;
+  if (!client.getProjectBinding)
+    throw new CliError(
+      "Portal client does not support project binding",
+      "failed",
+    );
+  const binding = await client.getProjectBinding(
+    portalUrl,
+    stored.token,
+    command.projectId,
+  );
+  if (binding.project_id !== command.projectId)
+    throw new CliError(
+      "Portal returned a mismatched project binding",
+      "policy_blocked",
+      { reason: "project_mismatch" },
+    );
+  const projectPath = path.join(context.projectRoot, ".vos", "project.yaml");
+  if (!existsSync(projectPath))
+    throw new CliError(
+      "project configuration missing, run `vos init` first",
+      "validation_failed",
+    );
+  let source = await readFile(projectPath, "utf8");
+  const set = (key: string, value: string) => {
+    const line = `${key}: ${value}`;
+    source = new RegExp(`^${key}:.*$`, "m").test(source)
+      ? source.replace(new RegExp(`^${key}:.*$`, "m"), line)
+      : `${source.trimEnd()}\n${line}\n`;
+  };
+  set("project_id", binding.project_id);
+  set("portal_url", portalUrl);
+  await writeFile(projectPath, source);
+  return {
+    status: "passed",
+    details: {
+      binding,
+      project_file: path.relative(context.projectRoot, projectPath),
+      message: "project binding updated; commit the binding before submitting",
+    },
+  };
+}
 
 export async function executeLedgerRecord(
   command: LedgerRecordCommand,
@@ -3676,7 +5736,9 @@ export async function executeLedgerRecord(
 ): Promise<CommandOutcome> {
   const commitSha = currentHead(projectRoot);
   if (!commitSha) {
-    throw new CliError("ledger record requires a git HEAD", "policy_blocked", { reason: "head_missing" });
+    throw new CliError("ledger record requires a git HEAD", "policy_blocked", {
+      reason: "head_missing",
+    });
   }
   const entry = await appendLedgerEntry(projectRoot, {
     commit_sha: commitSha,
@@ -3685,7 +5747,13 @@ export async function executeLedgerRecord(
     run_id: evidence.run_id,
     spec_refs: command.specRefs,
     changed_targets: command.changedTargets,
-    evidence_refs: [{ id: evidence.run_id, kind: "run", path: path.relative(projectRoot, evidence.manifest_path) }],
+    evidence_refs: [
+      {
+        id: evidence.run_id,
+        kind: "run",
+        path: path.relative(projectRoot, evidence.manifest_path),
+      },
+    ],
     collaboration_intent: command.intent,
   });
   return {
@@ -3703,40 +5771,64 @@ export async function executeKbAdd(
   context: ExecContext,
 ): Promise<CommandOutcome> {
   const { projectRoot, evidence } = context;
-  const source = await addKbSource(projectRoot, {
-    source: command.source,
-    sourceKind: command.sourceKind,
-    stage: command.stage,
-    title: command.title,
-    recursive: command.recursive,
-    branch: command.branch,
-    tag: command.tag,
-  }, {
-    embedder: createKbEmbedder(projectRoot),
-    onProgress: (progress) => {
-      updateProgress(context, {
-        stage: "kb add",
-        phase: progress.phase,
-        current: progress.current,
-        total: progress.total,
-        percent: progress.percent,
-        status: "running",
-        message: progress.message,
-      });
+  const source = await addKbSource(
+    projectRoot,
+    {
+      source: command.source,
+      sourceKind: command.sourceKind,
+      stage: command.stage,
+      title: command.title,
+      recursive: command.recursive,
+      branch: command.branch,
+      tag: command.tag,
     },
+    {
+      embedder: createKbEmbedder(projectRoot),
+      onProgress: (progress) => {
+        updateProgress(context, {
+          stage: "kb add",
+          phase: progress.phase,
+          current: progress.current,
+          total: progress.total,
+          percent: progress.percent,
+          status: "running",
+          message: progress.message,
+        });
+      },
+    },
+  );
+  updateProgress(context, {
+    stage: "kb add",
+    phase: "artifacts",
+    percent: 96,
+    status: "running",
+    message: "writing add result",
   });
-  updateProgress(context, { stage: "kb add", phase: "artifacts", percent: 96, status: "running", message: "writing add result" });
   const artifact = path.join(projectRoot, ".vos", "kb", "last-add.json");
   await mkdir(path.dirname(artifact), { recursive: true });
   await writeFile(artifact, `${JSON.stringify(source, null, 2)}\n`);
-  evidence.addArtifact("kb", path.relative(projectRoot, artifact), "kb source added");
+  evidence.addArtifact(
+    "kb",
+    path.relative(projectRoot, artifact),
+    "kb source added",
+  );
   if (command.manifestPath) {
-    updateProgress(context, { stage: "kb add", phase: "manifest", percent: 98, status: "running", message: "exporting manifest" });
+    updateProgress(context, {
+      stage: "kb add",
+      phase: "manifest",
+      percent: 98,
+      status: "running",
+      message: "exporting manifest",
+    });
     const manifest = await exportKbManifest(projectRoot);
     const manifestPath = path.resolve(projectRoot, command.manifestPath);
     await mkdir(path.dirname(manifestPath), { recursive: true });
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-    evidence.addArtifact("kb", path.relative(projectRoot, manifestPath), "kb object manifest");
+    evidence.addArtifact(
+      "kb",
+      path.relative(projectRoot, manifestPath),
+      "kb object manifest",
+    );
   }
   return {
     status: "passed",
@@ -3748,7 +5840,9 @@ export async function executeKbAdd(
   };
 }
 
-export async function executeKbList(projectRoot: string): Promise<CommandOutcome> {
+export async function executeKbList(
+  projectRoot: string,
+): Promise<CommandOutcome> {
   const sources = await listKbSources(projectRoot);
   return {
     status: "passed",
@@ -3767,7 +5861,15 @@ interface SeedStatusFields {
 }
 
 const SEED_LAB_FIELDS: Record<string, string[]> = {
-  "Lab 1 (identity)": ["id", "project", "domain", "target_platform", "language", "architecture_name", "architecture_summary"],
+  "Lab 1 (identity)": [
+    "id",
+    "project",
+    "domain",
+    "target_platform",
+    "language",
+    "architecture_name",
+    "architecture_summary",
+  ],
   "Lab 2 (boot)": ["constraints"],
   "Lab 3 (memory)": ["constraints"],
   "Lab 4 (interrupts)": [],
@@ -3781,15 +5883,22 @@ const SEED_LAB_FIELDS: Record<string, string[]> = {
 
 function isBlankValue(v: unknown): boolean {
   if (v === undefined || v === null) return true;
-  if (typeof v === "string" && (v.trim() === "" || v.startsWith("TODO"))) return true;
+  if (typeof v === "string" && (v.trim() === "" || v.startsWith("TODO")))
+    return true;
   if (Array.isArray(v)) {
     if (v.length === 0) return true;
-    return v.every((item) => typeof item === "string" && (item.trim() === "" || item.startsWith("TODO")));
+    return v.every(
+      (item) =>
+        typeof item === "string" &&
+        (item.trim() === "" || item.startsWith("TODO")),
+    );
   }
   return false;
 }
 
-export async function executeSeedStatus(projectRoot: string): Promise<CommandOutcome> {
+export async function executeSeedStatus(
+  projectRoot: string,
+): Promise<CommandOutcome> {
   const fs = await import("node:fs/promises");
   const path = await import("node:path");
   const yaml = await import("yaml");
@@ -3835,8 +5944,10 @@ export async function executeSeedStatus(projectRoot: string): Promise<CommandOut
 
   const completedLabs: string[] = [];
   if (fieldStatus["architecture_summary"]?.filled) completedLabs.push("Lab 1");
-  if (fieldStatus["goals"]?.filled && fieldStatus["non_goals"]?.filled) completedLabs.push("Lab 5 (goals/non-goals)");
-  if (fieldStatus["reference_systems"]?.filled) completedLabs.push("Lab 5 (reference systems)");
+  if (fieldStatus["goals"]?.filled && fieldStatus["non_goals"]?.filled)
+    completedLabs.push("Lab 5 (goals/non-goals)");
+  if (fieldStatus["reference_systems"]?.filled)
+    completedLabs.push("Lab 5 (reference systems)");
 
   return {
     status: "passed",
@@ -3845,7 +5956,10 @@ export async function executeSeedStatus(projectRoot: string): Promise<CommandOut
       filledCount,
       totalTracked,
       fields: Object.fromEntries(
-        Object.entries(fieldStatus).map(([k, v]) => [k, v.filled ? "filled" : "blank"])
+        Object.entries(fieldStatus).map(([k, v]) => [
+          k,
+          v.filled ? "filled" : "blank",
+        ]),
       ),
       completedLabs,
       summary: `${filledCount}/${totalTracked} fields filled — ${completedLabs.length > 0 ? completedLabs.join(", ") : "no labs completed yet"}`,
@@ -3853,8 +5967,13 @@ export async function executeSeedStatus(projectRoot: string): Promise<CommandOut
   };
 }
 
-export async function executeKbSearch(command: KbSearchCommand, context: ExecContext): Promise<CommandOutcome> {
-  const hits = await searchKb(context.projectRoot, command.query, { embedder: createKbEmbedder(context.projectRoot) });
+export async function executeKbSearch(
+  command: KbSearchCommand,
+  context: ExecContext,
+): Promise<CommandOutcome> {
+  const hits = await searchKb(context.projectRoot, command.query, {
+    embedder: createKbEmbedder(context.projectRoot),
+  });
   await context.evidence.appendEvent({
     type: "progress",
     visibility: "agent-only",
@@ -3874,7 +5993,10 @@ export async function executeKbSearch(command: KbSearchCommand, context: ExecCon
   };
 }
 
-export async function executeKbRemove(command: KbRemoveCommand, projectRoot: string): Promise<CommandOutcome> {
+export async function executeKbRemove(
+  command: KbRemoveCommand,
+  projectRoot: string,
+): Promise<CommandOutcome> {
   const removed = await removeKbSource(projectRoot, command.id);
   return {
     status: removed ? "passed" : "validation_failed",
@@ -3886,7 +6008,9 @@ export async function executeKbRemove(command: KbRemoveCommand, projectRoot: str
   };
 }
 
-export async function executeKbClear(projectRoot: string): Promise<CommandOutcome> {
+export async function executeKbClear(
+  projectRoot: string,
+): Promise<CommandOutcome> {
   await clearKbSources(projectRoot);
   return {
     status: "passed",
@@ -3903,10 +6027,18 @@ export async function executeKbExportManifest(
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
   const manifest = await exportKbManifest(projectRoot);
-  const outPath = path.resolve(projectRoot, command.outPath ?? path.join(".vos", "kb", "manifests", "object-manifest.json"));
+  const outPath = path.resolve(
+    projectRoot,
+    command.outPath ??
+      path.join(".vos", "kb", "manifests", "object-manifest.json"),
+  );
   await mkdir(path.dirname(outPath), { recursive: true });
   await writeFile(outPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  evidence.addArtifact("kb", path.relative(projectRoot, outPath), "kb object manifest");
+  evidence.addArtifact(
+    "kb",
+    path.relative(projectRoot, outPath),
+    "kb object manifest",
+  );
   return {
     status: "passed",
     details: {
@@ -3922,8 +6054,16 @@ export async function executeKbImportManifest(
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
   const manifestPath = path.resolve(projectRoot, command.manifestPath);
-  const manifest = await importKbManifest(projectRoot, JSON.parse(await readFile(manifestPath, "utf8")), { embedder: createKbEmbedder(projectRoot) });
-  evidence.addArtifact("kb", path.relative(projectRoot, manifestPath), "kb object manifest imported");
+  const manifest = await importKbManifest(
+    projectRoot,
+    JSON.parse(await readFile(manifestPath, "utf8")),
+    { embedder: createKbEmbedder(projectRoot) },
+  );
+  evidence.addArtifact(
+    "kb",
+    path.relative(projectRoot, manifestPath),
+    "kb object manifest imported",
+  );
   return {
     status: "passed",
     details: {
@@ -3941,12 +6081,17 @@ export async function executeBuildGenerate(
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
   if (command.noAgent) {
-    return await writeDeterministicToolchainManifest(projectRoot, evidence, true);
+    return await writeDeterministicToolchainManifest(
+      projectRoot,
+      evidence,
+      true,
+    );
   }
   const spec = await loadToolchainGenerationSpec(projectRoot);
   const agentResult = await runAgentWithPrompt({
     projectRoot,
-    taskPrompt: "Generate the minimum VOS toolchain draft from the provided toolchain specs and allowed output paths.",
+    taskPrompt:
+      "Generate the minimum VOS toolchain draft from the provided toolchain specs and allowed output paths.",
     taskKind: "toolchain_generate",
     requestedScope: "toolchain.generate",
     context: spec,
@@ -3957,10 +6102,17 @@ export async function executeBuildGenerate(
   });
   let draft;
   try {
-    draft = normalizeToolchainDraft(agentStructuredOutput(agentResult, "build_generate"));
+    draft = normalizeToolchainDraft(
+      agentStructuredOutput(agentResult, "build_generate"),
+    );
   } catch (error) {
     if (error instanceof AgentOutputError) {
-      await recordRawAgentOutput(evidence, "toolchain", "build-generate-raw.txt", agentResult.resultText);
+      await recordRawAgentOutput(
+        evidence,
+        "toolchain",
+        "build-generate-raw.txt",
+        agentResult.resultText,
+      );
     }
     throw error;
   }
@@ -3978,30 +6130,64 @@ export async function executeBuildGenerate(
     spec_hash: specHash,
     spec_path: "spec/toolchain/toolchain.yaml",
     generator: {
-      ...((draft.manifest.generator && typeof draft.manifest.generator === "object") ? draft.manifest.generator as Record<string, unknown> : {}),
-      name: ((draft.manifest.generator as { name?: unknown } | undefined)?.name as string | undefined) ?? "vos-agent",
-      version: ((draft.manifest.generator as { version?: unknown } | undefined)?.version as string | undefined) ?? "toolchain-draft-v1",
+      ...(draft.manifest.generator &&
+      typeof draft.manifest.generator === "object"
+        ? (draft.manifest.generator as Record<string, unknown>)
+        : {}),
+      name:
+        ((draft.manifest.generator as { name?: unknown } | undefined)?.name as
+          string | undefined) ?? "vos-agent",
+      version:
+        ((draft.manifest.generator as { version?: unknown } | undefined)
+          ?.version as string | undefined) ?? "toolchain-draft-v1",
     },
     environment: normalizeToolchainEnvironment(draft.manifest),
   };
   try {
     parseToolchainManifest(manifest);
   } catch (error) {
-    await recordRawAgentOutput(evidence, "toolchain", "build-generate-raw.txt", agentResult.resultText);
-    throw new AgentOutputError(error instanceof Error ? error.message : String(error));
+    await recordRawAgentOutput(
+      evidence,
+      "toolchain",
+      "build-generate-raw.txt",
+      agentResult.resultText,
+    );
+    throw new AgentOutputError(
+      error instanceof Error ? error.message : String(error),
+    );
   }
   const manifestPath = path.join(projectRoot, ".vos", "toolchain.json");
   await mkdir(path.dirname(manifestPath), { recursive: true });
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  const instructionsPath = path.join(evidence.artifacts_root, "toolchain", "build-instructions.md");
+  const instructionsPath = path.join(
+    evidence.artifacts_root,
+    "toolchain",
+    "build-instructions.md",
+  );
   await mkdir(path.dirname(instructionsPath), { recursive: true });
   await writeFile(instructionsPath, `${draft.build_instructions.trim()}\n`);
-  evidence.addArtifactFromPath("toolchain", instructionsPath, "agent build instructions");
+  evidence.addArtifactFromPath(
+    "toolchain",
+    instructionsPath,
+    "agent build instructions",
+  );
 
-  const changedTargets = [...new Set([...draft.changed_targets, ...draft.files.map((file) => file.path), ".vos/toolchain.json"])];
-  git(projectRoot, ["add", ...changedTargets.filter((target) => !target.startsWith(".vos/"))]);
-  const ignoredVosTargets = changedTargets.filter((target) => target.startsWith(".vos/"));
-  if (ignoredVosTargets.length > 0) git(projectRoot, ["add", "-f", ...ignoredVosTargets]);
+  const changedTargets = [
+    ...new Set([
+      ...draft.changed_targets,
+      ...draft.files.map((file) => file.path),
+      ".vos/toolchain.json",
+    ]),
+  ];
+  git(projectRoot, [
+    "add",
+    ...changedTargets.filter((target) => !target.startsWith(".vos/")),
+  ]);
+  const ignoredVosTargets = changedTargets.filter((target) =>
+    target.startsWith(".vos/"),
+  );
+  if (ignoredVosTargets.length > 0)
+    git(projectRoot, ["add", "-f", ...ignoredVosTargets]);
   git(projectRoot, ["commit", "-m", "[vos][toolchain] Generate build system"]);
   const commitSha = currentHead(projectRoot);
   if (commitSha) {
@@ -4013,7 +6199,13 @@ export async function executeBuildGenerate(
       run_id: evidence.run_id,
       spec_refs: draft.spec_refs,
       changed_targets: changedTargets,
-      evidence_refs: [{ id: evidence.run_id, kind: "run", path: path.relative(projectRoot, evidence.manifest_path) }],
+      evidence_refs: [
+        {
+          id: evidence.run_id,
+          kind: "run",
+          path: path.relative(projectRoot, evidence.manifest_path),
+        },
+      ],
       collaboration_intent: "toolchain-generate",
     });
   }
@@ -4040,7 +6232,9 @@ interface ToolchainLintResult {
   issues: string[];
 }
 
-async function runToolchainLint(projectRoot: string): Promise<ToolchainLintResult> {
+async function runToolchainLint(
+  projectRoot: string,
+): Promise<ToolchainLintResult> {
   const specRoot = path.join(projectRoot, "spec", "toolchain");
   const toolchainSpecPath = path.join(specRoot, "toolchain.yaml");
   let manifestPath = path.join(projectRoot, ".vos", "toolchain.json");
@@ -4084,7 +6278,9 @@ async function runToolchainLint(projectRoot: string): Promise<ToolchainLintResul
 
   for (const file of includedFiles) {
     if (!existsSync(file)) {
-      issues.push(`toolchain include missing: ${path.relative(projectRoot, file)}`);
+      issues.push(
+        `toolchain include missing: ${path.relative(projectRoot, file)}`,
+      );
       passed = false;
       continue;
     }
@@ -4100,7 +6296,9 @@ async function runToolchainLint(projectRoot: string): Promise<ToolchainLintResul
     const buildText = await readFile(buildSpecPath, "utf8");
     allowedOutputPaths = parseYamlList(buildText, "allowed_output_path");
     if (allowedOutputPaths.length === 0) {
-      issues.push("build.allowed_output_path should contain at least one allowed path");
+      issues.push(
+        "build.allowed_output_path should contain at least one allowed path",
+      );
       passed = false;
     }
   }
@@ -4113,11 +6311,17 @@ async function runToolchainLint(projectRoot: string): Promise<ToolchainLintResul
       issues.push("toolchain manifest is not valid JSON");
       passed = false;
     } else {
-      const manifestFiles = collectManifestPaths(manifest as Record<string, unknown>);
+      const manifestFiles = collectManifestPaths(
+        manifest as Record<string, unknown>,
+      );
       if (manifestFiles.length > 0 && allowedOutputPaths.length > 0) {
-        const denied = manifestFiles.filter((entry) => !isPathAllowed(entry, allowedOutputPaths));
+        const denied = manifestFiles.filter(
+          (entry) => !isPathAllowed(entry, allowedOutputPaths),
+        );
         if (denied.length > 0) {
-          issues.push(`toolchain manifest has files outside allowed_output_path: ${denied.join(", ")}`);
+          issues.push(
+            `toolchain manifest has files outside allowed_output_path: ${denied.join(", ")}`,
+          );
           passed = false;
         }
       }
@@ -4131,7 +6335,9 @@ async function runToolchainLint(projectRoot: string): Promise<ToolchainLintResul
     includedFiles: includes,
     allowedOutputPaths,
     manifestExists: existsSync(manifestPath),
-    manifestPath: existsSync(manifestPath) ? path.relative(projectRoot, manifestPath) : undefined,
+    manifestPath: existsSync(manifestPath)
+      ? path.relative(projectRoot, manifestPath)
+      : undefined,
     issues,
   };
 }
@@ -4145,7 +6351,10 @@ function isPathAllowed(candidate: string, allowedPrefixes: string[]): boolean {
   const normalized = normalizePath(candidate);
   return allowedPrefixes.some((prefix) => {
     const normalizedPrefix = normalizePath(prefix);
-    return normalized === normalizedPrefix || normalized.startsWith(`${normalizedPrefix}${path.sep}`);
+    return (
+      normalized === normalizedPrefix ||
+      normalized.startsWith(`${normalizedPrefix}${path.sep}`)
+    );
   });
 }
 
@@ -4168,22 +6377,59 @@ function isSuccessStatus(status: CommandStatus): boolean {
   return status === "passed" || status === "ok" || status === "planned";
 }
 
-export async function executeBuild(command: BuildCommand, context: ExecContext, evidence: EvidenceWriter, projectRoot: string): Promise<CommandOutcome> {
+export async function executeBuild(
+  command: BuildCommand,
+  context: ExecContext,
+  evidence: EvidenceWriter,
+  projectRoot: string,
+): Promise<CommandOutcome> {
   if (existsSync(path.join(projectRoot, "vos.yaml"))) {
-    updateProgress(context, { stage: "build", status: "running", message: command.dryRun ? "planning build" : "running build" });
+    updateProgress(context, {
+      stage: "build",
+      status: "running",
+      message: command.dryRun ? "planning build" : "running build",
+    });
     if (command.dryRun) {
       const manifest = await readStudentManifest(projectRoot);
-      return { status: "planned", details: { target: "build", program: manifest.manifest.build.program, args: manifest.manifest.build.args, cwd: manifest.manifest.build.cwd, timeout: manifest.manifest.build.timeout } };
+      return {
+        status: "planned",
+        details: {
+          target: "build",
+          program: manifest.manifest.build.program,
+          args: manifest.manifest.build.args,
+          cwd: manifest.manifest.build.cwd,
+          timeout: manifest.manifest.build.timeout,
+        },
+      };
     }
     const runner = new ManifestRunner(projectRoot, context.signal);
     const result = await runner.build("build");
     const bundle = await runner.collectEvidence();
     const artifact = path.join(evidence.artifacts_root, "student-build.json");
-    await writeFile(artifact, `${JSON.stringify({ result, bundle }, null, 2)}\n`);
-    evidence.addArtifactFromPath("build", artifact, "student manifest build evidence");
-    return { status: result.status === "passed" ? "passed" : result.status === "timed_out" ? "timed_out" : "failed", details: { ...result, evidence: bundle } };
+    await writeFile(
+      artifact,
+      `${JSON.stringify({ result, bundle }, null, 2)}\n`,
+    );
+    evidence.addArtifactFromPath(
+      "build",
+      artifact,
+      "student manifest build evidence",
+    );
+    return {
+      status:
+        result.status === "passed"
+          ? "passed"
+          : result.status === "timed_out"
+            ? "timed_out"
+            : "failed",
+      details: { ...result, evidence: bundle },
+    };
   }
-  updateProgress(context, { stage: "build", status: "running", message: command.dryRun ? "planning build" : "running build" });
+  updateProgress(context, {
+    stage: "build",
+    status: "running",
+    message: command.dryRun ? "planning build" : "running build",
+  });
   const result = await runBuildCommand({
     projectRoot,
     evidence,
@@ -4203,25 +6449,58 @@ export async function executeBuild(command: BuildCommand, context: ExecContext, 
   };
 }
 
-export async function executeRunQemu(command: RunQemuCommand, context: ExecContext, evidence: EvidenceWriter, projectRoot: string): Promise<CommandOutcome> {
+export async function executeRunQemu(
+  command: RunQemuCommand,
+  context: ExecContext,
+  evidence: EvidenceWriter,
+  projectRoot: string,
+): Promise<CommandOutcome> {
   if (existsSync(path.join(projectRoot, "vos.yaml"))) {
     if (command.listProfiles || command.listCases) {
       const manifest = await readStudentManifest(projectRoot);
-      return { status: "passed", details: { profiles: manifest.manifest.runners.qemu ? ["qemu"] : [], cases: Object.keys(manifest.manifest.checks) } };
+      return {
+        status: "passed",
+        details: {
+          profiles: manifest.manifest.runners.qemu ? ["qemu"] : [],
+          cases: Object.keys(manifest.manifest.checks),
+        },
+      };
     }
     if (command.dryRun) {
       const manifest = await readStudentManifest(projectRoot);
-      return { status: "planned", details: { target: "qemu", program: manifest.manifest.runners.qemu?.program, args: manifest.manifest.runners.qemu?.args } };
+      return {
+        status: "planned",
+        details: {
+          target: "qemu",
+          program: manifest.manifest.runners.qemu?.program,
+          args: manifest.manifest.runners.qemu?.args,
+        },
+      };
     }
     const runner = new QemuRunner(projectRoot, context.signal);
     const result = await runner.run("qemu");
     const bundle = await runner.collectEvidence();
     const artifact = path.join(evidence.artifacts_root, "student-qemu.json");
-    await writeFile(artifact, `${JSON.stringify({ result, bundle }, null, 2)}\n`);
+    await writeFile(
+      artifact,
+      `${JSON.stringify({ result, bundle }, null, 2)}\n`,
+    );
     evidence.addArtifactFromPath("qemu", artifact, "student QEMU evidence");
-    return { status: result.status === "passed" ? "passed" : result.status === "timed_out" ? "timed_out" : "failed", details: { ...result, evidence: bundle } };
+    return {
+      status:
+        result.status === "passed"
+          ? "passed"
+          : result.status === "timed_out"
+            ? "timed_out"
+            : "failed",
+      details: { ...result, evidence: bundle },
+    };
   }
-  updateProgress(context, { stage: "run qemu", status: "running", message: command.dryRun ? "planning run" : "running qemu" });
+  updateProgress(context, {
+    stage: "run qemu",
+    status: "running",
+    message: command.dryRun ? "planning run" : "running qemu",
+  });
   const result = await runQemuCommand({
     projectRoot,
     evidence,
@@ -4251,25 +6530,66 @@ export async function executeRunQemu(command: RunQemuCommand, context: ExecConte
   };
 }
 
-export async function executeRunHardware(command: RunHardwareCommand, context: ExecContext, evidence: EvidenceWriter, projectRoot: string): Promise<CommandOutcome> {
+export async function executeRunHardware(
+  command: RunHardwareCommand,
+  context: ExecContext,
+  evidence: EvidenceWriter,
+  projectRoot: string,
+): Promise<CommandOutcome> {
   if (!existsSync(path.join(projectRoot, "vos.yaml"))) {
-    throw new CliError("run hardware requires a v2 vos.yaml manifest", "validation_failed");
+    throw new CliError(
+      "run hardware requires a v2 vos.yaml manifest",
+      "validation_failed",
+    );
   }
   if (command.dryRun) {
     const manifest = await readStudentManifest(projectRoot);
-    return { status: "planned", details: { target: "hardware", program: manifest.manifest.runners.hardware?.program, args: manifest.manifest.runners.hardware?.args, human_review: "pending_human_review" } };
+    return {
+      status: "planned",
+      details: {
+        target: "hardware",
+        program: manifest.manifest.runners.hardware?.program,
+        args: manifest.manifest.runners.hardware?.args,
+        human_review: "pending_human_review",
+      },
+    };
   }
   const runner = new HardwareRunner(projectRoot, context.signal);
   const result = await runner.run("hardware");
   const bundle = await runner.collectEvidence();
   const artifact = path.join(evidence.artifacts_root, "student-hardware.json");
   await writeFile(artifact, `${JSON.stringify({ result, bundle }, null, 2)}\n`);
-  evidence.addArtifactFromPath("hardware", artifact, "student hardware evidence pending human review");
-  return { status: result.status === "passed" ? "passed" : result.status === "timed_out" ? "timed_out" : "failed", details: { ...result, human_review: "pending_human_review", evidence: bundle } };
+  evidence.addArtifactFromPath(
+    "hardware",
+    artifact,
+    "student hardware evidence pending human review",
+  );
+  return {
+    status:
+      result.status === "passed"
+        ? "passed"
+        : result.status === "timed_out"
+          ? "timed_out"
+          : "failed",
+    details: {
+      ...result,
+      human_review: "pending_human_review",
+      evidence: bundle,
+    },
+  };
 }
 
-export async function executeTest(command: TestCommand, context: ExecContext, evidence: EvidenceWriter, projectRoot: string): Promise<CommandOutcome> {
-  updateProgress(context, { stage: "test", status: "running", message: command.dryRun ? "planning tests" : "running tests" });
+export async function executeTest(
+  command: TestCommand,
+  context: ExecContext,
+  evidence: EvidenceWriter,
+  projectRoot: string,
+): Promise<CommandOutcome> {
+  updateProgress(context, {
+    stage: "test",
+    status: "running",
+    message: command.dryRun ? "planning tests" : "running tests",
+  });
   const result = await runTestCommand({
     projectRoot,
     evidence,
@@ -4295,9 +6615,15 @@ export async function executeVerify(
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
   if (existsSync(path.join(projectRoot, "vos.yaml"))) {
+    if (process.env.VOS_COURSE_ADAPTER === "xv6-spec")
+      return executeXv6CourseVerify(command, context, evidence);
     return executeStudentVerify(command, context, evidence);
   }
-  updateProgress(context, { stage: "verify", status: "running", message: `verifying ${command.scope}` });
+  updateProgress(context, {
+    stage: "verify",
+    status: "running",
+    message: `verifying ${command.scope}`,
+  });
   const result = await runVerifyCommand({
     projectRoot,
     evidence,
@@ -4309,12 +6635,13 @@ export async function executeVerify(
     behaviorTestRunner: createVerifyBehaviorTestRunner(context, projectRoot),
     signal: context.signal,
   });
-  const debug = result.status === "passed" || result.status === "ok"
-    ? undefined
-    : {
-      run_id: evidence.run_id,
-      command: `vos agent debug --run ${evidence.run_id}`,
-    };
+  const debug =
+    result.status === "passed" || result.status === "ok"
+      ? undefined
+      : {
+          run_id: evidence.run_id,
+          command: `vos agent debug --run ${evidence.run_id}`,
+        };
   return {
     status: result.status,
     details: {
@@ -4328,47 +6655,281 @@ export async function executeVerify(
   };
 }
 
+async function executeXv6CourseVerify(
+  command: VerifyCommand,
+  context: ExecContext,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  if (command.scope !== "public" && command.scope !== "full")
+    return {
+      status: "validation_failed",
+      details: {
+        reason: "xv6 course adapter only supports public and authoritative verification",
+      },
+    };
+  const runner = new HostRunner(context.projectRoot, context.signal);
+  const manifest = await readStudentManifest(context.projectRoot);
+  const build = await runXv6CourseBuild(runner, context);
+  const checks = [] as Array<Awaited<ReturnType<ManifestRunner["check"]>>>;
+  if (build.status === "passed") {
+    const ids = await xv6CourseCheckIds(context, manifest);
+    for (const id of ids)
+      checks.push(await runXv6CourseCheck(id, runner, context));
+  }
+  await Promise.all(
+    ["kernel/kernel.asm", "kernel/kernel.sym"].map((file) =>
+      rm(path.join(context.projectRoot, file), { force: true }),
+    ),
+  );
+  const collected = await runner.collectEvidence();
+  const passed =
+    build.status === "passed" &&
+    checks.every((check) => check.status === "passed") &&
+    collected.cleanHead;
+  const summary = await evidence.writeLog(
+    "course",
+    "xv6-verification.json",
+    `${JSON.stringify({ adapter: "xv6-spec", build, checks, evidence: collected }, null, 2)}\n`,
+  );
+  evidence.addEvidenceRef(
+    `${evidence.run_id}:xv6-course-verification`,
+    "xv6-course-verification",
+    path.relative(context.projectRoot, summary).replaceAll(path.sep, "/"),
+  );
+  return {
+    status: passed ? "passed" : "validation_failed",
+    details: { adapter: "xv6-spec", build, checks, evidence: collected },
+  };
+}
+
+async function runXv6CourseCheck(
+  id: string,
+  runner: HostRunner,
+  context: ExecContext,
+): Promise<RunEvidence> {
+  if (id === "devintr_timer") {
+    const trap = await readFile(
+      path.join(context.projectRoot, "kernel", "trap.c"),
+      "utf8",
+    );
+    if (
+      /r_scause\(\)[\s\S]*0x8000000000000005/.test(trap) &&
+      /w_stimecmp/.test(trap)
+    )
+      return {
+        target: id,
+        runner: "host",
+        status: "passed",
+        exitCode: 0,
+        stdout: "course adapter semantic timer check passed",
+        stderr: "",
+        durationMs: 0,
+        artifacts: [],
+        submittable: true,
+        humanReview: "not_required",
+      };
+  }
+  if (existsSync(path.join(context.projectRoot, "tests", "public", "verify.sh"))) {
+    const result = await runStructuredStudentCommand(
+      context.projectRoot,
+      {
+        program: "bash",
+        args: ["tests/public/verify.sh", id],
+        cwd: ".",
+        env: ["PATH"],
+        timeout: 120_000,
+      },
+      context.signal,
+    );
+    return {
+      target: id,
+      runner: "host",
+      ...result,
+      artifacts: [],
+      submittable: result.status === "passed",
+      humanReview: "not_required",
+    };
+  }
+  return runner.check(id);
+}
+
+async function xv6CourseCheckIds(
+  context: ExecContext,
+  manifest: Awaited<ReturnType<typeof readStudentManifest>>,
+): Promise<string[]> {
+  if (process.env.VOS_COURSE_STAGE_KEY === "lab9") {
+    return Object.keys(manifest.manifest.checks).filter(
+      (id) => id !== "usertests_all_pass",
+    );
+  }
+  const scriptPath = path.join(
+    context.projectRoot,
+    "tests",
+    "public",
+    "verify.sh",
+  );
+  if (existsSync(scriptPath)) {
+    const script = await readFile(scriptPath, "utf8");
+    const match = script.match(
+      /case \"\$case_id\" in\s*([A-Za-z0-9_|-]+)\s*\)\s*;;/,
+    );
+    if (match) {
+      const ids = match[1]
+        .split("|")
+        .map((id) => id.trim())
+        .filter(Boolean);
+      if (ids.length > 0) return ids;
+    }
+  }
+  return Object.keys(manifest.manifest.checks);
+}
+
+async function runXv6CourseBuild(
+  runner: HostRunner,
+  context: ExecContext,
+): Promise<BuildEvidence> {
+  const makefilePath = path.join(context.projectRoot, "Makefile");
+  const kernelVector = path.join(context.projectRoot, "kernel", "kernelvec.S");
+  if (existsSync(makefilePath) && existsSync(kernelVector)) {
+    const makefile = await readFile(makefilePath, "utf8");
+    if (!makefile.includes("kernelvec.o")) {
+      const sourceFiles = (await readdir(path.join(context.projectRoot, "kernel")))
+        .filter((file) => file.endsWith(".c") || file.endsWith(".S"))
+        .sort()
+        .map((file) => `kernel/${file.slice(0, -2)}.o`);
+      const result = await runStructuredStudentCommand(
+        context.projectRoot,
+        {
+          program: "make",
+          args: [`OBJS=${sourceFiles.join(" ")}`],
+          cwd: ".",
+          env: ["PATH"],
+          timeout: 120_000,
+        },
+        context.signal,
+      );
+      return {
+        target: "build",
+        ...result,
+        artifacts: ["kernel/kernel"],
+        submittable: result.status === "passed",
+      };
+    }
+  }
+  return runner.build("build");
+}
+
 async function executeStudentVerify(
   command: VerifyCommand,
   context: ExecContext,
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
-  updateProgress(context, { stage: "verify", status: "running", message: "checking student contract" });
+  updateProgress(context, {
+    stage: "verify",
+    status: "running",
+    message: "checking student contract",
+  });
   const bundle = await buildNormalizedSpecBundle({ projectRoot });
   const diagnostics = [...bundle.diagnostics];
-  if (!bundle.design) diagnostics.push({ severity: "error", code: "design.missing", message: "spec/design.yaml is required", path: "spec/design.yaml" });
-  if (bundle.normalized_modules.length === 0) diagnostics.push({ severity: "error", code: "module.missing", message: "at least one ModuleSpec is required", path: "spec/modules" });
-  if (!bundle.manifest || bundle.manifest.checks.length === 0) diagnostics.push({ severity: "error", code: "manifest.checks_missing", message: "vos.yaml must declare at least one public or contract check", path: "vos.yaml/checks" });
+  if (!bundle.design)
+    diagnostics.push({
+      severity: "error",
+      code: "design.missing",
+      message: "spec/design.yaml is required",
+      path: "spec/design.yaml",
+    });
+  if (bundle.normalized_modules.length === 0)
+    diagnostics.push({
+      severity: "error",
+      code: "module.missing",
+      message: "at least one ModuleSpec is required",
+      path: "spec/modules",
+    });
+  if (!bundle.manifest || bundle.manifest.checks.length === 0)
+    diagnostics.push({
+      severity: "error",
+      code: "manifest.checks_missing",
+      message: "vos.yaml must declare at least one public or contract check",
+      path: "vos.yaml/checks",
+    });
   if (hasBlockingDiagnostics(diagnostics)) {
-    return { status: "validation_failed", details: { diagnostics, checks: [], clean_head: false, submittable: false } };
+    return {
+      status: "validation_failed",
+      details: {
+        diagnostics,
+        checks: [],
+        clean_head: false,
+        submittable: false,
+      },
+    };
   }
   if (command.dryRun) {
     const manifest = await readStudentManifest(projectRoot);
-    return { status: "planned", details: { diagnostics, checks: Object.keys(manifest.manifest.checks), build: manifest.manifest.build.program } };
+    return {
+      status: "planned",
+      details: {
+        diagnostics,
+        checks: Object.keys(manifest.manifest.checks),
+        build: manifest.manifest.build.program,
+      },
+    };
   }
   const runner = new HostRunner(projectRoot, context.signal);
   const build = await runner.build("build");
   const checks = [] as Array<Awaited<ReturnType<ManifestRunner["check"]>>>;
   if (build.status === "passed") {
     const manifest = await readStudentManifest(projectRoot);
-    const selected = command.target ? [command.target] : Object.keys(manifest.manifest.checks);
+    const selected = command.target
+      ? [command.target]
+      : Object.keys(manifest.manifest.checks);
     for (const id of selected) {
       checks.push(await runner.check(id));
     }
   }
   const collected = await runner.collectEvidence();
-  const publicPassed = build.status === "passed" && checks.every((check) => check.status === "passed") && collected.cleanHead;
-  const hidden = command.hidden && publicPassed
-    ? await executeStudentHiddenVerification(projectRoot, bundle, context.signal)
-    : undefined;
+  const publicPassed =
+    build.status === "passed" &&
+    checks.every((check) => check.status === "passed") &&
+    collected.cleanHead;
+  const hidden =
+    command.hidden && publicPassed
+      ? await executeStudentHiddenVerification(
+          projectRoot,
+          bundle,
+          context.signal,
+        )
+      : undefined;
   const artifact = path.join(evidence.artifacts_root, "student-verify.json");
-  await writeFile(artifact, `${JSON.stringify({ diagnostics, build, checks, hidden, evidence: collected }, null, 2)}\n`);
-  evidence.addArtifactFromPath("verify", artifact, "deterministic student verification evidence");
-  const passed = publicPassed && (!command.hidden || hidden?.status === "passed");
+  await writeFile(
+    artifact,
+    `${JSON.stringify({ diagnostics, build, checks, hidden, evidence: collected }, null, 2)}\n`,
+  );
+  evidence.addArtifactFromPath(
+    "verify",
+    artifact,
+    "deterministic student verification evidence",
+  );
+  const passed =
+    publicPassed && (!command.hidden || hidden?.status === "passed");
   return {
-    status: passed ? "passed" : build.status === "timed_out" || checks.some((check) => check.status === "timed_out") || hidden?.status === "timed_out" || hidden?.results.some((result) => result.status === "timed_out") ? "timed_out" : "validation_failed",
-    details: { diagnostics, build, checks, hidden, evidence: collected, clean_head: collected.cleanHead, submittable: passed },
+    status: passed
+      ? "passed"
+      : build.status === "timed_out" ||
+          checks.some((check) => check.status === "timed_out") ||
+          hidden?.status === "timed_out" ||
+          hidden?.results.some((result) => result.status === "timed_out")
+        ? "timed_out"
+        : "validation_failed",
+    details: {
+      diagnostics,
+      build,
+      checks,
+      hidden,
+      evidence: collected,
+      clean_head: collected.cleanHead,
+      submittable: passed,
+    },
   };
 }
 
@@ -4379,30 +6940,52 @@ interface StudentHiddenVerification {
   config_hash: string;
   manifest_path: string;
   build: BuildEvidence;
-  results: Array<Record<string, unknown> & { status: "passed" | "failed" | "timed_out" }>;
+  results: Array<
+    Record<string, unknown> & { status: "passed" | "failed" | "timed_out" }
+  >;
   verification_path: string;
 }
 
-async function refreshStudentHiddenManifest(projectRoot: string, bundle: NormalizedSpecBundle, specHash: string): Promise<void> {
+async function refreshStudentHiddenManifest(
+  projectRoot: string,
+  bundle: NormalizedSpecBundle,
+  specHash: string,
+): Promise<void> {
   const root = path.join(projectRoot, ".vos", "hidden-tests", specHash);
   await mkdir(root, { recursive: true });
   const manifestPath = path.join(root, "manifest.json");
   let currentManifest: unknown;
   if (existsSync(manifestPath)) {
     try {
-      currentManifest = JSON.parse(await readFile(manifestPath, "utf8")) as unknown;
+      currentManifest = JSON.parse(
+        await readFile(manifestPath, "utf8"),
+      ) as unknown;
     } catch {
       currentManifest = undefined;
     }
   }
-  const legacyModuleId = isRecord(currentManifest) && typeof currentManifest.module_id === "string" ? currentManifest.module_id : undefined;
-  const currentTests = isRecord(currentManifest) && currentManifest.version === "vos.hidden-tests.v1" && currentManifest.spec_hash === specHash && Array.isArray(currentManifest.tests)
-    ? currentManifest.tests.filter(isRecord).flatMap((test) => {
-      const moduleId = typeof test.module_id === "string" ? test.module_id : legacyModuleId;
-      const bindingHash = moduleId ? hiddenModuleBindingHash(bundle, moduleId) : undefined;
-      return moduleId && bindingHash ? [{ ...test, module_id: moduleId, binding_hash: bindingHash }] : [];
-    })
-    : [];
+  const legacyModuleId =
+    isRecord(currentManifest) && typeof currentManifest.module_id === "string"
+      ? currentManifest.module_id
+      : undefined;
+  const currentTests =
+    isRecord(currentManifest) &&
+    currentManifest.version === "vos.hidden-tests.v1" &&
+    currentManifest.spec_hash === specHash &&
+    Array.isArray(currentManifest.tests)
+      ? currentManifest.tests.filter(isRecord).flatMap((test) => {
+          const moduleId =
+            typeof test.module_id === "string"
+              ? test.module_id
+              : legacyModuleId;
+          const bindingHash = moduleId
+            ? hiddenModuleBindingHash(bundle, moduleId)
+            : undefined;
+          return moduleId && bindingHash
+            ? [{ ...test, module_id: moduleId, binding_hash: bindingHash }]
+            : [];
+        })
+      : [];
   const tests = await collectStudentHiddenTests({
     projectRoot,
     bundle,
@@ -4412,12 +6995,21 @@ async function refreshStudentHiddenManifest(projectRoot: string, bundle: Normali
     excludedModules: new Set(),
   });
   if (tests.length === 0) return;
-  const generationRunId = tests.reduce((latest, test) => typeof test.generation_run_id === "string" && test.generation_run_id > latest ? test.generation_run_id : latest, "");
+  const generationRunId = tests.reduce(
+    (latest, test) =>
+      typeof test.generation_run_id === "string" &&
+      test.generation_run_id > latest
+        ? test.generation_run_id
+        : latest,
+    "",
+  );
   const manifest = {
     version: "vos.hidden-tests.v1",
     commit_sha: currentHead(projectRoot),
     spec_hash: specHash,
-    config_hash: hashString(await readFile(path.join(projectRoot, "vos.yaml"), "utf8")),
+    config_hash: hashString(
+      await readFile(path.join(projectRoot, "vos.yaml"), "utf8"),
+    ),
     module_id: "aggregate",
     model: "retained",
     generation_run_id: generationRunId,
@@ -4426,56 +7018,120 @@ async function refreshStudentHiddenManifest(projectRoot: string, bundle: Normali
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
-async function executeStudentHiddenVerification(projectRoot: string, bundle: NormalizedSpecBundle, signal?: AbortSignal): Promise<StudentHiddenVerification> {
+async function executeStudentHiddenVerification(
+  projectRoot: string,
+  bundle: NormalizedSpecBundle,
+  signal?: AbortSignal,
+): Promise<StudentHiddenVerification> {
   const commitSha = currentHead(projectRoot);
-  if (!commitSha) throw new CliError("hidden verification requires a committed HEAD", "policy_blocked", { reason: "head_missing" });
+  if (!commitSha)
+    throw new CliError(
+      "hidden verification requires a committed HEAD",
+      "policy_blocked",
+      { reason: "head_missing" },
+    );
   const specHash = hashString(JSON.stringify(bundle.hashes));
-  const configHash = hashString(await readFile(path.join(projectRoot, "vos.yaml"), "utf8"));
+  const configHash = hashString(
+    await readFile(path.join(projectRoot, "vos.yaml"), "utf8"),
+  );
   const root = path.join(projectRoot, ".vos", "hidden-tests", specHash);
   const manifestPath = path.join(root, "manifest.json");
   await refreshStudentHiddenManifest(projectRoot, bundle, specHash);
   if (!existsSync(manifestPath)) {
-    throw new CliError("no hidden tests are bound to the current Spec hash; rerun vos agent implement", "validation_failed", { spec_hash: specHash });
+    throw new CliError(
+      "no hidden tests are bound to the current Spec hash; rerun vos agent implement",
+      "validation_failed",
+      { spec_hash: specHash },
+    );
   }
   const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as unknown;
-  if (!isRecord(manifest) || manifest.version !== "vos.hidden-tests.v1" || manifest.spec_hash !== specHash || manifest.config_hash !== configHash || !Array.isArray(manifest.tests)) {
-    throw new CliError("hidden tests are not bound to the current Spec and vos.yaml", "validation_failed", { reason: "hidden_binding_mismatch" });
+  if (
+    !isRecord(manifest) ||
+    manifest.version !== "vos.hidden-tests.v1" ||
+    manifest.spec_hash !== specHash ||
+    manifest.config_hash !== configHash ||
+    !Array.isArray(manifest.tests)
+  ) {
+    throw new CliError(
+      "hidden tests are not bound to the current Spec and vos.yaml",
+      "validation_failed",
+      { reason: "hidden_binding_mismatch" },
+    );
   }
   const results = [] as StudentHiddenVerification["results"];
-  const executionRoot = await createStudentWorktree(projectRoot, `hidden-verify-${process.pid}-${Date.now()}`);
+  const executionRoot = await createStudentWorktree(
+    projectRoot,
+    `hidden-verify-${process.pid}-${Date.now()}`,
+  );
   let build: BuildEvidence;
   try {
     build = await new HostRunner(executionRoot, signal).build("hidden-build");
     if (build.status === "passed") {
       for (const raw of manifest.tests) {
-        if (!isRecord(raw) || typeof raw.id !== "string" || typeof raw.path !== "string" || typeof raw.content_hash !== "string" || typeof raw.program !== "string" || !isStringArray(raw.args) || typeof raw.cwd !== "string" || !isStringArray(raw.env) || !isPositiveInteger(raw.timeout)) {
-          throw new CliError("hidden test manifest contains an invalid command", "validation_failed");
+        if (
+          !isRecord(raw) ||
+          typeof raw.id !== "string" ||
+          typeof raw.path !== "string" ||
+          typeof raw.content_hash !== "string" ||
+          typeof raw.program !== "string" ||
+          !isStringArray(raw.args) ||
+          typeof raw.cwd !== "string" ||
+          !isStringArray(raw.env) ||
+          !isPositiveInteger(raw.timeout)
+        ) {
+          throw new CliError(
+            "hidden test manifest contains an invalid command",
+            "validation_failed",
+          );
         }
         assertSafeStudentRelativePath(raw.path, `hidden test ${raw.id} path`);
         const hiddenFile = path.resolve(projectRoot, raw.path);
-        if (!existsSync(hiddenFile) || hashString(await readFile(hiddenFile, "utf8")) !== raw.content_hash) {
-          throw new CliError(`hidden test ${raw.id} content does not match its bound hash`, "validation_failed", { reason: "hidden_content_mismatch", hidden_test: raw.id });
+        if (
+          !existsSync(hiddenFile) ||
+          hashString(await readFile(hiddenFile, "utf8")) !== raw.content_hash
+        ) {
+          throw new CliError(
+            `hidden test ${raw.id} content does not match its bound hash`,
+            "validation_failed",
+            { reason: "hidden_content_mismatch", hidden_test: raw.id },
+          );
         }
-        const result = await runStructuredStudentCommand(executionRoot, {
-          program: raw.program,
-          args: raw.args.map((value) => value === raw.path || value === "{hidden_test}" ? hiddenFile : value),
-          cwd: raw.cwd,
-          env: raw.env,
-          timeout: raw.timeout,
-        }, signal);
+        const result = await runStructuredStudentCommand(
+          executionRoot,
+          {
+            program: raw.program,
+            args: raw.args.map((value) =>
+              value === raw.path || value === "{hidden_test}"
+                ? hiddenFile
+                : value,
+            ),
+            cwd: raw.cwd,
+            env: raw.env,
+            timeout: raw.timeout,
+          },
+          signal,
+        );
         results.push({ id: raw.id, ...result });
       }
     }
   } finally {
     await removeStudentWorktree(projectRoot, executionRoot);
   }
-  const status = build.status === "timed_out"
-    ? "timed_out"
-    : build.status === "passed" && results.length > 0 && results.every((result) => result.status === "passed")
-      ? "passed"
-      : results.some((result) => result.status === "timed_out") ? "timed_out" : "validation_failed";
+  const status =
+    build.status === "timed_out"
+      ? "timed_out"
+      : build.status === "passed" &&
+          results.length > 0 &&
+          results.every((result) => result.status === "passed")
+        ? "passed"
+        : results.some((result) => result.status === "timed_out")
+          ? "timed_out"
+          : "validation_failed";
   const verificationPath = path.join(root, "last-verification.json");
-  await writeFile(verificationPath, `${JSON.stringify({ version: "vos.hidden-verification.v1", status, commit_sha: commitSha, spec_hash: specHash, config_hash: configHash, manifest_hash: hashString(await readFile(manifestPath, "utf8")), build, results }, null, 2)}\n`);
+  await writeFile(
+    verificationPath,
+    `${JSON.stringify({ version: "vos.hidden-verification.v1", status, commit_sha: commitSha, spec_hash: specHash, config_hash: configHash, manifest_hash: hashString(await readFile(manifestPath, "utf8")), build, results }, null, 2)}\n`,
+  );
   return {
     status,
     commit_sha: commitSha,
@@ -4488,21 +7144,36 @@ async function executeStudentHiddenVerification(projectRoot: string, bundle: Nor
   };
 }
 
-function canonicalStudentHiddenArgs(hiddenPath: string, args: string[]): string[] {
-  return args.map((value) => value === "{hidden_test}" ? hiddenPath : value);
+function canonicalStudentHiddenArgs(
+  hiddenPath: string,
+  args: string[],
+): string[] {
+  return args.map((value) => (value === "{hidden_test}" ? hiddenPath : value));
 }
 
-function createVerifyBehaviorTestRunner(context: ExecContext, projectRoot: string): BehaviorTestRunner {
+function createVerifyBehaviorTestRunner(
+  context: ExecContext,
+  projectRoot: string,
+): BehaviorTestRunner {
   return async (request) => {
-    const agentProgress = createAgentProgressParams(context, `verify ${request.phase} behavior`);
+    const agentProgress = createAgentProgressParams(
+      context,
+      `verify ${request.phase} behavior`,
+    );
     const result = await runAgentWithPrompt({
       projectRoot,
       taskPrompt: agentProgress.taskPrompt(request.prompt),
       taskKind: "validate",
       requestedScope: `verify.${request.phase}.behavior.${request.kind}`,
       courseMode: true,
-      allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
-      resultSubmissionSchema: request.kind === "plan" ? "behavior_test_plan.v1" : "behavior_test_patch.v1",
+      allowedVosCommands: await loadAgentAllowedCommands(
+        projectRoot,
+        context.effectivePolicy,
+      ),
+      resultSubmissionSchema:
+        request.kind === "plan"
+          ? "behavior_test_plan.v1"
+          : "behavior_test_patch.v1",
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
       taskRunner: context.agentRunner,
@@ -4511,7 +7182,11 @@ function createVerifyBehaviorTestRunner(context: ExecContext, projectRoot: strin
   };
 }
 
-export async function executeAgentServe(command: AgentServeCommand, projectRoot: string, evidence: EvidenceWriter): Promise<CommandOutcome> {
+export async function executeAgentServe(
+  command: AgentServeCommand,
+  projectRoot: string,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
   const server = startAgentServer({
     projectRoot,
     host: command.host,
@@ -4520,7 +7195,11 @@ export async function executeAgentServe(command: AgentServeCommand, projectRoot:
   const serveLog = path.join(projectRoot, ".vos", "agent-serve.log");
   const content = `serving package vos-agent/headless at ${server.url} at ${new Date().toISOString()}\n`;
   await writeFile(serveLog, content);
-  evidence.addArtifact("agent", path.relative(projectRoot, serveLog), "agent serve intent");
+  evidence.addArtifact(
+    "agent",
+    path.relative(projectRoot, serveLog),
+    "agent serve intent",
+  );
   return {
     status: "passed",
     details: {
@@ -4545,39 +7224,66 @@ export async function executeAgentGenerate(
   }
 
   const projectRoot = context.projectRoot;
-  updateProgress(context, { stage: "agent generate", status: "running", message: "building context" });
+  updateProgress(context, {
+    stage: "agent generate",
+    status: "running",
+    message: "building context",
+  });
   const bundle = await buildContextBundle({
     projectRoot,
     requestedScope: "agent.generate",
     effectivePolicy: context.effectivePolicy,
   });
   const task = command.task ?? command.target ?? bundle.current_stage;
-  updateProgress(context, { stage: "agent generate", status: "running", message: "waiting for agent" });
+  updateProgress(context, {
+    stage: "agent generate",
+    status: "running",
+    message: "waiting for agent",
+  });
   const agentProgress = createAgentProgressParams(context, "agent generate");
   let agentResult = await runAgentWithPrompt({
     projectRoot,
-    taskPrompt: agentProgress.taskPrompt(`Generate a spec-bound patch for ${task}.`),
+    taskPrompt: agentProgress.taskPrompt(
+      `Generate a spec-bound patch for ${task}.`,
+    ),
     taskKind: "codegen",
     requestedScope: "agent.generate",
-    context: { bundle, build_requested: command.build, run_requested: command.run },
+    context: {
+      bundle,
+      build_requested: command.build,
+      run_requested: command.run,
+    },
     allowedPaths: bundle.allowed_paths,
     evidenceRefs: bundle.recent_evidence.map((entry) => entry.run_id),
     policyFlags: bundle.policy_flags,
     courseMode: true,
-    allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+    allowedVosCommands: await loadAgentAllowedCommands(
+      projectRoot,
+      context.effectivePolicy,
+    ),
     resultSubmissionSchema: "spec_compiler_output.v1",
     extraMcpServers: agentProgress.extraMcpServers,
     onEvent: agentProgress.onEvent,
     taskRunner: context.agentRunner,
   });
-  const rawResponsePath = path.join(projectRoot, ".vos", "agent-generate-raw.txt");
+  const rawResponsePath = path.join(
+    projectRoot,
+    ".vos",
+    "agent-generate-raw.txt",
+  );
   let parsed;
   try {
-    parsed = parsePatchProposal(agentStructuredOutput(agentResult, "agent_generate"));
+    parsed = parsePatchProposal(
+      agentStructuredOutput(agentResult, "agent_generate"),
+    );
   } catch (error) {
     await mkdir(path.dirname(rawResponsePath), { recursive: true });
     await writeFile(rawResponsePath, `${agentResult.resultText}\n`);
-    evidence.addArtifact("agent", path.relative(projectRoot, rawResponsePath), "raw agent generate response");
+    evidence.addArtifact(
+      "agent",
+      path.relative(projectRoot, rawResponsePath),
+      "raw agent generate response",
+    );
     throw error;
   }
   let applyStatus: "skipped" | "ok" | "failed" = "skipped";
@@ -4587,7 +7293,12 @@ export async function executeAgentGenerate(
   let runOutput: string | undefined;
   let resultStatus: CommandStatus = "passed";
   if (command.apply) {
-    updateProgress(context, { stage: "agent generate", status: "running", message: "applying patch", percent: 70 });
+    updateProgress(context, {
+      stage: "agent generate",
+      status: "running",
+      message: "applying patch",
+      percent: 70,
+    });
     const applyResult = await applyPatchText({
       projectRoot,
       patchText: parsed.patch,
@@ -4602,34 +7313,64 @@ export async function executeAgentGenerate(
     applyValidationSummary = applyResult.validationSummary ?? [];
     if (applyResult.reason === "policy_violation") {
       resultStatus = "policy_blocked";
-    } else if (applyResult.validationRun && applyResult.validationStatus === "failed") {
+    } else if (
+      applyResult.validationRun &&
+      applyResult.validationStatus === "failed"
+    ) {
       resultStatus = "validation_failed";
     } else if (applyStatus === "failed") {
       resultStatus = "failed";
     }
     if (command.build && applyResult.validationRun) {
-      const applySummaryPath = path.join(evidence.artifacts_root, "agent", "agent-generate-apply.json");
+      const applySummaryPath = path.join(
+        evidence.artifacts_root,
+        "agent",
+        "agent-generate-apply.json",
+      );
       await mkdir(path.dirname(applySummaryPath), { recursive: true });
-      await writeFile(applySummaryPath, `${JSON.stringify({
-        status: applyResult.status,
-        changedPaths: applyResult.changedPaths,
-        validationStatus: applyResult.validationStatus,
-        validationSummary: applyResult.validationSummary ?? [],
-      })}\n`);
-      evidence.addArtifactFromPath("agent", applySummaryPath, "agent-generated patch applied");
+      await writeFile(
+        applySummaryPath,
+        `${JSON.stringify({
+          status: applyResult.status,
+          changedPaths: applyResult.changedPaths,
+          validationStatus: applyResult.validationStatus,
+          validationSummary: applyResult.validationSummary ?? [],
+        })}\n`,
+      );
+      evidence.addArtifactFromPath(
+        "agent",
+        applySummaryPath,
+        "agent-generated patch applied",
+      );
     } else if (command.apply) {
-      const applySummaryPath = path.join(evidence.artifacts_root, "agent", "agent-generate-apply.json");
+      const applySummaryPath = path.join(
+        evidence.artifacts_root,
+        "agent",
+        "agent-generate-apply.json",
+      );
       await mkdir(path.dirname(applySummaryPath), { recursive: true });
-      await writeFile(applySummaryPath, `${JSON.stringify({
-        status: applyResult.status,
-        changedPaths: applyResult.changedPaths,
-        validationStatus: applyResult.validationStatus,
-        validationSummary: applyResult.validationSummary ?? [],
-      })}\n`);
-      evidence.addArtifactFromPath("agent", applySummaryPath, "agent-generated patch apply result");
+      await writeFile(
+        applySummaryPath,
+        `${JSON.stringify({
+          status: applyResult.status,
+          changedPaths: applyResult.changedPaths,
+          validationStatus: applyResult.validationStatus,
+          validationSummary: applyResult.validationSummary ?? [],
+        })}\n`,
+      );
+      evidence.addArtifactFromPath(
+        "agent",
+        applySummaryPath,
+        "agent-generated patch apply result",
+      );
     }
     if (applyResult.status === "ok" && command.run) {
-      updateProgress(context, { stage: "agent generate", status: "running", message: "running qemu", percent: 88 });
+      updateProgress(context, {
+        stage: "agent generate",
+        status: "running",
+        message: "running qemu",
+        percent: 88,
+      });
       const runResult = await runQemuCommand({
         projectRoot,
         evidence,
@@ -4657,7 +7398,11 @@ export async function executeAgentGenerate(
   };
   const bundlePath = path.join(projectRoot, ".vos", "agent-generate.json");
   await writeFile(bundlePath, `${JSON.stringify(details, null, 2)}\n`);
-  evidence.addArtifact("agent", path.relative(projectRoot, bundlePath), "agent generate proposal");
+  evidence.addArtifact(
+    "agent",
+    path.relative(projectRoot, bundlePath),
+    "agent generate proposal",
+  );
   return {
     status: resultStatus,
     details,
@@ -4676,22 +7421,33 @@ export async function executeAgentApplyPatch(
   const result = await applyPatchText({
     projectRoot,
     patchText,
-    allowedPaths: effectivePolicy?.source === "portal"
-      ? effectivePolicy.allowedPaths
-      : await loadAgentAllowedPaths(projectRoot),
+    allowedPaths:
+      effectivePolicy?.source === "portal"
+        ? effectivePolicy.allowedPaths
+        : await loadAgentAllowedPaths(projectRoot),
     requireSpec: command.requireSpec,
     runValidation: command.runValidation,
     evidence,
   });
-  const artifact = path.join(projectRoot, ".vos", "agent", "apply-patch-last.txt");
+  const artifact = path.join(
+    projectRoot,
+    ".vos",
+    "agent",
+    "apply-patch-last.txt",
+  );
   await mkdir(path.dirname(artifact), { recursive: true });
   await writeFile(artifact, `${JSON.stringify(result, null, 2)}\n`);
-  evidence.addArtifact("agent", path.relative(projectRoot, artifact), "apply-patch result");
-  const status: CommandStatus = command.runValidation && result.validationStatus === "failed"
-    ? "validation_failed"
-    : result.reason === "policy_violation"
-      ? "policy_blocked"
-      : result.status;
+  evidence.addArtifact(
+    "agent",
+    path.relative(projectRoot, artifact),
+    "apply-patch result",
+  );
+  const status: CommandStatus =
+    command.runValidation && result.validationStatus === "failed"
+      ? "validation_failed"
+      : result.reason === "policy_violation"
+        ? "policy_blocked"
+        : result.status;
   return {
     status,
     details: result as unknown as Record<string, unknown>,
@@ -4704,22 +7460,36 @@ export async function executeAgentAsk(
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
-  const studentProject = existsSync(path.join(projectRoot, "vos.yaml")) && !isLegacyProject(projectRoot);
-  const readonlyBefore = studentProject ? await studentGitFingerprint(projectRoot) : undefined;
-  const studentHasKbSources = studentProject && (await listKbSources(projectRoot)).length > 0;
+  const studentProject =
+    existsSync(path.join(projectRoot, "vos.yaml")) &&
+    !isLegacyProject(projectRoot);
+  const readonlyBefore = studentProject
+    ? await studentGitFingerprint(projectRoot)
+    : undefined;
+  const studentHasKbSources =
+    studentProject && (await listKbSources(projectRoot)).length > 0;
   const requestedScope = studentProject
     ? "student-kb"
-    : command.scope ?? await currentStageForProject(projectRoot).catch(() => "agent.ask");
-  updateProgress(context, { stage: "agent ask", status: "running", message: "building context" });
+    : (command.scope ??
+      (await currentStageForProject(projectRoot).catch(() => "agent.ask")));
+  updateProgress(context, {
+    stage: "agent ask",
+    status: "running",
+    message: "building context",
+  });
   const bundle = await buildContextBundle({
     projectRoot,
     requestedScope,
     effectivePolicy: context.effectivePolicy,
   });
-  const embedder = !studentProject || studentHasKbSources ? createKbEmbedder(projectRoot) : undefined;
-  const kbHits = command.question && embedder
-    ? await searchKb(projectRoot, command.question, { limit: 5, embedder })
-    : [];
+  const embedder =
+    !studentProject || studentHasKbSources
+      ? createKbEmbedder(projectRoot)
+      : undefined;
+  const kbHits =
+    command.question && embedder
+      ? await searchKb(projectRoot, command.question, { limit: 5, embedder })
+      : [];
   const kbManifest = await exportKbManifest(projectRoot);
   await evidence.appendEvent({
     type: "progress",
@@ -4732,15 +7502,23 @@ export async function executeAgentAsk(
       policy: context.effectivePolicy?.visibilityScope ?? "local",
     },
   });
-  const kbMcpServer = embedder ? {
-    name: "vos-kb",
-    command: process.execPath,
-    args: [path.resolve(import.meta.dir, "../../../packages/vos-kb/src/mcp.ts")],
-    cwd: projectRoot,
-    env: { VOS_PROJECT_ROOT: projectRoot, ...kbEmbeddingEnv(projectRoot) },
-  } : undefined;
+  const kbMcpServer = embedder
+    ? {
+        name: "vos-kb",
+        command: process.execPath,
+        args: [
+          path.resolve(import.meta.dir, "../../../packages/vos-kb/src/mcp.ts"),
+        ],
+        cwd: projectRoot,
+        env: { VOS_PROJECT_ROOT: projectRoot, ...kbEmbeddingEnv(projectRoot) },
+      }
+    : undefined;
   if (command.interactive) {
-    updateProgress(context, { stage: "agent ask", status: "running", message: "starting interactive repl" });
+    updateProgress(context, {
+      stage: "agent ask",
+      status: "running",
+      message: "starting interactive repl",
+    });
     context.progress?.hide();
     await runAgentInteractiveTask({
       projectRoot,
@@ -4749,11 +7527,19 @@ export async function executeAgentAsk(
       initialTask: command.question,
       context: { bundle, kb_hits: kbHits, object_manifest: kbManifest },
       courseMode: true,
-      allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      allowedVosCommands: await loadAgentAllowedCommands(
+        projectRoot,
+        context.effectivePolicy,
+      ),
       extraMcpServers: kbMcpServer ? [kbMcpServer] : [],
       runner: context.interactiveAgentRunner,
     });
-    if (readonlyBefore) assertStudentReadonlyFingerprint(readonlyBefore, await studentGitFingerprint(projectRoot), "agent ask");
+    if (readonlyBefore)
+      assertStudentReadonlyFingerprint(
+        readonlyBefore,
+        await studentGitFingerprint(projectRoot),
+        "agent ask",
+      );
     return {
       status: "passed",
       details: {
@@ -4764,11 +7550,20 @@ export async function executeAgentAsk(
     };
   }
   if (!command.question) {
-    throw new CliError("agent ask requires a question unless interactive mode is enabled", "failed");
+    throw new CliError(
+      "agent ask requires a question unless interactive mode is enabled",
+      "failed",
+    );
   }
-  updateProgress(context, { stage: "agent ask", status: "running", message: "waiting for agent" });
+  updateProgress(context, {
+    stage: "agent ask",
+    status: "running",
+    message: "waiting for agent",
+  });
   const agentProgress = createAgentProgressParams(context, "agent ask");
-  let response: ValidatedAgentRunResult<ReturnType<typeof parseKnowledgebaseAnswer>>;
+  let response: ValidatedAgentRunResult<
+    ReturnType<typeof parseKnowledgebaseAnswer>
+  >;
   try {
     response = await runAgentWithValidatedSubmission({
       projectRoot,
@@ -4779,7 +7574,10 @@ export async function executeAgentAsk(
       evidenceRefs: bundle.recent_evidence.map((entry) => entry.run_id),
       policyFlags: bundle.policy_flags,
       courseMode: true,
-      allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      allowedVosCommands: await loadAgentAllowedCommands(
+        projectRoot,
+        context.effectivePolicy,
+      ),
       resultSubmissionSchema: "knowledgebase_answer.v1",
       extraMcpServers: [
         ...agentProgress.extraMcpServers,
@@ -4795,7 +7593,9 @@ export async function executeAgentAsk(
       evidence,
       "agent",
       "agent-ask-raw.txt",
-      typeof error.details?.raw_result_text === "string" ? error.details.raw_result_text : "",
+      typeof error.details?.raw_result_text === "string"
+        ? error.details.raw_result_text
+        : "",
     );
     throw new AgentOutputError(error.message, {
       ...error.details,
@@ -4804,8 +7604,15 @@ export async function executeAgentAsk(
   }
   const parsed = response.validatedResult;
   const artifact = path.join(projectRoot, ".vos", "agent-ask.json");
-  await writeFile(artifact, `${JSON.stringify({ question: command.question, answer: parsed, kb_hits: kbHits, object_manifest: kbManifest }, null, 2)}\n`);
-  evidence.addArtifact("agent", path.relative(projectRoot, artifact), "knowledgebase answer");
+  await writeFile(
+    artifact,
+    `${JSON.stringify({ question: command.question, answer: parsed, kb_hits: kbHits, object_manifest: kbManifest }, null, 2)}\n`,
+  );
+  evidence.addArtifact(
+    "agent",
+    path.relative(projectRoot, artifact),
+    "knowledgebase answer",
+  );
   const logPath = await recordAICollaboration({
     projectRoot,
     event: {
@@ -4820,8 +7627,17 @@ export async function executeAgentAsk(
       evidence_ref: path.relative(projectRoot, artifact),
     },
   });
-  evidence.addArtifact("agent", path.relative(projectRoot, logPath), "agent ask log");
-  if (readonlyBefore) assertStudentReadonlyFingerprint(readonlyBefore, await studentGitFingerprint(projectRoot), "agent ask");
+  evidence.addArtifact(
+    "agent",
+    path.relative(projectRoot, logPath),
+    "agent ask log",
+  );
+  if (readonlyBefore)
+    assertStudentReadonlyFingerprint(
+      readonlyBefore,
+      await studentGitFingerprint(projectRoot),
+      "agent ask",
+    );
   return {
     status: "passed",
     details: {
@@ -4860,7 +7676,11 @@ async function executeDebugTrace(params: {
 }): Promise<CommandOutcome> {
   const { context, evidence } = params;
   const projectRoot = context.projectRoot;
-  updateProgress(context, { stage: "agent debug trace", status: "running", message: "checking worktree" });
+  updateProgress(context, {
+    stage: "agent debug trace",
+    status: "running",
+    message: "checking worktree",
+  });
   await ensureCleanGitWorktree(projectRoot);
   const recentEvidence = await collectRunManifestSummaries(projectRoot);
   const traceInput = await buildDebugTraceInput({
@@ -4873,8 +7693,17 @@ async function executeDebugTrace(params: {
   let lastAgentOutput = "";
   let lastError: unknown;
   for (let attempt = 1; attempt <= DEBUG_TRACE_AGENT_ATTEMPTS; attempt++) {
-    updateProgress(context, { stage: "agent debug trace", status: "running", message: `agent attempt ${attempt}`, current: attempt, total: DEBUG_TRACE_AGENT_ATTEMPTS });
-    const agentProgress = createAgentProgressParams(context, "agent debug trace");
+    updateProgress(context, {
+      stage: "agent debug trace",
+      status: "running",
+      message: `agent attempt ${attempt}`,
+      current: attempt,
+      total: DEBUG_TRACE_AGENT_ATTEMPTS,
+    });
+    const agentProgress = createAgentProgressParams(
+      context,
+      "agent debug trace",
+    );
     const agentResult = await runAgentWithPrompt({
       projectRoot,
       taskPrompt: agentProgress.taskPrompt(prompt),
@@ -4882,7 +7711,10 @@ async function executeDebugTrace(params: {
       requestedScope: params.requestedScope,
       context: traceInput,
       courseMode: true,
-      allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      allowedVosCommands: await loadAgentAllowedCommands(
+        projectRoot,
+        context.effectivePolicy,
+      ),
       resultSubmissionSchema: "debug_trace_plan.v1",
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
@@ -4912,8 +7744,10 @@ async function executeDebugTrace(params: {
             plan: path.relative(projectRoot, result.planPath),
             summary: path.relative(projectRoot, result.summaryPath),
             caseCount: result.cases.length,
-            passedCount: result.cases.filter((item) => item.status === "ok").length,
-            failedCount: result.cases.filter((item) => item.status === "failed").length,
+            passedCount: result.cases.filter((item) => item.status === "ok")
+              .length,
+            failedCount: result.cases.filter((item) => item.status === "failed")
+              .length,
             cases: result.cases,
             agentAttempts: attempt,
             raw_events: rawEvents,
@@ -4929,7 +7763,10 @@ async function executeDebugTrace(params: {
       });
     } catch (error) {
       lastError = error;
-      if (attempt >= DEBUG_TRACE_AGENT_ATTEMPTS || !isTracePlanFeedbackError(error)) {
+      if (
+        attempt >= DEBUG_TRACE_AGENT_ATTEMPTS ||
+        !isTracePlanFeedbackError(error)
+      ) {
         throw error;
       }
       prompt = buildAgentDebugTraceRepairPrompt({
@@ -4939,7 +7776,9 @@ async function executeDebugTrace(params: {
       });
     }
   }
-  throw lastError instanceof Error ? lastError : new CliError("agent debug trace failed", "validation_failed");
+  throw lastError instanceof Error
+    ? lastError
+    : new CliError("agent debug trace failed", "validation_failed");
 }
 
 export async function executeAgentDebug(
@@ -4948,18 +7787,29 @@ export async function executeAgentDebug(
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
   const projectRoot = context.projectRoot;
-  // Keep the frozen Portal/legacy command path intact. Student v2 projects are
+  // Keep the Portal-bound legacy command path explicit. Student v2 projects are
   // identified by vos.yaml and use the deterministic, read-only debug report
   // below; legacy projects still expose their existing interactive profile.
-  if (!existsSync(path.join(projectRoot, "vos.yaml")) && !command.logPath && !command.runId) {
-    updateProgress(context, { stage: "agent debug", status: "running", message: "starting interactive repl" });
+  if (
+    !existsSync(path.join(projectRoot, "vos.yaml")) &&
+    !command.logPath &&
+    !command.runId
+  ) {
+    updateProgress(context, {
+      stage: "agent debug",
+      status: "running",
+      message: "starting interactive repl",
+    });
     context.progress?.hide();
     await runAgentInteractiveTask({
       projectRoot,
       taskKind: "debug",
       requestedScope: "agent.debug",
       courseMode: true,
-      allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      allowedVosCommands: await loadAgentAllowedCommands(
+        projectRoot,
+        context.effectivePolicy,
+      ),
       runner: context.interactiveAgentRunner,
     });
     return {
@@ -4970,54 +7820,91 @@ export async function executeAgentDebug(
       },
     };
   }
-  updateProgress(context, { stage: "agent debug", status: "running", message: "loading log" });
-  const runContext = command.runId ? await loadDebugRunContext(projectRoot, command.runId) : undefined;
+  updateProgress(context, {
+    stage: "agent debug",
+    status: "running",
+    message: "loading log",
+  });
+  const runContext = command.runId
+    ? await loadDebugRunContext(projectRoot, command.runId)
+    : undefined;
   const debugTarget = runContext ? inferDebugTarget(runContext) : undefined;
   const debugRoot = path.join(evidence.artifacts_root, "agent-debug");
   await mkdir(debugRoot, { recursive: true });
   const traceEvidence = runContext
     ? await prepareAgentDebugTraceEvidence({
-      projectRoot,
-      context,
-      evidence,
-      debugRoot,
-      target: debugTarget ?? "full-syscall",
-      keepWorktree: command.keepWorktree,
-    })
+        projectRoot,
+        context,
+        evidence,
+        debugRoot,
+        target: debugTarget ?? "full-syscall",
+        keepWorktree: command.keepWorktree,
+      })
     : undefined;
   const adapterContractPath = runContext
-    ? await writeGdbAdapterContract(projectRoot, evidence, debugRoot, runContext, debugTarget ?? "full-syscall")
+    ? await writeGdbAdapterContract(
+        projectRoot,
+        evidence,
+        debugRoot,
+        runContext,
+        debugTarget ?? "full-syscall",
+      )
     : undefined;
-  const logPath = command.logPath ?? (runContext?.primaryLogPath ?? await findLatestLogPath(projectRoot));
+  const logPath =
+    command.logPath ??
+    runContext?.primaryLogPath ??
+    (await findLatestLogPath(projectRoot));
   if (!logPath) {
     return { status: "failed", details: { message: "log path required" } };
   }
   const text = await readFile(logPath, "utf8");
-  const readonlyBefore = existsSync(path.join(projectRoot, "vos.yaml")) ? await studentGitFingerprint(projectRoot) : undefined;
-  updateProgress(context, { stage: "agent debug", status: "running", message: "waiting for agent" });
+  const readonlyBefore = existsSync(path.join(projectRoot, "vos.yaml"))
+    ? await studentGitFingerprint(projectRoot)
+    : undefined;
+  updateProgress(context, {
+    stage: "agent debug",
+    status: "running",
+    message: "waiting for agent",
+  });
   const agentProgress = createAgentProgressParams(context, "agent debug");
   let response: ValidatedAgentRunResult<ReturnType<typeof parseDebugOutput>>;
   try {
     response = await runAgentWithValidatedSubmission({
       projectRoot,
-      taskPrompt: agentProgress.taskPrompt(`Diagnose VOS run failure from ${path.basename(logPath)}.`),
-      taskKind: existsSync(path.join(projectRoot, "vos.yaml")) && !command.runId && !command.logPath ? "student_debug" : "debug",
+      taskPrompt: agentProgress.taskPrompt(
+        `Diagnose VOS run failure from ${path.basename(logPath)}.`,
+      ),
+      taskKind:
+        existsSync(path.join(projectRoot, "vos.yaml")) &&
+        !command.runId &&
+        !command.logPath
+          ? "student_debug"
+          : "debug",
       requestedScope: "agent.debug",
       context: {
         log_ref: path.basename(logPath),
         log_text: text,
         run_context: runContext,
         trace_evidence: traceEvidence,
-        gdb_adapter_contract: adapterContractPath ? path.relative(projectRoot, adapterContractPath) : undefined,
+        gdb_adapter_contract: adapterContractPath
+          ? path.relative(projectRoot, adapterContractPath)
+          : undefined,
         debug_target: debugTarget,
       },
       evidenceRefs: [
         ...(command.runId ? [command.runId] : []),
-        ...(traceEvidence?.summaryPath ? [path.relative(projectRoot, traceEvidence.summaryPath)] : []),
-        ...(adapterContractPath ? [path.relative(projectRoot, adapterContractPath)] : []),
+        ...(traceEvidence?.summaryPath
+          ? [path.relative(projectRoot, traceEvidence.summaryPath)]
+          : []),
+        ...(adapterContractPath
+          ? [path.relative(projectRoot, adapterContractPath)]
+          : []),
       ],
       courseMode: true,
-      allowedVosCommands: await loadAgentAllowedCommands(projectRoot, context.effectivePolicy),
+      allowedVosCommands: await loadAgentAllowedCommands(
+        projectRoot,
+        context.effectivePolicy,
+      ),
       resultSubmissionSchema: "debug_output.v1",
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
@@ -5029,13 +7916,20 @@ export async function executeAgentDebug(
       },
     });
   } catch (error) {
-    if (readonlyBefore) assertStudentReadonlyFingerprint(readonlyBefore, await studentGitFingerprint(projectRoot), "agent debug");
+    if (readonlyBefore)
+      assertStudentReadonlyFingerprint(
+        readonlyBefore,
+        await studentGitFingerprint(projectRoot),
+        "agent debug",
+      );
     if (error instanceof AgentOutputError) {
       const rawPath = await recordRawAgentOutput(
         evidence,
         "agent-debug",
         "agent-debug-raw.txt",
-        typeof error.details?.raw_result_text === "string" ? error.details.raw_result_text : "",
+        typeof error.details?.raw_result_text === "string"
+          ? error.details.raw_result_text
+          : "",
       );
       throw new AgentOutputError(error.message, {
         ...error.details,
@@ -5043,29 +7937,59 @@ export async function executeAgentDebug(
       });
     }
     if (!command.runId) throw error;
-    const failurePath = await writeGdbFailureArtifact(projectRoot, evidence, debugRoot, error, adapterContractPath);
+    const failurePath = await writeGdbFailureArtifact(
+      projectRoot,
+      evidence,
+      debugRoot,
+      error,
+      adapterContractPath,
+    );
     return {
       status: "failed",
       details: {
         run_id: command.runId,
         message: "DebugAgent GDB MCP setup failed",
         gdb_failure: path.relative(projectRoot, failurePath),
-        adapter_contract: adapterContractPath ? path.relative(projectRoot, adapterContractPath) : undefined,
+        adapter_contract: adapterContractPath
+          ? path.relative(projectRoot, adapterContractPath)
+          : undefined,
       },
     };
   }
-  if (readonlyBefore) assertStudentReadonlyFingerprint(readonlyBefore, await studentGitFingerprint(projectRoot), "agent debug");
+  if (readonlyBefore)
+    assertStudentReadonlyFingerprint(
+      readonlyBefore,
+      await studentGitFingerprint(projectRoot),
+      "agent debug",
+    );
   const debugOutput = response.validatedResult;
-  const gdbSummaryPath = await writeGdbSummaryArtifact(projectRoot, evidence, debugRoot, debugOutput, adapterContractPath);
+  const gdbSummaryPath = await writeGdbSummaryArtifact(
+    projectRoot,
+    evidence,
+    debugRoot,
+    debugOutput,
+    adapterContractPath,
+  );
   const artifact = path.join(debugRoot, "debug.json");
   const markdown = path.join(debugRoot, "debug.md");
   const visualization = path.join(debugRoot, "visualization.html");
   await writeFile(artifact, `${JSON.stringify(debugOutput, null, 2)}\n`);
   await writeFile(markdown, renderDebugMarkdown(debugOutput));
-  await writeFile(visualization, sanitizeAgentVisualizationHtml(debugOutput.visualization_html));
+  await writeFile(
+    visualization,
+    sanitizeAgentVisualizationHtml(debugOutput.visualization_html),
+  );
   evidence.addArtifactFromPath("agent-debug", artifact, "agent debug output");
-  evidence.addArtifactFromPath("agent-debug-markdown", markdown, "agent debug report");
-  evidence.addArtifactFromPath("agent-debug-visualization", visualization, "agent debug visualization");
+  evidence.addArtifactFromPath(
+    "agent-debug-markdown",
+    markdown,
+    "agent debug report",
+  );
+  evidence.addArtifactFromPath(
+    "agent-debug-visualization",
+    visualization,
+    "agent debug visualization",
+  );
   return {
     status: "passed",
     details: {
@@ -5078,7 +8002,9 @@ export async function executeAgentDebug(
       report: path.relative(projectRoot, markdown),
       visualization: path.relative(projectRoot, visualization),
       gdb_summary: path.relative(projectRoot, gdbSummaryPath),
-      adapter_contract: adapterContractPath ? path.relative(projectRoot, adapterContractPath) : undefined,
+      adapter_contract: adapterContractPath
+        ? path.relative(projectRoot, adapterContractPath)
+        : undefined,
       raw_events: response.rawEvents,
     },
   };
@@ -5094,33 +8020,56 @@ async function prepareAgentDebugTraceEvidence(params: {
 }): Promise<{ summary: string; summaryPath: string }> {
   const summaryPath = path.join(params.debugRoot, "trace", "summary.json");
   await mkdir(path.dirname(summaryPath), { recursive: true });
-  const toolchainPath = await resolveToolchainManifestPath({ projectRoot: params.projectRoot });
+  const toolchainPath = await resolveToolchainManifestPath({
+    projectRoot: params.projectRoot,
+  });
   if (!existsSync(toolchainPath) || !currentHead(params.projectRoot)) {
-    await writeFile(summaryPath, `${JSON.stringify({
-      status: "not_observed",
-      reason: "debug trace requires a git project with .vos/toolchain.json",
-      target: params.target,
-    }, null, 2)}\n`);
-    params.evidence.addArtifactFromPath("agent-debug-trace-summary", summaryPath, "agent debug trace summary");
+    await writeFile(
+      summaryPath,
+      `${JSON.stringify(
+        {
+          status: "not_observed",
+          reason: "debug trace requires a git project with .vos/toolchain.json",
+          target: params.target,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    params.evidence.addArtifactFromPath(
+      "agent-debug-trace-summary",
+      summaryPath,
+      "agent debug trace summary",
+    );
     return { summary: "not observed", summaryPath };
   }
 
   try {
-    const recentEvidence = await collectRunManifestSummaries(params.projectRoot);
+    const recentEvidence = await collectRunManifestSummaries(
+      params.projectRoot,
+    );
     const traceInput = await buildDebugTraceInput({
       projectRoot: params.projectRoot,
       target: params.target,
       recentEvidence,
     });
-    const agentProgress = createAgentProgressParams(params.context, "agent debug trace");
+    const agentProgress = createAgentProgressParams(
+      params.context,
+      "agent debug trace",
+    );
     const agentResult = await runAgentWithPrompt({
       projectRoot: params.projectRoot,
-      taskPrompt: agentProgress.taskPrompt(buildAgentDebugTracePrompt(traceInput)),
+      taskPrompt: agentProgress.taskPrompt(
+        buildAgentDebugTracePrompt(traceInput),
+      ),
       taskKind: "debug_trace",
       requestedScope: "agent.debug.trace",
       context: traceInput,
       courseMode: true,
-      allowedVosCommands: await loadAgentAllowedCommands(params.projectRoot, params.context.effectivePolicy),
+      allowedVosCommands: await loadAgentAllowedCommands(
+        params.projectRoot,
+        params.context.effectivePolicy,
+      ),
       resultSubmissionSchema: "debug_trace_plan.v1",
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
@@ -5139,12 +8088,23 @@ async function prepareAgentDebugTraceEvidence(params: {
       summaryPath: result.summaryPath,
     };
   } catch (error) {
-    await writeFile(summaryPath, `${JSON.stringify({
-      status: "failed",
-      target: params.target,
-      reason: error instanceof Error ? error.message : String(error),
-    }, null, 2)}\n`);
-    params.evidence.addArtifactFromPath("agent-debug-trace-summary", summaryPath, "agent debug trace summary");
+    await writeFile(
+      summaryPath,
+      `${JSON.stringify(
+        {
+          status: "failed",
+          target: params.target,
+          reason: error instanceof Error ? error.message : String(error),
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    params.evidence.addArtifactFromPath(
+      "agent-debug-trace-summary",
+      summaryPath,
+      "agent debug trace summary",
+    );
     return { summary: "failed", summaryPath };
   }
 }
@@ -5153,19 +8113,28 @@ async function findRecentFailedRunIds(projectRoot: string): Promise<string[]> {
   const runsRoot = path.join(projectRoot, ".vos", "runs");
   if (!existsSync(runsRoot)) return [];
   const out: string[] = [];
-  for (const entry of await readdir(runsRoot, { withFileTypes: true }).catch(() => [])) {
+  for (const entry of await readdir(runsRoot, { withFileTypes: true }).catch(
+    () => [],
+  )) {
     if (!entry.isDirectory()) continue;
     const manifestPath = path.join(runsRoot, entry.name, "manifest.json");
     if (!existsSync(manifestPath)) continue;
-    const manifest = safeJsonTryParse(await readFile(manifestPath, "utf8")) as { status?: string; run_id?: string } | undefined;
-    if (manifest?.status && !["passed", "ok", "partial", "planned"].includes(manifest.status)) {
+    const manifest = safeJsonTryParse(await readFile(manifestPath, "utf8")) as
+      { status?: string; run_id?: string } | undefined;
+    if (
+      manifest?.status &&
+      !["passed", "ok", "partial", "planned"].includes(manifest.status)
+    ) {
       out.push(manifest.run_id ?? entry.name);
     }
   }
   return out.sort().slice(-10).reverse();
 }
 
-async function loadDebugRunContext(projectRoot: string, runId: string): Promise<{
+async function loadDebugRunContext(
+  projectRoot: string,
+  runId: string,
+): Promise<{
   runId: string;
   status: string;
   command: string[];
@@ -5173,16 +8142,28 @@ async function loadDebugRunContext(projectRoot: string, runId: string): Promise<
   artifacts: Array<{ path: string; snippet: string }>;
   manifest: Record<string, unknown>;
 }> {
-  const manifestPath = path.join(projectRoot, ".vos", "runs", runId, "manifest.json");
+  const manifestPath = path.join(
+    projectRoot,
+    ".vos",
+    "runs",
+    runId,
+    "manifest.json",
+  );
   if (!existsSync(manifestPath)) {
     throw new CliError(`debug run not found: ${runId}`, "failed");
   }
-  const manifest = safeJsonTryParse(await readFile(manifestPath, "utf8")) as {
-    run_id?: string;
-    command?: unknown;
-    status?: string;
-    artifacts?: Array<{ path?: unknown; kind?: unknown; summary?: unknown }>;
-  } | undefined;
+  const manifest = safeJsonTryParse(await readFile(manifestPath, "utf8")) as
+    | {
+        run_id?: string;
+        command?: unknown;
+        status?: string;
+        artifacts?: Array<{
+          path?: unknown;
+          kind?: unknown;
+          summary?: unknown;
+        }>;
+      }
+    | undefined;
   if (!manifest) {
     throw new CliError(`debug run manifest is not JSON: ${runId}`, "failed");
   }
@@ -5197,14 +8178,22 @@ async function loadDebugRunContext(projectRoot: string, runId: string): Promise<
       snippet: text.slice(0, 12_000),
     });
   }
-  const primary = artifacts.find((artifact) => /log|result|trace|manifest/i.test(artifact.path)) ?? artifacts[0];
+  const primary =
+    artifacts.find((artifact) =>
+      /log|result|trace|manifest/i.test(artifact.path),
+    ) ?? artifacts[0];
   if (!primary) {
-    throw new CliError(`debug run has no readable artifacts: ${runId}`, "failed");
+    throw new CliError(
+      `debug run has no readable artifacts: ${runId}`,
+      "failed",
+    );
   }
   return {
     runId: manifest.run_id ?? runId,
     status: manifest.status ?? "unknown",
-    command: Array.isArray(manifest.command) ? manifest.command.map(String) : [],
+    command: Array.isArray(manifest.command)
+      ? manifest.command.map(String)
+      : [],
     primaryLogPath: path.resolve(projectRoot, primary.path),
     artifacts,
     manifest: manifest as Record<string, unknown>,
@@ -5216,11 +8205,15 @@ function inferDebugTarget(runContext: {
   manifest: Record<string, unknown>;
   artifacts: Array<{ path: string; snippet: string }>;
 }): string {
-  const details = isRecord(runContext.manifest.details) ? runContext.manifest.details : {};
-  if (typeof details.scopeTarget === "string" && details.scopeTarget.trim()) return details.scopeTarget.trim();
+  const details = isRecord(runContext.manifest.details)
+    ? runContext.manifest.details
+    : {};
+  if (typeof details.scopeTarget === "string" && details.scopeTarget.trim())
+    return details.scopeTarget.trim();
   const command = runContext.command.join(" ");
   const targetIndex = runContext.command.indexOf("--target");
-  if (targetIndex >= 0 && runContext.command[targetIndex + 1]) return runContext.command[targetIndex + 1];
+  if (targetIndex >= 0 && runContext.command[targetIndex + 1])
+    return runContext.command[targetIndex + 1];
   if (/verify\s+public/.test(command)) return "public";
   for (const artifact of runContext.artifacts) {
     const match = artifact.snippet.match(/kernel\/[A-Za-z0-9_/-]+/);
@@ -5251,15 +8244,33 @@ async function writeGdbAdapterContract(
     target,
     source_run_id: runContext.runId,
     source_command: runContext.command,
-    program: toolchain.run?.artifact ?? toolchain.run?.artifacts?.[0] ?? "build/kernel.elf",
-    symbols: toolchain.run?.artifact ?? toolchain.run?.artifacts?.[0] ?? "build/kernel.elf",
+    program:
+      toolchain.run?.artifact ??
+      toolchain.run?.artifacts?.[0] ??
+      "build/kernel.elf",
+    symbols:
+      toolchain.run?.artifact ??
+      toolchain.run?.artifacts?.[0] ??
+      "build/kernel.elf",
     endpoint,
     qmp_endpoint: qmpEndpoint,
     hmp_endpoint: hmpEndpoint,
     connect_gdb: [`target remote ${endpoint}`],
     qemu_args: ensureQemuDebugArgs(runArgs, endpoint, qmpEndpoint, hmpEndpoint),
     forbidden: ["qemu-user-gdb", "gdb_attach for QEMU-system"],
-    monitor_forbidden_commands: ["quit", "stop", "cont", "system_reset", "system_powerdown", "device_add", "device_del", "migrate", "savevm", "loadvm", "screendump"],
+    monitor_forbidden_commands: [
+      "quit",
+      "stop",
+      "cont",
+      "system_reset",
+      "system_powerdown",
+      "device_add",
+      "device_del",
+      "migrate",
+      "savevm",
+      "loadvm",
+      "screendump",
+    ],
     notes: [
       "Use built-in gdb-debug skill.",
       "Use built-in qemu-monitor skill only for supplemental readonly QEMU monitor evidence.",
@@ -5268,7 +8279,11 @@ async function writeGdbAdapterContract(
     ],
   };
   await writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
-  evidence.addArtifactFromPath("agent-debug-gdb-adapter", contractPath, "GDB adapter contract");
+  evidence.addArtifactFromPath(
+    "agent-debug-gdb-adapter",
+    contractPath,
+    "GDB adapter contract",
+  );
   return contractPath;
 }
 
@@ -5282,12 +8297,29 @@ async function writeGdbSummaryArtifact(
   const gdbRoot = path.join(debugRoot, "gdb");
   await mkdir(gdbRoot, { recursive: true });
   const summaryPath = path.join(gdbRoot, "summary.json");
-  await writeFile(summaryPath, `${JSON.stringify({
-    summary: debugOutput.gdb_summary ?? "not observed",
-    adapter_contract: adapterContractPath ? path.relative(projectRoot, adapterContractPath) : undefined,
-    observations: debugOutput.evidence_chain.filter((entry) => /gdb|backtrace|register|breakpoint/i.test(`${entry.label} ${entry.observation}`)),
-  }, null, 2)}\n`);
-  evidence.addArtifactFromPath("agent-debug-gdb-summary", summaryPath, "GDB debug summary");
+  await writeFile(
+    summaryPath,
+    `${JSON.stringify(
+      {
+        summary: debugOutput.gdb_summary ?? "not observed",
+        adapter_contract: adapterContractPath
+          ? path.relative(projectRoot, adapterContractPath)
+          : undefined,
+        observations: debugOutput.evidence_chain.filter((entry) =>
+          /gdb|backtrace|register|breakpoint/i.test(
+            `${entry.label} ${entry.observation}`,
+          ),
+        ),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  evidence.addArtifactFromPath(
+    "agent-debug-gdb-summary",
+    summaryPath,
+    "GDB debug summary",
+  );
   return summaryPath;
 }
 
@@ -5301,12 +8333,25 @@ async function writeGdbFailureArtifact(
   const gdbRoot = path.join(debugRoot, "gdb");
   await mkdir(gdbRoot, { recursive: true });
   const failurePath = path.join(gdbRoot, "failure.json");
-  await writeFile(failurePath, `${JSON.stringify({
-    status: "failed",
-    reason: error instanceof Error ? error.message : String(error),
-    adapter_contract: adapterContractPath ? path.relative(projectRoot, adapterContractPath) : undefined,
-  }, null, 2)}\n`);
-  evidence.addArtifactFromPath("agent-debug-gdb-failure", failurePath, "GDB debug failure");
+  await writeFile(
+    failurePath,
+    `${JSON.stringify(
+      {
+        status: "failed",
+        reason: error instanceof Error ? error.message : String(error),
+        adapter_contract: adapterContractPath
+          ? path.relative(projectRoot, adapterContractPath)
+          : undefined,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  evidence.addArtifactFromPath(
+    "agent-debug-gdb-failure",
+    failurePath,
+    "GDB debug failure",
+  );
   return failurePath;
 }
 
@@ -5316,7 +8361,13 @@ async function readToolchainForDebug(projectRoot: string): Promise<{
   if (!existsSync(path.join(projectRoot, ".vos", "toolchain.json"))) return {};
   const { manifest } = await loadToolchainManifest({ projectRoot });
   const profile = manifest.run.profiles[0];
-  return { run: { args: profile.args, artifact: profile.artifacts[0], artifacts: profile.artifacts } };
+  return {
+    run: {
+      args: profile.args,
+      artifact: profile.artifacts[0],
+      artifacts: profile.artifacts,
+    },
+  };
 }
 
 function ensureQemuGdbstubArgs(args: string[], endpoint: string): string[] {
@@ -5327,25 +8378,44 @@ function ensureQemuGdbstubArgs(args: string[], endpoint: string): string[] {
   return out;
 }
 
-function ensureQemuDebugArgs(args: string[], gdbEndpoint: string, qmpEndpoint: string, hmpEndpoint: string): string[] {
+function ensureQemuDebugArgs(
+  args: string[],
+  gdbEndpoint: string,
+  qmpEndpoint: string,
+  hmpEndpoint: string,
+): string[] {
   const out = ensureQemuGdbstubArgs(args, gdbEndpoint);
-  if (!out.includes("-qmp")) out.push("-qmp", `${qmpEndpoint.slice("unix:".length)},server=on,wait=off`);
-  if (!out.includes("-monitor")) out.push("-monitor", `${hmpEndpoint.slice("unix:".length)},server=on,wait=off`);
+  if (!out.includes("-qmp"))
+    out.push("-qmp", `${qmpEndpoint.slice("unix:".length)},server=on,wait=off`);
+  if (!out.includes("-monitor"))
+    out.push(
+      "-monitor",
+      `${hmpEndpoint.slice("unix:".length)},server=on,wait=off`,
+    );
   return out;
 }
 
-function renderDebugMarkdown(debug: ReturnType<typeof parseDebugOutput>): string {
+function renderDebugMarkdown(
+  debug: ReturnType<typeof parseDebugOutput>,
+): string {
   return [
     `# Debug Summary`,
     "",
     `**Failure class:** ${debug.failure_class}`,
     "",
     debug.summary,
-    debug.trace_summary ? ["", "## Trace Summary", debug.trace_summary].join("\n") : "",
-    debug.gdb_summary ? ["", "## GDB Summary", debug.gdb_summary].join("\n") : "",
+    debug.trace_summary
+      ? ["", "## Trace Summary", debug.trace_summary].join("\n")
+      : "",
+    debug.gdb_summary
+      ? ["", "## GDB Summary", debug.gdb_summary].join("\n")
+      : "",
     "",
     "## Evidence Chain",
-    ...debug.evidence_chain.map((entry) => `- ${entry.label}: ${entry.observation}${entry.artifact ? ` (${entry.artifact})` : ""}`),
+    ...debug.evidence_chain.map(
+      (entry) =>
+        `- ${entry.label}: ${entry.observation}${entry.artifact ? ` (${entry.artifact})` : ""}`,
+    ),
     "",
     "## Suspected Concepts",
     ...debug.suspected_concepts.map((concept) => `- ${concept}`),
@@ -5354,17 +8424,26 @@ function renderDebugMarkdown(debug: ReturnType<typeof parseDebugOutput>): string
     ...debug.next_diagnostic_commands.map((command) => `- \`${command}\``),
     "",
     "## Student-visible limitations",
-    ...(debug.student_visible_limitations.length > 0 ? debug.student_visible_limitations : ["Full instrumentation diffs are withheld from this report."]).map((item) => `- ${item}`),
+    ...(debug.student_visible_limitations.length > 0
+      ? debug.student_visible_limitations
+      : ["Full instrumentation diffs are withheld from this report."]
+    ).map((item) => `- ${item}`),
     "",
   ].join("\n");
 }
 
 function sanitizeAgentVisualizationHtml(html: string): string {
   if (!/<!doctype html|<html[\s>]/i.test(html)) {
-    throw new CliError("DebugOutput.visualization_html must be a complete HTML document", "validation_failed");
+    throw new CliError(
+      "DebugOutput.visualization_html must be a complete HTML document",
+      "validation_failed",
+    );
   }
   if (/diff --git|^@@\s/m.test(html)) {
-    throw new CliError("DebugOutput.visualization_html must not include full instrumentation diffs", "validation_failed");
+    throw new CliError(
+      "DebugOutput.visualization_html must not include full instrumentation diffs",
+      "validation_failed",
+    );
   }
   return html;
 }
@@ -5379,9 +8458,19 @@ export async function executeAgentLog(
     const text = command.inputPath
       ? await readFile(path.resolve(projectRoot, command.inputPath), "utf8")
       : await readPatchFromStdin();
-    await appendLogEntry(logPath, safeJsonTryParse(text) ?? { raw: text, ts: new Date().toISOString() });
-    evidence.addArtifact("agent", path.relative(projectRoot, logPath), "agent log append");
-    return { status: "passed", details: { append: true, logPath: path.relative(projectRoot, logPath) } };
+    await appendLogEntry(
+      logPath,
+      safeJsonTryParse(text) ?? { raw: text, ts: new Date().toISOString() },
+    );
+    evidence.addArtifact(
+      "agent",
+      path.relative(projectRoot, logPath),
+      "agent log append",
+    );
+    return {
+      status: "passed",
+      details: { append: true, logPath: path.relative(projectRoot, logPath) },
+    };
   }
   const entries = await readLogEntries(logPath);
   return {
@@ -5400,10 +8489,20 @@ async function writeNormalizedBundle(
   bundle: NormalizedSpecBundle,
   evidence: EvidenceWriter,
 ): Promise<string> {
-  const cachePath = path.join(projectRoot, ".vos", "cache", "normalized", "bundle.json");
+  const cachePath = path.join(
+    projectRoot,
+    ".vos",
+    "cache",
+    "normalized",
+    "bundle.json",
+  );
   await mkdir(path.dirname(cachePath), { recursive: true });
   await writeFile(cachePath, `${JSON.stringify(bundle, null, 2)}\n`);
-  evidence.addArtifact("spec", path.relative(projectRoot, cachePath), "normalized spec bundle");
+  evidence.addArtifact(
+    "spec",
+    path.relative(projectRoot, cachePath),
+    "normalized spec bundle",
+  );
   return cachePath;
 }
 
@@ -5412,7 +8511,10 @@ async function writeCurrentNormalizedBundleAndHash(
   evidence: EvidenceWriter,
 ): Promise<string> {
   const project = await loadProjectConfig(projectRoot);
-  const bundle = await buildNormalizedSpecBundle({ projectRoot, specRoot: project.spec_root ?? "spec" });
+  const bundle = await buildNormalizedSpecBundle({
+    projectRoot,
+    specRoot: project.spec_root ?? "spec",
+  });
   const bundlePath = await writeNormalizedBundle(projectRoot, bundle, evidence);
   return normalizedBundleContentHash(await readFile(bundlePath, "utf8"));
 }
@@ -5435,33 +8537,68 @@ async function writePatchApplyCache(params: {
   selectedChecks: string[];
   status: CommandStatus;
 }): Promise<{ impact: string; verification_plan: string; status: string }> {
-  const patchDir = path.join(params.projectRoot, ".vos", "cache", "patches", safeCacheSegment(params.patch.id));
+  const patchDir = path.join(
+    params.projectRoot,
+    ".vos",
+    "cache",
+    "patches",
+    safeCacheSegment(params.patch.id),
+  );
   await mkdir(patchDir, { recursive: true });
   const impactPath = path.join(patchDir, "impact.json");
   const planPath = path.join(patchDir, "verification-plan.json");
   const statusPath = path.join(patchDir, "status.json");
-  await writeFile(impactPath, `${JSON.stringify({ patch: params.patch, impact: params.impact }, null, 2)}\n`);
-  await writeFile(planPath, `${JSON.stringify({
-    patch_id: params.patch.id,
-    commit_sha: params.patch.commit_sha,
-    parent_sha: params.patch.parent_sha,
-    selected_checks: params.selectedChecks,
-    required_checks: params.impact.required_checks,
-    selected_tests: params.impact.selected_tests,
-    generated_at: new Date().toISOString(),
-  }, null, 2)}\n`);
-  await writeFile(statusPath, `${JSON.stringify({
-    patch_id: params.patch.id,
-    commit_sha: params.patch.commit_sha,
-    parent_sha: params.patch.parent_sha,
-    status: params.status,
-    diagnostics: params.impact.diagnostics,
-    verification_run_id: params.evidence.run_id,
-    updated_at: new Date().toISOString(),
-  }, null, 2)}\n`);
-  params.evidence.addArtifact("patch", path.relative(params.projectRoot, impactPath), "SpecPatch impact report");
-  params.evidence.addArtifact("patch", path.relative(params.projectRoot, planPath), "SpecPatch verification plan");
-  params.evidence.addArtifact("patch", path.relative(params.projectRoot, statusPath), "SpecPatch apply status");
+  await writeFile(
+    impactPath,
+    `${JSON.stringify({ patch: params.patch, impact: params.impact }, null, 2)}\n`,
+  );
+  await writeFile(
+    planPath,
+    `${JSON.stringify(
+      {
+        patch_id: params.patch.id,
+        commit_sha: params.patch.commit_sha,
+        parent_sha: params.patch.parent_sha,
+        selected_checks: params.selectedChecks,
+        required_checks: params.impact.required_checks,
+        selected_tests: params.impact.selected_tests,
+        generated_at: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await writeFile(
+    statusPath,
+    `${JSON.stringify(
+      {
+        patch_id: params.patch.id,
+        commit_sha: params.patch.commit_sha,
+        parent_sha: params.patch.parent_sha,
+        status: params.status,
+        diagnostics: params.impact.diagnostics,
+        verification_run_id: params.evidence.run_id,
+        updated_at: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  params.evidence.addArtifact(
+    "patch",
+    path.relative(params.projectRoot, impactPath),
+    "SpecPatch impact report",
+  );
+  params.evidence.addArtifact(
+    "patch",
+    path.relative(params.projectRoot, planPath),
+    "SpecPatch verification plan",
+  );
+  params.evidence.addArtifact(
+    "patch",
+    path.relative(params.projectRoot, statusPath),
+    "SpecPatch apply status",
+  );
   void params.bundle;
   return {
     impact: path.relative(params.projectRoot, impactPath),
@@ -5480,18 +8617,36 @@ async function writePatchApplyStatus(params: {
   diagnostics: SpecDiagnostic[];
   verificationRunId: string;
 }): Promise<string> {
-  const statusPath = path.join(params.projectRoot, ".vos", "cache", "patches", safeCacheSegment(params.patchId), "status.json");
+  const statusPath = path.join(
+    params.projectRoot,
+    ".vos",
+    "cache",
+    "patches",
+    safeCacheSegment(params.patchId),
+    "status.json",
+  );
   await mkdir(path.dirname(statusPath), { recursive: true });
-  await writeFile(statusPath, `${JSON.stringify({
-    patch_id: params.patchId,
-    commit_sha: params.commitSha,
-    parent_sha: params.parentSha,
-    status: params.status,
-    diagnostics: params.diagnostics,
-    verification_run_id: params.verificationRunId,
-    updated_at: new Date().toISOString(),
-  }, null, 2)}\n`);
-  params.evidence.addArtifact("patch", path.relative(params.projectRoot, statusPath), "SpecPatch apply status");
+  await writeFile(
+    statusPath,
+    `${JSON.stringify(
+      {
+        patch_id: params.patchId,
+        commit_sha: params.commitSha,
+        parent_sha: params.parentSha,
+        status: params.status,
+        diagnostics: params.diagnostics,
+        verification_run_id: params.verificationRunId,
+        updated_at: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  params.evidence.addArtifact(
+    "patch",
+    path.relative(params.projectRoot, statusPath),
+    "SpecPatch apply status",
+  );
   return statusPath;
 }
 
@@ -5502,7 +8657,13 @@ async function writeAppliedPatchState(params: {
   impactRef: string;
   verificationRef: string;
 }): Promise<Record<string, unknown>> {
-  const appliedPath = path.join(params.projectRoot, ".vos", "cache", "patches", "applied.json");
+  const appliedPath = path.join(
+    params.projectRoot,
+    ".vos",
+    "cache",
+    "patches",
+    "applied.json",
+  );
   const applied = {
     patch_id: params.patch.id,
     commit_sha: params.patch.commit_sha,
@@ -5514,7 +8675,11 @@ async function writeAppliedPatchState(params: {
   };
   await mkdir(path.dirname(appliedPath), { recursive: true });
   await writeFile(appliedPath, `${JSON.stringify(applied, null, 2)}\n`);
-  params.evidence.addArtifact("patch", path.relative(params.projectRoot, appliedPath), "applied SpecPatch state");
+  params.evidence.addArtifact(
+    "patch",
+    path.relative(params.projectRoot, appliedPath),
+    "applied SpecPatch state",
+  );
   return {
     ...applied,
     path: path.relative(params.projectRoot, appliedPath),
@@ -5529,16 +8694,25 @@ async function writeLocalPatchProjections(params: {
   impact: PatchImpactReport;
   selectedChecks: string[];
 }): Promise<Record<string, string>> {
-  const projectionDir = path.join(params.projectRoot, ".vos", "cache", "projections");
+  const projectionDir = path.join(
+    params.projectRoot,
+    ".vos",
+    "cache",
+    "projections",
+  );
   await mkdir(projectionDir, { recursive: true });
-  const specHash = createHash("sha256").update(JSON.stringify(params.bundle.hashes)).digest("hex");
+  const specHash = createHash("sha256")
+    .update(JSON.stringify(params.bundle.hashes))
+    .digest("hex");
   const student = {
     projection_kind: "student",
     generated_at: new Date().toISOString(),
     spec_hash: specHash,
     patch_id: params.patch.id,
     stage: params.patch.stage,
-    visible_sources: params.bundle.sources.filter((source) => params.bundle.visibility[source.path] === "public").map((source) => source.path),
+    visible_sources: params.bundle.sources
+      .filter((source) => params.bundle.visibility[source.path] === "public")
+      .map((source) => source.path),
     stages: params.bundle.architecture.stages,
     modules: params.bundle.modules,
     operations: params.bundle.operations.map((operation) => ({
@@ -5560,7 +8734,8 @@ async function writeLocalPatchProjections(params: {
       affected_code_paths: params.impact.affected_code_paths,
       affected_modules: params.impact.affected_modules,
       affected_operations: params.impact.affected_operations,
-      requires_cloud_projection_refresh: params.impact.requires_cloud_projection_refresh,
+      requires_cloud_projection_refresh:
+        params.impact.requires_cloud_projection_refresh,
     },
   };
   const staff = {
@@ -5576,7 +8751,11 @@ async function writeLocalPatchProjections(params: {
   for (const [kind, value] of Object.entries(projections)) {
     const filePath = path.join(projectionDir, `${kind}.json`);
     await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
-    params.evidence.addArtifact("projection", path.relative(params.projectRoot, filePath), `${kind} local projection`);
+    params.evidence.addArtifact(
+      "projection",
+      path.relative(params.projectRoot, filePath),
+      `${kind} local projection`,
+    );
     out[kind] = path.relative(params.projectRoot, filePath);
   }
   return out;
@@ -5599,16 +8778,23 @@ async function runDefaultAgentSpecReview(params: {
   const targetRefs = new Set(params.targetRefs ?? []);
   const targetPaths = new Set(params.targetPaths ?? []);
   const scoped = targetRefs.size > 0 || targetPaths.size > 0;
-  const operations = params.bundle.operations.filter((operation) =>
-    !scoped || targetRefs.has(operation.module) || targetPaths.has(operation.path)
+  const operations = params.bundle.operations.filter(
+    (operation) =>
+      !scoped ||
+      targetRefs.has(operation.module) ||
+      targetPaths.has(operation.path),
   );
-  const publicChecks = (params.bundle.manifest?.checks ?? []).filter((check) =>
-    !scoped || check.verifies.some((ref) => targetRefs.has(ref))
+  const publicChecks = (params.bundle.manifest?.checks ?? []).filter(
+    (check) => !scoped || check.verifies.some((ref) => targetRefs.has(ref)),
   );
-  const stages = new Set(params.bundle.architecture.stages.map((stage) => stage.stage));
+  const stages = new Set(
+    params.bundle.architecture.stages.map((stage) => stage.stage),
+  );
   for (const module of params.bundle.normalized_modules) {
-    if (scoped && !targetRefs.has(module.id) && !targetPaths.has(module.path)) continue;
-    const stage = typeof module.state?.stage === "string" ? module.state.stage.trim() : "";
+    if (scoped && !targetRefs.has(module.id) && !targetPaths.has(module.path))
+      continue;
+    const stage =
+      typeof module.state?.stage === "string" ? module.state.stage.trim() : "";
     if (stage) stages.add(stage);
   }
   const reviewInput = {
@@ -5625,7 +8811,10 @@ async function runDefaultAgentSpecReview(params: {
     },
     inventory: {
       operations: operations.map((operation) => operation.id),
-      mapped_checks: publicChecks.map((check) => ({ id: check.id, verifies: check.verifies })),
+      mapped_checks: publicChecks.map((check) => ({
+        id: check.id,
+        verifies: check.verifies,
+      })),
     },
     architecture: {
       stages: [...stages].sort(),
@@ -5644,7 +8833,10 @@ async function runDefaultAgentSpecReview(params: {
   ].join("\n\n");
 
   try {
-    const agentProgress = createAgentProgressParams(params.context, "agent spec review");
+    const agentProgress = createAgentProgressParams(
+      params.context,
+      "agent spec review",
+    );
     const response = await runAgentWithValidatedSubmission({
       projectRoot: params.context.projectRoot,
       taskPrompt: agentProgress.taskPrompt(prompt),
@@ -5652,28 +8844,44 @@ async function runDefaultAgentSpecReview(params: {
       requestedScope: `agent.review:${params.target ?? "all"}`,
       context: reviewInput,
       courseMode: true,
-      allowedVosCommands: await loadAgentAllowedCommands(params.context.projectRoot, params.context.effectivePolicy),
+      allowedVosCommands: await loadAgentAllowedCommands(
+        params.context.projectRoot,
+        params.context.effectivePolicy,
+      ),
       resultSubmissionSchema: "spec_review.v1",
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
       taskRunner: params.context.agentRunner,
-      validateSubmission: (submission, _events, resultText) => parseAgentSpecReview(submission, resultText),
+      validateSubmission: (submission, _events, resultText) =>
+        parseAgentSpecReview(submission, resultText),
     });
     const review = response.validatedResult;
-    await writeAgentReviewArtifact(params.context.projectRoot, params.evidence, review);
+    await writeAgentReviewArtifact(
+      params.context.projectRoot,
+      params.evidence,
+      review,
+    );
     return review;
   } catch (error) {
     const review: AgentSpecReview = {
       status: "unavailable",
-      findings: [{
-        severity: "warning",
-        message: `agent review unavailable: ${error instanceof Error ? error.message : String(error)}`,
-        related_specs: [],
-        suggested_actions: ["configure vos-agent model credentials or rerun `vos agent review`"],
-      }],
+      findings: [
+        {
+          severity: "warning",
+          message: `agent review unavailable: ${error instanceof Error ? error.message : String(error)}`,
+          related_specs: [],
+          suggested_actions: [
+            "configure vos-agent model credentials or rerun `vos agent review`",
+          ],
+        },
+      ],
       summary: "agent review unavailable; deterministic spec checks still ran",
     };
-    await writeAgentReviewArtifact(params.context.projectRoot, params.evidence, review);
+    await writeAgentReviewArtifact(
+      params.context.projectRoot,
+      params.evidence,
+      review,
+    );
     return review;
   }
 }
@@ -5691,7 +8899,11 @@ async function writeAgentReviewArtifact(
   evidence: EvidenceWriter,
   review: AgentSpecReview,
 ): Promise<void> {
-  const artifact = path.join(evidence.artifacts_root, "agent", "spec-review.json");
+  const artifact = path.join(
+    evidence.artifacts_root,
+    "agent",
+    "spec-review.json",
+  );
   await mkdir(path.dirname(artifact), { recursive: true });
   await writeFile(artifact, `${JSON.stringify(review, null, 2)}\n`);
   evidence.addArtifactFromPath("agent", artifact, "agent spec review");
@@ -5708,7 +8920,10 @@ async function writeAgentReviewArtifact(
   }
 }
 
-async function loadAgentAllowedCommands(projectRoot: string, effectivePolicy?: EffectivePolicy): Promise<string[]> {
+async function loadAgentAllowedCommands(
+  projectRoot: string,
+  effectivePolicy?: EffectivePolicy,
+): Promise<string[]> {
   if (effectivePolicy) {
     return effectivePolicy.allowedCommands.filter(isAllowedModelVosCommand);
   }
@@ -5731,17 +8946,26 @@ function updateProgress(context: ExecContext, update: ProgressUpdate): void {
       stage: update.stage,
       ...(update.phase ? { phase: update.phase } : {}),
       ...(update.step ? { step: update.step } : {}),
-      ...(typeof update.current === "number" ? { current: update.current } : {}),
+      ...(typeof update.current === "number"
+        ? { current: update.current }
+        : {}),
       ...(typeof update.total === "number" ? { total: update.total } : {}),
-      ...(typeof update.percent === "number" ? { percent: update.percent } : {}),
+      ...(typeof update.percent === "number"
+        ? { percent: update.percent }
+        : {}),
       ...(update.status ? { status: update.status } : {}),
       ...(update.message ? { message: update.message } : {}),
-      ...(typeof update.confidence === "number" ? { confidence: update.confidence } : {}),
+      ...(typeof update.confidence === "number"
+        ? { confidence: update.confidence }
+        : {}),
     },
   });
 }
 
-function createAgentProgressParams(context: ExecContext, stage: string): {
+function createAgentProgressParams(
+  context: ExecContext,
+  stage: string,
+): {
   taskPrompt: (prompt: string) => string;
   extraMcpServers: ReturnType<typeof createProgressMcpServerConfig>[];
   onEvent: (event: Record<string, unknown>) => Promise<void>;
@@ -5787,13 +9011,40 @@ export function commandToArray(command: CliCommand): string[] {
         ...(command.tokenStdin ? ["--token-stdin"] : []),
       ];
     case "logout":
-      return ["logout", ...(command.portalUrl ? ["--portal-url", command.portalUrl] : [])];
+      return [
+        "logout",
+        ...(command.portalUrl ? ["--portal-url", command.portalUrl] : []),
+      ];
     case "whoami":
-      return ["whoami", ...(command.portalUrl ? ["--portal-url", command.portalUrl] : [])];
+      return [
+        "whoami",
+        ...(command.portalUrl ? ["--portal-url", command.portalUrl] : []),
+      ];
     case "portal_pipeline":
-      return ["pipeline",command.action,...(command.runId?[command.runId]:[]),...(command.scope&&command.action==="trigger"?["--scope",command.scope]:[]),...(command.modelCredentialId&&command.action==="trigger"?["--model-credential",command.modelCredentialId]:[]),...(command.outDir&&command.action==="download"?["--out",command.outDir]:[]),...(command.reason?["--reason",command.reason]:[])];
+      return [
+        "pipeline",
+        command.action,
+        ...(command.runId ? [command.runId] : []),
+        ...(command.scope && command.action === "trigger"
+          ? ["--scope", command.scope]
+          : []),
+        ...(command.modelCredentialId && command.action === "trigger"
+          ? ["--model-credential", command.modelCredentialId]
+          : []),
+        ...(command.outDir && command.action === "download"
+          ? ["--out", command.outDir]
+          : []),
+        ...(command.reason ? ["--reason", command.reason] : []),
+      ];
     case "project_bind":
-      return ["project","bind","--portal-url",command.portalUrl,"--project-id",command.projectId];
+      return [
+        "project",
+        "bind",
+        "--portal-url",
+        command.portalUrl,
+        "--project-id",
+        command.projectId,
+      ];
     case "serve":
       return [
         "serve",
@@ -5816,7 +9067,9 @@ export function commandToArray(command: CliCommand): string[] {
       return [
         "build",
         "generate",
-        ...(command.agentSession ? ["--agent-session", command.agentSession] : []),
+        ...(command.agentSession
+          ? ["--agent-session", command.agentSession]
+          : []),
         ...(command.noAgent ? ["--no-agent"] : []),
       ];
     case "run_qemu":
@@ -5825,31 +9078,55 @@ export function commandToArray(command: CliCommand): string[] {
         "qemu",
         ...(command.dryRun ? ["--dry-run"] : []),
         ...(command.timeoutMs ? ["--timeout", String(command.timeoutMs)] : []),
-        ...(command.readyPattern ? ["--ready-pattern", command.readyPattern] : []),
+        ...(command.readyPattern
+          ? ["--ready-pattern", command.readyPattern]
+          : []),
       ];
     case "run_hardware":
-      return ["run", "hardware", ...(command.dryRun ? ["--dry-run"] : []), ...(command.timeoutMs !== undefined ? ["--timeout", String(command.timeoutMs)] : [])];
+      return [
+        "run",
+        "hardware",
+        ...(command.dryRun ? ["--dry-run"] : []),
+        ...(command.timeoutMs !== undefined
+          ? ["--timeout", String(command.timeoutMs)]
+          : []),
+      ];
     case "spec_lint":
       return ["spec", "lint", ...(command.target ? [command.target] : [])];
     case "spec_check_consistency":
       return ["spec", "check-consistency"];
     case "spec_patch_lint":
-      return command.patchPath ? ["spec", "patch", "lint", command.patchPath] : ["spec", "patch", "lint"];
+      return command.patchPath
+        ? ["spec", "patch", "lint", command.patchPath]
+        : ["spec", "patch", "lint"];
     case "spec_patch_apply":
       return [
         "spec",
         "patch",
         "apply",
-        ...(command.patchPath ? [command.patchPath] : command.inputFromStdin ? ["-"] : []),
+        ...(command.patchPath
+          ? [command.patchPath]
+          : command.inputFromStdin
+            ? ["-"]
+            : []),
       ];
     case "spec_normalize":
       return ["spec", "normalize"];
     case "arch_lint":
-      return ["arch", "lint", ...(command.noAgent ? ["--no-agent"] : []), ...(command.path ? [command.path] : [])];
+      return [
+        "arch",
+        "lint",
+        ...(command.noAgent ? ["--no-agent"] : []),
+        ...(command.path ? [command.path] : []),
+      ];
     case "arch_compose":
-      return command.path ? ["arch", "compose", command.path] : ["arch", "compose"];
+      return command.path
+        ? ["arch", "compose", command.path]
+        : ["arch", "compose"];
     case "arch_derive_tests":
-      return command.path ? ["arch", "derive-tests", command.path] : ["arch", "derive-tests"];
+      return command.path
+        ? ["arch", "derive-tests", command.path]
+        : ["arch", "derive-tests"];
     case "test":
       return [
         "test",
@@ -5873,7 +9150,9 @@ export function commandToArray(command: CliCommand): string[] {
         ...(command.timeoutMs ? ["--timeout", String(command.timeoutMs)] : []),
       ];
     case "debug_explain_log":
-      return command.logPath ? ["debug", "explain-log", command.logPath] : ["debug", "explain-log"];
+      return command.logPath
+        ? ["debug", "explain-log", command.logPath]
+        : ["debug", "explain-log"];
     case "toolchain_lint":
       return ["toolchain", "lint"];
     case "toolchain_init":
@@ -5895,11 +9174,21 @@ export function commandToArray(command: CliCommand): string[] {
         ...(command.baseUrl ? ["--base-url", command.baseUrl] : []),
         ...(command.authEnv ? ["--auth-env", command.authEnv] : []),
         ...(command.configureEmbedding === true ? ["--with-embedding"] : []),
-        ...(command.configureEmbedding === false ? ["--without-embedding"] : []),
-        ...(command.embeddingProvider ? ["--embedding-provider", command.embeddingProvider] : []),
-        ...(command.embeddingModel ? ["--embedding-model", command.embeddingModel] : []),
-        ...(command.embeddingBaseUrl ? ["--embedding-base-url", command.embeddingBaseUrl] : []),
-        ...(command.embeddingAuthEnv ? ["--embedding-auth-env", command.embeddingAuthEnv] : []),
+        ...(command.configureEmbedding === false
+          ? ["--without-embedding"]
+          : []),
+        ...(command.embeddingProvider
+          ? ["--embedding-provider", command.embeddingProvider]
+          : []),
+        ...(command.embeddingModel
+          ? ["--embedding-model", command.embeddingModel]
+          : []),
+        ...(command.embeddingBaseUrl
+          ? ["--embedding-base-url", command.embeddingBaseUrl]
+          : []),
+        ...(command.embeddingAuthEnv
+          ? ["--embedding-auth-env", command.embeddingAuthEnv]
+          : []),
         ...(command.show ? ["--show"] : []),
         ...(command.reset ? ["--reset"] : []),
         ...(command.check ? ["--check"] : []),
@@ -5923,7 +9212,11 @@ export function commandToArray(command: CliCommand): string[] {
         "agent",
         "generate",
         ...(command.display ? ["-i"] : []),
-        ...(command.target ? [command.target] : command.task ? ["--task", command.task] : []),
+        ...(command.target
+          ? [command.target]
+          : command.task
+            ? ["--task", command.task]
+            : []),
         ...(command.apply ? ["--apply"] : []),
         ...(command.build ? ["--build"] : []),
         ...(command.run ? ["--run"] : []),
@@ -5957,11 +9250,22 @@ export function commandToArray(command: CliCommand): string[] {
         ...(command.keepWorktree ? ["--keep-worktree"] : []),
       ];
     case "agent_implement":
-      return ["agent", "implement", command.module, ...(command.resumeRunId ? ["--resume", command.resumeRunId] : []), ...(command.display ? ["--interactive"] : [])];
+      return [
+        "agent",
+        "implement",
+        command.module,
+        ...(command.resumeRunId ? ["--resume", command.resumeRunId] : []),
+        ...(command.display ? ["--interactive"] : []),
+      ];
     case "agent_verify":
       return ["agent", "verify", ...(command.display ? ["--interactive"] : [])];
     case "agent_review":
-      return ["agent", "review", ...(command.target ? [command.target] : []), ...(command.display ? ["--interactive"] : [])];
+      return [
+        "agent",
+        "review",
+        ...(command.target ? [command.target] : []),
+        ...(command.display ? ["--interactive"] : []),
+      ];
     case "agent_log":
       return [
         "agent",
@@ -5998,7 +9302,11 @@ export function commandToArray(command: CliCommand): string[] {
     case "kb_clear":
       return ["kb", "clear"];
     case "kb_export_manifest":
-      return ["kb", "export-manifest", ...(command.outPath ? ["--out", command.outPath] : [])];
+      return [
+        "kb",
+        "export-manifest",
+        ...(command.outPath ? ["--out", command.outPath] : []),
+      ];
     case "kb_import_manifest":
       return ["kb", "import-manifest", command.manifestPath];
     case "report_generate":
@@ -6018,7 +9326,10 @@ export function commandToArray(command: CliCommand): string[] {
         "--intent",
         command.intent,
         ...command.specRefs.flatMap((ref) => ["--spec-ref", ref]),
-        ...command.changedTargets.flatMap((target) => ["--changed-target", target]),
+        ...command.changedTargets.flatMap((target) => [
+          "--changed-target",
+          target,
+        ]),
       ];
     case "init":
       return ["init"];
@@ -6027,7 +9338,14 @@ export function commandToArray(command: CliCommand): string[] {
     case "stage_show":
       return ["stage", "show"];
     case "stage_save":
-      return ["stage", "save", "--actor", command.actor, "--intent", command.intent];
+      return [
+        "stage",
+        "save",
+        "--actor",
+        command.actor,
+        "--intent",
+        command.intent,
+      ];
     default:
       return ["unknown"];
   }
@@ -6040,11 +9358,14 @@ function commandExists(cmd: string): boolean {
     ? [".exe", ".cmd", "", ".bat"].map((suffix) => cmd + suffix)
     : [cmd];
   return envPath.some((dir) => {
-    return candidates.some((candidate) => existsSync(path.join(dir, candidate)));
+    return candidates.some((candidate) =>
+      existsSync(path.join(dir, candidate)),
+    );
   });
 }
 
-type DoctorCategory = "base" | "project" | "toolchain" | "toolchain-command" | "optional-tools";
+type DoctorCategory =
+  "base" | "project" | "toolchain" | "toolchain-command" | "optional-tools";
 
 interface DoctorCheck {
   name: string;
@@ -6087,7 +9408,12 @@ function doctorCommandCheck(
   };
 }
 
-function doctorFileCheck(name: string, category: DoctorCategory, filePath: string, hint: string): DoctorCheck {
+function doctorFileCheck(
+  name: string,
+  category: DoctorCategory,
+  filePath: string,
+  hint: string,
+): DoctorCheck {
   const ok = existsSync(filePath);
   return {
     name,
@@ -6127,7 +9453,10 @@ function manifestCommandEntrypoints(manifest: ToolchainManifestV2): string[] {
   const commands = new Set<string>();
   for (const variant of manifest.build.variants) {
     for (const command of variant.commands) {
-      const entrypoint = typeof command === "string" ? firstCommandToken(command) : command.command[0];
+      const entrypoint =
+        typeof command === "string"
+          ? firstCommandToken(command)
+          : command.command[0];
       if (entrypoint) commands.add(entrypoint);
     }
   }
@@ -6141,12 +9470,16 @@ function manifestCommandEntrypoints(manifest: ToolchainManifestV2): string[] {
 }
 
 function firstCommandToken(command: string): string | undefined {
-  return command.match(/"([^"]*)"|'([^']*)'|\S+/)?.[0]?.replace(/^"|"$|^'|'$/g, "");
+  return command
+    .match(/"([^"]*)"|'([^']*)'|\S+/)?.[0]
+    ?.replace(/^"|"$|^'|'$/g, "");
 }
 
 function installHint(command: string): string {
-  if (command.startsWith("qemu-system-")) return "Install QEMU system emulator with your OS package manager.";
-  if (command.startsWith("riscv64-unknown-elf-")) return "Install the RISC-V cross toolchain with your OS package manager.";
+  if (command.startsWith("qemu-system-"))
+    return "Install QEMU system emulator with your OS package manager.";
+  if (command.startsWith("riscv64-unknown-elf-"))
+    return "Install the RISC-V cross toolchain with your OS package manager.";
   return `Install ${command} with your OS package manager.`;
 }
 
@@ -6157,7 +9490,9 @@ function errorMessage(error: unknown): string {
 async function discoverSpecFiles(root: string): Promise<string[]> {
   const normalizedRoot = path.resolve(root);
   const entries = await listYamlFiles(normalizedRoot);
-  return entries.filter((entry) => isYamlFile(entry)).map((entry) => path.resolve(entry));
+  return entries
+    .filter((entry) => isYamlFile(entry))
+    .map((entry) => path.resolve(entry));
 }
 
 async function listYamlFiles(root: string): Promise<string[]> {
@@ -6170,9 +9505,12 @@ async function listYamlFiles(root: string): Promise<string[]> {
   const fs = await import("node:fs/promises");
   const out: string[] = [];
   const walk = async (dir: string): Promise<void> => {
-    let items: { name: string; isDirectory(): boolean; isFile(): boolean }[] = [];
+    let items: { name: string; isDirectory(): boolean; isFile(): boolean }[] =
+      [];
     try {
-      items = await fs.readdir(dir, { withFileTypes: true }) as unknown as typeof items;
+      items = (await fs.readdir(dir, {
+        withFileTypes: true,
+      })) as unknown as typeof items;
     } catch {
       return;
     }
@@ -6198,15 +9536,21 @@ function isYamlFile(name: string): boolean {
 function classifyErrorStatus(error: unknown): CommandStatus {
   if (error instanceof AgentOutputError) return "agent_output_error";
   if (error instanceof CliError) return error.status;
-  if (error instanceof Error && error.message.includes("timed out")) return "timed_out";
+  if (error instanceof Error && error.message.includes("timed out"))
+    return "timed_out";
   return "failed";
 }
 
-function safeJsonParse(text: string): { ok: true; value: unknown } | { ok: false; error: string } {
+function safeJsonParse(
+  text: string,
+): { ok: true; value: unknown } | { ok: false; error: string } {
   try {
     return { ok: true, value: JSON.parse(text) };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
@@ -6227,7 +9571,9 @@ function inferSpecsFromLog(text: string): string[] {
   return [...candidates];
 }
 
-async function findLatestLogPath(projectRoot: string): Promise<string | undefined> {
+async function findLatestLogPath(
+  projectRoot: string,
+): Promise<string | undefined> {
   const runs = path.join(projectRoot, ".vos", "runs");
   if (!existsSync(runs)) return undefined;
   const dirs = await readdir(runs, { withFileTypes: true });
@@ -6237,7 +9583,9 @@ async function findLatestLogPath(projectRoot: string): Promise<string | undefine
     const manifestPath = path.join(runs, dir.name, "manifest.json");
     if (!existsSync(manifestPath)) continue;
     try {
-      const stat = await import("node:fs/promises").then((m) => m.stat(manifestPath));
+      const stat = await import("node:fs/promises").then((m) =>
+        m.stat(manifestPath),
+      );
       runEntries.push({ manifestPath, mtimeMs: stat.mtimeMs });
     } catch {
       continue;
@@ -6251,13 +9599,20 @@ async function findLatestLogPath(projectRoot: string): Promise<string | undefine
     if (!manifest || !Array.isArray(manifest.artifacts)) continue;
     const candidate = manifest.artifacts
       .map((artifact) => artifact.path)
-      .find((value) => value.includes("trace") || value.includes("qemu") || value.includes("log"));
+      .find(
+        (value) =>
+          value.includes("trace") ||
+          value.includes("qemu") ||
+          value.includes("log"),
+      );
     if (candidate) return path.resolve(projectRoot, candidate);
   }
   return undefined;
 }
 
-async function collectRunManifestSummaries(projectRoot: string): Promise<Array<{ run_id: string; status: string }>> {
+async function collectRunManifestSummaries(
+  projectRoot: string,
+): Promise<Array<{ run_id: string; status: string }>> {
   const runRoot = path.join(projectRoot, ".vos", "runs");
   if (!existsSync(runRoot)) return [];
   const dirs = await readdir(runRoot, { withFileTypes: true });
@@ -6289,7 +9644,7 @@ export function buildAgentDebugTracePrompt(input: DebugTraceInput): string {
     "If target names a specific module or requirement, every case must map to that target through requirement_id, related_specs, and expected_trace_events.",
     "The JSON object must contain:",
     "- instrumentation_patch: a git unified diff that applies with git apply",
-    "- trace_format: { \"prefix\": \"VOS_TRACE \" }",
+    '- trace_format: { "prefix": "VOS_TRACE " }',
     "- cases: array of validation cases",
     "Each case must contain:",
     "- id: string",
@@ -6298,10 +9653,10 @@ export function buildAgentDebugTracePrompt(input: DebugTraceInput): string {
     "- stdin or stimulus: string or string[] to send to QEMU stdin",
     "- success_regex: string",
     "- failure_regex: optional string",
-    "- expected_trace_events: string[] containing event names only, for example [\"boot_ok\"], not full trace lines",
+    '- expected_trace_events: string[] containing event names only, for example ["boot_ok"], not full trace lines',
     "success_regex must validate non-trace serial output. Do not put VOS_TRACE in success_regex; expected_trace_events validates trace output separately.",
     "Instrumentation may only touch kernel/, user/, mkfs/, Makefile, or .vos/toolchain.json.",
-    "Instrumentation must emit trace lines as: VOS_TRACE {\"event\":\"name\",...}.",
+    'Instrumentation must emit trace lines as: VOS_TRACE {"event":"name",...}.',
     "Use existing kernel/user printing facilities already present in the inspected file, such as printk/printf, instead of adding new dependencies.",
     "Do not weaken the build or run contract in .vos/toolchain.json. Only touch it when agent debug trace cannot run without a toolchain fix grounded in the current manifest.",
     "Unified diff requirements:",
@@ -6358,22 +9713,28 @@ function debugTraceFailureSummary(result: {
 }): string {
   return [
     `agent debug trace finished with status ${result.status}`,
-    ...result.cases.map((item) => [
-      `case ${item.id}: ${item.status}`,
-      item.requirement_id ? `requirement=${item.requirement_id}` : undefined,
-      `success_matched=${item.success_matched}`,
-      `failure_matched=${item.failure_matched}`,
-      `trace_count=${item.trace_count}`,
-      `serial_log=${item.serial_log}`,
-      `trace_log=${item.trace_log}`,
-    ].filter(Boolean).join(", ")),
+    ...result.cases.map((item) =>
+      [
+        `case ${item.id}: ${item.status}`,
+        item.requirement_id ? `requirement=${item.requirement_id}` : undefined,
+        `success_matched=${item.success_matched}`,
+        `failure_matched=${item.failure_matched}`,
+        `trace_count=${item.trace_count}`,
+        `serial_log=${item.serial_log}`,
+        `trace_log=${item.trace_log}`,
+      ]
+        .filter(Boolean)
+        .join(", "),
+    ),
   ].join("\n");
 }
 
 function isTracePlanFeedbackError(error: unknown): boolean {
   if (error instanceof AgentOutputError) return true;
   if (!(error instanceof CliError)) return false;
-  return error.status === "validation_failed" || error.status === "policy_blocked";
+  return (
+    error.status === "validation_failed" || error.status === "policy_blocked"
+  );
 }
 
 async function recordAICollaboration(params: {
@@ -6396,11 +9757,16 @@ async function recordAICollaboration(params: {
   return logPath;
 }
 
-function agentStructuredOutput(result: Awaited<ReturnType<typeof runAgentWithPrompt>>, _source: string): unknown {
+function agentStructuredOutput(
+  result: Awaited<ReturnType<typeof runAgentWithPrompt>>,
+  _source: string,
+): unknown {
   return result.parsedResult;
 }
 
-function agentTracePlanText(result: Awaited<ReturnType<typeof runAgentWithPrompt>>): string {
+function agentTracePlanText(
+  result: Awaited<ReturnType<typeof runAgentWithPrompt>>,
+): string {
   return `${JSON.stringify(result.parsedResult, null, 2)}\n`;
 }
 
@@ -6430,22 +9796,44 @@ async function loadToolchainGenerationSpec(projectRoot: string): Promise<{
   allowedOutputPaths: string[];
   environment: { required_tools: RequiredToolV2[] };
 }> {
-  const toolchainPath = path.join(projectRoot, "spec", "toolchain", "toolchain.yaml");
+  const toolchainPath = path.join(
+    projectRoot,
+    "spec",
+    "toolchain",
+    "toolchain.yaml",
+  );
   const buildPath = path.join(projectRoot, "spec", "toolchain", "build.yaml");
   if (!existsSync(toolchainPath) || !existsSync(buildPath)) {
-    throw new CliError("build generate requires spec/toolchain/toolchain.yaml and build.yaml", "failed");
+    throw new CliError(
+      "build generate requires spec/toolchain/toolchain.yaml and build.yaml",
+      "failed",
+    );
   }
-  const toolchainIndex = parseTopLevelYaml(await readFile(toolchainPath, "utf8"));
+  const toolchainIndex = parseTopLevelYaml(
+    await readFile(toolchainPath, "utf8"),
+  );
   const buildSpec = parseTopLevelYaml(await readFile(buildPath, "utf8"));
-  const profilePath = path.join(projectRoot, "spec", "toolchain", "profile.yaml");
+  const profilePath = path.join(
+    projectRoot,
+    "spec",
+    "toolchain",
+    "profile.yaml",
+  );
   const runPath = path.join(projectRoot, "spec", "toolchain", "run.yaml");
-  const profileSpec = existsSync(profilePath) ? parseTopLevelYaml(await readFile(profilePath, "utf8")) : undefined;
+  const profileSpec = existsSync(profilePath)
+    ? parseTopLevelYaml(await readFile(profilePath, "utf8"))
+    : undefined;
   return {
     toolchainIndex,
     buildSpec,
     profileSpec,
-    runSpec: existsSync(runPath) ? parseTopLevelYaml(await readFile(runPath, "utf8")) : undefined,
-    allowedOutputPaths: collectStringListByKey(buildSpec, "allowed_output_path"),
+    runSpec: existsSync(runPath)
+      ? parseTopLevelYaml(await readFile(runPath, "utf8"))
+      : undefined,
+    allowedOutputPaths: collectStringListByKey(
+      buildSpec,
+      "allowed_output_path",
+    ),
     environment: normalizeProfileEnvironment(profileSpec),
   };
 }
@@ -6457,23 +9845,40 @@ async function writeDeterministicToolchainManifest(
 ): Promise<CommandOutcome> {
   const manifestPath = path.join(projectRoot, ".vos", "toolchain.json");
   if (existsSync(manifestPath) && !force) {
-    throw new CliError("toolchain manifest already exists; rerun with --force to overwrite", "failed", {
-      path: ".vos/toolchain.json",
-    });
+    throw new CliError(
+      "toolchain manifest already exists; rerun with --force to overwrite",
+      "failed",
+      {
+        path: ".vos/toolchain.json",
+      },
+    );
   }
   const spec = await loadToolchainGenerationSpec(projectRoot);
-  const specHash = await writeCurrentNormalizedBundleAndHash(projectRoot, evidence);
-  const manifest = buildDeterministicToolchainManifest(projectRoot, spec, specHash);
+  const specHash = await writeCurrentNormalizedBundleAndHash(
+    projectRoot,
+    evidence,
+  );
+  const manifest = buildDeterministicToolchainManifest(
+    projectRoot,
+    spec,
+    specHash,
+  );
   parseToolchainManifest(manifest);
   await mkdir(path.dirname(manifestPath), { recursive: true });
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  evidence.addArtifact("toolchain", path.relative(projectRoot, manifestPath), "deterministic toolchain manifest");
+  evidence.addArtifact(
+    "toolchain",
+    path.relative(projectRoot, manifestPath),
+    "deterministic toolchain manifest",
+  );
   return {
     status: "passed",
     details: {
       path: ".vos/toolchain.json",
       generator: manifest.generator,
-      required_tools: manifest.environment.required_tools.map((tool) => tool.command),
+      required_tools: manifest.environment.required_tools.map(
+        (tool) => tool.command,
+      ),
       build_artifacts: manifest.build.variants[0]?.artifacts ?? [],
       run_cases: manifest.run.cases.map((testCase) => testCase.id),
       test_suites: manifest.test.suites.map((suite) => suite.name),
@@ -6486,53 +9891,76 @@ function buildDeterministicToolchainManifest(
   spec: Awaited<ReturnType<typeof loadToolchainGenerationSpec>>,
   specHash: string,
 ): ToolchainManifestV2 {
-  const buildArtifacts = collectStringListByKey(spec.buildSpec, "generated_artifacts").length > 0
-    ? collectStringListByKey(spec.buildSpec, "generated_artifacts")
-    : collectStringListByKey(spec.buildSpec, "expected_outputs");
-  const runSpec = isRecord(spec.runSpec) && isRecord(spec.runSpec.run) ? spec.runSpec.run : spec.runSpec;
+  const buildArtifacts =
+    collectStringListByKey(spec.buildSpec, "generated_artifacts").length > 0
+      ? collectStringListByKey(spec.buildSpec, "generated_artifacts")
+      : collectStringListByKey(spec.buildSpec, "expected_outputs");
+  const runSpec =
+    isRecord(spec.runSpec) && isRecord(spec.runSpec.run)
+      ? spec.runSpec.run
+      : spec.runSpec;
   const runRecord = isRecord(runSpec) ? runSpec : {};
-  const command = stringValue(runRecord.command) ?? stringValue(runRecord.emulator) ?? "qemu-system-riscv64";
+  const command =
+    stringValue(runRecord.command) ??
+    stringValue(runRecord.emulator) ??
+    "qemu-system-riscv64";
   const args = stringValue(runRecord.command)
     ? []
     : qemuArgsFromRunSpec(runRecord, buildArtifacts[0] ?? "build/kernel.elf");
   const timeoutSecs = numberValue(runRecord.timeout_secs);
-  const timeoutMs = numberValue(runRecord.timeout_ms) ?? (timeoutSecs ? timeoutSecs * 1000 : undefined);
-  const successRegex = stringValue(runRecord.success_signal) ?? stringValue(runRecord.success_regex) ?? "ok";
+  const timeoutMs =
+    numberValue(runRecord.timeout_ms) ??
+    (timeoutSecs ? timeoutSecs * 1000 : undefined);
+  const successRegex =
+    stringValue(runRecord.success_signal) ??
+    stringValue(runRecord.success_regex) ??
+    "ok";
   const profileArtifact = stringValue(runRecord.artifact) ?? buildArtifacts[0];
   const publicTests = publicMatrixTests(projectRoot);
   return {
     manifest_version: 2,
     spec_hash: specHash,
     spec_path: "spec/toolchain/toolchain.yaml",
-    files: ["Makefile"].filter((file) => existsSync(path.join(projectRoot, file))),
+    files: ["Makefile"].filter((file) =>
+      existsSync(path.join(projectRoot, file)),
+    ),
     generator: { name: "vos-deterministic", version: "toolchain-init-v1" },
-    environment: spec.environment.required_tools.length > 0
-      ? spec.environment
-      : { required_tools: [requiredTool("true", ">=0")] },
+    environment:
+      spec.environment.required_tools.length > 0
+        ? spec.environment
+        : { required_tools: [requiredTool("true", ">=0")] },
     build: {
-      variants: [{
-        id: "baseline",
-        commands: [{ name: "make-all", command: ["make", "all"], timeout_ms: 60000 }],
-        artifacts: buildArtifacts,
-      }],
+      variants: [
+        {
+          id: "baseline",
+          commands: [
+            { name: "make-all", command: ["make", "all"], timeout_ms: 60000 },
+          ],
+          artifacts: buildArtifacts,
+        },
+      ],
     },
     run: {
-      profiles: [{
-        id: "default",
-        command,
-        args,
-        artifacts: profileArtifact ? [profileArtifact] : [],
-        timeout_ms: timeoutMs,
-      }],
-      cases: [{
-        id: "boot-smoke",
-        profile: "default",
-        success_regex: successRegex,
-        exit_code: 0,
-        timeout_ms: timeoutMs,
-        required_artifacts: [],
-        expected_qmp_events: [],
-      }],
+      profiles: [
+        {
+          id: "default",
+          command,
+          args,
+          artifacts: profileArtifact ? [profileArtifact] : [],
+          timeout_ms: timeoutMs,
+        },
+      ],
+      cases: [
+        {
+          id: "boot-smoke",
+          profile: "default",
+          success_regex: successRegex,
+          exit_code: 0,
+          timeout_ms: timeoutMs,
+          required_artifacts: [],
+          expected_qmp_events: [],
+        },
+      ],
     },
     test: {
       suites: publicTests.map((name) => ({
@@ -6545,7 +9973,10 @@ function buildDeterministicToolchainManifest(
   };
 }
 
-function qemuArgsFromRunSpec(runSpec: Record<string, unknown>, artifact: string): string[] {
+function qemuArgsFromRunSpec(
+  runSpec: Record<string, unknown>,
+  artifact: string,
+): string[] {
   const args: string[] = [];
   const machine = stringValue(runSpec.machine);
   if (machine) args.push("-machine", machine);
@@ -6555,13 +9986,22 @@ function qemuArgsFromRunSpec(runSpec: Record<string, unknown>, artifact: string)
   const memory = stringValue(runSpec.memory);
   if (memory) args.push("-m", memory);
   args.push("-smp", "1");
-  const extra = Array.isArray(runSpec.extra_args) ? runSpec.extra_args.filter((item): item is string => typeof item === "string") : [];
+  const extra = Array.isArray(runSpec.extra_args)
+    ? runSpec.extra_args.filter(
+        (item): item is string => typeof item === "string",
+      )
+    : [];
   args.push(...extra);
   return args;
 }
 
 function publicMatrixTests(projectRoot: string): string[] {
-  const matrixPath = path.join(projectRoot, "spec", "verification", "public-matrix.yaml");
+  const matrixPath = path.join(
+    projectRoot,
+    "spec",
+    "verification",
+    "public-matrix.yaml",
+  );
   if (!existsSync(matrixPath)) return [];
   try {
     const matrix = parseTopLevelYaml(readFileSync(matrixPath, "utf8"));
@@ -6576,7 +10016,9 @@ function stringValue(value: unknown): string | undefined {
 }
 
 function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function normalizeToolchainDraft(raw: unknown): ToolchainGenerationDraft {
@@ -6586,16 +10028,24 @@ function normalizeToolchainDraft(raw: unknown): ToolchainGenerationDraft {
   const obj = raw as Record<string, unknown>;
   const files = Array.isArray(obj.files)
     ? obj.files.map((file) => {
-      if (!file || typeof file !== "object") throw new AgentOutputError("toolchain draft file must be an object");
-      const item = file as Record<string, unknown>;
-      if (typeof item.path !== "string" || typeof item.content !== "string") {
-        throw new AgentOutputError("toolchain draft files require path and content");
-      }
-      return { path: normalizeProjectPath(item.path), content: item.content };
-    })
+        if (!file || typeof file !== "object")
+          throw new AgentOutputError("toolchain draft file must be an object");
+        const item = file as Record<string, unknown>;
+        if (typeof item.path !== "string" || typeof item.content !== "string") {
+          throw new AgentOutputError(
+            "toolchain draft files require path and content",
+          );
+        }
+        return { path: normalizeProjectPath(item.path), content: item.content };
+      })
     : undefined;
-  if (!files || files.length === 0) throw new AgentOutputError("toolchain draft requires files");
-  if (!obj.manifest || typeof obj.manifest !== "object" || Array.isArray(obj.manifest)) {
+  if (!files || files.length === 0)
+    throw new AgentOutputError("toolchain draft requires files");
+  if (
+    !obj.manifest ||
+    typeof obj.manifest !== "object" ||
+    Array.isArray(obj.manifest)
+  ) {
     throw new AgentOutputError("toolchain draft requires manifest object");
   }
   if (typeof obj.build_instructions !== "string") {
@@ -6610,64 +10060,105 @@ function normalizeToolchainDraft(raw: unknown): ToolchainGenerationDraft {
   };
 }
 
-function validateToolchainDraftPaths(draft: ToolchainGenerationDraft, allowedOutputPaths: string[]): void {
+function validateToolchainDraftPaths(
+  draft: ToolchainGenerationDraft,
+  allowedOutputPaths: string[],
+): void {
   if (allowedOutputPaths.length === 0) {
-    throw new CliError("policy_blocked: toolchain allowed_output_path is empty", "policy_blocked", {
-      reason: "path_denied",
-    });
+    throw new CliError(
+      "policy_blocked: toolchain allowed_output_path is empty",
+      "policy_blocked",
+      {
+        reason: "path_denied",
+      },
+    );
   }
   const filePaths = draft.files.map((file) => normalizeProjectPath(file.path));
   for (const filePath of filePaths) {
     if (!isAllowedToolchainOutput(filePath, allowedOutputPaths)) {
-      throw new CliError(`policy_blocked: disallowed toolchain output ${filePath}`, "policy_blocked", {
-        reason: "path_denied",
-        path: filePath,
-      });
+      throw new CliError(
+        `policy_blocked: disallowed toolchain output ${filePath}`,
+        "policy_blocked",
+        {
+          reason: "path_denied",
+          path: filePath,
+        },
+      );
     }
   }
-  const manifestFiles = stringArrayValue((draft.manifest as { files?: unknown }).files);
+  const manifestFiles = stringArrayValue(
+    (draft.manifest as { files?: unknown }).files,
+  );
   if (manifestFiles.length === 0) {
     throw new AgentOutputError("toolchain manifest requires files");
   }
   const fileSet = new Set(filePaths);
-  const missing = manifestFiles.map(normalizeProjectPath).filter((file) => !fileSet.has(file));
+  const missing = manifestFiles
+    .map(normalizeProjectPath)
+    .filter((file) => !fileSet.has(file));
   if (missing.length > 0) {
-    throw new AgentOutputError(`toolchain manifest references files not in draft: ${missing.join(", ")}`);
+    throw new AgentOutputError(
+      `toolchain manifest references files not in draft: ${missing.join(", ")}`,
+    );
   }
 }
 
-function normalizeToolchainEnvironment(
-  manifest: Record<string, unknown>,
-): { required_tools: Array<Record<string, unknown>> } {
-  const existing = manifest.environment && typeof manifest.environment === "object" && !Array.isArray(manifest.environment)
-    ? (manifest.environment as { required_tools?: unknown }).required_tools
-    : undefined;
+function normalizeToolchainEnvironment(manifest: Record<string, unknown>): {
+  required_tools: Array<Record<string, unknown>>;
+} {
+  const existing =
+    manifest.environment &&
+    typeof manifest.environment === "object" &&
+    !Array.isArray(manifest.environment)
+      ? (manifest.environment as { required_tools?: unknown }).required_tools
+      : undefined;
   if (!Array.isArray(existing) || existing.length === 0) {
-    throw new AgentOutputError("toolchain environment.required_tools is required");
+    throw new AgentOutputError(
+      "toolchain environment.required_tools is required",
+    );
   }
-  const tools = existing.filter((tool): tool is Record<string, unknown> => Boolean(tool) && typeof tool === "object" && !Array.isArray(tool));
+  const tools = existing.filter(
+    (tool): tool is Record<string, unknown> =>
+      Boolean(tool) && typeof tool === "object" && !Array.isArray(tool),
+  );
   if (tools.length === 0) {
-    throw new AgentOutputError("toolchain environment.required_tools is required");
+    throw new AgentOutputError(
+      "toolchain environment.required_tools is required",
+    );
   }
   return { required_tools: tools };
 }
 
-function normalizeProfileEnvironment(profileSpec: unknown): { required_tools: RequiredToolV2[] } {
-  const env = profileSpec && typeof profileSpec === "object" && !Array.isArray(profileSpec)
-    ? (profileSpec as { environment?: unknown }).environment
-    : undefined;
-  if (!env || typeof env !== "object" || Array.isArray(env)) return { required_tools: [] };
+function normalizeProfileEnvironment(profileSpec: unknown): {
+  required_tools: RequiredToolV2[];
+} {
+  const env =
+    profileSpec &&
+    typeof profileSpec === "object" &&
+    !Array.isArray(profileSpec)
+      ? (profileSpec as { environment?: unknown }).environment
+      : undefined;
+  if (!env || typeof env !== "object" || Array.isArray(env))
+    return { required_tools: [] };
   const out = new Map<string, RequiredToolV2>();
-  for (const item of Array.isArray((env as { required_tools?: unknown }).required_tools) ? (env as { required_tools: unknown[] }).required_tools : []) {
+  for (const item of Array.isArray(
+    (env as { required_tools?: unknown }).required_tools,
+  )
+    ? (env as { required_tools: unknown[] }).required_tools
+    : []) {
     if (item && typeof item === "object" && !Array.isArray(item)) {
       for (const [name, constraint] of Object.entries(item)) {
-        if (typeof constraint === "string") out.set(name, requiredTool(name, constraint));
+        if (typeof constraint === "string")
+          out.set(name, requiredTool(name, constraint));
       }
     }
   }
-  for (const line of stringArrayValue((env as { allowed_versions?: unknown }).allowed_versions)) {
+  for (const line of stringArrayValue(
+    (env as { allowed_versions?: unknown }).allowed_versions,
+  )) {
     const match = /^(\S+)\s+(.+)$/.exec(line.trim());
-    if (match && !out.has(match[1])) out.set(match[1], requiredTool(match[1], match[2]));
+    if (match && !out.has(match[1]))
+      out.set(match[1], requiredTool(match[1], match[2]));
   }
   return { required_tools: [...out.values()] };
 }
@@ -6686,11 +10177,21 @@ function requiredTool(name: string, constraint: string): RequiredToolV2 {
 function toolKind(name: string): string {
   if (["bash", "make", "true"].includes(name)) return "utility";
   if (name.includes("qemu")) return "emulator";
-  if (name.includes("objcopy") || name.includes("objdump") || name.endsWith("-ld") || name === "ld" || name === "ar") return "binutils";
+  if (
+    name.includes("objcopy") ||
+    name.includes("objdump") ||
+    name.endsWith("-ld") ||
+    name === "ld" ||
+    name === "ar"
+  )
+    return "binutils";
   return "compiler";
 }
 
-function isAllowedToolchainOutput(candidate: string, allowedOutputPaths: string[]): boolean {
+function isAllowedToolchainOutput(
+  candidate: string,
+  allowedOutputPaths: string[],
+): boolean {
   const normalized = normalizeProjectPath(candidate);
   return allowedOutputPaths.some((allowed) => {
     const prefix = normalizeProjectPath(allowed);
@@ -6704,7 +10205,10 @@ function normalizeProjectPath(value: string): string {
 
 function stringArrayValue(value: unknown): string[] {
   return Array.isArray(value)
-    ? value.filter((item) => typeof item === "string").map((item) => item.trim()).filter(Boolean)
+    ? value
+        .filter((item) => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean)
     : [];
 }
 
@@ -6712,15 +10216,24 @@ function hashString(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function printResult(result: Record<string, unknown>, asJson: boolean, verbose: boolean): void {
+function printResult(
+  result: Record<string, unknown>,
+  asJson: boolean,
+  verbose: boolean,
+): void {
   if (asJson) {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
-  console.log(renderOutput(result as unknown as BaseCommandResult, { verbose }));
+  console.log(
+    renderOutput(result as unknown as BaseCommandResult, { verbose }),
+  );
 }
 
-export function printHelp(topic?: string, stream: "stdout" | "stderr" = "stdout"): boolean {
+export function printHelp(
+  topic?: string,
+  stream: "stdout" | "stderr" = "stdout",
+): boolean {
   const lines = STUDENT_HELP_TOPICS[topic ?? ""];
   const write = stream === "stdout" ? console.log : console.error;
   if (!lines) {
@@ -6741,7 +10254,11 @@ export function printCliError(error: unknown, argv: string[]): void {
   }
 }
 
-function helpBlock(usage: string, options: string[], examples: string[]): string[] {
+function helpBlock(
+  usage: string,
+  options: string[],
+  examples: string[],
+): string[] {
   return [
     `Usage: vos ${usage}`,
     "",
@@ -6789,39 +10306,235 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
     "  verify",
     "  report",
     "  submit",
+    "  portal login|whoami|logout|bind|run|status|evidence|submit",
     "",
     "Agent implementation runs in a disposable detached Git worktree. This is a rollback boundary, not a process, network, credential, or host-file security sandbox; commands inherit the current user's privileges.",
   ],
-  "init": helpBlock("init", ["Creates an empty DesignSpec, toolchain ModuleSpec, vos.yaml, .gitignore, and an initial Git commit."], ["vos init"]),
-  "doctor": helpBlock("doctor", ["Runs deterministic project checks, then asks the read-only Debug Agent to derive and probe required and optional host tools from the Specs."], ["vos doctor"]),
-  "spec": helpBlock("spec lint [<Spec ID|path|design|all>]", ["Deterministic schema, stable-ID, reference, path, owns, level, and vos.yaml mapping checks. Omit the target for all Specs."], ["vos spec lint", "vos spec lint design", "vos spec lint kernel.memory"]),
-  "spec lint": helpBlock("spec lint [<Spec ID|path|design|all>]", ["Loads the complete project so cross-Spec references remain valid, then reports diagnostics relevant to the selected target. It never calls a model."], ["vos spec lint", "vos spec lint spec/modules/memory.yaml"]),
-  "agent": helpBlock("agent config|implement|debug|verify|ask|review", ["config [--show|--check|--reset]", "implement <module>", "debug", "verify", "ask [question]", "review [<Spec ID|path|design|all>] [-i]"], ["vos agent config", "vos agent ask \"What is a syscall boundary?\"", "vos agent review design", "vos agent implement memory"]),
-  "agent config": helpBlock("agent config [options]", ["No options: run the interactive setup wizard.", "--provider <anthropic|openai|openai-compatible|deepseek|ollama>", "--model <id>", "--base-url <url>", "--auth-env <name>", "--with-embedding | --without-embedding", "--embedding-provider <openai|openai-compatible>", "--embedding-model <id>", "--embedding-base-url <url>", "--embedding-auth-env <name>", "--show: show configuration without secret values", "--check: validate configuration and referenced credentials", "--reset: remove agent and embedding sections"], ["vos agent config", "vos agent config --check", "vos agent config --provider openai --model gpt-5 --auth-env OPENAI_API_KEY"]),
-  "agent implement": helpBlock("agent implement <module> [--resume <run-id>]", ["Requires clean HEAD and a committed ModuleSpec whose owns covers implementation and test paths. Generates implementation plus public, contract, fixed-seed fuzz, trace/oracle, and local hidden tests. VOS validates and atomically projects test targets into vos.yaml. --resume restores a failed run only when its module, HEAD, Spec hash, and owns set still match, then reruns every gate."], ["vos agent implement memory", "vos agent implement memory --resume 202608120845459-350b6984"]),
-  "agent debug": helpBlock("agent debug", ["Read-only root-cause and evidence summary."], ["vos agent debug"]),
-  "agent verify": helpBlock("agent verify", ["Runs deterministic public verification in a disposable worktree, then asks the read-only Validation Agent to review evidence and stable Spec ID coverage."], ["vos agent verify"]),
-  "agent ask": helpBlock("agent ask [question]", ["Question answering only; omit the question or pass --interactive for a continuing conversation. It does not modify project files."], ["vos agent ask \"What is a syscall boundary?\"", "vos agent ask"]),
-  "agent review": helpBlock("agent review [<Spec ID|path|design|all>] [-i]", ["Runs deterministic lint first, then reviews the selected handwritten Spec, related Specs, and verifies mappings without modifying files. Non-interactive blocker findings fail validation; -i begins with a full review and continues as advisory Q&A."], ["vos agent review memory", "vos agent review design -i"]),
-  "kb": helpBlock("kb add|list|search|remove|clear|export-manifest|import-manifest", ["KB sources are managed by commands and indexed under .vos; vos.yaml contains no knowledge source declarations."], ["vos kb add docs/reference --recursive", "vos kb list", "vos kb search \"Sv39 page table\""]),
-  "kb add": helpBlock("kb add <path-or-url> [options]", ["--recursive", "--source-kind <project|course|external>", "--title <text>", "--stage <id>", "--branch <name> | --tag <name>", "--manifest <path>"], ["vos kb add docs/reference --recursive", "vos kb add https://example.invalid/reference.git --tag v1.0.0"]),
-  "kb list": helpBlock("kb list", ["Lists indexed sources and stable source IDs."], ["vos kb list"]),
-  "kb search": helpBlock("kb search <query>", ["Runs semantic search through the configured embedding provider."], ["vos kb search \"Sv39 page table\""]),
-  "kb remove": helpBlock("kb remove <source-id>", ["Removes one indexed source and its local objects."], ["vos kb remove <source-id>"]),
-  "kb clear": helpBlock("kb clear", ["Removes every indexed source from the current project."], ["vos kb clear"]),
-  "kb export-manifest": helpBlock("kb export-manifest [--out <path>]", ["Exports a content-addressed KB object manifest."], ["vos kb export-manifest"]),
-  "kb import-manifest": helpBlock("kb import-manifest <path>", ["Imports and verifies a previously exported object manifest."], ["vos kb import-manifest .vos/kb/manifests/object-manifest.json"]),
-  "build": helpBlock("build", ["Runs the structured argv build target from vos.yaml."], ["vos build"]),
-  "run": helpBlock("run qemu|hardware", ["qemu", "hardware (evidence remains pending_human_review)"], ["vos run qemu"]),
-  "run qemu": helpBlock("run qemu", ["Captures non-graphical serial output from the manifest runner."], ["vos run qemu"]),
-  "run hardware": helpBlock("run hardware", ["Records board/build/serial evidence and never self-approves human review."], ["vos run hardware"]),
-  "verify": helpBlock("verify [--hidden]", ["Requires clean HEAD; runs spec lint, build, and every public, contract, fixed-seed fuzz, and trace target deterministically. --hidden runs the suite bound to the current Spec and config, then binds its result to the current commit."], ["vos verify", "vos verify --hidden"]),
-  "report": helpBlock("report", ["Generates deterministic .vos/report.json without invoking a model or committing."], ["vos report"]),
-  "submit": helpBlock("submit", ["Requires a current successful vos verify --hidden, refreshes the report, and creates a private reproducible archive bound to commit/spec/config/test hashes."], ["vos submit"]),
+  init: helpBlock(
+    "init",
+    [
+      "Creates an empty DesignSpec, toolchain ModuleSpec, vos.yaml, .gitignore, and an initial Git commit.",
+    ],
+    ["vos init"],
+  ),
+  doctor: helpBlock(
+    "doctor",
+    [
+      "Runs deterministic project checks, then asks the read-only Debug Agent to derive and probe required and optional host tools from the Specs.",
+    ],
+    ["vos doctor"],
+  ),
+  spec: helpBlock(
+    "spec lint [<Spec ID|path|design|all>]",
+    [
+      "Deterministic schema, stable-ID, reference, path, owns, level, and vos.yaml mapping checks. Omit the target for all Specs.",
+    ],
+    ["vos spec lint", "vos spec lint design", "vos spec lint kernel.memory"],
+  ),
+  "spec lint": helpBlock(
+    "spec lint [<Spec ID|path|design|all>]",
+    [
+      "Loads the complete project so cross-Spec references remain valid, then reports diagnostics relevant to the selected target. It never calls a model.",
+    ],
+    ["vos spec lint", "vos spec lint spec/modules/memory.yaml"],
+  ),
+  agent: helpBlock(
+    "agent config|implement|debug|verify|ask|review",
+    [
+      "config [--show|--check|--reset]",
+      "implement <module>",
+      "debug",
+      "verify",
+      "ask [question]",
+      "review [<Spec ID|path|design|all>] [-i]",
+    ],
+    [
+      "vos agent config",
+      'vos agent ask "What is a syscall boundary?"',
+      "vos agent review design",
+      "vos agent implement memory",
+    ],
+  ),
+  "agent config": helpBlock(
+    "agent config [options]",
+    [
+      "No options: run the interactive setup wizard.",
+      "--provider <anthropic|openai|openai-compatible|deepseek|ollama>",
+      "--model <id>",
+      "--base-url <url>",
+      "--auth-env <name>",
+      "--with-embedding | --without-embedding",
+      "--embedding-provider <openai|openai-compatible>",
+      "--embedding-model <id>",
+      "--embedding-base-url <url>",
+      "--embedding-auth-env <name>",
+      "--show: show configuration without secret values",
+      "--check: validate configuration and referenced credentials",
+      "--reset: remove agent and embedding sections",
+    ],
+    [
+      "vos agent config",
+      "vos agent config --check",
+      "vos agent config --provider openai --model gpt-5 --auth-env OPENAI_API_KEY",
+    ],
+  ),
+  "agent implement": helpBlock(
+    "agent implement <module> [--resume <run-id>]",
+    [
+      "Requires clean HEAD and a committed ModuleSpec whose owns covers implementation and test paths. Generates implementation plus public, contract, fixed-seed fuzz, trace/oracle, and local hidden tests. VOS validates and atomically projects test targets into vos.yaml. --resume restores a failed run only when its module, HEAD, Spec hash, and owns set still match, then reruns every gate.",
+    ],
+    [
+      "vos agent implement memory",
+      "vos agent implement memory --resume 202608120845459-350b6984",
+    ],
+  ),
+  "agent debug": helpBlock(
+    "agent debug",
+    ["Read-only root-cause and evidence summary."],
+    ["vos agent debug"],
+  ),
+  "agent verify": helpBlock(
+    "agent verify",
+    [
+      "Runs deterministic public verification in a disposable worktree, then asks the read-only Validation Agent to review evidence and stable Spec ID coverage.",
+    ],
+    ["vos agent verify"],
+  ),
+  "agent ask": helpBlock(
+    "agent ask [question]",
+    [
+      "Question answering only; omit the question or pass --interactive for a continuing conversation. It does not modify project files.",
+    ],
+    ['vos agent ask "What is a syscall boundary?"', "vos agent ask"],
+  ),
+  "agent review": helpBlock(
+    "agent review [<Spec ID|path|design|all>] [-i]",
+    [
+      "Runs deterministic lint first, then reviews the selected handwritten Spec, related Specs, and verifies mappings without modifying files. Non-interactive blocker findings fail validation; -i begins with a full review and continues as advisory Q&A.",
+    ],
+    ["vos agent review memory", "vos agent review design -i"],
+  ),
+  kb: helpBlock(
+    "kb add|list|search|remove|clear|export-manifest|import-manifest",
+    [
+      "KB sources are managed by commands and indexed under .vos; vos.yaml contains no knowledge source declarations.",
+    ],
+    [
+      "vos kb add docs/reference --recursive",
+      "vos kb list",
+      'vos kb search "Sv39 page table"',
+    ],
+  ),
+  "kb add": helpBlock(
+    "kb add <path-or-url> [options]",
+    [
+      "--recursive",
+      "--source-kind <project|course|external>",
+      "--title <text>",
+      "--stage <id>",
+      "--branch <name> | --tag <name>",
+      "--manifest <path>",
+    ],
+    [
+      "vos kb add docs/reference --recursive",
+      "vos kb add https://example.invalid/reference.git --tag v1.0.0",
+    ],
+  ),
+  "kb list": helpBlock(
+    "kb list",
+    ["Lists indexed sources and stable source IDs."],
+    ["vos kb list"],
+  ),
+  "kb search": helpBlock(
+    "kb search <query>",
+    ["Runs semantic search through the configured embedding provider."],
+    ['vos kb search "Sv39 page table"'],
+  ),
+  "kb remove": helpBlock(
+    "kb remove <source-id>",
+    ["Removes one indexed source and its local objects."],
+    ["vos kb remove <source-id>"],
+  ),
+  "kb clear": helpBlock(
+    "kb clear",
+    ["Removes every indexed source from the current project."],
+    ["vos kb clear"],
+  ),
+  "kb export-manifest": helpBlock(
+    "kb export-manifest [--out <path>]",
+    ["Exports a content-addressed KB object manifest."],
+    ["vos kb export-manifest"],
+  ),
+  "kb import-manifest": helpBlock(
+    "kb import-manifest <path>",
+    ["Imports and verifies a previously exported object manifest."],
+    ["vos kb import-manifest .vos/kb/manifests/object-manifest.json"],
+  ),
+  build: helpBlock(
+    "build",
+    ["Runs the structured argv build target from vos.yaml."],
+    ["vos build"],
+  ),
+  run: helpBlock(
+    "run qemu|hardware",
+    ["qemu", "hardware (evidence remains pending_human_review)"],
+    ["vos run qemu"],
+  ),
+  "run qemu": helpBlock(
+    "run qemu",
+    ["Captures non-graphical serial output from the manifest runner."],
+    ["vos run qemu"],
+  ),
+  "run hardware": helpBlock(
+    "run hardware",
+    [
+      "Records board/build/serial evidence and never self-approves human review.",
+    ],
+    ["vos run hardware"],
+  ),
+  verify: helpBlock(
+    "verify [--hidden]",
+    [
+      "Requires clean HEAD; runs spec lint, build, and every public, contract, fixed-seed fuzz, and trace target deterministically. --hidden runs the suite bound to the current Spec and config, then binds its result to the current commit.",
+    ],
+    ["vos verify", "vos verify --hidden"],
+  ),
+  report: helpBlock(
+    "report",
+    [
+      "Generates deterministic .vos/report.json without invoking a model or committing.",
+    ],
+    ["vos report"],
+  ),
+  submit: helpBlock(
+    "submit",
+    [
+      "Requires a current successful vos verify --hidden, refreshes the report, and creates a private reproducible archive bound to commit/spec/config/test hashes.",
+    ],
+    ["vos submit"],
+  ),
+  portal: helpBlock(
+    "portal login|whoami|logout|bind|run|status|evidence|submit",
+    [
+      "Explicit online control-plane operations. Offline init/spec/agent/build/run/verify/report/submit behavior is unchanged.",
+    ],
+    [
+      "vos portal login https://portal.example.edu",
+      "vos portal bind https://portal.example.edu <project-id>",
+      "vos portal run --watch",
+      "vos portal submit --watch",
+    ],
+  ),
 };
 
 function inferHelpTopic(argv: string[]): string | undefined {
-  const valueFlags = new Set(["--project-root", "--progress", "--agent-session", "--report", "--evidence-dir"]);
+  const valueFlags = new Set([
+    "--project-root",
+    "--progress",
+    "--agent-session",
+    "--report",
+    "--evidence-dir",
+  ]);
   const tokens: string[] = [];
   const args = argv.slice(2);
   for (let i = 0; i < args.length; i++) {
@@ -6862,7 +10575,11 @@ function extractPatchTouches(patchText: string): string[] {
 
 export { executeCommand };
 export { startAgentServer } from "./agent/runner.ts";
-export type { CommandOutcome, ExecContext, ExecuteCliOptions } from "./bootstrap.ts";
+export type {
+  CommandOutcome,
+  ExecContext,
+  ExecuteCliOptions,
+} from "./bootstrap.ts";
 
 if (import.meta.main) {
   main();

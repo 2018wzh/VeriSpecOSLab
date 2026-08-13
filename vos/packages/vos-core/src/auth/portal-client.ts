@@ -2,8 +2,8 @@ import { CliError } from "../errors.ts";
 import { createHash } from "node:crypto";
 import { open, rm } from "node:fs/promises";
 import type { PolicySnapshot, PortalUserSummary } from "../types.ts";
-import type { ArtifactRefV1, EvidenceBundleV1, PipelineEventV1, PipelineRequestV1, PipelineSummaryV1, ProjectBindingV1, RunReproductionV1 } from "../portal/contracts.ts";
-import { PipelineEventV1Schema, PresignedObjectRequestSchema, RunReproductionV1Schema } from "../portal/contracts.ts";
+import type { ArtifactRefV1, AssessmentSubmissionRequestV1, AssessmentSubmissionV1, EvidenceBundleV1, PipelineEventV1, PipelineRequestV1, PipelineSummaryV1, ProjectBindingV1, RunReproductionV1 } from "../portal/contracts.ts";
+import { AssessmentSubmissionV1Schema, PipelineEventV1Schema, PresignedObjectRequestSchema, RunReproductionV1Schema } from "../portal/contracts.ts";
 import { normalizePortalUrl } from "./store.ts";
 
 export interface PortalClient {
@@ -20,6 +20,7 @@ export interface PortalClient {
   getReproduction?(portalUrl:string,token:string,runId:string):Promise<RunReproductionV1>;
   downloadArtifact?(portalUrl:string,token:string,artifact:ArtifactRefV1,destination:string):Promise<{size_bytes:number;sha256:string}>;
   getProjectBinding?(portalUrl:string,token:string,projectId:string):Promise<ProjectBindingV1>;
+  createAssessmentSubmission?(portalUrl:string,token:string,input:AssessmentSubmissionRequestV1):Promise<AssessmentSubmissionV1>;
 }
 
 export interface DeviceAuthorization {device_code:string;user_code:string;verification_uri:string;expires_in:number;interval:number}
@@ -44,6 +45,7 @@ export class HttpPortalClient implements PortalClient {
     try{const reader=response.body.getReader();for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>artifact.size_bytes){await reader.cancel();throw new CliError("Downloaded artifact exceeds its declared size","failed",{artifact_id:artifact.id,expected_size:artifact.size_bytes});}hash.update(value);let offset=0;while(offset<value.byteLength){const {bytesWritten}=await file.write(value,offset,value.byteLength-offset);if(bytesWritten<=0)throw new Error("artifact download made no filesystem write progress");offset+=bytesWritten;}}const actual=hash.digest("hex");if(size!==artifact.size_bytes||actual!==artifact.sha256)throw new CliError("Downloaded artifact failed integrity verification","failed",{artifact_id:artifact.id,expected_size:artifact.size_bytes,actual_size:size,expected_sha256:artifact.sha256,actual_sha256:actual});return{size_bytes:size,sha256:actual};}catch(error){await file.close();await rm(destination,{force:true});throw error;}finally{await file.close().catch(()=>undefined);}
   }
   async getProjectBinding(portalUrl:string,token:string,projectId:string):Promise<ProjectBindingV1>{return await this.portalJson(`${normalizePortalUrl(portalUrl)}/api/v1/projects/${encodeURIComponent(projectId)}/binding`,token) as ProjectBindingV1;}
+  async createAssessmentSubmission(portalUrl:string,token:string,input:AssessmentSubmissionRequestV1):Promise<AssessmentSubmissionV1>{return AssessmentSubmissionV1Schema.parse(await this.portalJson(`${normalizePortalUrl(portalUrl)}/api/v1/submissions`,token,{method:"POST",body:JSON.stringify(input)}));}
   async watchPipeline(portalUrl:string,token:string,runId:string):Promise<PipelineEventV1[]>{
     const base=`${normalizePortalUrl(portalUrl)}/api/v1/pipelines/${encodeURIComponent(runId)}`;
     const events:PipelineEventV1[]=[];const sequences=new Set<number>();let after=-1;let reconnects=0;

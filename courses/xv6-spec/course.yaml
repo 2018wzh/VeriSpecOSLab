@@ -1,0 +1,29 @@
+version: course-manifest.v1
+course:
+  code: VOS-XV6
+  name: VeriSpecOSLab xv6 规格驱动操作系统实验
+  term: "2026"
+experiment:
+  id: xv6-spec
+  title: xv6 Lab 1-10
+  spec_version: student-v2
+stages:
+  - { id: lab1, key: lab1, name: 环境与工具, sequence: 0, source_ref: course/lab1-complete, spec_refs: [design, toolchain], test_sets: [lab1.public], rubric_ids: [correctness], hardware_gate: none, human_review_required: false, required_artifacts: [vos.yaml], required_evidence: [{ suite: lab1, case_name: public, required_result: pass }], manual_review_required: false }
+  - { id: lab2, key: lab2, name: 进程管理, sequence: 1, source_ref: course/lab2-complete, spec_refs: [kernel.process], test_sets: [lab2.public], rubric_ids: [correctness, design], hardware_gate: none, human_review_required: false, required_artifacts: [kernel], required_evidence: [{ suite: lab2, case_name: public, required_result: pass }], manual_review_required: false }
+  - { id: lab3, key: lab3, name: 内存管理, sequence: 2, source_ref: course/lab3-complete, spec_refs: [kernel.memory], test_sets: [lab3.public], rubric_ids: [correctness, design], hardware_gate: none, human_review_required: false, required_artifacts: [kernel], required_evidence: [{ suite: lab3, case_name: public, required_result: pass }], manual_review_required: false }
+  - { id: lab4, key: lab4, name: 文件系统, sequence: 3, source_ref: course/lab4-complete, spec_refs: [kernel.fs], test_sets: [lab4.public], rubric_ids: [correctness, design], hardware_gate: none, human_review_required: false, required_artifacts: [kernel], required_evidence: [{ suite: lab4, case_name: public, required_result: pass }], manual_review_required: false }
+  - { id: lab5, key: lab5, name: 进程通信, sequence: 4, source_ref: course/lab5-complete, spec_refs: [kernel.ipc], test_sets: [lab5.public], rubric_ids: [correctness, design], hardware_gate: none, human_review_required: false, required_artifacts: [kernel], required_evidence: [{ suite: lab5, case_name: public, required_result: pass }], manual_review_required: false }
+  - { id: lab6, key: lab6, name: 调度与锁, sequence: 5, source_ref: course/lab6-complete, spec_refs: [kernel.scheduler], test_sets: [lab6.public], rubric_ids: [correctness, design], hardware_gate: none, human_review_required: false, required_artifacts: [kernel], required_evidence: [{ suite: lab6, case_name: public, required_result: pass }], manual_review_required: false }
+  - { id: lab7, key: lab7, name: 虚拟内存, sequence: 6, source_ref: course/lab7-complete, spec_refs: [kernel.vm], test_sets: [lab7.public], rubric_ids: [correctness, design], hardware_gate: none, human_review_required: false, required_artifacts: [kernel], required_evidence: [{ suite: lab7, case_name: public, required_result: pass }], manual_review_required: false }
+  - { id: lab8, key: lab8, name: 系统调用, sequence: 7, source_ref: course/lab8-complete, spec_refs: [kernel.syscall], test_sets: [lab8.public], rubric_ids: [correctness, design], hardware_gate: none, human_review_required: false, required_artifacts: [kernel, user], required_evidence: [{ suite: lab8, case_name: public, required_result: pass }], manual_review_required: false }
+  - { id: lab9, key: lab9, name: 设备驱动候选, sequence: 8, source_ref: course/lab9-candidate, spec_refs: [kernel.driver], test_sets: [lab9.public, usertests.four-hart], rubric_ids: [correctness, hardware, review], hardware_gate: visionfive2-four-hart, human_review_required: true, required_artifacts: [kernel, hardware-report], required_evidence: [{ suite: lab9, case_name: public, required_result: pass }, { suite: visionfive2, case_name: usertests-four-hart, required_result: pass }], manual_review_required: true }
+  - { id: lab10, key: lab10, name: 综合挑战候选, sequence: 9, source_ref: course/lab10-candidate, spec_refs: [design, kernel], test_sets: [lab10.public, usertests.four-hart], rubric_ids: [correctness, design, hardware, review], hardware_gate: visionfive2-four-hart, human_review_required: true, required_artifacts: [kernel, user, hardware-report], required_evidence: [{ suite: lab10, case_name: public, required_result: pass }, { suite: visionfive2, case_name: usertests-four-hart, required_result: pass }], manual_review_required: true }
+rubric:
+  - { id: correctness, name: 自动测评正确性, weight: 60 }
+  - { id: design, name: 规格与设计, weight: 20 }
+  - { id: hardware, name: VisionFive 2 四核证据, weight: 10 }
+  - { id: review, name: 教师人工复核, weight: 10 }
+ai_policy:
+  allowed_models: [school-default]
+  monthly_budget: 20
+  allow_byok: true

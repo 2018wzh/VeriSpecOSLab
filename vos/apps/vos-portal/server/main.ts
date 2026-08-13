@@ -1,7 +1,7 @@
 import { closeDatabase, db } from "../storage/database.ts";
 import { migrate } from "../storage/migrate.ts";
 import { runWorker } from "../worker/worker.ts";
-import { startPortalServer } from "./http.ts";
+import { startPortalServer } from "./fastify.ts";
 import { seed } from "./seed.ts";
 import { collectExpiredObjects } from "../storage/gc.ts";
 import { S3ObjectStore } from "../storage/s3.ts";

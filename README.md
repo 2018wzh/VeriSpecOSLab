@@ -71,7 +71,7 @@ vos kb export-manifest         vos kb import-manifest <path>
 
 ## 仓库结构与开发
 
-`vos/apps/vos-cli` 是薄 CLI 入口，`vos/apps/vos-agent` 是进程内 headless/TUI/暂留 HTTP 后端，`vos/apps/vos-portal` 和 Demo 保留但冻结，`vos/packages/vos-core`、`vos-spec`、`vos-runtime`、`vos-kb`、`vos-server` 提供共享能力。Portal/Demo 不承诺旧 connected teaching loop。
+`vos/apps/vos-cli` 是薄 CLI 入口，`vos/apps/vos-agent` 是进程内 headless/TUI 后端，`vos/apps/vos-portal` 提供教学、在线测评、Worker、Runner 与独立静态 Demo，`vos/packages/vos-core`、`vos-spec`、`vos-runtime`、`vos-kb`、`vos-server` 提供共享能力。离线主链不联网；只有 `vos portal ...` 显式访问 Portal。
 
 ```sh
 cd vos

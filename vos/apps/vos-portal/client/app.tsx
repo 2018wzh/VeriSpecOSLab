@@ -34,8 +34,7 @@ export function App({ demo }: { demo: boolean }) {
           path="/workspace"
           element={
             actor.data.role === "student" ? <StudentDashboard />
-              : actor.data.role === "ta" ? <OperationsDashboard />
-                : actor.data.role === "teacher" ? <CourseControlPage />
+              : actor.data.role === "ta" || actor.data.role === "teacher" ? <OperationsDashboard />
                   : <AdminOidcPage demo={demo} />
           }
         />

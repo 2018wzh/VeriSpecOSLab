@@ -1,6 +1,11 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+} from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { AsyncEntry } from "@napi-rs/keyring";
@@ -48,10 +53,14 @@ export async function loadAuthStore(): Promise<AuthStore> {
   }
 
   try {
-    const disk = JSON.parse(await readFile(storePath, "utf8")) as Record<string, unknown>;
-    const parsed = disk.version === 2
-      ? JSON.parse(await decryptStore(disk)) as Partial<AuthStore>
-      : disk as Partial<AuthStore>;
+    const disk = JSON.parse(await readFile(storePath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const parsed =
+      disk.version === 2
+        ? (JSON.parse(await decryptStore(disk)) as Partial<AuthStore>)
+        : (disk as Partial<AuthStore>);
     const store = validateStore(parsed);
     if (disk.version === 1) {
       await writeAuthStore(store);
@@ -87,7 +96,10 @@ export async function saveToken(params: {
   return entry;
 }
 
-export async function updateStoredUser(portalUrl: string, user: PortalUserSummary): Promise<void> {
+export async function updateStoredUser(
+  portalUrl: string,
+  user: PortalUserSummary,
+): Promise<void> {
   const normalized = normalizePortalUrl(portalUrl);
   const store = await loadAuthStore();
   const entry = store.portals[normalized];
@@ -100,7 +112,9 @@ export async function updateStoredUser(portalUrl: string, user: PortalUserSummar
   await writeAuthStore(store);
 }
 
-export async function getToken(portalUrl: string): Promise<AuthStoreEntry | undefined> {
+export async function getToken(
+  portalUrl: string,
+): Promise<AuthStoreEntry | undefined> {
   const store = await loadAuthStore();
   return store.portals[normalizePortalUrl(portalUrl)];
 }
@@ -128,18 +142,36 @@ export function normalizePortalUrl(raw: string): string {
   try {
     parsed = new URL(normalized);
   } catch {
-    throw new CliError("Portal URL must be an absolute HTTP(S) URL", "validation_failed");
+    throw new CliError(
+      "Portal URL must be an absolute HTTP(S) URL",
+      "validation_failed",
+    );
   }
+  const trustedRunnerInternal =
+    process.env.VOS_RUNNER_INTERNAL_PORTAL === "1" &&
+    (parsed.hostname === "vos-portal" || parsed.hostname === "portal");
   if (
-    parsed.protocol !== "https:"
-    && !(parsed.protocol === "http:" && (parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost"))
+    parsed.protocol !== "https:" &&
+    !(
+      parsed.protocol === "http:" &&
+      (parsed.hostname === "127.0.0.1" ||
+        parsed.hostname === "localhost" ||
+        trustedRunnerInternal)
+    )
   ) {
-    throw new CliError("Portal URL must use HTTPS except for localhost", "policy_blocked", {
-      reason: "insecure_portal_url",
-    });
+    throw new CliError(
+      "Portal URL must use HTTPS except for localhost",
+      "policy_blocked",
+      {
+        reason: "insecure_portal_url",
+      },
+    );
   }
   if (parsed.username || parsed.password || parsed.search || parsed.hash) {
-    throw new CliError("Portal URL must not contain credentials, query, or fragment", "validation_failed");
+    throw new CliError(
+      "Portal URL must not contain credentials, query, or fragment",
+      "validation_failed",
+    );
   }
   return parsed.toString().replace(/\/$/, "");
 }
@@ -183,8 +215,14 @@ function legacyAuthKeyPath(): string {
 }
 
 function keyringEntry(): AsyncEntry {
-  const storeIdentity = createHash("sha256").update(authStorePath()).digest("hex").slice(0, 24);
-  return new AsyncEntry(KEYRING_SERVICE, `${KEYRING_ACCOUNT_PREFIX}:${storeIdentity}`);
+  const storeIdentity = createHash("sha256")
+    .update(authStorePath())
+    .digest("hex")
+    .slice(0, 24);
+  return new AsyncEntry(
+    KEYRING_SERVICE,
+    `${KEYRING_ACCOUNT_PREFIX}:${storeIdentity}`,
+  );
 }
 
 async function authKey(): Promise<Buffer> {
@@ -224,7 +262,10 @@ async function fileAuthKey(): Promise<Buffer> {
   await mkdir(path.dirname(keyPath), { recursive: true });
   const key = randomBytes(32);
   try {
-    await writeFile(keyPath, `${key.toString("base64")}\n`, { mode: 0o600, flag: "wx" });
+    await writeFile(keyPath, `${key.toString("base64")}\n`, {
+      mode: 0o600,
+      flag: "wx",
+    });
     return key;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "EEXIST") {
@@ -257,7 +298,10 @@ function decodeAuthKey(encoded: string): Buffer {
   return key;
 }
 
-function keyringError(operation: "access" | "delete", error: unknown): CliError {
+function keyringError(
+  operation: "access" | "delete",
+  error: unknown,
+): CliError {
   return new CliError(
     `system credential manager ${operation} failed: ${error instanceof Error ? error.message : String(error)}`,
     "failed",
@@ -267,14 +311,18 @@ function keyringError(operation: "access" | "delete", error: unknown): CliError 
 
 async function decryptStore(raw: Record<string, unknown>): Promise<string> {
   if (
-    raw.algorithm !== "aes-256-gcm"
-    || typeof raw.iv !== "string"
-    || typeof raw.tag !== "string"
-    || typeof raw.ciphertext !== "string"
+    raw.algorithm !== "aes-256-gcm" ||
+    typeof raw.iv !== "string" ||
+    typeof raw.tag !== "string" ||
+    typeof raw.ciphertext !== "string"
   ) {
     throw new Error("invalid encrypted credential envelope");
   }
-  const decipher = createDecipheriv("aes-256-gcm", await authKey(), Buffer.from(raw.iv, "base64"));
+  const decipher = createDecipheriv(
+    "aes-256-gcm",
+    await authKey(),
+    Buffer.from(raw.iv, "base64"),
+  );
   decipher.setAuthTag(Buffer.from(raw.tag, "base64"));
   return Buffer.concat([
     decipher.update(Buffer.from(raw.ciphertext, "base64")),
@@ -284,24 +332,27 @@ async function decryptStore(raw: Record<string, unknown>): Promise<string> {
 
 function validateStore(parsed: Partial<AuthStore>): AuthStore {
   if (
-    !parsed
-    || typeof parsed !== "object"
-    || parsed.version !== 1
-    || !parsed.portals
-    || typeof parsed.portals !== "object"
+    !parsed ||
+    typeof parsed !== "object" ||
+    parsed.version !== 1 ||
+    !parsed.portals ||
+    typeof parsed.portals !== "object"
   ) {
     throw new Error("unsupported auth store schema");
   }
   for (const [key, value] of Object.entries(parsed.portals)) {
     if (
-      !value
-      || typeof value !== "object"
-      || typeof value.token !== "string"
-      || typeof value.portalUrl !== "string"
-      || key !== normalizePortalUrl(value.portalUrl)
+      !value ||
+      typeof value !== "object" ||
+      typeof value.token !== "string" ||
+      typeof value.portalUrl !== "string" ||
+      key !== normalizePortalUrl(value.portalUrl)
     ) {
       throw new Error(`invalid auth entry ${key}`);
     }
   }
-  return { version: 1, portals: parsed.portals as Record<string, AuthStoreEntry> };
+  return {
+    version: 1,
+    portals: parsed.portals as Record<string, AuthStoreEntry>,
+  };
 }

@@ -2,7 +2,8 @@ name: vos-portal
 
 services:
   postgres:
-    image: postgres:16-alpine
+    profiles: ["base", "runner", "test", "ops"]
+    image: postgres:16.9-alpine
     environment:
       POSTGRES_DB: vos_portal
       POSTGRES_USER: vos_portal
@@ -15,7 +16,23 @@ services:
     volumes: ["vos_postgres_data:/var/lib/postgresql/data"]
     networks: ["control"]
 
+  gitea-postgres:
+    profiles: ["base", "runner", "test"]
+    image: postgres:16.9-alpine
+    environment:
+      POSTGRES_DB: gitea
+      POSTGRES_USER: gitea
+      POSTGRES_PASSWORD: ${VOS_GITEA_DB_PASSWORD:?set VOS_GITEA_DB_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gitea -d gitea"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes: ["vos_gitea_postgres_data:/var/lib/postgresql/data"]
+    networks: ["control"]
+
   minio:
+    profiles: ["base", "runner", "test", "ops"]
     image: minio/minio:RELEASE.2025-04-22T22-12-26Z
     command: server /data --console-address :9001
     environment:
@@ -30,6 +47,7 @@ services:
     networks: ["control", "objects"]
 
   minio-init:
+    profiles: ["base", "runner", "test", "ops"]
     image: minio/minio:RELEASE.2025-04-22T22-12-26Z
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -47,13 +65,19 @@ services:
     restart: "no"
 
   gitea:
-    image: gitea/gitea:1.22
+    profiles: ["base", "runner", "test"]
+    image: docker.gitea.com/gitea:1.22.6
     environment:
       USER_UID: 1000
       USER_GID: 1000
-      GITEA__server__ROOT_URL: ${VOS_GITEA_PUBLIC_URL:-http://localhost:3001/}
+      GITEA__server__ROOT_URL: ${VOS_GITEA_PUBLIC_URL:-https://git.localhost:8443/}
       GITEA__server__LOCAL_ROOT_URL: http://gitea:3000/
-      GITEA__database__DB_TYPE: sqlite3
+      GITEA__database__DB_TYPE: postgres
+      GITEA__database__HOST: gitea-postgres:5432
+      GITEA__database__NAME: gitea
+      GITEA__database__USER: gitea
+      GITEA__database__PASSWD: ${VOS_GITEA_DB_PASSWORD:?set VOS_GITEA_DB_PASSWORD}
+      GITEA__database__SSL_MODE: disable
       GITEA__security__INSTALL_LOCK: "true"
       GITEA__security__SECRET_KEY: ${VOS_GITEA_SECRET_KEY:?set VOS_GITEA_SECRET_KEY}
       GITEA__security__INTERNAL_TOKEN: ${VOS_GITEA_INTERNAL_TOKEN:?set VOS_GITEA_INTERNAL_TOKEN}
@@ -64,14 +88,13 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
-    ports: ["3001:3000", "2222:22"]
     volumes: ["vos_gitea_data:/data"]
     depends_on:
-      postgres: { condition: service_healthy }
+      gitea-postgres: { condition: service_healthy }
     networks: ["control", "checkout"]
 
   vos-runner-image:
-    profiles: ["runner"]
+    profiles: ["runner", "test"]
     image: vos-runner:local
     build:
       context: ./vos
@@ -84,7 +107,7 @@ services:
     restart: "no"
 
   docker-socket-proxy:
-    profiles: ["runner"]
+    profiles: ["runner", "test"]
     image: ghcr.io/tecnativa/docker-socket-proxy:v0.4.2
     environment:
       CONTAINERS: 1
@@ -127,6 +150,7 @@ services:
     restart: "no"
 
   migrate:
+    profiles: ["base", "runner", "test", "ops"]
     image: vos-portal:local
     build:
       context: ./vos
@@ -140,6 +164,7 @@ services:
     restart: "no"
 
   vos-portal:
+    profiles: ["base", "runner", "test"]
     image: vos-portal:local
     build:
       context: ./vos
@@ -180,7 +205,8 @@ services:
     networks: ["control", "ingress"]
 
   caddy:
-    image: caddy:2.10-alpine
+    profiles: ["base", "runner", "test"]
+    image: caddy:2.10.0-alpine
     ports:
       - "${VOS_PORTAL_HTTPS_PORT:-8443}:443"
       - "${VOS_PORTAL_HTTP_PORT:-8080}:80"
@@ -199,7 +225,7 @@ services:
     networks: ["control", "ingress"]
 
   vos-worker:
-    profiles: ["runner"]
+    profiles: ["runner", "test"]
     image: vos-portal:local
     build:
       context: ./vos
@@ -211,7 +237,7 @@ services:
       VOS_RUNNER_IMAGE: vos-runner:local
       VOS_RUNNER_CHECKOUT_NETWORK: vos-portal-checkout
       VOS_RUNNER_NETWORK: vos-portal-runner
-      VOS_RUNNER_PORTAL_URL: ${VOS_PORTAL_PUBLIC_ORIGIN:?set VOS_PORTAL_PUBLIC_ORIGIN}
+      VOS_RUNNER_PORTAL_URL: ${VOS_RUNNER_PORTAL_URL:-http://vos-portal:8787}
       VOS_RUNNER_CPUS: ${VOS_RUNNER_CPUS:-2}
       VOS_RUNNER_MEMORY_BYTES: ${VOS_RUNNER_MEMORY_BYTES:-2147483648}
       VOS_RUNNER_PIDS: ${VOS_RUNNER_PIDS:-256}
@@ -234,11 +260,13 @@ services:
       migrate: { condition: service_completed_successfully }
       vos-runner-image: { condition: service_completed_successfully }
       docker-socket-proxy: { condition: service_started }
+      vos-portal: { condition: service_healthy }
     read_only: true
     tmpfs: ["/tmp:size=128m,noexec,nosuid"]
     security_opt: ["no-new-privileges:true"]
     cap_drop: ["ALL"]
     networks: ["control", "runner", "runtime-control"]
+    restart: unless-stopped
 
 networks:
   control: { internal: true }
@@ -250,6 +278,7 @@ networks:
 
 volumes:
   vos_postgres_data:
+  vos_gitea_postgres_data:
   vos_minio_data:
   vos_gitea_data:
   vos_caddy_data:

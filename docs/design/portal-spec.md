@@ -1,5 +1,5 @@
-# Portal frozen boundary
+# Portal boundary and connected contract
 
-Portal/Demo is retained only as a platform boundary in this phase. Its API, worker, Web UI, and static Demo may continue to build and pass unit tests, but they do not define the student file contract and do not participate in the local student loop.
+Portal is the online control plane for teaching and assessment. Its Fastify API, worker, Web UI, static Demo, Docker Compose deployment, and isolated Runner are versioned alongside the shared Portal contracts. The local student loop remains offline and is not changed by enabling online operations.
 
-The student CLI stays in-process with `vos-agent/headless`. Any HTTP/OpenAI-compatible service is an internal Portal capability; `agent serve`, pipeline orchestration, hidden tests, and connected teaching acceptance are not public student commands.
+The student CLI stays in-process with `vos-agent/headless`. Online operations are explicit and live only under `vos portal`: device login, project binding, public runs, SSE status, evidence download, and authoritative submissions. Pipeline orchestration, hidden tests, and Runner execution remain Portal/worker capabilities rather than general-purpose student commands.

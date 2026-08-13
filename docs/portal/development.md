@@ -1,6 +1,6 @@
 # Portal Development
 
-> 冻结说明：本页保留 Portal 维护与历史连接测试方法，当前交付只保证 typecheck、build 和 unit test。下文 connected/Production 命令不属于学生主链，也不能作为本阶段已经完成 connected teaching loop 的证据。
+本页给出 Portal 的本地开发、Compose、connected 测试与恢复演练方法。connected 结果必须单独记录，不能用 unit 或静态 Demo 结果替代。
 
 从 `vos/` 运行：
 
@@ -43,9 +43,7 @@ export VOS_PORTAL_MASTER_KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '
 该密钥用于包封 OIDC、学校模型 Provider 与 BYOK 凭据，轮换前必须先完成密文重包封，不能直接替换。
 
 ```sh
-docker compose up -d postgres minio minio-init gitea
-docker compose run --rm migrate
-docker compose up -d vos-portal caddy
+docker compose --profile base --profile runner up -d
 ```
 
 本地 Caddy 使用内部 CA。浏览器演示前应从 Caddy 数据卷导出并信任根证书；正式部署

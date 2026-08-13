@@ -81,8 +81,11 @@ export interface PortalPipelineCommand extends BaseCommand {
   scope?: "public" | "staff" | "final";
   modelCredentialId?: string;
   outDir?: string;
+  stageKey?: string;
+  watchAfter?: boolean;
 }
 export interface ProjectBindCommand extends BaseCommand {kind:"project_bind";portalUrl:string;projectId:string}
+export interface PortalSubmitCommand extends BaseCommand {kind:"portal_submit";stageKey?:string;watch:boolean}
 
 export interface ServeCommand extends BaseCommand {
   kind: "serve";
@@ -405,15 +408,16 @@ export type StudentCliCommand =
   | KbClearCommand
   | KbExportManifestCommand
   | KbImportManifestCommand
-  | { kind: "help"; topic?: string };
-
-/** Commands retained only for the frozen Portal/internal execution API. */
-export type FrozenPortalCommand =
   | LoginCommand
   | LogoutCommand
   | WhoamiCommand
   | PortalPipelineCommand
   | ProjectBindCommand
+  | PortalSubmitCommand
+  | { kind: "help"; topic?: string };
+
+/** Commands retained only for the Portal/internal execution API. */
+export type PortalInternalCommand =
   | ServeCommand
   | StageShowCommand
   | StageSaveCommand
@@ -440,7 +444,7 @@ export type FrozenPortalCommand =
   | AgentLogCommand
   | SeedStatusCommand;
 
-export type CliCommand = StudentCliCommand | FrozenPortalCommand;
+export type CliCommand = StudentCliCommand | PortalInternalCommand;
 
 export type CliOnlyCommand =
   | LoginCommand
@@ -448,6 +452,7 @@ export type CliOnlyCommand =
   | WhoamiCommand
   | PortalPipelineCommand
   | ProjectBindCommand
+  | PortalSubmitCommand
   | ServeCommand
   | AgentServeCommand
   | { kind: "help"; topic?: string };

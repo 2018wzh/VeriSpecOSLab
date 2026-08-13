@@ -97,7 +97,7 @@ export async function collectRunnerEvidence(input: {
     manifest.policy_snapshot_ref !== input.portalRun.policy_snapshot_ref
   )
     throw new Error("runner manifest policy snapshot mismatch");
-  const visibility = input.portalRun.scope === "public" ? "student" : "staff";
+  const visibility = input.portalRun.scope === "staff" ? "staff" : "student";
   const stored: Array<{
     id: string;
     key: string;

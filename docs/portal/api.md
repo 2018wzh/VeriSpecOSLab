@@ -1,6 +1,6 @@
 # Portal API
 
-> 冻结边界：本页保留 Portal 冻结前的 API 与 runner 协议，供维护现有 typecheck、build 和 unit test 使用。学生 CLI 已删除旧 runner 服务入口，下面的 connected 路径不是当前可运行承诺。
+Portal Web、CLI 与 Worker 共享本页所述的版本化 contract。旧顶级在线命令不会恢复；公开 CLI 入口均位于 `vos portal`。
 
 Portal Web 与控制面同源，所有当前应用接口位于 `/api/v1`。生产请求使用
 `Secure`、`HttpOnly`、`SameSite=Strict` session cookie；mutation 还必须携带
@@ -151,7 +151,7 @@ envelope 经受限 Docker exec 投影到 tmpfs 并在容器内解密。运行结
 
 ## Runner API 边界
 
-冻结前的 worker 只调用项目内旧 runner HTTP 服务的 typed API：
+worker 只调用短生命周期容器内专用 runner HTTP 服务的 typed API：
 
 ```http
 POST /api/v1/verify/runs

@@ -11,11 +11,13 @@ test("every HTTP mutation declares an idempotency guard or a reviewed protocol e
     "/courses/import/dry-run", // validation query; it does not persist state
     "const downloadObject=", // authorized signed-URL query; it does not persist state
   ];
-  const handlers = source.split("\n").filter(line => /request\.method==="(POST|PUT|PATCH|DELETE)"/.test(line));
+  const lines = source.split("\n");
+  const handlers = lines.flatMap((line, index) => /request\.method\s*===\s*"(POST|PUT|PATCH|DELETE)"/.test(line) ? [{ line, index }] : []);
   expect(handlers.length).toBeGreaterThan(20);
   for (const handler of handlers) {
-    const guarded = handler.includes("mutationGuard(") || handler.includes("unauthenticatedMutationGuard(");
-    const exempt = exemptions.some(value => handler.includes(value));
-    expect(guarded || exempt, handler.trim()).toBe(true);
+    const context = lines.slice(handler.index, handler.index + 8).join("\n");
+    const guarded = context.includes("mutationGuard(") || context.includes("unauthenticatedMutationGuard(");
+    const exempt = exemptions.some(value => context.includes(value));
+    expect(guarded || exempt, handler.line.trim()).toBe(true);
   }
 });

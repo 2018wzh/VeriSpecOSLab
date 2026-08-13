@@ -20,6 +20,8 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
       return handlers.executePortalPipeline(command, context);
     case "project_bind":
       return handlers.executeProjectBind(command, context);
+    case "portal_submit":
+      return handlers.executePortalSubmit(command, context);
 
     case "init":
       return handlers.executeInit(command, context);

@@ -51,6 +51,14 @@ export async function assertReproducible(projectRoot: string): Promise<Reproduci
   return verdict;
 }
 
+export function assertPortalCleanHead(projectRoot:string):string{
+  const head=currentHead(projectRoot);if(!head)throw new CliError("portal operation requires a committed Git HEAD","policy_blocked",{reason:"head_missing"});
+  const status=gitMaybe(projectRoot,["status","--porcelain","--untracked-files=all"]);if(!status.ok)throw new CliError("portal operation requires a Git project","policy_blocked",{reason:"not_git_repo"});
+  const dirty=status.stdout.split(/\r?\n/).filter(Boolean).map(line=>line.slice(3).trim()).filter(file=>!isPortalRuntimeArtifact(file));
+  if(dirty.length)throw new CliError("portal operation requires a clean HEAD","policy_blocked",{reason:"dirty_worktree",changed_targets:dirty});
+  return head;
+}
+
 export async function appendLedgerEntry(
   projectRoot: string,
   entry: Omit<CommitLedgerEntry, "created_at"> & { created_at?: string },
@@ -158,6 +166,8 @@ function isIgnoredRuntimeArtifact(file: string): boolean {
     file === ".gitignore" ||
     file === "AGENTS.md";
 }
+
+function isPortalRuntimeArtifact(file:string):boolean{return file.startsWith(".vos/runs/")||file.startsWith(".vos/audit/")||file.startsWith(".vos/index/")||file.startsWith(".vos/downloads/")||file.startsWith(".vos/submit/")||file.startsWith(".vos/cache/")||file.startsWith(".vos/worktrees/");}
 
 function gitMaybe(projectRoot: string, args: string[]): { ok: true; stdout: string; stderr: string } | { ok: false; stdout: string; stderr: string } {
   const proc = Bun.spawnSync(["git", ...args], {

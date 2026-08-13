@@ -12,7 +12,15 @@ https://localhost {
 		Referrer-Policy "same-origin"
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 	}
+	@metrics path /metrics
+	respond @metrics 404
 	reverse_proxy vos-portal:8787
+}
+
+https://git.localhost {
+	tls internal
+	encode zstd gzip
+	reverse_proxy gitea:3000
 }
 
 https://objects.localhost {

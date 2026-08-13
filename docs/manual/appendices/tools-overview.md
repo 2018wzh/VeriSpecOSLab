@@ -23,4 +23,4 @@ vos agent review [module]
 
 Lab 1 的 CTF 双环境热身发生在正式 VOS 项目主链之前。它使用语言工具链、QEMU 和教师提供的镜像，不因此恢复旧学生 CLI。任务形式与隐私边界见 [CTF 与 flag](ctf-flags.md)。
 
-Portal 与 Demo 仍保留构建和单测，但已冻结，不属于学生主链，也不承诺旧 connected teaching loop。
+Portal 是显式联网的教学与测评控制面，只通过 `vos portal ...` 使用；离线学生主链不变。Demo 仅用于静态视觉验收，不构成 connected 或发布证据。

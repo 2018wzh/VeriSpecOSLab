@@ -48,3 +48,6 @@
     display: none;
   }
 }
+
+@media (max-width:1100px){.student-summary{grid-template-columns:1fr 1fr}.overview{grid-column:1/3}.teacher-bottom{grid-template-columns:1fr}.lab-track{grid-template-columns:repeat(10,90px)}}
+@media (max-width:760px){.student-title,.teacher-title,.primary-action,.pending-strip{align-items:flex-start;flex-direction:column}.primary-action{padding:20px}.student-summary{display:flex;flex-direction:column}.overview{grid-column:auto}.evidence-links{align-items:flex-start;flex-direction:column;gap:14px}.course-lifecycle{grid-template-columns:repeat(6,90px);overflow-x:auto}.pending-strip>div{align-items:flex-start;flex-wrap:wrap;gap:10px}.teacher-filters{grid-template-columns:1fr}.teacher-bottom{display:flex;flex-direction:column}}

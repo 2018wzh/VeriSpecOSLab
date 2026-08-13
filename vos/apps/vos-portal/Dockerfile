@@ -11,7 +11,7 @@ COPY apps/vos-agent/package.json ./apps/vos-agent/
 COPY apps/vos-cli/package.json ./apps/vos-cli/
 COPY apps/vos-demo/package.json ./apps/vos-demo/
 COPY apps/vos-portal/package.json ./apps/vos-portal/
-RUN bun install --frozen-lockfile --ignore-scripts
+RUN bun install --frozen-lockfile --ignore-scripts --registry https://registry.npmjs.org
 COPY packages ./packages
 COPY apps ./apps
 RUN bun run --cwd apps/vos-portal build

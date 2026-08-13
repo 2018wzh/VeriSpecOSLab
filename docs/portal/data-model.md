@@ -7,6 +7,7 @@ PostgreSQL migration 是持久化模型的唯一真相源，共享 Zod schema �
 - identity：users、sessions、OIDC identity 与课程角色；
 - course：courses、course_manifest_versions、experiments、stage_gates、rubric/AI policy 快照、course_memberships 与 course_groups；
 - project：projects、project_members、project_repositories、project_commit_ledger、design_submissions、policy snapshot 与冻结 commit；
+- authoritative assessment：assessment_submissions 将 submission、project、stage、commit、Spec/config/manifest hash、policy snapshot、提交人、run 与终态时间绑定；普通 public run 不写入该表；
 - evidence：pipeline_runs、evidence_records、object_refs；
 - teaching：score_snapshots、member_adjustments、appeals、notifications；
 - AI：qa_threads、qa_messages、对象引用与审计事件；

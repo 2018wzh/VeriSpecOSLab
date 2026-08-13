@@ -13,5 +13,5 @@ init → ask → handwrite Spec → lint/review → manual commit
 - [ ] Agent tests cover read-only review, detached worktrees, owns unions, HEAD drift, structured-submission repair, failed-run isolation, automatic commits, and maxIterations.
 - [ ] KB tests cover command-managed sources, revision/content hashes, snippets actually shown to the student, path/credential redaction, and hash-chain replay.
 - [ ] `report` and `submit` bind commits, Spec IDs, tests, logs, evidence, and commit/spec/config hashes.
-- [ ] Portal/Demo remain frozen and continue typecheck/build/unit-test checks.
+- [x] Portal/Demo connected Compose control plane, isolated Runner, and static Demo are validated separately from the offline student chain.
 - [ ] Real provider validation completes `ask → handwritten Spec → lint → review → manual commit → implement → verify`; Fixture/model stubs do not close this gate.

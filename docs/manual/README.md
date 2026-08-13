@@ -97,4 +97,4 @@ bun run test
 bun run build
 ```
 
-Portal 和 Demo 在本阶段保留并维持 typecheck/build/unit test，但冻结，不保证旧的 connected teaching loop。完整设计索引见 [`docs/design/spec/README.md`](../design/spec/README.md)、[`docs/design/toolchain/README.md`](../design/toolchain/README.md) 和 [`docs/design/agent/README.md`](../design/agent/README.md)。
+Portal 提供显式在线教学与测评，Demo 只用于静态界面验收。离线主链不会自动联网；完整设计索引见 [`docs/design/spec/README.md`](../design/spec/README.md)、[`docs/design/toolchain/README.md`](../design/toolchain/README.md) 和 [`docs/design/agent/README.md`](../design/agent/README.md)。

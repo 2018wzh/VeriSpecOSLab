@@ -128,6 +128,16 @@ describe("student CLI contract", () => {
     }
   });
 
+  test("exposes online operations only through vos portal",()=>{
+    expect(parseArgs(["bun","vos","portal","login","https://portal.example.edu"]).command).toEqual({kind:"login",portalUrl:"https://portal.example.edu",tokenStdin:false});
+    expect(parseArgs(["bun","vos","portal","bind","https://portal.example.edu","project-1"]).command).toEqual({kind:"project_bind",portalUrl:"https://portal.example.edu",projectId:"project-1"});
+    expect(parseArgs(["bun","vos","portal","run","--stage","memory","--watch"]).command).toEqual({kind:"portal_pipeline",action:"trigger",scope:"public",reason:"student requested public remote verification",stageKey:"memory",watchAfter:true});
+    expect(parseArgs(["bun","vos","portal","status","run-1","--watch"]).command).toEqual({kind:"portal_pipeline",action:"watch",runId:"run-1"});
+    expect(parseArgs(["bun","vos","portal","evidence","run-1","--out","evidence"]).command).toEqual({kind:"portal_pipeline",action:"download",runId:"run-1",outDir:"evidence"});
+    expect(parseArgs(["bun","vos","portal","submit","--watch"]).command).toEqual({kind:"portal_submit",stageKey:undefined,watch:true});
+    expect(()=>parseArgs(["bun","vos","portal","run","--scope","final"])).toThrow("unknown portal option");
+  });
+
   test("rejects retired nested commands without aliases", () => {
     for (const command of ["normalize", "check-consistency", "patch"]) {
       expect(() => parseArgs(["bun", "vos", "spec", command])).toThrow(`spec ${command} was removed`);

@@ -22,8 +22,8 @@ integration("course manifests publish immutable snapshots, rollback, and import 
     course: { code: prefix, name: "Course Control Integration", term: "test" },
     experiment: { id: `${prefix}-lab`, title: `Kernel Lab ${specVersion}`, spec_version: specVersion },
     stages: [
-      { id: "boot", key: "boot", name: "Boot", sequence: 0, required_artifacts: ["serial.log"], required_evidence: [], manual_review_required: false },
-      { id: "memory", key: "memory", name: "Memory", sequence: 1, required_artifacts: [], required_evidence: [{ suite: "memory", case_name: "map", required_result: "pass" }], manual_review_required: true },
+      { id: "boot", key: "boot", name: "Boot", sequence: 0, source_ref:"course/lab1-complete",spec_refs:["kernel.boot"],test_sets:["boot.public"],rubric_ids:["correctness"],hardware_gate:"none",human_review_required:false,required_artifacts: ["serial.log"], required_evidence: [], manual_review_required: false },
+      { id: "memory", key: "memory", name: "Memory", sequence: 1, source_ref:"course/lab2-complete",spec_refs:["kernel.memory"],test_sets:["memory.public"],rubric_ids:["correctness","design"],hardware_gate:"none",human_review_required:false,required_artifacts: [], required_evidence: [{ suite: "memory", case_name: "map", required_result: "pass" }], manual_review_required: true },
     ],
     rubric: [{ id: "correctness", name: "Correctness", weight: 80 }, { id: "design", name: "Design", weight: 20 }],
     ai_policy: { allowed_models: ["school-default"], monthly_budget: 100, allow_byok: false },

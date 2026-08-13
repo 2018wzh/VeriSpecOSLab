@@ -1,7 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { parseTopLevelYaml, extractTimelineStages, type TimelineStage } from "./yaml.ts";
+import {
+  parseTopLevelYaml,
+  extractTimelineStages,
+  type TimelineStage,
+} from "./yaml.ts";
 
 export interface ProjectConfig {
   project_id?: string;
@@ -44,11 +48,14 @@ const STUDENT_ALLOWED_COMMANDS = [
   "run qemu",
   "run hardware",
   "verify",
+  "verify public",
   "report",
   "submit",
 ] as const;
 
-export async function loadProjectConfig(projectRoot: string): Promise<ProjectConfig> {
+export async function loadProjectConfig(
+  projectRoot: string,
+): Promise<ProjectConfig> {
   const configPath = path.resolve(projectRoot, ".vos", "project.yaml");
   if (!existsSync(configPath)) {
     throw new Error("project configuration missing, run `vos init` first");
@@ -57,9 +64,28 @@ export async function loadProjectConfig(projectRoot: string): Promise<ProjectCon
   return parseTopLevelYaml(text) as ProjectConfig;
 }
 
-export async function loadPolicyConfig(projectRoot: string): Promise<PolicyConfig> {
+export async function loadPolicyConfig(
+  projectRoot: string,
+): Promise<PolicyConfig> {
   const policyPath = path.resolve(projectRoot, ".vos", "policy.yaml");
-  const isStudentV2 = existsSync(path.resolve(projectRoot, "vos.yaml")) && !existsSync(path.resolve(projectRoot, ".vos", "project.yaml"));
+  if (process.env.VOS_COURSE_ADAPTER === "xv6-spec") {
+    return {
+      allowed_commands: [...STUDENT_ALLOWED_COMMANDS, "verify full"],
+      allowed_paths: [
+        "spec",
+        "src",
+        "tests",
+        ".vos",
+        "Makefile",
+        "kernel",
+        "user",
+      ],
+      visibility_scope: "public",
+    };
+  }
+  const isStudentV2 =
+    existsSync(path.resolve(projectRoot, "vos.yaml")) &&
+    !existsSync(path.resolve(projectRoot, ".vos", "project.yaml"));
   if (isStudentV2) {
     return {
       allowed_commands: [...STUDENT_ALLOWED_COMMANDS],
@@ -70,7 +96,16 @@ export async function loadPolicyConfig(projectRoot: string): Promise<PolicyConfi
   if (!existsSync(policyPath)) {
     return {
       allowed_commands: [...STUDENT_ALLOWED_COMMANDS],
-      allowed_paths: ["spec", "src", "tests", ".vos", "Makefile", "CMakeLists.txt", "xtask", "AGENTS.md"],
+      allowed_paths: [
+        "spec",
+        "src",
+        "tests",
+        ".vos",
+        "Makefile",
+        "CMakeLists.txt",
+        "xtask",
+        "AGENTS.md",
+      ],
       visibility_scope: "public",
     };
   }
@@ -78,8 +113,15 @@ export async function loadPolicyConfig(projectRoot: string): Promise<PolicyConfi
   return parseTopLevelYaml(text) as PolicyConfig;
 }
 
-export async function loadTimeline(projectRoot: string): Promise<TimelineStage[]> {
-  const timelinePath = path.resolve(projectRoot, "spec", "architecture", "timeline.yaml");
+export async function loadTimeline(
+  projectRoot: string,
+): Promise<TimelineStage[]> {
+  const timelinePath = path.resolve(
+    projectRoot,
+    "spec",
+    "architecture",
+    "timeline.yaml",
+  );
   if (!existsSync(timelinePath)) {
     return [];
   }
@@ -87,22 +129,32 @@ export async function loadTimeline(projectRoot: string): Promise<TimelineStage[]
   return extractTimelineStages(text);
 }
 
-export async function currentStageForProject(projectRoot: string): Promise<string> {
+export async function currentStageForProject(
+  projectRoot: string,
+): Promise<string> {
   const project = await loadProjectConfig(projectRoot);
   const timeline = await loadTimeline(projectRoot);
   if (!project.current_stage) {
-    throw new Error("project current_stage is missing, run `vos init` to create it");
+    throw new Error(
+      "project current_stage is missing, run `vos init` to create it",
+    );
   }
   if (timeline.length === 0) {
-    throw new Error("project timeline is missing, run `vos init` to create timeline metadata");
+    throw new Error(
+      "project timeline is missing, run `vos init` to create timeline metadata",
+    );
   }
   if (!timeline.some((item) => item.stage === project.current_stage)) {
-    throw new Error(`current_stage ${project.current_stage} is not in timeline`);
+    throw new Error(
+      `current_stage ${project.current_stage} is not in timeline`,
+    );
   }
   return project.current_stage;
 }
 
-export async function ensureDefaultProjectConfig(projectRoot: string): Promise<void> {
+export async function ensureDefaultProjectConfig(
+  projectRoot: string,
+): Promise<void> {
   const vosDir = path.resolve(projectRoot, ".vos");
   const projectPath = path.join(vosDir, "project.yaml");
   const policyPath = path.join(vosDir, "policy.yaml");
@@ -144,7 +196,9 @@ export async function ensureDefaultProjectConfig(projectRoot: string): Promise<v
 
 function ensureVosGitignore(projectRoot: string): void {
   const gitignorePath = path.join(projectRoot, ".gitignore");
-  const existing = existsSync(gitignorePath) ? readFileSync(gitignorePath, "utf8") : "";
+  const existing = existsSync(gitignorePath)
+    ? readFileSync(gitignorePath, "utf8")
+    : "";
   const lines = existing.split(/\r?\n/).map((line) => line.trim());
 
   const hasVos = lines.some((line) => line === ".vos/" || line === ".vos/*");
