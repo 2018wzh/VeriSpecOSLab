@@ -12,7 +12,8 @@ COPY apps/vos-cli/package.json ./apps/vos-cli/
 COPY apps/vos-demo/package.json ./apps/vos-demo/
 COPY apps/vos-portal/package.json ./apps/vos-portal/
 RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --frozen-lockfile --ignore-scripts --registry https://registry.npmjs.org --filter vos-cli
+    sed -i 's#https://registry.npmmirror.com/#https://registry.npmjs.org/#g' bun.lock \
+    && bun install --frozen-lockfile --ignore-scripts --registry https://registry.npmjs.org --filter vos-cli
 
 FROM oven/bun:1.3.14-debian
 RUN apt-get update \

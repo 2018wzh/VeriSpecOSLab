@@ -21,6 +21,7 @@ Production 首次启动必须显式迁移和 seed；数据库或 runner 不可�
 
 - [架构](architecture.md)
 - [API](api.md)
+- [OAuth 2.0 登录](oauth.md)
 - [数据模型](data-model.md)
 - [开发与验证](development.md)
 - [xv6 学生 CLI connected 验收记录](acceptance/xv6-student-cli-20260813.md)

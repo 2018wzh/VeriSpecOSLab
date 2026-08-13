@@ -310,6 +310,7 @@ const en = {
   密码: "Password",
   登录: "Sign in",
   学校统一身份认证: "Institutional single sign-on",
+  "OAuth 登录": "OAuth sign-in",
   "使用 {{provider}} 登录": "Sign in with {{provider}}",
   "Demo：student、ta、teacher、admin，密码与账号相同。":
     "Demo: student, ta, teacher, and admin; each password matches its username.",
@@ -360,6 +361,12 @@ const en = {
   系统与身份认证管理: "System and identity administration",
   "检查 PostgreSQL、Gitea、MinIO、worker 与队列，并配置 OIDC Authorization Code + PKCE。":
     "Inspect PostgreSQL, Gitea, MinIO, workers, and queues, and configure OIDC Authorization Code + PKCE.",
+  "OAuth 2.0 Provider": "OAuth 2.0 provider",
+  "用于没有 OIDC ID Token 的标准 OAuth 2.0 服务；Portal 通过 Authorization Code + PKCE 获取 UserInfo。":
+    "For standard OAuth 2.0 services without an OIDC ID Token; Portal obtains UserInfo with Authorization Code + PKCE.",
+  "请填写 OAuth 授权、令牌和 UserInfo 端点":
+    "Enter OAuth authorization, token, and UserInfo endpoints",
+  "subject claim": "Subject claim",
   "Demo 无生产连接": "Demo has no production connections",
   生产服务状态: "Production service status",
   "正在检查…": "Checking…",
@@ -390,6 +397,8 @@ const en = {
   审计理由: "Audit reason",
   "启用 Provider": "Enable provider",
   "OIDC provider 已加密保存。": "The OIDC provider was encrypted and saved.",
+  "OAuth provider 已加密保存。": "The OAuth provider was encrypted and saved.",
+  "加密保存 OAuth": "Save OAuth encrypted",
   课程配置与发布: "Course configuration and publishing",
   "先 dry-run 校验清单，再创建不可变草稿；发布和回滚都会生成可审计快照。":
     "Validate the manifest with a dry run before creating an immutable draft; publishing and rollback both create auditable snapshots.",

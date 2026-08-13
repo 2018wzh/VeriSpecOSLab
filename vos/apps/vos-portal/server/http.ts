@@ -19,6 +19,7 @@ import {
   ModelQuotaPolicyInputV1Schema,
   NotificationReadV1Schema,
   ObjectUploadRequestV1Schema,
+  OAuthProviderInputV1Schema,
   OidcProviderInputV1Schema,
   PipelineRequestV1Schema,
   ProjectProvisionRequestV1Schema,
@@ -461,6 +462,8 @@ async function api(
   }
   if (route === "/auth/oidc/providers" && request.method === "GET")
     return json(await oidc.providers());
+  if (route === "/auth/oauth/providers" && request.method === "GET")
+    return json(await oidc.oauthProviders());
   const oidcStart = route.match(/^\/auth\/oidc\/([^/]+)\/start$/);
   if (oidcStart && request.method === "GET") {
     const providerId = decodeURIComponent(oidcStart[1]);
@@ -479,6 +482,29 @@ async function api(
       `${publicOrigin(request)}${url.pathname}${url.search}`,
     );
     const result = await oidc.callback(providerId, externalUrl);
+    return redirect(
+      result.return_to,
+      sessionCookies(result.token, result.csrf),
+    );
+  }
+  const oauthStart = route.match(/^\/auth\/oauth\/([^/]+)\/start$/);
+  if (oauthStart && request.method === "GET") {
+    const providerId = decodeURIComponent(oauthStart[1]);
+    const callback = `${publicOrigin(request)}/api/v1/auth/oauth/${encodeURIComponent(providerId)}/callback`;
+    const authorization = await oidc.startOAuth(
+      providerId,
+      callback,
+      url.searchParams.get("return_to") ?? "/workspace",
+    );
+    return redirect(authorization.toString());
+  }
+  const oauthCallback = route.match(/^\/auth\/oauth\/([^/]+)\/callback$/);
+  if (oauthCallback && request.method === "GET") {
+    const providerId = decodeURIComponent(oauthCallback[1]);
+    const externalUrl = new URL(
+      `${publicOrigin(request)}${url.pathname}${url.search}`,
+    );
+    const result = await oidc.callbackOAuth(providerId, externalUrl);
     return redirect(
       result.return_to,
       sessionCookies(result.token, result.csrf),
@@ -615,6 +641,24 @@ async function api(
     const input = OidcProviderInputV1Schema.parse(await body(request));
     return json(
       await oidc.saveProvider(
+        session.actor,
+        input,
+        trace,
+        key,
+        await requestHash(input),
+      ),
+    );
+  }
+  if (route === "/admin/oauth/providers" && request.method === "GET") {
+    if (session.actor.role !== "admin")
+      throw new Unauthorized(403, "仅管理员可查看 OAuth 配置");
+    return json(await oidc.oauthProviders(true));
+  }
+  if (route === "/admin/oauth/providers" && request.method === "POST") {
+    const key = await mutationGuard(request, repository, session);
+    const input = OAuthProviderInputV1Schema.parse(await body(request));
+    return json(
+      await oidc.saveOAuthProvider(
         session.actor,
         input,
         trace,

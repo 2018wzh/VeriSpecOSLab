@@ -4,7 +4,7 @@ PostgreSQL migration 是持久化模型的唯一真相源，共享 Zod schema �
 
 主要聚合：
 
-- identity：users、sessions、OIDC identity 与课程角色；
+- identity：users、sessions、OIDC/OAuth identity 与课程角色；
 - course：courses、course_manifest_versions、experiments、stage_gates、rubric/AI policy 快照、course_memberships 与 course_groups；
 - project：projects、project_members、project_repositories、project_commit_ledger、design_submissions、policy snapshot 与冻结 commit；
 - authoritative assessment：assessment_submissions 将 submission、project、stage、commit、Spec/config/manifest hash、policy snapshot、提交人、run 与终态时间绑定；普通 public run 不写入该表；
@@ -29,6 +29,11 @@ outbox 增加显式租约；达到重试上限后使用 PostgreSQL `infinity` �
 `006_oidc.sql` 增加 provider 配置和十分钟有效的授权状态。client secret、PKCE verifier
 与 nonce 均以 AES-256-GCM 密文保存；state 仅保存 SHA-256，callback 使用带 expiry 与
 `consumed_at is null` 条件的原子更新防止并发回放。provider 配置与审计写入同一事务。
+
+`021_oauth_provider_endpoints.sql` 为同一 provider 表增加 OAuth 2.0 的 authorization、token、
+UserInfo endpoint 与 subject claim。OAuth provider 以 endpoint 非空与 OIDC provider 区分，
+共用包封 secret、授权状态和 Portal session，但 UserInfo subject 取代 ID Token `sub` 作为
+外部身份绑定；access token 不持久化。
 
 `007_qa_agent.sql` 为问答消息增加请求 actor、请求/回答谱系和处理状态，并增加
 `agent_audits`。每个 request message 最多对应一个 assistant message 和一个 Agent 审计，

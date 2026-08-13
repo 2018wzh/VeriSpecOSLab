@@ -18,6 +18,7 @@ Worker  -> course.published outbox -> course-member notifications
 Worker  -> qa.agent.requested -> authenticated vos-agent knowledgebase_qa -> answer + audit
 Admin   -> encrypted model Provider + course/member monthly quota -> usage ledger
 Browser -> OIDC provider -> one-time state/PKCE/nonce -> Portal session
+Browser -> OAuth 2.0 provider -> one-time state/PKCE -> server-side UserInfo -> Portal session
 Browser -> role-bound invite redemption -> course membership + audit
 Browser -> accessible contexts -> explicitly selected project dashboard/Q&A
 ```
@@ -41,6 +42,7 @@ Browser -> accessible contexts -> explicitly selected project dashboard/Q&A
 - 课程发布和回滚以 manifest snapshot 为边界；rollback 创建新版本并在同一事务中物化实验、StageGate、rubric、AI policy、审计与 outbox，不修改旧快照。
 - `course.published` 由 worker 租约消费；失败采用指数退避，五次后停在 `infinity` 并保留结构化错误，不会阻塞其他 outbox topic。
 - OIDC discovery、PKCE 和 token 校验复用 `openid-client`；数据库只保存 state hash 和 AES-256-GCM 包封的短期 flow secret。provider secret 使用同一主密钥包封、AAD 绑定、只写不回显，配置变更与审计记录在同一事务提交。
+- OAuth 2.0 使用显式 HTTPS authorization/token/UserInfo endpoint 和 `openid-client` Authorization Code grant + PKCE；access token 只存在服务端 UserInfo 请求期间，不进入浏览器存储、数据库、日志或审计 payload。UserInfo subject 与 issuer 绑定 Portal 账户，角色映射不能授予 admin。
 - Q&A 提交在 PostgreSQL 中锁定课程额度，按保守 Token 上限预留请求与费用；课程和可选成员额度均在并发事务下强制执行。worker 只调用带 Bearer service token 的 `vos-agent` typed task API，通过由相同 service token 派生的 AES-GCM 会话 envelope 传递已解封的单次 Provider 配置。课程 allowed_models 与 reservation 在领取后重新校验，公网搜索工具被禁用，成功后结算实际 usage，终止失败释放预留；provider/contract/policy 失败不会生成伪回答。
 - runner 终态不是成功证据；worker 还必须取得 versioned manifest，校验 run/project/commit/policy 绑定，并在每个 artifact 通过路径、单对象 50 MiB、总计 250 MiB 与 SHA-256 门禁后写入 MinIO。数据库只保存验证后的 S3 URI、checksum、visibility 和 lineage。
 - Demo 由编译期模式生成独立产物，Production bundle 不包含 localStorage adapter。

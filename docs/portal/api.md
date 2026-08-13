@@ -22,8 +22,13 @@ GET  /api/v1/auth/me
 GET  /api/v1/auth/oidc/providers
 GET  /api/v1/auth/oidc/{provider_id}/start
 GET  /api/v1/auth/oidc/{provider_id}/callback
+GET  /api/v1/auth/oauth/providers
+GET  /api/v1/auth/oauth/{provider_id}/start
+GET  /api/v1/auth/oauth/{provider_id}/callback
 GET  /api/v1/admin/oidc/providers
 POST /api/v1/admin/oidc/providers
+GET  /api/v1/admin/oauth/providers
+POST /api/v1/admin/oauth/providers
 GET  /api/v1/admin/system/status
 GET  /api/v1/admin/model-providers
 PUT  /api/v1/admin/model-providers
@@ -118,6 +123,13 @@ OIDC 使用 `openid-client` 执行 discovery、Authorization Code + PKCE、issue
 和 ID Token 校验。state 只以 SHA-256 保存并通过单条条件更新一次性消费；PKCE verifier
 与 nonce 使用 AES-256-GCM 包封并绑定 provider AAD。管理员提交的 client secret 同样只
 保存密文且 API 永不回显；外部角色只能映射为 teacher、ta 或 student，不能授予 admin。
+
+OAuth 2.0 使用独立的 `/auth/oauth` 与 `/admin/oauth` 命名空间。管理员显式登记 HTTPS
+authorization/token/UserInfo endpoint；Portal 使用 `openid-client` 的 Authorization Code
+grant 与 PKCE，但不要求 ID Token，随后只在服务端以短生命周期 access token 请求 UserInfo。
+UserInfo 的 configured subject claim 绑定 `(issuer, subject)` 账户；access token 不进入
+cookie、数据库、日志或审计 payload。OAuth 同样使用一次性 state、同源最终 Web session
+和不可授予 admin 的课程角色映射。
 
 管理员可签发最长 24 小时的自动化 service token。scope 只允许 `project:read`、
 `pipeline:write` 和 `evidence:read`，未显式映射的 API 一律拒绝。创建幂等重放会从服务端

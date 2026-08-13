@@ -101,6 +101,56 @@ export const OidcProviderSummaryV1Schema = OidcProviderInputV1Schema.omit({
   .strict();
 export type OidcProviderSummaryV1 = z.infer<typeof OidcProviderSummaryV1Schema>;
 
+const HttpsUrlSchema = z
+  .string()
+  .url()
+  .refine(
+    (value) => new URL(value).protocol === "https:",
+    "URL must use HTTPS",
+  );
+
+/** OAuth 2.0 providers use an explicit user-info endpoint because OAuth 2.0
+ * itself does not define an identity token or a discovery document. */
+export const OAuthProviderInputV1Schema = z
+  .object({
+    version: z.literal("oauth-provider-input.v1"),
+    id: z.string().regex(/^[a-zA-Z0-9_.-]{1,64}$/),
+    name: z.string().min(1).max(100),
+    issuer: HttpsUrlSchema,
+    authorization_endpoint: HttpsUrlSchema,
+    token_endpoint: HttpsUrlSchema,
+    userinfo_endpoint: HttpsUrlSchema,
+    client_id: z.string().min(1).max(200),
+    client_secret: z.string().min(1).max(1000),
+    scopes: z
+      .array(z.string().regex(/^[A-Za-z0-9._:-]+$/))
+      .min(1)
+      .max(20),
+    subject_claim: z.string().min(1).max(100),
+    username_claim: z.string().min(1).max(100),
+    display_name_claim: z.string().min(1).max(100),
+    role_claim: z.string().min(1).max(100).optional(),
+    role_mappings: z.record(z.string(), OidcCourseRoleSchema),
+    default_role: OidcCourseRoleSchema,
+    enabled: z.boolean(),
+    reason: z.string().min(10).max(500),
+  })
+  .strict();
+export type OAuthProviderInputV1 = z.infer<typeof OAuthProviderInputV1Schema>;
+export const OAuthProviderSummaryV1Schema = OAuthProviderInputV1Schema.omit({
+  client_secret: true,
+  reason: true,
+})
+  .extend({
+    version: z.literal("oauth-provider-summary.v1"),
+    secret_configured: z.literal(true),
+    updated_at: z.string().datetime(),
+  })
+  .strict();
+export type OAuthProviderSummaryV1 = z.infer<
+  typeof OAuthProviderSummaryV1Schema
+>;
+
 export const TraceIdSchema = z.string().regex(/^trace-[a-zA-Z0-9_-]+$/);
 export const IdempotencyKeySchema = z.string().min(8).max(128);
 export const CursorPageSchema = z
@@ -1390,6 +1440,8 @@ export const PortalContractSchemas = {
   CourseGroupMutationV1: CourseGroupMutationV1Schema,
   OidcProviderInputV1: OidcProviderInputV1Schema,
   OidcProviderSummaryV1: OidcProviderSummaryV1Schema,
+  OAuthProviderInputV1: OAuthProviderInputV1Schema,
+  OAuthProviderSummaryV1: OAuthProviderSummaryV1Schema,
   PolicySnapshotV1: PolicySnapshotV1Schema,
   ProjectBindingV1: ProjectBindingV1Schema,
   ProjectProvisionRequestV1: ProjectProvisionRequestV1Schema,
@@ -1890,6 +1942,46 @@ export function portalOpenApiDocument(): Record<string, unknown> {
           },
         },
       },
+      "/api/v1/auth/oauth/providers": {
+        get: {
+          security: [],
+          responses: {
+            "200": {
+              description: "Enabled OAuth 2.0 providers without credentials",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "array",
+                    items: {
+                      $ref: "#/components/schemas/OAuthProviderSummaryV1",
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/v1/auth/oauth/{provider_id}/start": {
+        get: {
+          security: [],
+          parameters: parameter("provider_id"),
+          responses: {
+            "302": {
+              description: "Redirect to the OAuth 2.0 authorization endpoint",
+            },
+          },
+        },
+      },
+      "/api/v1/auth/oauth/{provider_id}/callback": {
+        get: {
+          security: [],
+          parameters: parameter("provider_id"),
+          responses: {
+            "302": { description: "Create a web session and redirect locally" },
+          },
+        },
+      },
       "/api/v1/admin/oidc/providers": {
         get: {
           responses: {
@@ -1914,6 +2006,34 @@ export function portalOpenApiDocument(): Record<string, unknown> {
             "200": {
               description: "Encrypted OIDC provider configuration",
               content: json("OidcProviderSummaryV1"),
+            },
+          },
+        },
+      },
+      "/api/v1/admin/oauth/providers": {
+        get: {
+          responses: {
+            "200": {
+              description: "OAuth 2.0 provider configurations without credentials",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "array",
+                    items: {
+                      $ref: "#/components/schemas/OAuthProviderSummaryV1",
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        post: {
+          requestBody: { required: true, content: json("OAuthProviderInputV1") },
+          responses: {
+            "200": {
+              description: "Encrypted OAuth 2.0 provider configuration",
+              content: json("OAuthProviderSummaryV1"),
             },
           },
         },

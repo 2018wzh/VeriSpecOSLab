@@ -21,4 +21,8 @@ vos portal logout https://portal.example.edu
 
 `portal submit` 是权威课程提交：工作树必须 clean，提交必须是当前 `HEAD`，且该 commit 必须已经出现在绑定 Gitea 仓库的 commit ledger。请求绑定 stage、Spec/config/manifest hash 和课程 policy snapshot。若课程仓库只提交 `vos.yaml`，它就是显式的 manifest projection；生成的 `.vos/toolchain.json` 存在时优先使用它。失败时不会改用本地验证、上传工作树快照或生成归档。
 
+Portal Web 登录支持本地账号、OIDC 和 OAuth 2.0。OAuth 登录使用服务端 Authorization Code
++ PKCE 与 UserInfo，不会把 access token 写入浏览器或项目文件；管理员必须先在身份认证管理
+页面登记 HTTPS endpoint 和角色映射。
+
 Lab 9 与 Lab 10 的容器或 QEMU 通过结果仍只能形成 candidate。VisionFive 2 四核 `usertests` 证据与教师人工复核完成前，Portal 不得将其升级为 complete。

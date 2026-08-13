@@ -21,6 +21,7 @@
 - [x] Course-scoped group editor with active-student validation, one-group membership, optimistic revisions, idempotency and audit history in Production and Demo.
 - [x] Course publication outbox notifications with lease, backoff, terminal failure and audit records.
 - [x] OIDC provider control plane, encrypted credentials, PKCE/state/nonce flow and administrator configuration UI.
+- [x] OAuth 2.0 Authorization Code + PKCE provider control plane, explicit HTTPS endpoints, server-side UserInfo mapping, encrypted credentials and administrator configuration UI.
 - [x] Course-policy-gated BYOK credential create/list/revoke API and UI with envelope encryption, no secret echo and Demo hard-disable.
 - [x] Short-lived BYOK runner lease, encrypted exec-envelope projection, expiry deletion, revoke and expired-worker recovery implementation.
 - [x] Administrator PostgreSQL/Gitea/MinIO health, worker heartbeat and queue-depth projection; Demo reports production services unavailable.
@@ -46,6 +47,7 @@
 - [x] Verify the per-job Docker runner path: container isolation, checkout/runner network transition, resource limits, authenticated runner service, no-egress and cleanup through the restricted runtime adapter.
 - [x] Run CLI device authorization, encrypted credential persistence, online `whoami`, logout and server-side revoke against HTTPS Portal and PostgreSQL.
 - [x] Complete OIDC provider integration and replay/issuer/audience/nonce verification.
+- [x] Complete OAuth 2.0 provider integration and replay/PKCE/UserInfo/subject-mapping verification.
 - [x] Execute a real PostgreSQL 100-student/100-project queue fixture with 20 concurrent isolated runner startups and an explicit readiness threshold.
 - [x] Execute PostgreSQL/MinIO backup-and-restore drill and full teaching-cycle E2E.
 - [x] Execute the real student CLI flow for `course/lab1-complete` through

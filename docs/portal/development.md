@@ -61,6 +61,7 @@ bun test apps/vos-portal/tests/project-provisioning.integration.test.ts
 bun test apps/vos-portal/tests/project-provisioning-gitea.integration.test.ts
 bun test apps/vos-portal/tests/course-control.integration.test.ts
 bun test apps/vos-portal/tests/oidc.integration.test.ts
+bun test apps/vos-portal/tests/oauth.integration.test.ts
 bun test apps/vos-portal/tests/qa-agent.integration.test.ts
 bun test apps/vos-portal/tests/model-control.integration.test.ts
 bun test apps/vos-portal/tests/runner-evidence.integration.test.ts
@@ -114,6 +115,11 @@ Contents API 产生 push，并把签名 delivery 送入 Portal；它们只在显
 OIDC 连接测试通过 `openid-client` 的受控 HTTPS transport 使用真实 RS256 ID Token，覆盖
 provider secret 密文落库、API summary 不回显、成功登录、外部角色映射，以及 state、
 issuer、audience 与 nonce 的拒绝路径。校园 issuer 的具体 client 注册仍属于部署配置。
+
+OAuth 2.0 连接测试覆盖 Authorization Code + PKCE、显式 HTTPS 授权/令牌/UserInfo endpoint、
+access token 仅用于服务端 UserInfo 请求、subject/角色映射、secret 不回显以及一次性 state。
+OAuth 不接受隐式或密码模式，也不会把 token 写入 cookie、数据库或日志；配置和回调说明见
+[`oauth.md`](oauth.md)。
 
 runner evidence 连接测试使用受控 typed runner、真实 PostgreSQL 与 MinIO，覆盖 manifest
 绑定、artifact checksum/size/path 门禁、内部对象上传、evidence projection 和谱系。该测试

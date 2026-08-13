@@ -1,6 +1,6 @@
 import type {
   AgentAuditV1, AppealRecordV1, AppealSubmitV1, AppealTransitionV1, CourseManifestDryRunV1, CourseManifestV1, CourseManifestVersionV1, EnrollmentCsvImportV1, EnrollmentImportResultV1, EnrollmentInviteCreateV1, EnrollmentInviteIssuedV1, EnrollmentInviteRedeemV1, EnrollmentInviteRedemptionV1, EnrollmentInviteSummaryV1, EvidenceBundleV1, ModelCredentialInputV1, ModelCredentialRefV1, ModelProviderInputV1, ModelProviderSummaryV1, ModelQuotaPolicyInputV1, ModelQuotaPolicyV1, PipelineRequestV1, PipelineSummaryV1,
-  CourseGroupMutationV1, CourseGroupV1, CourseOperationsV1, DesignReviewInputV1, DesignSubmissionInputV1, DesignSubmissionV1, NotificationV1, OidcProviderInputV1, OidcProviderSummaryV1, PortalActor, PortalContextV1, PortalDashboard, PortalRole, ProjectProvisionOptionsV1, ProjectProvisionRequestV1, ProjectProvisionStatusV1, QaThreadV1, RetentionPolicyUpdateV1, RetentionPolicyV1, ScoreAdjustmentInputV1, ScoreCalculationV1, ScoreSnapshotV1, ScoreTransitionV1,
+  CourseGroupMutationV1, CourseGroupV1, CourseOperationsV1, DesignReviewInputV1, DesignSubmissionInputV1, DesignSubmissionV1, NotificationV1, OAuthProviderInputV1, OAuthProviderSummaryV1, OidcProviderInputV1, OidcProviderSummaryV1, PortalActor, PortalContextV1, PortalDashboard, PortalRole, ProjectProvisionOptionsV1, ProjectProvisionRequestV1, ProjectProvisionStatusV1, QaThreadV1, RetentionPolicyUpdateV1, RetentionPolicyV1, ScoreAdjustmentInputV1, ScoreCalculationV1, ScoreSnapshotV1, ScoreTransitionV1,
 } from "vos-core/portal-contracts";
 import type { AdminSystemStatusV1 } from "vos-core/portal-contracts";
 
@@ -14,6 +14,9 @@ export interface PortalRepository {
   oidcProviders():Promise<OidcProviderSummaryV1[]>;
   adminOidcProviders():Promise<OidcProviderSummaryV1[]>;
   saveOidcProvider(input:OidcProviderInputV1):Promise<OidcProviderSummaryV1>;
+  oauthProviders():Promise<OAuthProviderSummaryV1[]>;
+  adminOAuthProviders():Promise<OAuthProviderSummaryV1[]>;
+  saveOAuthProvider(input:OAuthProviderInputV1):Promise<OAuthProviderSummaryV1>;
   modelProviders():Promise<ModelProviderSummaryV1[]>;
   saveModelProvider(input:ModelProviderInputV1):Promise<ModelProviderSummaryV1>;
   modelQuotas():Promise<ModelQuotaPolicyV1[]>;
