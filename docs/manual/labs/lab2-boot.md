@@ -364,6 +364,8 @@ vos verify
 
 RISC-V、x86-64 和 AArch64 的特权级、寄存器、页表和启动传参不同。正文只保留本 Lab 需要的入口状态、栈、BSS、核心启动、输出和关机问题；具体字段回到所选 ISA 规范、QEMU 机器文档和板卡手册核对。把这些差异放在启动 HAL 中，核心启动状态机只依赖统一语义。
 
+如果未来从 QEMU `virt` 移植到真实板卡，补画 `Boot ROM → SPL/TPL → OpenSBI/UEFI → U-Boot → 内核` 的交接图。记录 U-Boot 的 `defconfig`、DTB、`mmc`/SPI 探测、镜像格式、加载地址、`bootargs` 和入口寄存器；`fatload`/`booti` 成功只证明加载链路，不能证明内核已经完成 SDIO/SPI、DMA/cache 或文件系统初始化。
+
 ModuleSpec 的 L1/L2/L3、操作契约、并发字段和跨模块 SpecPatch 已在本 Lab 的字段骨架和检查项中展开。不要从仓库内部手册复制旧字段，也不要把 `owns` 扩大成平台万能写权限。
 
 ## 5. 质量门禁

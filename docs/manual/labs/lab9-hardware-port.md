@@ -19,6 +19,21 @@
 
 > **参考实现**：本课程参考实现固定使用 StarFive VisionFive 2，由固定 BSP DTB、OpenSBI、U-Boot FIT、原生 SDIO 和按 GPT type GUID/`xv6fs` 名称发现的文件系统分区组成。未知 compatible、缺失 DT 节点或 SBI TIME/IPI/HSM/RFENCE/SRST 扩展必须直接失败；四个 U74 hart 通过 SBI HSM 有序启动。选择其它板卡时，同样要把板卡身份、启动链和验收边界固定下来。
 
+### QEMU 对照基线：先证明“差异”，再开始移植
+
+在第一次改板级代码前，冻结一份 QEMU 基线：机器型号、CPU/RAM 参数、内核镜像格式、启动参数、设备树、串口参数、构建身份、预期阶段标记和完整日志。随后在 `hardware_port` 中逐项填写下表；“QEMU 通过”与“板卡已验证”必须是两列独立状态。
+
+| 边界 | QEMU 基线要记录什么 | 板卡移植要补什么证据 |
+| --- | --- | --- |
+| 启动 | `-kernel`/固件参数、入口和 hart | Boot ROM → SPL/TPL → OpenSBI/UEFI → U-Boot → 内核的阶段、镜像格式、加载/入口地址 |
+| 内存 | RAM 起始/大小、DTB 或固定机器参数 | DDR training、保留区、DTB RAM 节点、cache/MMU 初始状态 |
+| 控制台 | UART 模型、地址、时钟、波特率 | pinmux、时钟/复位、电平、USB-UART、冷/暖复位后的完整日志 |
+| 中断/定时器 | PLIC/虚拟 timer、频率和 IRQ 编号 | SoC IRQ domain、timer 源、IPI、清除/确认和实际 tick 周期 |
+| 存储 | virtio-blk 队列、host 镜像和分区 | SDIO/eMMC/SPI-NOR/SPI-SD 的供电、协议初始化、DMA/cache、卡检测和错误 |
+| 复位/调试 | QEMU monitor/GDB 可随时附加 | watchdog、LED 阶段码、JTAG/OpenOCD 停止位置和寄存器快照 |
+
+如果一项只在 QEMU 有值，标记为 `qemu_only`；如果 U-Boot 能加载但内核驱动没有读写证据，标记为 `bootloader_only`，两者都不能写入实板通过项。
+
 ## 2. 移植顺序
 
 1. 收集 SoC/板卡手册、启动日志、设备树和已知可启动镜像，记录版本与哈希。
@@ -40,6 +55,51 @@ ENTRY → STACK → BSS → UART → MEMORY → TIMER → IRQ
 ```
 
 每次只推进一个里程碑，并保持前一阶段日志。这样 UART 失效后仍可用调试器判断是否到达入口，而不是把所有失败都归因于串口。
+
+### 2.1 U-Boot 交接与板级移植
+
+先确认课程板卡使用的 U-Boot 版本、`defconfig`、DTB 和 SPL/TPL 组成；不要把另一块板卡的 `bootcmd` 或固定地址直接复制过来。按以下顺序建立可回退的 bring-up 基线：
+
+1. 用上游或课程指定配置构建 U-Boot，记录版本、交叉编译器、配置差异和产物身份；先让 U-Boot 输出版本、DRAM 大小和设备树地址。
+2. 单独验证 U-Boot 的时钟/复位/pinmux、UART、DRAM、MMC/SDIO 或 SPI-NOR。设备探测不稳定时，停在 U-Boot，不要同时改内核。
+3. 在命令行手动完成设备选择、重新扫描、分区/文件列举和镜像加载。以下是命令形状，设备号、分区号、文件名和地址必须以板卡资料为准：
+
+   ```text
+   => mmc list
+   => mmc dev <dev> <part>
+   => mmc rescan
+   => fatls mmc <dev>:<part>
+   => fatload mmc <dev>:<part> <kernel_addr_r> <kernel-file>
+   => fatload mmc <dev>:<part> <fdt_addr_r> <dtb-file>
+   => booti <kernel_addr_r> - <fdt_addr_r>
+   ```
+
+4. 记录 U-Boot 交给内核的入口特权级、hart、`a0/a1` 或等价寄存器、DTB 地址、`bootargs`、RAM 范围和固件服务。内核第一段代码把这些值打印成可比对的标记。
+5. 将已验证的手动流程收敛为环境脚本或 FIT 配置，并保留一份不依赖环境变量的手动命令，方便环境损坏时恢复。任何签名/校验失败都应停止，不要自动回退到未知镜像。
+
+U-Boot 成功执行 `fatload` 只证明启动介质的 bootloader 路径。Lab 9 还要运行内核自己的存储探针；若内核暂时不实现 SDIO/SPI，报告必须写明只完成 `bootloader_only`，不得把 U-Boot 结果当作文件系统或块设备验收。
+
+### 2.2 真实外设 bring-up 顺序
+
+按“依赖先于协议”的顺序推进，任何一步失败都保留原始日志和停机原因：
+
+1. **时钟、复位、电源、pinmux**：为 UART、timer/IRQ、SDIO/SPI 分别确认 provider、门控、reset、regulator、电平和引脚复用。
+2. **UART 与 GPIO/LED**：先用轮询发送单字符，再验证接收和错误位；没有串口时用 LED 阶段码标记 `ENTRY/STACK/BSS/UART`。
+3. **timer、IRQ、IPI**：读取真实频率，验证比较器、claim/complete、屏蔽、每核 tick 和 IPI；不要用 QEMU 频率推导板卡超时。
+4. **SDIO/eMMC 或 SPI 存储**：先 PIO 单块读写，再启用 DMA；记录卡检测/忙状态、分区发现、地址对齐和 cache clean/invalidate。
+5. **watchdog、网络或 USB（只有项目 workload 需要时）**：验证复位原因、PHY/枚举、DMA 和拔插/链路错误；范围外设备在 Spec 中明确列出。
+
+#### SDIO/SD host 最小验收
+
+明确“SDIO”是原生 SD host（CMD/CLK/DAT0–3）还是多功能 SDIO 设备。原生 SD host 至少覆盖 3.3 V/1.8 V、上拉、卡检测、低速初始化（`CMD0`、`CMD8`、`ACMD41` 等）、RCA/总线宽度、高速切换、CRC、busy、timeout 和拔卡行为。多功能 SDIO 还要记录 CCCR/FBR、function enable、块大小和 IRQ。
+
+PIO 通过后再接 DMA：提交前记录物理地址、对齐和 ownership，完成后执行平台要求的 cache invalidate/clean 与内存屏障。错误必须向块设备层返回，不能用全零或旧 buffer 继续运行。U-Boot 从 SD 读出内核不替代这张表。
+
+#### SPI 控制器与从设备最小验收
+
+先确认 `SCLK/MOSI/MISO/CS` 电平、CS 的控制者、CPOL/CPHA、最大频率、FIFO 阈值和半/全双工切换；再用 JEDEC ID/WHO_AM_I 做固定探针。SPI-NOR 至少测试 `READ ID`、状态寄存器、写使能、页写、扇区擦除和 busy 轮询；SPI-SD 至少测试低速初始化、命令帧、数据 token、单块读写、CRC/timeout。
+
+CS 提前释放、频率过高或 FIFO 未清空会造成偶发的全 `0xff`/首字节丢失。用逻辑分析仪同时记录 CS/SCLK/MOSI/MISO；PIO 回环通过后才启用 DMA，并保留一次失败事务的字节流和根因。
 
 ## 3. 当前契约映射
 
@@ -84,9 +144,12 @@ algorithm_intent: TODO
 ## 4. 质量门禁
 
 - [ ] 板卡身份、SoC revision、固件版本和连接方式已记录。
+- [ ] U-Boot/SPL 版本、配置、DTB、手动加载命令、镜像格式和内核入口交接可复现。
 - [ ] 内核从定义的启动介质进入，并输出分阶段串口标记。
 - [ ] RAM 范围、定时器频率和中断控制器与手册/设备树一致。
 - [ ] 串口收发、时钟中断和至少一个 workload 在板卡运行。
+- [ ] 项目声明的 SDIO/eMMC/SPI-NOR/SPI-SD 等真实存储路径完成 PIO 回环、DMA/cache、超时、分区发现和错误传播验证；只由 U-Boot 读取时明确标记为 `bootloader_only`。
+- [ ] GPIO/LED 或 JTAG 至少提供一种无串口阶段信号；watchdog、网络、USB 等范围外外设已在 Spec 中说明。
 - [ ] QEMU 的全部既有公开门禁继续通过。
 - [ ] hardware evidence 绑定 commit、Spec/配置版本或其他可定位的构建身份和完整串口日志。
 - [ ] 人工验收状态仍为 `pending_human_review`，等待教师确认。
@@ -107,6 +170,8 @@ algorithm_intent: TODO
 - [ ] 平台 ModuleSpec/InterfaceSpec 或等价的平台契约；
 - [ ] 必要 SpecPatch；
 - [ ] 板卡运行日志和失败分析；
+- [ ] U-Boot/SPL → 固件 → 内核的启动交接记录，以及 QEMU/板卡差异矩阵；
+- [ ] SDIO/SPI 等真实外设的探针、读写回环、DMA/cache 和故障证据；
 - [ ] QEMU 回归证据；
 - [ ] 移植报告（含调研记录表）；
 - [ ] Coding Agent 使用披露和学生 diff/测试复核说明。
@@ -125,11 +190,25 @@ algorithm_intent: TODO
 
 检查缓存、外设复位、持久化状态和烧录区域。硬件 reset 不一定等价于断电冷启动。
 
+### U-Boot 能 `fatload`，内核却读不到存储
+
+分别记录 U-Boot 和内核的设备枚举、pinmux/clock/reset、卡初始化、DMA 描述符和 cache 维护。`fatload` 只证明 U-Boot 的 host 驱动和分区路径，不能替代内核的 SDIO/SPI 块设备验证。
+
+### SDIO 初始化卡在 busy 或 `ACMD41`
+
+先回到低速、PIO 和 3.3 V 初始化，核对 CMD/DAT 上拉、电源稳定时间、response 类型、CRC 和 timeout。若使用多功能 SDIO，另查 CCCR/FBR、function enable、块大小和 IRQ；不要用固定延时吞掉 busy。
+
+### SPI 读回全 `0xff` 或首字节错位
+
+用逻辑分析仪同时观察 CS、SCLK、MOSI、MISO，逐项确认 CPOL/CPHA、最大频率、CS 保持和 FIFO 清空。先用 JEDEC ID/WHO_AM_I 和 PIO 回环建立基线，再启用 DMA；失败事务要记录原始字节流。
+
 ## 9. 参考卡
 
 - [Book 第 9 章：硬件移植](../book/ch09-hardware-port.md)：移植流程与常见硬件陷阱。
 
 按“入口、栈、BSS、UART、内存、定时器、IRQ、用户态、存储、workload”的顺序推进。QEMU 只证明模拟机器上的行为，不能替代板卡证据；设备树、固件传参、SD/eMMC 分区、UART 时钟和中断路由都要以当前板卡的手册、设备树或实测结果为来源。
+
+U-Boot 负责加载并不等于内核驱动完成。真实存储至少分开记录原生 SDIO/SD host 或多功能 SDIO、SPI-NOR/SPI-SD 的协议初始化、PIO 回环、DMA/cache 一致性、超时/拔卡和分区发现；这些差异应由平台 HAL 和块设备边界承接，而不是散落在文件系统核心。
 
 没有串口时，先用板载 LED、调试器断点、寄存器快照或最小探针区分“未到入口、链接地址错误、栈不可用、UART 配置错误”。GDB/OpenOCD 的命令只是手段，报告要保留停止位置、寄存器类别和下一步判断，不要只贴一张截图。
 

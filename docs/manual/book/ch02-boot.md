@@ -650,6 +650,19 @@ UART0 控制器收到写请求: 地址偏移 0x00, 数据 0x48
 - 如果你选择 bootloader 启动，你用的是 Multiboot2、Limine 还是 U-Boot？你的内核如何解析它传递的信息结构？
 - 如果你选择 UEFI 直启，你的内核入口的函数签名是什么？你在调用 `ExitBootServices()` 之前必须获取哪些信息？
 
+#### U-Boot 路径：加载成功不等于内核硬件已就绪
+
+RISC-V/ARM 板卡常见的启动链是 `Boot ROM → SPL/TPL → OpenSBI/TF-A → U-Boot → 内核`。U-Boot 可能负责 DDR、UART、MMC/SDIO、SPI-NOR、设备树和镜像校验，但这些初始化状态不一定会原样交给内核。DesignSpec 应把“U-Boot 提供的输入”和“内核必须重新确认的硬件”分开：
+
+| 交接项 | U-Boot 阶段要记录 | 内核阶段要重新确认 |
+| --- | --- | --- |
+| 镜像 | ELF/raw/Image/FIT、校验或签名 | 入口、加载范围、重定位和链接脚本是否一致 |
+| CPU | hart、入口特权级、SBI/UEFI 服务 | trap 上下文、栈、BSS、每核启动和服务版本 |
+| 内存 | DRAM 大小、保留区、DTB 地址 | DTB/固件传参、cache/MMU 属性和 allocator 范围 |
+| 外设 | U-Boot console、`mmc`/SPI 探测 | pinmux、clock/reset、IRQ、DMA/cache 和错误路径 |
+
+板卡 bring-up 时先在 U-Boot 命令行手动 `mmc list`、`mmc rescan`、列出分区并加载内核/DTB，再让内核打印 `a0/a1` 或等价交接寄存器。`fatload`/`booti` 成功只证明 bootloader 路径，不证明内核的 SDIO/SPI 块设备或文件系统可用；后者必须在相应 Lab 单独验证。
+
 ### 维度 3：入口与初始化序列
 
 从固件跳转到你的内核入口点后，你需要建立最基本的执行环境：
