@@ -386,6 +386,7 @@ export async function runWorker(signal: AbortSignal): Promise<void> {
                     commit_sha: String(run.commit_sha),
                     policy_snapshot_ref: String(run.policy_snapshot_ref),
                     scope: String(run.scope),
+                    stage_key: String(run.stage_key),
                   },
                 });
         } catch (error) {

@@ -75,6 +75,7 @@ export async function collectRunnerEvidence(input: {
     commit_sha: string;
     policy_snapshot_ref: string;
     scope: string;
+    stage_key?: string;
   };
 }): Promise<{manifest:RunnerManifest;report:WorkerEvidenceReportV1}> {
   const base = input.endpoint.replace(/\/$/, "");
@@ -97,7 +98,7 @@ export async function collectRunnerEvidence(input: {
     manifest.policy_snapshot_ref !== input.portalRun.policy_snapshot_ref
   )
     throw new Error("runner manifest policy snapshot mismatch");
-  const visibility = input.portalRun.scope === "staff" ? "staff" : "student";
+  const visibility: "student" | "staff" = input.portalRun.scope === "staff" ? "staff" : "student";
   const stored: Array<{
     id: string;
     key: string;
@@ -170,7 +171,7 @@ export async function collectRunnerEvidence(input: {
   }
   return {
     manifest,
-    report:{version:"worker-evidence-report.v1",worker_id:input.workerId,remote_run_id:input.remoteRunId,objects:stored.map(object=>({id:object.id,key:object.key,uri:object.uri,sha256:object.sha256,size_bytes:object.size,content_type:object.contentType,visibility,label:object.label,lineage:object.lineage})),evidence:manifest.evidence_refs.map(ref=>({id:`evidence-${crypto.randomUUID()}`,suite:ref.kind,case_name:ref.id,result:manifest.status==="passed"||manifest.status==="ok"?"pass" as const:"fail" as const,visibility,metrics:{path:ref.path,remote_run_id:input.remoteRunId},public_message:ref.kind}))},
+    report:{version:"worker-evidence-report.v1",worker_id:input.workerId,remote_run_id:input.remoteRunId,objects:stored.map(object=>({id:object.id,key:object.key,uri:object.uri,sha256:object.sha256,size_bytes:object.size,content_type:object.contentType,visibility,label:object.label,lineage:object.lineage})),evidence:[...manifest.evidence_refs.map(ref=>({id:`evidence-${crypto.randomUUID()}`,suite:ref.kind,case_name:ref.id,result:manifest.status==="passed"||manifest.status==="ok"?"pass" as const:"fail" as const,visibility,metrics:{path:ref.path,remote_run_id:input.remoteRunId},public_message:ref.kind})),...(input.portalRun.stage_key?[{id:`evidence-${crypto.randomUUID()}`,suite:input.portalRun.stage_key,case_name:"public",result:manifest.status==="passed"||manifest.status==="ok"?"pass" as const:"fail" as const,visibility,metrics:{remote_run_id:input.remoteRunId},public_message:"阶段公开门槛"}]:[])]},
   };
 }
 
