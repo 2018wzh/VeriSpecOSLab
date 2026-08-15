@@ -205,6 +205,13 @@ export const StageGateSchema = z
       .refine((labels) => new Set(labels).size === labels.length, {
         message: "required review artifact labels must be unique",
       }),
+    required_showcase_artifacts: z
+      .array(z.string().min(1).max(200))
+      .max(32)
+      .refine((labels) => new Set(labels).size === labels.length, {
+        message: "required showcase artifact labels must be unique",
+      })
+      .default([]),
     manual_review_required: z.boolean(),
   })
   .strict();

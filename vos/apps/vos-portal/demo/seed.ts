@@ -14,7 +14,7 @@ export function createDemoDashboard(role: PortalActor["role"] = "student"): Port
   const stages = stageNames.map((name, sequence) => ({
     id: `stage-${sequence}`, key: stageKeys[sequence], name, sequence,
     status: sequence < 2 ? "passed" as const : sequence === 2 ? "review" as const : "locked" as const,
-    required_artifacts: ["design", "implementation"], required_evidence: [{ suite: "public", case_name: "stage-gate", required_result: "pass" as const }], required_review_artifacts: [],
+    required_artifacts: ["design", "implementation"], required_evidence: [{ suite: "public", case_name: "stage-gate", required_result: "pass" as const }], required_review_artifacts: [], required_showcase_artifacts: [],
     manual_review_required: sequence === 2 || sequence >= 8,
   }));
   const runs = [

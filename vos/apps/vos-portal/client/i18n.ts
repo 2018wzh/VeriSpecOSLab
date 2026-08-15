@@ -303,6 +303,8 @@ const en = {
     "The answer is still processing; return to this page later.",
   必需产物: "Required artifacts",
   必需证据: "Required evidence",
+  重放材料: "Replay artifacts",
+  复核材料: "Review artifacts",
   运行记录: "Run records",
   规范驱动的操作系统实验: "Specification-driven operating systems lab",
   "围绕设计、实现与证据完成每一个教学阶段。":
@@ -621,6 +623,8 @@ const en = {
   "完成规格与实现后，在终端运行公开远程测评；本地工作流仍保持离线。": "After completing the specification and implementation, run the public remote assessment from the terminal; the local workflow remains offline.",
   项产物: "artifacts",
   项证据: "evidence requirements",
+  项重放材料: "replay artifacts",
+  项复核材料: "review artifacts",
   需要人工复核: "Manual review required",
   进入实验: "Open lab",
   课程概览: "Course overview",

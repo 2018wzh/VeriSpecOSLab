@@ -201,7 +201,7 @@ export class WorkerControlService {
   ): Promise<WorkerAckV1> {
     const result = await this.sql.begin(async (tx) => {
       const rows =
-        await tx`select *, (select count(*)::int from evidence_records where run_id=pipeline_runs.id) evidence_count,(select count(*)::int from object_refs where run_id=pipeline_runs.id and upload_status='verified' and deleted_at is null) object_count from pipeline_runs where id=${runId} for update`;
+        await tx`select *, (select count(*)::int from evidence_records where run_id=pipeline_runs.id) evidence_count,(select count(*)::int from object_refs where run_id=pipeline_runs.id and upload_status='verified' and deleted_at is null and lineage->>'remote_run_id'=${input.remote_run_id}) object_count from pipeline_runs where id=${runId} for update`;
       const run = rows[0] as Row | undefined;
       if (!run || run.lease_owner !== input.worker_id)
         throw new Error(
@@ -221,30 +221,49 @@ export class WorkerControlService {
         throw new Error(
           "pipeline cannot pass without a complete passing evidence set",
         );
+      const submissions =
+        await tx`select a.id,a.project_id,a.submitted_by,sg.config from assessment_submissions a join projects p on p.id=a.project_id join stage_gates sg on sg.id=p.current_stage_id where a.run_id=${runId} for update of a`;
+      const submission = submissions[0] as Row | undefined;
+      const requiredShowcaseArtifacts = submission
+        ? ((submission.config as { required_showcase_artifacts?: string[] })
+            .required_showcase_artifacts ?? [])
+        : [];
+      const recordedShowcaseArtifacts = submission && requiredShowcaseArtifacts.length > 0
+        ? await tx`select distinct o.label from object_refs o join pipeline_runs pr on pr.id=o.run_id where pr.project_id=${String(submission.project_id)} and pr.commit_sha=${String(run.commit_sha)} and pr.stage_key=${String(run.stage_key)} and o.upload_status='verified' and o.deleted_at is null`
+        : [];
+      const missingShowcaseArtifacts = requiredShowcaseArtifacts.filter(
+        (label) => !recordedShowcaseArtifacts.some((row) => row.label === label),
+      );
+      const terminalStatus =
+        input.status === "passed" && missingShowcaseArtifacts.length > 0
+          ? "failed"
+          : input.status;
+      const terminalFailureClass =
+        missingShowcaseArtifacts.length > 0
+          ? "verification_failure"
+          : input.failure_class ??
+            (terminalStatus === "failed" ? "verification_failure" : null);
       if (run.status !== "cancelled")
-        await tx`update pipeline_runs set status=${input.status},failure_class=${input.failure_class ?? (input.status === "failed" ? "verification_failure" : null)},public_message=${input.status === "passed" ? "评测通过" : input.status === "timed_out" ? "评测超时" : input.failure_class === "infra_failure" ? "评测基础设施失败，已通知课程团队" : "评测未通过，请查看公开证据"},finished_at=now() where id=${runId}`;
+        await tx`update pipeline_runs set status=${terminalStatus},failure_class=${terminalFailureClass},public_message=${missingShowcaseArtifacts.length > 0 ? `缺少课程重放展示材料：${missingShowcaseArtifacts.join(", ")}` : terminalStatus === "passed" ? "评测通过" : terminalStatus === "timed_out" ? "评测超时" : terminalFailureClass === "infra_failure" ? "评测基础设施失败，已通知课程团队" : "评测未通过，请查看公开证据"},finished_at=now() where id=${runId}`;
       await tx`update pipeline_runs set lease_owner=null,leased_until=null where id=${runId}`;
       await tx`update model_credential_leases set revoked_at=now() where run_id=${runId} and worker_id=${input.worker_id} and revoked_at is null`;
       if (run.status !== "cancelled") {
         const seq =
           await tx`select coalesce(max(sequence),-1)+1 sequence from pipeline_events where run_id=${runId}`;
-        await tx`insert into pipeline_events(run_id,sequence,event_type,visibility,payload) values(${runId},${Number(seq[0].sequence)},'finished','student',${tx.json({ status: input.status, failure_class: input.failure_class ?? null })})`;
-        const submissions =
-          await tx`select a.id,a.project_id,a.submitted_by,sg.config from assessment_submissions a join projects p on p.id=a.project_id join stage_gates sg on sg.id=p.current_stage_id where a.run_id=${runId} for update of a`;
-        const submission = submissions[0] as Row | undefined;
+        await tx`insert into pipeline_events(run_id,sequence,event_type,visibility,payload) values(${runId},${Number(seq[0].sequence)},'finished','student',${tx.json({ status: terminalStatus, failure_class: terminalFailureClass, missing_showcase_artifacts: missingShowcaseArtifacts })})`;
         if (submission) {
           const manual = Boolean(
             (submission.config as { manual_review_required?: boolean })
               .manual_review_required,
           );
           const status =
-            input.status === "passed"
+            terminalStatus === "passed"
               ? manual
                 ? "candidate"
                 : "complete"
               : "failed";
           await tx`update assessment_submissions set status=${status},completed_at=now() where id=${String(submission.id)}`;
-          if (input.status === "passed") {
+          if (terminalStatus === "passed") {
             const previous = (
               await tx`select id,state,snapshot_version from score_snapshots where project_id=${String(submission.project_id)} order by snapshot_version desc limit 1 for update`
             )[0] as Row | undefined;
@@ -277,10 +296,10 @@ export class WorkerControlService {
               await tx`update projects set current_stage_id=${String(next[0].id)},version=version+1,updated_at=now() where id=${String(submission.project_id)}`;
             }
           }
-          await tx`insert into audit_events(id,actor_id,action,resource_type,resource_id,reason,trace_id,payload) values(${identifier("audit")},null,'assessment.evaluate','assessment_submission',${String(submission.id)},'runner produced authoritative assessment baseline',${identifier("worker")},${tx.json({ run_id: runId, status, manual_review_required: manual })})`;
+          await tx`insert into audit_events(id,actor_id,action,resource_type,resource_id,reason,trace_id,payload) values(${identifier("audit")},null,'assessment.evaluate','assessment_submission',${String(submission.id)},'runner produced authoritative assessment baseline',${identifier("worker")},${tx.json({ run_id: runId, status, manual_review_required: manual, required_showcase_artifacts: requiredShowcaseArtifacts, missing_showcase_artifacts: missingShowcaseArtifacts })})`;
         }
       }
-      await tx`insert into audit_events(id,actor_id,action,resource_type,resource_id,reason,trace_id,payload) values(${identifier("audit")},null,'runner.complete','pipeline',${runId},'runner terminal result',${identifier("worker")},${tx.json({ worker_id: input.worker_id, remote_run_id: input.remote_run_id, status: input.status, runner_error: input.runner_error ?? null, manifest_status: input.manifest_status ?? null, manifest_message: input.manifest_message ?? null, evidence_records: input.evidence_records, objects: input.objects, runner_image_id: input.runner_image_id, runner_container_id: input.runner_container_id })})`;
+      await tx`insert into audit_events(id,actor_id,action,resource_type,resource_id,reason,trace_id,payload) values(${identifier("audit")},null,'runner.complete','pipeline',${runId},'runner terminal result',${identifier("worker")},${tx.json({ worker_id: input.worker_id, remote_run_id: input.remote_run_id, status: terminalStatus, runner_error: input.runner_error ?? null, manifest_status: input.manifest_status ?? null, manifest_message: input.manifest_message ?? null, evidence_records: input.evidence_records, objects: input.objects, runner_image_id: input.runner_image_id, runner_container_id: input.runner_container_id, missing_showcase_artifacts: missingShowcaseArtifacts })})`;
       return { version: "worker-ack.v1" as const, accepted: true as const };
     });
     return result as WorkerAckV1;

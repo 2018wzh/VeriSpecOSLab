@@ -20,6 +20,8 @@ test("Glenda manifest exposes only the Lab 1-10 course model", async () => {
     expect(stage.required_artifacts).toContain("replay-bundle");
     expect(stage.required_review_artifacts).toEqual([]);
   }
+  for (const stage of manifest.stages)
+    expect(stage.required_showcase_artifacts).toEqual([`${stage.key}-replay-bundle`]);
   expect(manifest.stages[8].required_review_artifacts).toEqual([
     "h5-simulation-report",
     "orangepi-prime-serial-log",

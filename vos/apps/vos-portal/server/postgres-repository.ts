@@ -1139,6 +1139,7 @@ export class PostgresPortalRepository {
       required_artifacts?: string[];
       required_evidence?: StageGate["required_evidence"];
       required_review_artifacts?: StageGate["required_review_artifacts"];
+      required_showcase_artifacts?: StageGate["required_showcase_artifacts"];
       manual_review_required?: boolean;
     };
     return {
@@ -1157,6 +1158,7 @@ export class PostgresPortalRepository {
         required_artifacts: config.required_artifacts ?? [],
         required_evidence: config.required_evidence ?? [],
         required_review_artifacts: config.required_review_artifacts ?? [],
+        required_showcase_artifacts: config.required_showcase_artifacts ?? [],
         manual_review_required: config.manual_review_required ?? false,
       },
       policy_snapshot_ref: String(row.policy_snapshot_ref),
@@ -1411,6 +1413,7 @@ export class PostgresPortalRepository {
         required_artifacts?: string[];
         required_evidence?: StageGate["required_evidence"];
         required_review_artifacts?: StageGate["required_review_artifacts"];
+        required_showcase_artifacts?: StageGate["required_showcase_artifacts"];
         manual_review_required?: boolean;
       };
       return {
@@ -1422,6 +1425,7 @@ export class PostgresPortalRepository {
         required_artifacts: config.required_artifacts ?? [],
         required_evidence: config.required_evidence ?? [],
         required_review_artifacts: config.required_review_artifacts ?? [],
+        required_showcase_artifacts: config.required_showcase_artifacts ?? [],
         manual_review_required: config.manual_review_required ?? false,
       };
     };
@@ -2256,7 +2260,7 @@ export class PostgresPortalRepository {
     const experimentId = `${manifest.experiment.id}-mv${manifestVersion}-${courseId}`;
     await tx`insert into experiments(id,course_id,title,spec_version,publish_state) values(${experimentId},${courseId},${manifest.experiment.title},${manifest.experiment.spec_version},'published')`;
     for (const stage of manifest.stages)
-      await tx`insert into stage_gates(id,experiment_id,key,name,sequence,status,config) values(${`${experimentId}-${stage.id}`},${experimentId},${stage.key},${stage.name},${stage.sequence},${stage.sequence === 0 ? "open" : "locked"},${tx.json({ source_ref: stage.source_ref, spec_refs: stage.spec_refs, test_sets: stage.test_sets, rubric_ids: stage.rubric_ids, hardware_gate: stage.hardware_gate, human_review_required: stage.human_review_required, required_artifacts: stage.required_artifacts, required_evidence: stage.required_evidence, required_review_artifacts: stage.required_review_artifacts, manual_review_required: stage.manual_review_required })})`;
+      await tx`insert into stage_gates(id,experiment_id,key,name,sequence,status,config) values(${`${experimentId}-${stage.id}`},${experimentId},${stage.key},${stage.name},${stage.sequence},${stage.sequence === 0 ? "open" : "locked"},${tx.json({ source_ref: stage.source_ref, spec_refs: stage.spec_refs, test_sets: stage.test_sets, rubric_ids: stage.rubric_ids, hardware_gate: stage.hardware_gate, human_review_required: stage.human_review_required, required_artifacts: stage.required_artifacts, required_evidence: stage.required_evidence, required_review_artifacts: stage.required_review_artifacts, required_showcase_artifacts: stage.required_showcase_artifacts, manual_review_required: stage.manual_review_required })})`;
     for (const item of manifest.rubric)
       await tx`insert into course_rubric_items(course_id,manifest_version,item_id,name,weight) values(${courseId},${manifestVersion},${item.id},${item.name},${item.weight})`;
     await tx`insert into course_ai_policies(course_id,manifest_version,policy) values(${courseId},${manifestVersion},${tx.json(manifest.ai_policy)})`;
