@@ -39,6 +39,13 @@ function formatError(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+const ANTHROPIC_ROUTING_PREFIX = "anthropic:";
+function stripAnthropicRoutingPrefix(model: string): string {
+  return model.startsWith(ANTHROPIC_ROUTING_PREFIX)
+    ? model.slice(ANTHROPIC_ROUTING_PREFIX.length)
+    : model;
+}
+
 /**
  * Wrap Anthropic's Messages API as a ChatClient. The wire format is
  * different from OpenAI; this adapter translates messages and tool
@@ -72,7 +79,7 @@ export function createAnthropicChatClient(
       try {
         const translated = toAnthropicRequest(request.messages, request.tools);
         const body: AnthropicRequestBody = {
-          model: request.model,
+          model: stripAnthropicRoutingPrefix(request.model),
           max_tokens: maxTokens,
           ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
           ...(translated.system ? { system: translated.system } : {}),
