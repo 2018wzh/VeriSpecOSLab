@@ -53,6 +53,7 @@ const STUDENT_ALLOWED_COMMANDS = [
   "pipeline status",
   "pipeline watch",
   "pipeline evidence",
+  "artifact upload",
   "pipeline cancel",
   "pipeline submit",
   "report",

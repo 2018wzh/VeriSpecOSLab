@@ -30,7 +30,7 @@ integration(
         await tx`insert into courses(id,code,name,term,status) values(${course},${prefix},'Integration Course','test','active')`;
         await tx`insert into course_memberships(course_id,user_id,role,status,source) values(${course},${teacher},'teacher','active','manual')`;
         await tx`insert into experiments(id,course_id,title,spec_version,publish_state) values(${experiment},${course},'Integration Lab','v1','published')`;
-        await tx`insert into stage_gates(id,experiment_id,key,name,sequence,status,config) values(${stage},${experiment},'boot','Boot',0,'open',${tx.json({ required_artifacts: [], required_evidence: [], manual_review_required: false })})`;
+        await tx`insert into stage_gates(id,experiment_id,key,name,sequence,status,config) values(${stage},${experiment},'boot','Boot',0,'open',${tx.json({ required_artifacts: [], required_evidence: [], required_review_artifacts: ["hardware-report"], manual_review_required: true })})`;
         await tx`insert into projects(id,experiment_id,current_stage_id,repo_url,status,policy_snapshot_ref) values(${project},${experiment},${stage},'https://git.example/integration.git','active','policy-it')`;
         await tx`insert into project_members(project_id,user_id) values(${project},${user})`;
       });
@@ -172,6 +172,16 @@ integration(
         (await repository.assessmentSubmission(actor, submission.id)).run_id,
       ).toBe(submission.run_id);
       await sql`update assessment_submissions set status='candidate' where id=${submission.id}`;
+      await expect(
+        repository.reviewAssessmentSubmission(
+          { id: teacher, username: teacher, display_name: "Integration Teacher", role: "teacher" },
+          { version: "assessment-review.v1", submission_id: submission.id, decision: "approve", reason: "attempt approval without required review artifact" },
+          `${prefix}-review-missing-trace`,
+          `${prefix}-review-missing-key`,
+          `${prefix}-review-missing-hash`,
+        ),
+      ).rejects.toThrow("人工门禁缺少已验证复核材料 hardware-report");
+      await sql`insert into object_refs(id,project_id,run_id,uri,object_key,sha256,size_bytes,content_type,visibility,label,upload_status) values(${`${prefix}-review-object`},${project},${submission.run_id},${`s3://vos-artifacts/${prefix}/hardware-report`},${`${prefix}/hardware-report`},${"f".repeat(64)},42,'application/json','student','hardware-report','verified')`;
       expect(
         (
           await repository.reviewAssessmentSubmission(

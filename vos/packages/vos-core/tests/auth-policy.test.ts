@@ -57,6 +57,7 @@ describe("Portal auth and policy internals", () => {
         status: "open" as const,
         required_artifacts: [],
         required_evidence: [],
+        required_review_artifacts: [],
         manual_review_required: false,
       },
       policy_snapshot_ref: "policy-1",
@@ -184,6 +185,31 @@ describe("Portal auth and policy internals", () => {
     expect(result.status).toBe("passed");
     expect(result.details?.verified).toBe(true);
     expect(readFileSync(join(projectRoot, "downloads", "artifact-1-report.txt"), "utf8")).toBe("verified evidence\n");
+  });
+
+  test("uploads a project-local artifact to the bound run with sanitized lineage", async () => {
+    const projectRoot = await makeAuthorizedPortalProject();
+    mkdirSync(join(projectRoot, ".vos"), { recursive: true });
+    writeFileSync(join(projectRoot, ".vos", "report.json"), "{\"status\":\"passed\"}\n");
+    const portalClient: PortalClient = {
+      async getMe() { return { id: "user-1" }; },
+      async getProjectPolicy() { throw new Error("not used"); },
+      async getPipeline() { return pipelineSummary("run-1", "project-1"); },
+      async uploadArtifact(_url, token, projectId, runId, input) {
+        expect(token).toBe("valid-token");
+        expect(projectId).toBe("project-1");
+        expect(runId).toBe("run-1");
+        expect(input.label).toBe("lab4-replay-report");
+        expect(input.lineage).toEqual({ source: "vos-cli", project_path: ".vos/report.json", commit_sha: "a".repeat(40), stage_key: "boot" });
+        return { object_id: "object-1", size_bytes: 20, sha256: "b".repeat(64), content_type: "application/json", label: input.label };
+      },
+    };
+    const result = await executePortalPipeline(
+      { kind: "portal_pipeline", action: "upload", runId: "run-1", artifactPath: ".vos/report.json", artifactLabel: "lab4-replay-report" },
+      portalContext(projectRoot, portalClient),
+    );
+    expect(result.status).toBe("passed");
+    expect((result.details?.artifact as { verified: boolean; path: string })).toMatchObject({ verified: true, path: ".vos/report.json" });
   });
 
   test("returns immutable run reproduction metadata", async () => {

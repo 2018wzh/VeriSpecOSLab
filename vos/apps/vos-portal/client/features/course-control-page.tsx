@@ -141,8 +141,8 @@ function exampleManifest(course: { code: string; name: string; term: string }): 
     course: { code: course.code, name: course.name, term: course.term },
     experiment: { id: "xv6-spec", title: "xv6 规范驱动内核", spec_version: "xv6-spec-v1.4.0" },
     stages: [
-      { id: "seed", key: "seed", name: "架构种子", sequence: 0, source_ref:"course/lab1-complete",spec_refs:["design"],test_sets:["lab1.public"],rubric_ids:["design"],hardware_gate:"none",human_review_required:true,required_artifacts: ["spec/architecture-seed.yaml"], required_evidence: [], manual_review_required: true },
-      { id: "boot", key: "boot", name: "启动", sequence: 1, source_ref:"course/lab2-complete",spec_refs:["kernel.boot"],test_sets:["lab2.public"],rubric_ids:["correctness"],hardware_gate:"none",human_review_required:false,required_artifacts: ["serial.log"], required_evidence: [{ suite: "boot", case_name: "kernel-start", required_result: "pass" }], manual_review_required: false },
+      { id: "seed", key: "seed", name: "架构种子", sequence: 0, source_ref:"course/lab1-complete",spec_refs:["design"],test_sets:["lab1.public"],rubric_ids:["design"],hardware_gate:"none",human_review_required:true,required_artifacts: ["spec/architecture-seed.yaml"], required_evidence: [], required_review_artifacts: [], manual_review_required: true },
+      { id: "boot", key: "boot", name: "启动", sequence: 1, source_ref:"course/lab2-complete",spec_refs:["kernel.boot"],test_sets:["lab2.public"],rubric_ids:["correctness"],hardware_gate:"none",human_review_required:false,required_artifacts: ["serial.log"], required_evidence: [{ suite: "boot", case_name: "kernel-start", required_result: "pass" }], required_review_artifacts: [], manual_review_required: false },
     ],
     rubric: [{ id: "correctness", name: "正确性", weight: 70 }, { id: "design", name: "设计与论证", weight: 30 }],
     ai_policy: { allowed_models: ["school-default"], monthly_budget: 100, allow_byok: false },

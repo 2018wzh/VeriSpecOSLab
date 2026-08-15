@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { open, rm } from "node:fs/promises";
 import type { PolicySnapshot, PortalUserSummary } from "../types.ts";
 import type { ArtifactRefV1, AssessmentSubmissionRequestV1, AssessmentSubmissionV1, EvidenceBundleV1, PipelineEventV1, PipelineRequestV1, PipelineSummaryV1, ProjectBindingV1, RunReproductionV1 } from "../portal/contracts.ts";
-import { AssessmentSubmissionV1Schema, PipelineEventV1Schema, PresignedObjectRequestSchema, RunReproductionV1Schema } from "../portal/contracts.ts";
+import { AssessmentSubmissionV1Schema, ObjectUploadResponseV1Schema, PipelineEventV1Schema, PresignedObjectRequestSchema, RunReproductionV1Schema } from "../portal/contracts.ts";
 import { normalizePortalUrl } from "./store.ts";
 
 export interface PortalClient {
@@ -19,6 +19,7 @@ export interface PortalClient {
   getEvidence?(portalUrl:string,token:string,runId:string):Promise<EvidenceBundleV1>;
   getReproduction?(portalUrl:string,token:string,runId:string):Promise<RunReproductionV1>;
   downloadArtifact?(portalUrl:string,token:string,artifact:ArtifactRefV1,destination:string):Promise<{size_bytes:number;sha256:string}>;
+  uploadArtifact?(portalUrl:string,token:string,projectId:string,runId:string,input:{path:string;label:string;visibility:"student";lineage:Record<string,unknown>}):Promise<{object_id:string;size_bytes:number;sha256:string;content_type:string;label:string}>;
   getProjectBinding?(portalUrl:string,token:string,projectId:string):Promise<ProjectBindingV1>;
   createAssessmentSubmission?(portalUrl:string,token:string,input:AssessmentSubmissionRequestV1):Promise<AssessmentSubmissionV1>;
 }
@@ -38,11 +39,22 @@ export class HttpPortalClient implements PortalClient {
   async downloadArtifact(portalUrl:string,token:string,artifact:ArtifactRefV1,destination:string):Promise<{size_bytes:number;sha256:string}>{
     const signed=PresignedObjectRequestSchema.parse(await this.portalJson(`${normalizePortalUrl(portalUrl)}/api/v1/objects/${encodeURIComponent(artifact.id)}/download`,token,{method:"POST",body:"{}"}));
     if(signed.sha256!==artifact.sha256||Date.parse(signed.expires_at)<=Date.now())throw new CliError("Portal returned an invalid or expired artifact download authorization","failed",{artifact_id:artifact.id});
-    const url=new URL(signed.url);const loopback=url.hostname==="localhost"||url.hostname==="127.0.0.1"||url.hostname==="[::1]"||url.hostname==="::1";
-    if(url.protocol!=="https:"&&!(url.protocol==="http:"&&loopback))throw new CliError("Portal artifact download URL must use HTTPS","policy_blocked",{artifact_id:artifact.id});
+    assertSignedObjectUrl(signed.url,"download",artifact.id);const url=new URL(signed.url);
     const response=await fetch(url,{headers:signed.headers});if(!response.ok||!response.body)throw portalError(response.status,"artifact_download_failed");
     const file=await open(destination,"wx",0o600);const hash=createHash("sha256");let size=0;
     try{const reader=response.body.getReader();for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>artifact.size_bytes){await reader.cancel();throw new CliError("Downloaded artifact exceeds its declared size","failed",{artifact_id:artifact.id,expected_size:artifact.size_bytes});}hash.update(value);let offset=0;while(offset<value.byteLength){const {bytesWritten}=await file.write(value,offset,value.byteLength-offset);if(bytesWritten<=0)throw new Error("artifact download made no filesystem write progress");offset+=bytesWritten;}}const actual=hash.digest("hex");if(size!==artifact.size_bytes||actual!==artifact.sha256)throw new CliError("Downloaded artifact failed integrity verification","failed",{artifact_id:artifact.id,expected_size:artifact.size_bytes,actual_size:size,expected_sha256:artifact.sha256,actual_sha256:actual});return{size_bytes:size,sha256:actual};}catch(error){await file.close();await rm(destination,{force:true});throw error;}finally{await file.close().catch(()=>undefined);}
+  }
+  async uploadArtifact(portalUrl:string,token:string,projectId:string,runId:string,input:{path:string;label:string;visibility:"student";lineage:Record<string,unknown>}):Promise<{object_id:string;size_bytes:number;sha256:string;content_type:string;label:string}>{
+    const source=Bun.file(input.path);if(!(await source.exists()))throw new CliError("Artifact file does not exist","validation_failed",{path:input.path});
+    const size=source.size;if(size>2_147_483_648)throw new CliError("Artifact exceeds the Portal upload limit","validation_failed",{size_bytes:size});
+    const hash=createHash("sha256");const reader=source.stream().getReader();for(;;){const {done,value}=await reader.read();if(done)break;hash.update(value);}const sha256=hash.digest("hex");
+    const contentType=source.type||"application/octet-stream";
+    const registered=ObjectUploadResponseV1Schema.parse(await this.portalJson(`${normalizePortalUrl(portalUrl)}/api/v1/projects/${encodeURIComponent(projectId)}/objects/uploads`,token,{method:"POST",body:JSON.stringify({run_id:runId,sha256,size_bytes:size,content_type:contentType,visibility:input.visibility,label:input.label,lineage:input.lineage})}));
+    if(registered.upload.sha256!==sha256||Date.parse(registered.upload.expires_at)<=Date.now())throw new CliError("Portal returned an invalid or expired artifact upload authorization","failed",{object_id:registered.object_id});
+    assertSignedObjectUrl(registered.upload.url,"upload",registered.object_id);
+    const response=await fetch(registered.upload.url,{method:"PUT",headers:registered.upload.headers,body:Bun.file(input.path)});if(!response.ok)throw portalError(response.status,"artifact_upload_failed");
+    await this.portalJson(`${normalizePortalUrl(portalUrl)}/api/v1/objects/${encodeURIComponent(registered.object_id)}/complete`,token,{method:"POST",body:"{}"});
+    return{object_id:registered.object_id,size_bytes:size,sha256,content_type:contentType,label:input.label};
   }
   async getProjectBinding(portalUrl:string,token:string,projectId:string):Promise<ProjectBindingV1>{return await this.portalJson(`${normalizePortalUrl(portalUrl)}/api/v1/projects/${encodeURIComponent(projectId)}/binding`,token) as ProjectBindingV1;}
   async createAssessmentSubmission(portalUrl:string,token:string,input:AssessmentSubmissionRequestV1):Promise<AssessmentSubmissionV1>{return AssessmentSubmissionV1Schema.parse(await this.portalJson(`${normalizePortalUrl(portalUrl)}/api/v1/submissions`,token,{method:"POST",body:JSON.stringify(input)}));}
@@ -109,6 +121,8 @@ export class HttpPortalClient implements PortalClient {
 }
 
 export const defaultPortalClient = new HttpPortalClient();
+
+function assertSignedObjectUrl(raw:string,action:"upload"|"download",objectId:string):void{const url=new URL(raw);const loopback=url.hostname==="localhost"||url.hostname==="127.0.0.1"||url.hostname==="[::1]"||url.hostname==="::1";if(url.protocol!=="https:"&&!(url.protocol==="http:"&&loopback))throw new CliError(`Portal artifact ${action} URL must use HTTPS`,"policy_blocked",{object_id:objectId});}
 
 function authHeaders(token: string): Record<string, string> {
   return {

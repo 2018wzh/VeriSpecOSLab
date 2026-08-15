@@ -199,6 +199,12 @@ export const StageGateSchema = z
         })
         .strict(),
     ),
+    required_review_artifacts: z
+      .array(z.string().min(1).max(200))
+      .max(32)
+      .refine((labels) => new Set(labels).size === labels.length, {
+        message: "required review artifact labels must be unique",
+      }),
     manual_review_required: z.boolean(),
   })
   .strict();
@@ -222,15 +228,25 @@ export const CourseStageV1Schema = StageGateSchema.omit({ status: true })
   .superRefine((stage, context) => {
     const candidate = stage.source_ref.endsWith("-candidate");
     if (
-      candidate &&
-      (stage.hardware_gate === "none" ||
-        !stage.human_review_required ||
-        !stage.manual_review_required)
+      stage.required_review_artifacts.length > 0 &&
+      (!stage.human_review_required || !stage.manual_review_required)
     )
       context.addIssue({
         code: "custom",
         message:
-          "candidate stages require a hardware gate and human/manual review gates",
+          "required review artifacts require human and manual review gates",
+      });
+    if (
+      candidate &&
+      (stage.hardware_gate === "none" ||
+        !stage.human_review_required ||
+        !stage.manual_review_required ||
+        stage.required_review_artifacts.length === 0)
+    )
+      context.addIssue({
+        code: "custom",
+        message:
+          "candidate stages require a hardware gate, human/manual review gates and review artifacts",
       });
   });
 

@@ -89,6 +89,8 @@ import {
   writeFile,
   rm,
   rename,
+  realpath,
+  stat,
 } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -5680,6 +5682,78 @@ export async function executePortalPipeline(
       },
     };
   }
+  if (command.action === "upload") {
+    const source = command.artifactPath;
+    const label = command.artifactLabel;
+    if (!source || !label)
+      throw new CliError(
+        "artifact upload requires a path and label",
+        "validation_failed",
+      );
+    const run = await requireMethod(
+      client.getPipeline?.bind(client),
+      "pipeline status",
+    )(project.portal_url, stored.token, runId);
+    assertBoundProject(run.project_id, project.project_id, "pipeline");
+    const root = await realpath(context.projectRoot);
+    let resolved: string;
+    try {
+      resolved = await realpath(path.resolve(root, source));
+    } catch {
+      throw new CliError("artifact path does not exist", "validation_failed", {
+        path: source,
+      });
+    }
+    const relative = path.relative(root, resolved);
+    if (
+      relative === "" ||
+      relative === ".." ||
+      relative.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relative)
+    )
+      throw new CliError(
+        "artifact path must be a file inside the project",
+        "policy_blocked",
+        { path: source },
+      );
+    const metadata = await stat(resolved);
+    if (!metadata.isFile())
+      throw new CliError("artifact path must be a regular file", "validation_failed", {
+        path: source,
+      });
+    const upload = requireMethod(
+      client.uploadArtifact?.bind(client),
+      "artifact upload",
+    );
+    const artifact = await upload(
+      project.portal_url,
+      stored.token,
+      project.project_id,
+      runId,
+      {
+        path: resolved,
+        label,
+        visibility: "student",
+        lineage: {
+          source: "vos-cli",
+          project_path: relative.split(path.sep).join("/"),
+          commit_sha: run.commit_sha,
+          stage_key: run.stage_key,
+        },
+      },
+    );
+    return {
+      status: "passed",
+      details: {
+        run_id: runId,
+        artifact: {
+          ...artifact,
+          path: relative.split(path.sep).join("/"),
+          verified: true,
+        },
+      },
+    };
+  }
   const method = requireMethod(
     client.getEvidence?.bind(client),
     "pipeline evidence",
@@ -9244,6 +9318,12 @@ export function commandToArray(command: CliCommand): string[] {
         ...(command.outDir && command.action === "download"
           ? ["--out", command.outDir]
           : []),
+        ...(command.artifactPath && command.action === "upload"
+          ? [command.artifactPath]
+          : []),
+        ...(command.artifactLabel && command.action === "upload"
+          ? ["--label", command.artifactLabel]
+          : []),
         ...(command.reason ? ["--reason", command.reason] : []),
       ];
     case "portal_submit":
@@ -10530,7 +10610,7 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
     "  verify",
     "  report",
     "  submit",
-    "  portal login|whoami|logout|bind|run|status|evidence|submit",
+    "  portal login|whoami|logout|bind|run|status|evidence|artifact|submit",
     "",
     "Agent implementation runs in a disposable detached Git worktree. This is a rollback boundary, not a process, network, credential, or host-file security sandbox; commands inherit the current user's privileges.",
   ],
@@ -10751,7 +10831,7 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
     ["vos submit"],
   ),
   portal: helpBlock(
-    "portal login|whoami|logout|bind|run|status|evidence|submit",
+    "portal login|whoami|logout|bind|run|status|evidence|artifact|submit",
     [
       "Explicit online control-plane operations. Offline init/spec/agent/build/run/verify/report/submit behavior is unchanged.",
     ],
@@ -10759,6 +10839,7 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
       "vos portal login https://portal.example.edu",
       "vos portal bind https://portal.example.edu <project-id>",
       "vos portal run --watch",
+      "vos portal artifact upload <run-id> .vos/report.json --label lab-report",
       "vos portal submit --watch",
     ],
   ),

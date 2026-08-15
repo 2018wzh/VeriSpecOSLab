@@ -138,6 +138,8 @@ describe("student CLI contract", () => {
     expect(parseArgs(["bun","vos","portal","run","--stage","memory","--watch"]).command).toEqual({kind:"portal_pipeline",action:"trigger",scope:"public",reason:"student requested public remote verification",stageKey:"memory",watchAfter:true});
     expect(parseArgs(["bun","vos","portal","status","run-1","--watch"]).command).toEqual({kind:"portal_pipeline",action:"watch",runId:"run-1"});
     expect(parseArgs(["bun","vos","portal","evidence","run-1","--out","evidence"]).command).toEqual({kind:"portal_pipeline",action:"download",runId:"run-1",outDir:"evidence"});
+    expect(parseArgs(["bun","vos","portal","artifact","upload","run-1",".vos/report.json","--label","lab-report"]).command).toEqual({kind:"portal_pipeline",action:"upload",runId:"run-1",artifactPath:".vos/report.json",artifactLabel:"lab-report"});
+    expect(()=>parseArgs(["bun","vos","portal","artifact","upload","run-1",".vos/report.json"])).toThrow("requires --label");
     expect(parseArgs(["bun","vos","portal","submit","--watch"]).command).toEqual({kind:"portal_submit",stageKey:undefined,watch:true});
     expect(()=>parseArgs(["bun","vos","portal","run","--scope","final"])).toThrow("unknown portal option");
   });

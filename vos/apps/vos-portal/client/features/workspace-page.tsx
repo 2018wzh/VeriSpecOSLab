@@ -52,7 +52,7 @@ export function WorkspacePage({ kind }: { kind: keyof typeof copy }) {
     }
   }
 
-  const facts = [["必需产物", String(data.project.current_stage.required_artifacts.length)], ["必需证据", String(data.project.current_stage.required_evidence.length)], ["运行记录", String(data.runs.length)], ["策略快照", data.project.policy_snapshot_ref]] as const;
+  const facts = [["必需产物", String(data.project.current_stage.required_artifacts.length)], ["必需证据", String(data.project.current_stage.required_evidence.length)], ["复核材料", String(data.project.current_stage.required_review_artifacts.length)], ["运行记录", String(data.runs.length)], ["策略快照", data.project.policy_snapshot_ref]] as const;
   return <div className="page">
     <div className="page-heading"><div><h1>{t(copy[kind][0])}</h1><p>{t(copy[kind][1])}</p></div></div>
     <div className="workspace-layout">

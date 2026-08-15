@@ -1138,6 +1138,7 @@ export class PostgresPortalRepository {
     const config = row.stage_config as {
       required_artifacts?: string[];
       required_evidence?: StageGate["required_evidence"];
+      required_review_artifacts?: StageGate["required_review_artifacts"];
       manual_review_required?: boolean;
     };
     return {
@@ -1155,6 +1156,7 @@ export class PostgresPortalRepository {
         status: row.stage_status as StageGate["status"],
         required_artifacts: config.required_artifacts ?? [],
         required_evidence: config.required_evidence ?? [],
+        required_review_artifacts: config.required_review_artifacts ?? [],
         manual_review_required: config.manual_review_required ?? false,
       },
       policy_snapshot_ref: String(row.policy_snapshot_ref),
@@ -1183,6 +1185,7 @@ export class PostgresPortalRepository {
         "pipeline status",
         "pipeline watch",
         "pipeline evidence",
+        "artifact upload",
         "pipeline cancel",
         "pipeline submit",
       ],
@@ -1407,6 +1410,7 @@ export class PostgresPortalRepository {
       const config = row.config as {
         required_artifacts?: string[];
         required_evidence?: StageGate["required_evidence"];
+        required_review_artifacts?: StageGate["required_review_artifacts"];
         manual_review_required?: boolean;
       };
       return {
@@ -1417,6 +1421,7 @@ export class PostgresPortalRepository {
         status: row.status as StageGate["status"],
         required_artifacts: config.required_artifacts ?? [],
         required_evidence: config.required_evidence ?? [],
+        required_review_artifacts: config.required_review_artifacts ?? [],
         manual_review_required: config.manual_review_required ?? false,
       };
     };
@@ -1852,7 +1857,7 @@ export class PostgresPortalRepository {
         const row = rows[0] as Row | undefined;
         if (!row) throw new Error("候选提交不存在、状态已变化或无教师权限");
         if (input.decision === "approve") {
-          const required =
+          const config =
             (
               row.config as {
                 required_evidence?: Array<{
@@ -1860,8 +1865,10 @@ export class PostgresPortalRepository {
                   case_name: string;
                   required_result: string;
                 }>;
+                required_review_artifacts?: string[];
               }
-            ).required_evidence ?? [];
+            );
+          const required = config.required_evidence ?? [];
           const evidence =
             await tx`select suite,case_name,result from evidence_records where run_id=${String(row.run_id)}`;
           for (const item of required)
@@ -1876,6 +1883,12 @@ export class PostgresPortalRepository {
               throw new Error(
                 `人工门禁缺少证据 ${item.suite}/${item.case_name}:${item.required_result}`,
               );
+          const requiredArtifacts = config.required_review_artifacts ?? [];
+          const reviewArtifacts =
+            await tx`select label from object_refs where run_id=${String(row.run_id)} and upload_status='verified' and deleted_at is null`;
+          for (const label of requiredArtifacts)
+            if (!reviewArtifacts.some((record) => record.label === label))
+              throw new Error(`人工门禁缺少已验证复核材料 ${label}`);
           await tx`update assessment_submissions set status='complete',completed_at=now() where id=${input.submission_id}`;
           const next =
             await tx`select next.id from projects p join stage_gates current on current.id=p.current_stage_id join stage_gates next on next.experiment_id=p.experiment_id and next.sequence=current.sequence+1 where p.id=${String(row.project_id)}`;
@@ -2243,7 +2256,7 @@ export class PostgresPortalRepository {
     const experimentId = `${manifest.experiment.id}-mv${manifestVersion}-${courseId}`;
     await tx`insert into experiments(id,course_id,title,spec_version,publish_state) values(${experimentId},${courseId},${manifest.experiment.title},${manifest.experiment.spec_version},'published')`;
     for (const stage of manifest.stages)
-      await tx`insert into stage_gates(id,experiment_id,key,name,sequence,status,config) values(${`${experimentId}-${stage.id}`},${experimentId},${stage.key},${stage.name},${stage.sequence},${stage.sequence === 0 ? "open" : "locked"},${tx.json({ source_ref: stage.source_ref, spec_refs: stage.spec_refs, test_sets: stage.test_sets, rubric_ids: stage.rubric_ids, hardware_gate: stage.hardware_gate, human_review_required: stage.human_review_required, required_artifacts: stage.required_artifacts, required_evidence: stage.required_evidence, manual_review_required: stage.manual_review_required })})`;
+      await tx`insert into stage_gates(id,experiment_id,key,name,sequence,status,config) values(${`${experimentId}-${stage.id}`},${experimentId},${stage.key},${stage.name},${stage.sequence},${stage.sequence === 0 ? "open" : "locked"},${tx.json({ source_ref: stage.source_ref, spec_refs: stage.spec_refs, test_sets: stage.test_sets, rubric_ids: stage.rubric_ids, hardware_gate: stage.hardware_gate, human_review_required: stage.human_review_required, required_artifacts: stage.required_artifacts, required_evidence: stage.required_evidence, required_review_artifacts: stage.required_review_artifacts, manual_review_required: stage.manual_review_required })})`;
     for (const item of manifest.rubric)
       await tx`insert into course_rubric_items(course_id,manifest_version,item_id,name,weight) values(${courseId},${manifestVersion},${item.id},${item.name},${item.weight})`;
     await tx`insert into course_ai_policies(course_id,manifest_version,policy) values(${courseId},${manifestVersion},${tx.json(manifest.ai_policy)})`;

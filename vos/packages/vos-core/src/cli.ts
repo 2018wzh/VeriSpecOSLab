@@ -532,9 +532,18 @@ function parsePortalCommand(args:string[]):StudentCliCommand{
   if(action==="run"){const options=parsePortalOptions(rest,new Set(["--stage","--watch"]));return{kind:"portal_pipeline",action:"trigger",scope:"public",reason:"student requested public remote verification",stageKey:options.stage,watchAfter:options.watch} satisfies PortalPipelineCommand;}
   if(action==="status"){const runId=rest[0];if(!runId||runId.startsWith("-"))throw new Error("vos portal status requires <run-id>");const options=parsePortalOptions(rest.slice(1),new Set(["--watch"]));return{kind:"portal_pipeline",action:options.watch?"watch":"status",runId} satisfies PortalPipelineCommand;}
   if(action==="evidence"){const runId=rest[0];if(!runId||runId.startsWith("-"))throw new Error("vos portal evidence requires <run-id>");const options=parsePortalOptions(rest.slice(1),new Set(["--out"]));return{kind:"portal_pipeline",action:"download",runId,outDir:options.out} satisfies PortalPipelineCommand;}
+  if(action==="artifact"){
+    if(rest[0]!=="upload")throw new Error("vos portal artifact requires upload <run-id> <path> --label <label>");
+    const runId=rest[1];const artifactPath=rest[2];
+    if(!runId||runId.startsWith("-")||!artifactPath||artifactPath.startsWith("-"))throw new Error("vos portal artifact upload requires <run-id> <path> --label <label>");
+    const options=parsePortalArtifactOptions(rest.slice(3));
+    return{kind:"portal_pipeline",action:"upload",runId,artifactPath,artifactLabel:options.label} satisfies PortalPipelineCommand;
+  }
   if(action==="submit"){const options=parsePortalOptions(rest,new Set(["--stage","--watch"]));return{kind:"portal_submit",stageKey:options.stage,watch:options.watch} satisfies PortalSubmitCommand;}
   throw new Error(`unknown portal subcommand: ${action??""}`);
 }
+
+function parsePortalArtifactOptions(args:string[]):{label:string}{let label:string|undefined;for(let index=0;index<args.length;index++){const arg=args[index];if(arg!=="--label")throw new Error(`unknown portal artifact option: ${arg}`);if(label)throw new Error("--label may only be specified once");const value=args[++index];if(!value||value.startsWith("-"))throw new Error("--label requires a value");label=value;}if(!label)throw new Error("vos portal artifact upload requires --label <label>");return{label};}
 
 function parsePortalOptions(args:string[],allowed:Set<string>):{stage?:string;out?:string;watch:boolean}{let stage:string|undefined;let out:string|undefined;let watch=false;for(let index=0;index<args.length;index++){const arg=args[index];if(!allowed.has(arg))throw new Error(`unknown portal option: ${arg}`);if(arg==="--watch"){watch=true;continue;}const value=args[++index];if(!value||value.startsWith("-"))throw new Error(`${arg} requires a value`);if(arg==="--stage")stage=value;else out=value;}return{stage,out,watch};}
 

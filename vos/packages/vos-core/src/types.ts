@@ -75,7 +75,7 @@ export interface WhoamiCommand extends BaseCommand {
 
 export interface PortalPipelineCommand extends BaseCommand {
   kind: "portal_pipeline";
-  action: "trigger" | "status" | "watch" | "cancel" | "evidence" | "download" | "reproduce";
+  action: "trigger" | "status" | "watch" | "cancel" | "evidence" | "download" | "reproduce" | "upload";
   runId?: string;
   reason?: string;
   scope?: "public" | "staff" | "final";
@@ -83,6 +83,8 @@ export interface PortalPipelineCommand extends BaseCommand {
   outDir?: string;
   stageKey?: string;
   watchAfter?: boolean;
+  artifactPath?: string;
+  artifactLabel?: string;
 }
 export interface ProjectBindCommand extends BaseCommand {kind:"project_bind";portalUrl:string;projectId:string}
 export interface PortalSubmitCommand extends BaseCommand {kind:"portal_submit";stageKey?:string;watch:boolean}
