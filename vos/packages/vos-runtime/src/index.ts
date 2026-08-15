@@ -106,7 +106,9 @@ export async function readStudentManifest(
       manifest: parseProjectManifest(
         process.env.VOS_COURSE_ADAPTER === "xv6-spec"
           ? normalizeXv6CourseManifest(parsed)
-          : parsed,
+          : process.env.VOS_COURSE_ADAPTER === "glenda-spec"
+            ? normalizeGlendaCourseManifest(parsed)
+            : parsed,
       ),
     };
   } catch (error) {
@@ -133,6 +135,29 @@ function normalizeXv6CourseManifest(value: unknown): unknown {
       qemu: {
         ...qemuRunner,
         success_pattern: qemuRunner.success_pattern ?? "XV6_BOOT_OK",
+        failure_pattern: qemuRunner.failure_pattern ?? "panic",
+      },
+    },
+  };
+}
+
+function normalizeGlendaCourseManifest(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const project = value as Record<string, unknown>;
+  if (project.version !== "vos.project.v1") return value;
+  const runners = project.runners;
+  if (!runners || typeof runners !== "object" || Array.isArray(runners))
+    return value;
+  const qemu = (runners as Record<string, unknown>).qemu;
+  if (!qemu || typeof qemu !== "object" || Array.isArray(qemu)) return value;
+  const qemuRunner = qemu as Record<string, unknown>;
+  return {
+    ...project,
+    runners: {
+      ...runners,
+      qemu: {
+        ...qemuRunner,
+        success_pattern: qemuRunner.success_pattern ?? "GLENDA_BOOT_OK",
         failure_pattern: qemuRunner.failure_pattern ?? "panic",
       },
     },
