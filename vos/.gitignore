@@ -3,3 +3,5 @@ dist/
 coverage/
 .vos-agent/
 .vos/
+# Regenerable offline crate cache baked into the Runner image (see docs/portal/acceptance/glenda-student-loop-20260815.md).
+apps/vos-portal/runner-cache/*.tar.gz
