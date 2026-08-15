@@ -33,3 +33,18 @@ test("Glenda manifest exposes only the Lab 1-10 course model", async () => {
     "orangepi-prime-hardware-report",
   ]);
 });
+
+test("Glenda connected replay preserves command, Git and Portal lineage for showcase", async () => {
+  const script = await readFile(
+    path.resolve(import.meta.dirname, "../scripts/glenda-student-cli-connected.ts"),
+    "utf8",
+  );
+  for (const step of ["spec-lint", "agent-ask", "agent-review", "build", "qemu", "verify", "report"])
+    expect(script).toContain(`name: "${step}"`);
+  expect(script).toContain('"glenda-replay-bundle.v1"');
+  expect(script).toContain('"glenda-showcase-index.v1"');
+  expect(script).toContain('"--format=%H%x09%P%x09%s"');
+  expect(script).toContain("public_run_id: publicRunId");
+  expect(script).toContain("submission_run_id: submissionRunId");
+  expect(script).toContain("showcase_index_label");
+});

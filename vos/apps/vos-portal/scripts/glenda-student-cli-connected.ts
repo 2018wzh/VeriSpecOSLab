@@ -100,7 +100,8 @@ try {
       const evidence = await runCli(cli, studentCheckout, env, [
         "portal", "evidence", publicRunId, "--out", `.vos/student-public-evidence/${stage.key}`,
       ]);
-      const replay = await runReplay(cli, studentCheckout, env, stage.key, stage.source_ref);
+      const evidenceStatus = String((parseJson(evidence.stdout) as Record<string, unknown>).status ?? "unknown");
+      const replay = await runReplay(cli, studentCheckout, env, stage.key, stage.source_ref, publicRunId, evidenceStatus);
       await uploadArtifact(cli, studentCheckout, env, publicRunId, replay.path, `${stage.key}-replay-bundle`);
       if (replay.status !== "passed")
         throw new Error(`${stage.key} local replay failed after its failure bundle was uploaded`);
@@ -129,14 +130,27 @@ try {
         : evaluated;
       if (finalStatus !== "complete")
         throw new Error(`${stage.source_ref} submission ended with ${finalStatus}, expected complete`);
+      const showcaseIndex = await writeShowcaseIndex(studentCheckout, stage.key, {
+        source_ref: stage.source_ref,
+        project_id: projectId,
+        commit_sha: git(studentCheckout, ["rev-parse", "HEAD"]).trim(),
+        public_run_id: publicRunId,
+        submission_id: submissionId,
+        submission_run_id: submissionRunId,
+        evidence_status: evidenceStatus,
+        submission_status: finalStatus,
+        replay_bundle_label: `${stage.key}-replay-bundle`,
+      });
+      await uploadArtifact(cli, studentCheckout, env, submissionRunId, showcaseIndex, `${stage.key}-showcase-index`);
       results.push({
         stage: stage.key,
         source_ref: stage.source_ref,
         commit_sha: git(studentCheckout, ["rev-parse", "HEAD"]).trim(),
         public_run_id: publicRunId,
         submission_run_id: submissionRunId,
-        evidence_status: String((parseJson(evidence.stdout) as Record<string, unknown>).status ?? "unknown"),
+        evidence_status: evidenceStatus,
         submission_status: finalStatus,
+        showcase_index_label: `${stage.key}-showcase-index`,
         pushed_branch: "main",
       });
     }
@@ -159,6 +173,8 @@ async function runReplay(
   env: Record<string, string | undefined>,
   stage: string,
   sourceRef: string,
+  publicRunId: string,
+  evidenceStatus: string,
 ): Promise<{ path: string; status: "passed" | "failed" }> {
   const commands: Array<{ name: string; args: string[]; result: unknown; artifacts: Record<string, unknown> }> = [];
   let status: "passed" | "failed" = "passed";
@@ -209,12 +225,30 @@ async function runReplay(
       stage,
       source_ref: sourceRef,
       commit_sha: git(cwd, ["rev-parse", "HEAD"]).trim(),
+      tree_sha: git(cwd, ["rev-parse", "HEAD^{tree}"]).trim(),
+      history: git(cwd, ["log", "--reverse", "--format=%H%x09%P%x09%s"]).trim().split("\n").filter(Boolean).map((line) => {
+        const [commit_sha, parent_shas, ...subject] = line.split("\t");
+        return { commit_sha, parent_shas: parent_shas ? parent_shas.split(" ") : [], subject: subject.join("\t") };
+      }),
+      portal: { project_id: projectId, public_run_id: publicRunId, evidence_status: evidenceStatus },
       status,
       commands,
       report,
     }, null, 2)}\n`,
   );
   return { path: path.relative(cwd, target), status };
+}
+
+async function writeShowcaseIndex(
+  cwd: string,
+  stage: string,
+  record: Record<string, string>,
+): Promise<string> {
+  const directory = path.join(cwd, ".vos", "showcase", stage);
+  await mkdir(directory, { recursive: true });
+  const target = path.join(directory, "portal-index.json");
+  await writeFile(target, `${JSON.stringify({ version: "glenda-showcase-index.v1", stage, ...record }, null, 2)}\n`);
+  return path.relative(cwd, target);
 }
 
 async function collectRunArtifacts(projectRoot: string, commandResult: unknown): Promise<Record<string, unknown>> {
