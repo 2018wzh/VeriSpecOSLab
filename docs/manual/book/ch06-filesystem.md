@@ -424,3 +424,9 @@ block_register(dev, ops)         // 注册块设备驱动
 
 - **依赖阶段 5**：文件系统操作在内核中运行，但它们的正确性为阶段 7 的 syscall 暴露奠定基础
 - **为阶段 7 提供**：`inode_read/inode_write` 等底层操作 → 阶段 7 封装为 `sys_read/sys_write` 等 syscall
+
+## 参考卡：块设备、DMA 与缓存一致性
+
+文件系统只依赖稳定的块设备、完成通知和错误接口；virtio、SD、USB Mass Storage 或其他介质由驱动实现。DMA 缓冲区的地址、对齐、所有权转移和 cache flush/invalidate 必须在设备边界明确，不能把 QEMU virtio 的行为当成所有硬件的规则。
+
+测试时分别记录设备发现、读写完成、错误返回和崩溃恢复；查阅设备规范、板卡手册与 IOMMU/缓存文档验证假设。确需硬编码的块大小、队列深度或 MMIO 值应集中管理并说明适用范围。

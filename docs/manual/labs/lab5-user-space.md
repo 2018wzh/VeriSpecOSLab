@@ -174,11 +174,10 @@ Agent 可以审查 trap 保存集合、状态机和 ABI 测试。学生必须决
 
 退出路径没有在发布 zombie/terminated 状态后唤醒等待者，或唤醒发生在状态可见之前。将状态发布与 wait queue 语义写入同一 L3 契约。
 
-## 11. 背景阅读
+## 11. 参考卡
 
 - [Book 第 5 章：用户空间](../book/ch05-user-space.md)：trap、进程、调度与 syscall 的完整背景。
-- [RISC-V 参考](../appendices/riscv-reference.md)：S/U 特权级切换、`sret` 与 `ecall`。
-- [x86-64 启动参考](../appendices/x86-boot-reference.md)：ring 0/3、`syscall`/`sysret`。
-- [ARM 启动参考](../appendices/arm-boot-reference.md)：EL0/EL1、SVC 异常。
-- [ModuleSpec](../specs/module-spec.md) 与 [InterfaceSpec](../specs/overview.md)：模块与接口契约写法。
-- [SpecPatch](../specs/spec-patch.md)：跨模块语义变化的手写契约。
+
+RISC-V 的 S/U 特权级、`sret` 和 `ecall`，x86-64 的 ring 0/3 与 `syscall/sysret`，AArch64 的 EL0/EL1 与 SVC，都会影响 trap frame、返回 PC、寄存器保存集合和用户指针检查。把这些架构差异放在上下文/HAL 接口中，syscall 分发和用户资源模型只处理统一的成功、错误和权限语义。
+
+本 Lab 前文已经给出 ModuleSpec、InterfaceSpec 和跨模块 SpecPatch 的字段用法。最终检查时要能从 ABI 字段追到实现、测试和失败证据，不要依赖仓库内部手册链接。

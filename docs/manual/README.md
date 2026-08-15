@@ -30,22 +30,13 @@ vos.yaml
 ## 日常循环
 
 ```text
-vos agent ask
-  ↓ 讨论概念与取舍，学生按字段骨架手写 Spec
-vos spec lint <target>
-vos agent review <target> [-i]
-  ↓ 学生按建议修改，再次 lint，并手动 git add/commit
-vos agent implement kernel/memory
-  ↓ Agent 在临时 linked worktree 中实现并生成 public/contract/fuzz/trace/hidden tests
-vos build
-vos verify
-vos run qemu
-vos run hardware
-vos report
-vos submit
+Lab 1–8：ask → 学生手写 Spec → lint → review → 学生提交 → VOS implement → build/verify → QEMU/硬件
+Lab 9–Final：学生与 Coding Agent 共同维护 Spec/实现 → 项目 build/test/QEMU/硬件 → 报告与答辩
 ```
 
-Spec 由学生亲手编写和提交。`spec lint` 不调用模型；`agent review` 先运行 lint，再结合相关 Spec 与 `vos.yaml` 的 `verifies` 映射给出建议，不写文件。`implement` 需要 clean HEAD 和已提交 Spec；成功后自动创建 `[vos][agent] Implement <module>` 提交。失败、越界、全量回归失败或 HEAD 漂移只保留诊断和 patch，不修改原工作树。
+Lab 1–8 中，Spec 由学生亲手编写和提交。`spec lint` 不调用模型；`agent review` 先运行 lint，再结合相关 Spec 与 `vos.yaml` 的 `verifies` 映射给出建议，不写文件。`implement` 需要 clean HEAD 和已提交 Spec；成功后自动创建 `[vos][agent] Implement <module>` 提交。失败、越界、全量回归失败或 HEAD 漂移只保留诊断和 patch，不修改原工作树。
+
+从 Lab 9 开始，课程允许直接使用 Codex、Claude Code、Gemini CLI、Copilot 等 Coding Agent 修改代码、测试、构建文件和 Spec。此时 VOS 的 Agent 角色和顺序不再是课程门禁；Lab 仍要求提交与实现一致的 Spec、实验报告和真实证据，并在报告中简要说明使用过的 Agent、任务范围和自己的复核方式。
 
 ## 教材与实验索引
 
@@ -65,7 +56,7 @@ Spec 由学生亲手编写和提交。`spec lint` 不调用模型；`agent revie
 | 验证 | [第 10 章](book/ch10-verification.md) | [Lab 10](labs/lab10-verification.md) |
 | 综合验收 | [第 11 章](book/ch11-comprehensive-assessment.md) | [Final Lab](labs/final-lab.md) |
 
-命令和平台细节见[附录索引](appendices/tools-overview.md)、[vos 学生命令参考](appendices/vos-commands.md)、[RISC-V](appendices/riscv-reference.md)、[x86-64](appendices/x86-boot-reference.md)与[AArch64](appendices/arm-boot-reference.md)参考。
+命令、平台和调试要点已经放在各章与对应 Lab 的“参考卡”中。学生发布包只包含 `book/` 与 `labs/`；`specs/`、`vos/` 和 `teacher/` 是仓库内部资料，不属于学生发布内容。
 
 ## 五类 Spec
 
@@ -77,15 +68,19 @@ Spec 由学生亲手编写和提交。`spec lint` 不调用模型；`agent revie
 
 `owns` 只能写仓库相对路径，不能包含 `..` 或绝对路径，并且要覆盖模块实现和模块测试。L1 缺少 L2/L3 字段只警告，`vos spec lint` 不调用模型。工具链也是 ModuleSpec；`vos.yaml` 只保存结构化 argv、环境变量白名单、超时、runner、测试验证的稳定 Spec ID 和产物。
 
+## HAL 与可移植性
+
+每个阶段都要区分平台相关代码和操作系统核心逻辑。UART、IRQ、定时器、页表格式、MMIO、DMA 和启动信息可以因平台而异，核心模块应尽量通过 HAL 或稳定接口访问它们。固定 canonical board 的常量并非一律禁止，但要集中管理，写明来源和适用范围，不能把同一个地址或中断号散落在多个模块里。各章的参考卡会在第一次遇到这些假设时说明如何查手册、设备树、ACPI 或固件输入。
+
 ## 运行与证据
 
-build 可以在脏树上运行，但 evidence 标记为不可提交。`vos verify` 要求 clean HEAD，并确定性执行 spec lint、build、全部 public、contract、固定种子 fuzz 和有界 trace targets；`vos verify --hidden` 还会运行绑定当前 Spec、配置、content hash、模型、seed 和生成 run 的本地 hidden tests，并把本次结果绑定当前 commit。QEMU 使用串口输出，通常配合 `-nographic`。Hardware Runner 记录板卡、构建身份、串口日志和 workload，并始终显示 `pending_human_review`。
+Lab 1–8 中，build 可以在脏树上运行但 evidence 标记为不可提交，并按课程指定的 VOS lint、build、verify 和报告链记录结果；Lab 9–Final 可使用 VOS，也可使用项目自己的构建、测试、QEMU 和硬件命令。所有阶段都要记录代码/Spec 或配置身份、target、状态、产物和有界日志；硬件证据始终显示 `pending_human_review`，等待人工复核。
 
-每次命令的 manifest、事件和产物在 `.vos/runs/`，审计事件在 `.vos/audit/chain.jsonl` 连续哈希保存。`.vos/` 不进 Git。`vos report` 确定性生成 `.vos/report.json`，`vos submit` 在 clean HEAD 上重新生成报告并归档。归档会遮蔽凭据和本机绝对路径；原始日志不进 Git。
+使用 VOS 时，命令 manifest、事件和产物在 `.vos/runs/`，审计事件在 `.vos/audit/chain.jsonl` 连续哈希保存。`.vos/` 不进 Git。`vos report` 和 `vos submit` 可确定性生成辅助报告与归档；其他 Coding Agent/项目工具也必须遮蔽凭据和本机绝对路径，保留可复现的原始运行记录。
 
 ## Agent 和本机信任边界
 
-Agent 只有一个运行时，角色决定读写边界。`debug`、`verify`、`review`、`ask` 是只读角色。Doctor 的 Debug Agent 会从 Spec 推导宿主工具并运行能力探针，但只能给出安装建议，不能调用包管理器。临时 linked worktree、prompt、Git 前后检查和审计记录都不隔离进程、网络、凭据或宿主文件；仓库外副作用也无法被 VOS 完整阻止。本机 hidden tests 与完整参考源码同样可被学生读取，不构成保密边界。
+Lab 1–8 中，VOS Agent 角色决定读写边界：`debug`、`verify`、`review`、`ask` 是只读角色，`implement` 才能按已提交 Spec 修改临时 worktree。Lab 9 起使用外部 Coding Agent 时，不再限制角色、路径或先后顺序，但学生仍需审查 diff、运行实验并如实报告结果。无论哪种 Agent，临时 linked worktree、prompt、Git 前后检查和审计记录都不隔离进程、网络、凭据或宿主文件。
 
 ## 开发者命令
 
@@ -97,4 +92,4 @@ bun run test
 bun run build
 ```
 
-Portal 提供显式在线教学与测评，Demo 只用于静态界面验收。离线主链不会自动联网；完整设计索引见 [`docs/design/spec/README.md`](../design/spec/README.md)、[`docs/design/toolchain/README.md`](../design/toolchain/README.md) 和 [`docs/design/agent/README.md`](../design/agent/README.md)。
+Portal 提供显式在线教学与测评，Demo 只用于静态界面验收。离线主链不会自动联网；教师和维护者需要的设计索引不属于学生 Book/Lab 发布包。

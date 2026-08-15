@@ -161,11 +161,10 @@ Agent 可以解释控制器寄存器、审查 trap frame 和分析串口日志�
 
 对照 trap frame 偏移和 ABI，检查入口/出口是否对称，尤其是栈切换、嵌套中断和浮点/扩展寄存器策略。
 
-## 10. 背景阅读
+## 10. 参考卡
 
 - [Book 第 4 章：中断与设备](../book/ch04-interrupts.md)：trap 路径、PLIC/定时器与中断嵌套。
-- [RISC-V 参考](../appendices/riscv-reference.md)：`mtvec`/`stvec`、`mstatus`/`sstatus`、定时器与 PLIC。
-- [x86-64 启动参考](../appendices/x86-boot-reference.md)：IDT、APIC 与中断门。
-- [ARM 启动参考](../appendices/arm-boot-reference.md)：异常向量表、GIC 与系统定时器。
-- [ModuleSpec](../specs/module-spec.md)：当前严格 schema 与 L1/L2/L3 分级。
-- [SpecPatch](../specs/spec-patch.md)：跨模块语义变化的手写契约。
+
+RISC-V 的 `mtvec/stvec`、状态寄存器、PLIC 和 timer，x86-64 的 IDT/APIC，AArch64 的异常向量表、GIC 和系统定时器，分别由对应架构规范定义。正文只要求你查清入口状态、claim/complete 或等价流程、屏蔽与优先级、每核目标和未知中断行为；不要把 IRQ 编号、控制器基址和时钟频率硬编码到通用中断分发器。
+
+把设备发现、IRQ 注册、定时器和 IPI 的平台差异集中在 HAL/平台层，通用 trap 状态机只依赖“注册、触发、完成、屏蔽、恢复”等语义。ModuleSpec 的并发字段、锁顺序、rely/guarantee 和 SpecPatch 规则已经在本 Lab 前文给出。

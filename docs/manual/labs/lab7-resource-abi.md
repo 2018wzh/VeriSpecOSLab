@@ -115,9 +115,10 @@ Agent 可以审查生命周期状态机、生成并发测试和解释泄漏日�
 
 只释放了 fd 表，没有递减底层对象引用。退出回收要遍历进程资源表，对每个底层对象递减引用，引用归零时触发销毁与设备关闭。
 
-## 9. 背景阅读
+## 9. 参考卡
 
 - [Book 第 7 章：资源与 ABI](../book/ch07-resource-abi.md)：资源模型范式的完整背景。
-- [ModuleSpec](../specs/module-spec.md) 与 [InterfaceSpec](../specs/overview.md)：模块与接口契约写法。
-- [SpecPatch](../specs/spec-patch.md)：跨模块语义变化的手写契约。
-- [调试方法论](../appendices/debugging-methodology.md)：死锁与泄漏排查。
+
+资源句柄和用户可见 ABI 应隐藏具体设备对象。驱动、文件系统和平台 HAL 可以实现不同的对象操作，但用户态只看到稳定的句柄、权限、生命周期和错误语义。调试泄漏、死锁和 lost wakeup 时，记录对象 ID、引用计数、等待者类别和锁状态，不要记录用户缓冲区原文。
+
+本 Lab 前文已经给出 ModuleSpec、InterfaceSpec 和 SpecPatch 的字段与边界。若资源接口需要接入新平台设备，先说明稳定 ABI 与平台实现之间的转换点，再决定是否需要跨模块变更。
