@@ -1,0 +1,24 @@
+version: course-manifest.v1
+course:
+  code: VOS-GLENDA
+  name: VeriSpecOSLab Glenda 规格驱动操作系统实验
+  term: "2026"
+experiment:
+  id: glenda-spec
+  title: Glenda Lab M1-M5
+  spec_version: student-v2
+stages:
+  - { id: m1, key: m1, name: 启动与串口, sequence: 0, source_ref: course/glenda-m1-complete, spec_refs: [design, boot-asm, uart, dtb, toolchain], test_sets: [m1.public], rubric_ids: [correctness], hardware_gate: none, human_review_required: false, required_artifacts: [vos.yaml, kernel], required_evidence: [{ suite: m1, case_name: public, required_result: pass }], manual_review_required: false }
+  - { id: m2, key: m2, name: DTB与内存, sequence: 1, source_ref: course/glenda-m2-complete, spec_refs: [dtb, mem], test_sets: [m2.public], rubric_ids: [correctness, design], hardware_gate: none, human_review_required: false, required_artifacts: [kernel], required_evidence: [{ suite: m2, case_name: public, required_result: pass }], manual_review_required: false }
+  - { id: m3, key: m3, name: 中断进程与系统调用, sequence: 2, source_ref: course/glenda-m3-complete, spec_refs: [irq, proc, syscall], test_sets: [m3.public], rubric_ids: [correctness, design], hardware_gate: none, human_review_required: false, required_artifacts: [kernel], required_evidence: [{ suite: m3, case_name: public, required_result: pass }], manual_review_required: false }
+  - { id: m4, key: m4, name: 文件系统与virtio, sequence: 3, source_ref: course/glenda-m4-complete, spec_refs: [fs, virtio], test_sets: [m4.public], rubric_ids: [correctness, design], hardware_gate: none, human_review_required: false, required_artifacts: [kernel, disk.img], required_evidence: [{ suite: m4, case_name: public, required_result: pass }], manual_review_required: false }
+  - { id: m5, key: m5, name: 用户态候选, sequence: 4, source_ref: course/glenda-m5-candidate, spec_refs: [design, userland], test_sets: [m5.public, hardware.orangepi-prime], rubric_ids: [correctness, design, hardware, review], hardware_gate: allwinner-h5-orangepi-prime, human_review_required: true, required_artifacts: [kernel, hardware-report], required_evidence: [{ suite: m5, case_name: public, required_result: pass }], manual_review_required: true }
+rubric:
+  - { id: correctness, name: 自动测评正确性, weight: 60 }
+  - { id: design, name: 规格与设计, weight: 20 }
+  - { id: hardware, name: Orange Pi Prime 板卡证据, weight: 10 }
+  - { id: review, name: 教师人工复核, weight: 10 }
+ai_policy:
+  allowed_models: [ecnu-max]
+  monthly_budget: 20
+  allow_byok: true
