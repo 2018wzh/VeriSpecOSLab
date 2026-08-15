@@ -172,6 +172,7 @@ services:
     command: ["serve"]
     environment:
       NODE_ENV: production
+      VOS_PORTAL_ALLOW_SEED: ${VOS_PORTAL_ALLOW_SEED:-0}
       DATABASE_URL: postgres://vos_portal:${VOS_PORTAL_DB_PASSWORD}@postgres:5432/vos_portal
       VOS_PORTAL_HOST: 0.0.0.0
       VOS_PORTAL_PORT: 8787

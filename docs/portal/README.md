@@ -26,5 +26,6 @@ Production 首次启动必须显式迁移和 seed；数据库或 runner 不可�
 - [开发与验证](development.md)
 - [xv6 学生 CLI connected 验收记录](acceptance/xv6-student-cli-20260813.md)
 - [部署与恢复](deployment.md)
+- [本地教学闭环验证](teaching-closed-loop.md)
 - [CLI 使用](../manual/vos/07-portal-workflow.md)
 - [交付状态](todo.md)
