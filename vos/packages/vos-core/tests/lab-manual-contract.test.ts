@@ -139,10 +139,33 @@ describe("Lab 1-10 manual command contract", () => {
       expect(content).not.toContain("vos agent implement <module>");
     }
   });
+
+  test("keeps QEMU, U-Boot, and real peripheral evidence as separate hardware-port contracts", () => {
+    const book = readBook("ch09-hardware-port.md");
+    const lab = readLab("lab9-hardware-port.md");
+    expect(book).toContain("QEMU 与真实板卡的差异矩阵");
+    expect(book).toContain("U-Boot 移植与固件交接");
+    expect(book).toContain("SDIO/SD host");
+    expect(book).toContain("SPI：先验证时序");
+    expect(book).toContain("不能只引用 U-Boot 的 `mmc`/`fatload`");
+    expect(lab).toContain("QEMU 对照基线");
+    expect(lab).toContain("2.1 U-Boot 交接与板级移植");
+    expect(lab).toContain("2.2 真实外设 bring-up 顺序");
+    expect(lab).toContain("bootloader_only");
+    expect(lab).toContain("SDIO/SD host 最小验收");
+    expect(lab).toContain("SPI 控制器与从设备最小验收");
+    expect(readBook("ch02-boot.md")).toContain("U-Boot 路径：加载成功不等于内核硬件已就绪");
+    expect(readBook("ch06-filesystem.md")).toContain("真实板卡的 SDIO/SPI 存储 bring-up");
+    expect(readLab("lab6-filesystem.md")).toContain("步骤 2a：把 QEMU virtio-blk 换成真实 SDIO/SPI");
+  });
 });
 
 function readLab(file: string): string {
   return readFileSync(join(labRoot, file), "utf8");
+}
+
+function readBook(file: string): string {
+  return readFileSync(join(repositoryRoot, "docs", "manual", "book", file), "utf8");
 }
 
 function moduleTargets(markdown: string): string[] {

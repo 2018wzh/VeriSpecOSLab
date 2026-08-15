@@ -192,6 +192,22 @@ McKusick 的 Fast File System（FFS）引入了两个关键思想。一个是**�
 - 你的驱动是同步还是异步的？同步驱动在 I/O 完成前阻塞调用线程（实现简单）；异步驱动支持提交后立即返回，通过回调/中断通知完成（性能更好，适合 O3 高吞吐 I/O）。
 - 是否支持多队列？virtio-blk 从 1.0 开始支持 multi-queue，NVMe 原生支持。多队列在多核场景下消除锁竞争。
 
+### 维度 8a：真实板卡的 SDIO/SPI 存储 bring-up
+
+QEMU 的 virtio-blk 把设备发现、队列和 host 文件都准备好了；真实板卡的 SD/eMMC/SPI 存储还要经过供电、pinmux、时钟、复位、协议初始化和 DMA/cache 边界。U-Boot 可以从 SD 读出内核，但这不等于内核的块设备驱动已经可用。
+
+#### 原生 SD host/SDIO
+
+先在 DesignSpec 中区分原生 SD host（`CMD/CLK/DAT0..3`，用于 SD 卡/eMMC）和多功能 SDIO 设备（例如 Wi-Fi）。原生 host 的最小序列是：核对 3.3 V/1.8 V、电平转换、上拉、卡检测和 pinmux；解除 clock/reset；以初始化低速完成 `CMD0`、`CMD8`、`ACMD41`、RCA 和总线宽度协商；然后再切换高速模式和 DMA。每个 response 都要检查类型、CRC、busy 和 timeout，错误必须向上返回。
+
+先用 PIO 做单块读写回环，再启用 DMA。提交 DMA 前记录物理地址和对齐，完成后执行 SoC 要求的 cache clean/invalidate、ownership 转移和内存屏障。多功能 SDIO 还要验证 CCCR/FBR、function enable、块大小和 IRQ；不要用虚拟 virtio 队列的完成语义替代这些状态。
+
+#### SPI-NOR/SPI-SD
+
+SPI 没有 ACK/NACK，CS、CPOL/CPHA、频率和 FIFO 顺序错误时可能得到全 `0xff` 或错位的首字节。先以 PIO 验证 `SCLK/MOSI/MISO/CS` 电平、片选保持和 JEDEC ID/WHO_AM_I，再接入 DMA。SPI-NOR 至少覆盖读 ID、状态寄存器、写使能、页写、扇区擦除和 busy 轮询；SPI-SD 至少覆盖低速初始化、命令帧、数据 token、单块读写和 CRC/timeout。逻辑分析仪记录一次失败事务，驱动不得用旧 buffer 或固定延时掩盖错误。
+
+文件系统只依赖稳定的 `block_read/block_write/flush` 和持久化错误语义；设备发现、命令/响应、CS、DMA、cache、分区和掉卡处理留在驱动/HAL 边界。这样同一文件系统可以先跑 virtio-blk，再跑 SDIO/eMMC/SPI，而不是把 QEMU 地址和队列假设散落到 inode 或日志代码中。
+
 ### 维度 9：磁盘分区表
 
 在文件系统之前，磁盘上还有一层更底层的结构：分区表。它告诉 OS："这块磁盘被分成了几块区域？每块从哪个扇区开始、到哪个扇区结束？哪块是可引导的？"

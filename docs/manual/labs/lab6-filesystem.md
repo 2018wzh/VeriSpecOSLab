@@ -28,6 +28,8 @@ Lab 1 只读镜像热身在这里扩展为可写文件系统。实现按块设�
 | inode | 直接/间接块、extent | 最大文件、截断、引用计数 |
 | 崩溃一致性 | 无日志、redo log、copy-on-write | 提交原子性、恢复幂等 |
 
+真实板卡的 `block device` 不能只写成“SD 卡”：还要标明是原生 SD host/SDIO、eMMC、SPI-NOR 还是 SPI-SD，以及它由 U-Boot 加载、内核自己驱动，还是两者都实现。QEMU 的 virtio-blk 回归与真实存储回归分开记账。
+
 ## 3. 分步操作指引
 
 文件系统是"牵一发动全身"的模块，建议按四层推进，每层自检通过后再进入下一层。
@@ -51,6 +53,15 @@ Lab 1 只读镜像热身在这里扩展为可写文件系统。实现按块设�
 先完成固定块号的读写回环，记录请求 ID、块号、方向、长度、完成状态和超时。设备错误必须向上返回，不能用全零块替代失败数据。
 
 **自检点**：对每个块号写唯一模式再读回，全部一致；注入设备错误后，错误能传到上层而不是被吞掉。
+
+#### 步骤 2a：把 QEMU virtio-blk 换成真实 SDIO/SPI
+
+如果 Lab 9 的 canonical board 需要从 SD/eMMC/SPI 启动或运行持久化 workload，本 Lab 先定义硬件路径而不是直接改文件系统。记录供电、电平、pinmux、clock/reset、卡检测/片选和分区来源；先用 PIO 完成单块读写，再接 DMA，并明确 buffer 对齐、ownership、cache clean/invalidate、内存屏障和完成 IRQ。
+
+- 原生 SD host/SDIO：验证低速 `CMD0`、`CMD8`、`ACMD41`、RCA、总线宽度、高速切换、CRC、busy、timeout 和拔卡；多功能 SDIO 还验证 CCCR/FBR、function enable、块大小和 IRQ。
+- SPI-NOR/SPI-SD：验证 CPOL/CPHA、频率、CS 保持、FIFO、JEDEC ID/WHO_AM_I；SPI-NOR 测试写使能/页写/擦除/busy，SPI-SD 测试命令帧、数据 token、块读写和 CRC/timeout。
+
+U-Boot 的 `mmc`/`fatload` 成功只能标记启动介质为 `bootloader_only`；内核块设备仍需独立读写回环和错误证据。文件系统只依赖稳定的块设备接口，不能直接读取 virtio 或 SDIO/SPI 控制器寄存器。
 
 ### 步骤 3：Buffer cache
 
