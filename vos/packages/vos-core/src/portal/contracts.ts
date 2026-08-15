@@ -208,26 +208,29 @@ export const CourseStageV1Schema = StageGateSchema.omit({ status: true })
   .extend({
     source_ref: z
       .string()
-      .regex(/^course\/lab(?:[1-8]-complete|9-candidate|10-candidate)$/),
+      .regex(/^course\/[a-z0-9][a-z0-9-]*-(?:complete|candidate)$/),
     spec_refs: z.array(z.string().min(1)).min(1),
     test_sets: z.array(z.string().min(1)).min(1),
     rubric_ids: z.array(z.string().min(1)).min(1),
-    hardware_gate: z.enum(["none", "visionfive2-four-hart"]),
+    hardware_gate: z.union([
+      z.literal("none"),
+      z.string().regex(/^[a-z0-9][a-z0-9-]{2,63}$/),
+    ]),
     human_review_required: z.boolean(),
   })
   .strict()
   .superRefine((stage, context) => {
-    const candidate = /lab(?:9|10)-candidate$/.test(stage.source_ref);
+    const candidate = stage.source_ref.endsWith("-candidate");
     if (
       candidate &&
-      (stage.hardware_gate !== "visionfive2-four-hart" ||
+      (stage.hardware_gate === "none" ||
         !stage.human_review_required ||
         !stage.manual_review_required)
     )
       context.addIssue({
         code: "custom",
         message:
-          "Lab 9/10 candidate stages require VisionFive 2 four-hart and human review gates",
+          "candidate stages require a hardware gate and human/manual review gates",
       });
   });
 
@@ -666,7 +669,7 @@ export const WorkerPipelineLeaseV1Schema = z
         policy_snapshot_ref: z.string(),
         requested_by: z.string(),
         reason: z.string(),
-        course_adapter: z.literal("xv6-spec").optional(),
+        course_adapter: z.enum(["xv6-spec", "glenda-spec"]).optional(),
       })
       .strict(),
     repository: z.object({ url: z.string().url() }).strict(),

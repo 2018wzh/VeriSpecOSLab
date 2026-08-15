@@ -17,7 +17,7 @@ export interface DockerRunnerRequest {
   stageKey: string;
   scope: string;
   policySnapshotRef: string;
-  courseAdapter?: "xv6-spec";
+  courseAdapter?: "xv6-spec" | "glenda-spec";
   actor: PortalUserSummary;
   commitLedger: CommitLedgerEntry;
   modelCredential?: {
@@ -304,7 +304,10 @@ async function writeRunnerIdentity(
     allowedCommands: [
       request.scope === "public" ? "verify public" : "verify full",
     ],
-    allowedPaths: ["spec", "src", "kernel", "user", "tests", ".vos"],
+    allowedPaths:
+      request.courseAdapter === "glenda-spec"
+        ? ["spec", "src", "kernel", "service", "xtask", "user", "tests", ".vos"]
+        : ["spec", "src", "kernel", "user", "tests", ".vos"],
     visibilityScope: visibility,
     expiresAt: new Date(Date.now() + 45 * 60_000).toISOString(),
   };

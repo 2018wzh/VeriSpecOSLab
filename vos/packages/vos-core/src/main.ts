@@ -499,7 +499,8 @@ function assertStudentCommandSurface(
   if (
     command.kind === "verify" &&
     command.scope !== "public" &&
-    process.env.VOS_COURSE_ADAPTER !== "xv6-spec"
+    process.env.VOS_COURSE_ADAPTER !== "xv6-spec" &&
+    process.env.VOS_COURSE_ADAPTER !== "glenda-spec"
   ) {
     throw new CliError(
       "student v2 verify has no legacy scope; it always runs public and contract checks",
@@ -6651,6 +6652,8 @@ export async function executeVerify(
   if (existsSync(path.join(projectRoot, "vos.yaml"))) {
     if (process.env.VOS_COURSE_ADAPTER === "xv6-spec")
       return executeXv6CourseVerify(command, context, evidence);
+    if (process.env.VOS_COURSE_ADAPTER === "glenda-spec")
+      return executeGlendaCourseVerify(command, context, evidence);
     return executeStudentVerify(command, context, evidence);
   }
   updateProgress(context, {
@@ -6851,6 +6854,74 @@ async function runXv6CourseBuild(
     }
   }
   return runner.build("build");
+}
+
+async function executeGlendaCourseVerify(
+  command: VerifyCommand,
+  context: ExecContext,
+  evidence: EvidenceWriter,
+): Promise<CommandOutcome> {
+  if (command.scope !== "public" && command.scope !== "full")
+    return {
+      status: "validation_failed",
+      details: {
+        reason:
+          "glenda course adapter only supports public and authoritative verification",
+      },
+    };
+  const runner = new HostRunner(context.projectRoot, context.signal);
+  const manifest = await readStudentManifest(context.projectRoot);
+  const build = await runner.build("build");
+  const checks = [] as Array<Awaited<ReturnType<ManifestRunner["check"]>>>;
+  if (build.status === "passed") {
+    const ids = await glendaCourseCheckIds(context, manifest);
+    for (const id of ids) checks.push(await runner.check(id));
+  }
+  const collected = await runner.collectEvidence();
+  const passed =
+    build.status === "passed" &&
+    checks.every((check) => check.status === "passed") &&
+    collected.cleanHead;
+  const summary = await evidence.writeLog(
+    "course",
+    "glenda-verification.json",
+    `${JSON.stringify({ adapter: "glenda-spec", build, checks, evidence: collected }, null, 2)}\n`,
+  );
+  evidence.addEvidenceRef(
+    `${evidence.run_id}:glenda-course-verification`,
+    "glenda-course-verification",
+    path.relative(context.projectRoot, summary).replaceAll(path.sep, "/"),
+  );
+  return {
+    status: passed ? "passed" : "validation_failed",
+    details: { adapter: "glenda-spec", build, checks, evidence: collected },
+  };
+}
+
+async function glendaCourseCheckIds(
+  context: ExecContext,
+  manifest: Awaited<ReturnType<typeof readStudentManifest>>,
+): Promise<string[]> {
+  const scriptPath = path.join(
+    context.projectRoot,
+    "tests",
+    "public",
+    "verify.sh",
+  );
+  if (existsSync(scriptPath)) {
+    const script = await readFile(scriptPath, "utf8");
+    const match = script.match(
+      /case "\$case_id" in\s*([A-Za-z0-9_|-]+)\s*\)\s*;;/,
+    );
+    if (match) {
+      const ids = match[1]
+        .split("|")
+        .map((id) => id.trim())
+        .filter(Boolean);
+      if (ids.length > 0) return ids;
+    }
+  }
+  return Object.keys(manifest.manifest.checks);
 }
 
 async function executeStudentVerify(

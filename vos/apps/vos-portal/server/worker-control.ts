@@ -14,6 +14,19 @@ function identifier(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;
 }
 
+const COURSE_ADAPTERS: Record<string, "xv6-spec" | "glenda-spec"> = {
+  "xv6-spec": "xv6-spec",
+  "glenda-spec": "glenda-spec",
+};
+function courseAdapterForExperiment(
+  experimentId: string,
+): "xv6-spec" | "glenda-spec" | undefined {
+  for (const [prefix, adapter] of Object.entries(COURSE_ADAPTERS)) {
+    if (experimentId.startsWith(prefix)) return adapter;
+  }
+  return undefined;
+}
+
 export class WorkerControlService {
   constructor(
     private readonly sql: Sql,
@@ -58,8 +71,8 @@ export class WorkerControlService {
           policy_snapshot_ref: String(run.policy_snapshot_ref),
           requested_by: String(run.requested_by),
           reason: String(run.reason),
-          ...(String(current.experiment_id).startsWith("xv6-spec")
-            ? { course_adapter: "xv6-spec" as const }
+          ...(courseAdapterForExperiment(String(current.experiment_id))
+            ? { course_adapter: courseAdapterForExperiment(String(current.experiment_id)) }
             : {}),
         },
         repository: {

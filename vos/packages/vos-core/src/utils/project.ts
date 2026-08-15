@@ -89,6 +89,27 @@ export async function loadPolicyConfig(
       visibility_scope: "public",
     };
   }
+  if (process.env.VOS_COURSE_ADAPTER === "glenda-spec") {
+    return {
+      allowed_commands: [...STUDENT_ALLOWED_COMMANDS, "verify full"],
+      allowed_paths: [
+        "spec",
+        "src",
+        "tests",
+        ".vos",
+        "kernel",
+        "service",
+        "xtask",
+        "include",
+        "Cargo.toml",
+        "Cargo.lock",
+        ".cargo",
+        "rust-toolchain.toml",
+        "vendor",
+      ],
+      visibility_scope: "public",
+    };
+  }
   const isStudentV2 =
     existsSync(path.resolve(projectRoot, "vos.yaml")) &&
     !existsSync(path.resolve(projectRoot, ".vos", "project.yaml"));
