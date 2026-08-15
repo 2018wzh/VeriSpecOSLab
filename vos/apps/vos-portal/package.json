@@ -22,7 +22,7 @@
     "test:gitea": "bun test tests/gitea.integration.test.ts",
     "test:xv6:student-cli": "bun run scripts/xv6-student-cli-connected.ts",
     "test:xv6:student-cli:course": "bun run scripts/xv6-student-cli-connected.ts --all",
-    "test:glenda:connected": "bun run scripts/glenda-course-connected.ts",
+    "test:glenda:connected": "bun run scripts/glenda-student-cli-connected.ts --all",
     "test:glenda:student-cli": "bun run scripts/glenda-student-cli-connected.ts",
     "test:glenda:student-cli:course": "bun run scripts/glenda-student-cli-connected.ts --all",
     "typecheck": "tsc --noEmit -p tsconfig.json"

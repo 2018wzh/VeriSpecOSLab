@@ -1,6 +1,7 @@
-import { mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { Buffer } from "node:buffer";
 import { HttpPortalClient } from "vos-core";
 import { CourseManifestV1Schema } from "vos-core/portal-contracts";
 import { parse } from "yaml";
@@ -11,8 +12,8 @@ const source = path.resolve(
   process.env.VOS_GLENDA_SPEC_ROOT ??
     path.join(import.meta.dirname, "../../../../../glenda-spec"),
 );
-const sourceRef = process.env.VOS_GLENDA_STUDENT_REF ?? "course/glenda-m5-candidate";
-const expectedStage = process.env.VOS_GLENDA_STUDENT_STAGE ?? "m5";
+const sourceRef = process.env.VOS_GLENDA_STUDENT_REF ?? "course/lab10-complete";
+const expectedStage = process.env.VOS_GLENDA_STUDENT_STAGE ?? "lab10";
 const courseManifest = CourseManifestV1Schema.parse(
   parse(
     await readFile(
@@ -22,12 +23,12 @@ const courseManifest = CourseManifestV1Schema.parse(
   ),
 );
 const stages = (process.env.VOS_GLENDA_STUDENT_ALL === "1" || process.argv.includes("--all"))
-  ? courseManifest.stages.filter((stage) => stage.source_ref.endsWith("-complete"))
+  ? courseManifest.stages
   : [
       courseManifest.stages.find((stage) => stage.key === expectedStage) ??
         ({ key: expectedStage, source_ref: sourceRef } as (typeof courseManifest.stages)[number]),
     ];
-if (stages.length === 0) throw new Error("glenda course manifest has no complete stages");
+if (stages.length === 0) throw new Error("glenda course manifest has no stages");
 const giteaOrigin = process.env.VOS_GITEA_PUBLIC_ORIGIN?.replace(/\/$/, "");
 if (!giteaOrigin)
   throw new Error("VOS_GITEA_PUBLIC_ORIGIN is required for the student CLI simulation");
@@ -54,52 +55,57 @@ try {
     GIT_TERMINAL_PROMPT: "0",
     GIT_SSL_NO_VERIFY: process.env.GIT_SSL_NO_VERIFY ?? "1",
   };
-  let authenticated = false;
   const results: Array<Record<string, string | number>> = [];
-  for (const stage of stages) {
-    const binding = await client.getProjectBinding(portalUrl, token, projectId);
-    if (binding.current_stage.key !== stage.key)
-      throw new Error(
-        `project ${projectId} is at ${binding.current_stage.key}, expected ${stage.key}`,
-      );
-    const stageCheckout = path.join(workspace, stage.key);
-    let pushedBranch: string | undefined;
-    let remote: string | undefined;
-    let worktreeAdded = false;
-    try {
-      git(source, ["worktree", "add", "--detach", stageCheckout, stage.source_ref]);
-      worktreeAdded = true;
-      if (!authenticated) {
-        if (process.env.VOS_PORTAL_TOKEN?.trim())
-          await runCli(cli, stageCheckout, env, ["portal", "login", portalUrl]);
-        else
-          await runCliDeviceLogin(cli, stageCheckout, env, portalUrl, webSession);
-        authenticated = true;
-      }
-      await runCli(cli, stageCheckout, env, ["portal", "whoami", portalUrl]);
-      await runCli(cli, stageCheckout, env, ["portal", "bind", portalUrl, projectId]);
+  const studentCheckout = path.join(workspace, "student-main");
+  let worktreeAdded = false;
+  try {
+    git(source, ["worktree", "add", "--detach", studentCheckout, stages[0].source_ref]);
+    worktreeAdded = true;
+    git(studentCheckout, ["switch", "-c", "main"]);
+    const privateAgentConfig = path.join(source, ".vos", "config.toml");
+    if (await Bun.file(privateAgentConfig).exists()) {
+      await mkdir(path.join(studentCheckout, ".vos"), { recursive: true });
+      await copyFile(privateAgentConfig, path.join(studentCheckout, ".vos", "config.toml"));
+    }
+    if (process.env.VOS_PORTAL_TOKEN?.trim())
+      await runCli(cli, studentCheckout, env, ["portal", "login", portalUrl]);
+    else
+      await runCliDeviceLogin(cli, studentCheckout, env, portalUrl, webSession);
+    await runCli(cli, studentCheckout, env, ["portal", "whoami", portalUrl]);
+    const firstBinding = await client.getProjectBinding(portalUrl, token, projectId);
+    await runCli(cli, studentCheckout, env, ["portal", "bind", portalUrl, projectId]);
+    git(studentCheckout, ["add", ".gitignore", ".vos/project.yaml"]);
+    git(studentCheckout, ["commit", "-m", `[course][portal] Bind glenda ${stages[0].key} project`]);
+    const remote = publicRepositoryUrl(firstBinding.repo_url);
+    git(studentCheckout, ["remote", "add", "portal", remote]);
 
-      git(stageCheckout, ["add", ".gitignore", ".vos/project.yaml"]);
-      git(stageCheckout, ["commit", "-m", `[course][portal] Bind glenda ${stage.key} project`]);
-      pushedBranch = `vos-student-${stage.key}-${crypto.randomUUID().slice(0, 8)}`;
-      remote = publicRepositoryUrl(binding.repo_url);
-      try {
-        git(stageCheckout, ["remote", "set-url", "portal", remote]);
-      } catch {
-        git(stageCheckout, ["remote", "add", "portal", remote]);
+    for (let index = 0; index < stages.length; index++) {
+      const stage = stages[index];
+      const binding = await client.getProjectBinding(portalUrl, token, projectId);
+      if (binding.current_stage.key !== stage.key)
+        throw new Error(
+          `project ${projectId} is at ${binding.current_stage.key}, expected ${stage.key}`,
+        );
+      if (index > 0) {
+        await applyStageDelta(source, studentCheckout, stages[index - 1].source_ref, stage.source_ref);
+        git(studentCheckout, ["commit", "-m", `[course][replay] Advance glenda ${stage.key}`]);
       }
-      await push(stageCheckout, pushedBranch, env);
-      // Gitea's signed webhook is asynchronous; retry only the explicit ledger race.
+      await pushMain(studentCheckout, env, index === 0);
       await Bun.sleep(1_500);
 
-      const publicRun = await runWithLedgerRetry(cli, stageCheckout, env, [
+      const publicRun = await runWithLedgerRetry(cli, studentCheckout, env, [
         "portal", "run", "--stage", stage.key, "--watch",
       ]);
       const publicRunId = findRunId(publicRun);
-      const evidence = await runCli(cli, stageCheckout, env, [
+      const evidence = await runCli(cli, studentCheckout, env, [
         "portal", "evidence", publicRunId, "--out", `.vos/student-public-evidence/${stage.key}`,
       ]);
-      const submission = await runCli(cli, stageCheckout, env, [
+      const replay = await runReplay(cli, studentCheckout, env, stage.key, stage.source_ref);
+      await uploadArtifact(cli, studentCheckout, env, publicRunId, replay.path, `${stage.key}-replay-bundle`);
+      if (replay.status !== "passed")
+        throw new Error(`${stage.key} local replay failed after its failure bundle was uploaded`);
+
+      const submission = await runCli(cli, studentCheckout, env, [
         "portal", "submit", "--stage", stage.key,
       ]);
       const submissionValue = parseJson(submission.stdout) as Record<string, unknown>;
@@ -109,52 +115,240 @@ try {
       const submissionRunId = String(submissionRecord.run_id ?? "");
       if (!submissionId || !submissionRunId)
         throw new Error("CLI submission response did not contain submission and run ids");
-      const status = await runCli(cli, stageCheckout, env, [
+      await uploadArtifact(cli, studentCheckout, env, submissionRunId, replay.path, `${stage.key}-replay-bundle`);
+      await uploadRequiredReviewArtifacts(cli, studentCheckout, env, submissionRunId, stage.key, stage.required_review_artifacts);
+      const status = await runCli(cli, studentCheckout, env, [
         "portal", "status", submissionRunId, "--watch",
       ]);
-      const statusValue = parseJson(status.stdout);
-      const terminal = nestedRunStatus(statusValue);
+      const terminal = nestedRunStatus(parseJson(status.stdout));
       if (terminal !== "passed")
         throw new Error(`authoritative student CLI run ended with ${terminal}`);
-      const finalSubmission = (await request(
-        portalUrl,
-        `/submissions/${encodeURIComponent(submissionId)}`,
-        { headers: { authorization: `Bearer ${token}` } },
-      ).then((response) => response.json())) as { status?: string };
-      const expectedStatus = stage.source_ref.endsWith("-candidate") ? "candidate" : "complete";
-      if (finalSubmission.status !== expectedStatus)
-        throw new Error(
-          `${stage.source_ref} submission ended with ${finalSubmission.status ?? "unknown"}, expected ${expectedStatus}`,
-        );
+      const evaluated = await submissionStatus(portalUrl, token, submissionId);
+      const finalStatus = stage.manual_review_required
+        ? await waitForTeacherApproval(portalUrl, token, submissionId, evaluated)
+        : evaluated;
+      if (finalStatus !== "complete")
+        throw new Error(`${stage.source_ref} submission ended with ${finalStatus}, expected complete`);
       results.push({
         stage: stage.key,
         source_ref: stage.source_ref,
+        commit_sha: git(studentCheckout, ["rev-parse", "HEAD"]).trim(),
         public_run_id: publicRunId,
         submission_run_id: submissionRunId,
         evidence_status: String((parseJson(evidence.stdout) as Record<string, unknown>).status ?? "unknown"),
-        submission_status: finalSubmission.status,
-        pushed_branch: pushedBranch,
+        submission_status: finalStatus,
+        pushed_branch: "main",
       });
-    } finally {
-      if (pushedBranch && remote)
-        await deleteRemoteBranch(remote, pushedBranch).catch((error) =>
-          console.error(`cleanup branch failed: ${String(error)}`));
-      if (worktreeAdded) {
-        try {
-          git(source, ["worktree", "remove", "--force", stageCheckout]);
-        } catch (error) {
-          console.error(`cleanup worktree failed: ${String(error)}`);
-        }
-      }
     }
+  } finally {
+    if (worktreeAdded)
+      git(source, ["worktree", "remove", "--force", studentCheckout]);
   }
   console.log(JSON.stringify({
-    flow: ["portal login", "portal whoami", "portal bind", "portal run", "portal evidence", "portal submit", "portal status"],
+    flow: ["portal login", "portal whoami", "portal bind", "local replay", "push main", "portal run", "portal evidence", "portal artifact upload", "portal submit", "portal status", "teacher approval"],
     project_id: projectId,
     stages: results,
   }));
 } finally {
   await rm(workspace, { recursive: true, force: true }).catch((error) => console.error(String(error))); 
+}
+
+async function runReplay(
+  cli: string,
+  cwd: string,
+  env: Record<string, string | undefined>,
+  stage: string,
+  sourceRef: string,
+): Promise<{ path: string; status: "passed" | "failed" }> {
+  const commands: Array<{ name: string; args: string[]; result: unknown; artifacts: Record<string, unknown> }> = [];
+  let status: "passed" | "failed" = "passed";
+  const execute = async (name: string, args: string[], requireModel = false): Promise<boolean> => {
+    try {
+      const result = await runCli(cli, cwd, env, args);
+      const parsed = parseJson(result.stdout);
+      if (requireModel) assertModelResult(parsed, name);
+      commands.push({
+        name,
+        args,
+        result: sanitizeShowcase(parsed, cwd),
+        artifacts: await collectRunArtifacts(cwd, parsed),
+      });
+      return true;
+    } catch (error) {
+      status = "failed";
+      commands.push({
+        name,
+        args,
+        result: { status: "failed", error: redact(error instanceof Error ? error.message : String(error)) },
+        artifacts: {},
+      });
+      return false;
+    }
+  };
+  for (const step of [
+    { name: "spec-lint", args: ["spec", "lint", "all"], model: false },
+    { name: "agent-ask", args: ["agent", "ask", `Review the ${stage} design boundary and identify only mechanisms introduced by this checkpoint.`], model: true },
+    { name: "agent-review", args: ["agent", "review", "all"], model: true },
+    { name: "build", args: ["build"], model: false },
+    { name: "qemu", args: ["run", "qemu"], model: false },
+    { name: "verify", args: ["verify"], model: false },
+    { name: "report", args: ["report"], model: false },
+  ])
+    if (!(await execute(step.name, step.args, step.model))) break;
+  const reportPath = path.join(cwd, ".vos", "report.json");
+  const report = await Bun.file(reportPath).exists()
+    ? sanitizeShowcase(JSON.parse(await readFile(reportPath, "utf8")), cwd)
+    : null;
+  const directory = path.join(cwd, ".vos", "showcase", stage);
+  await mkdir(directory, { recursive: true });
+  const target = path.join(directory, "replay-bundle.json");
+  await writeFile(
+    target,
+    `${JSON.stringify({
+      version: "glenda-replay-bundle.v1",
+      stage,
+      source_ref: sourceRef,
+      commit_sha: git(cwd, ["rev-parse", "HEAD"]).trim(),
+      status,
+      commands,
+      report,
+    }, null, 2)}\n`,
+  );
+  return { path: path.relative(cwd, target), status };
+}
+
+async function collectRunArtifacts(projectRoot: string, commandResult: unknown): Promise<Record<string, unknown>> {
+  const root = commandResult as Record<string, unknown>;
+  const runId = typeof root.run_id === "string" ? root.run_id : undefined;
+  if (!runId) return {};
+  const runRoot = path.join(projectRoot, ".vos", "runs", runId);
+  if (!(await Bun.file(path.join(runRoot, "manifest.json")).exists())) return {};
+  const collected: Record<string, unknown> = {};
+  const visit = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "artifacts") await visit(absolute);
+        continue;
+      }
+      if (!/\.(?:json|jsonl|log|txt)$/i.test(entry.name)) continue;
+      const relative = path.relative(runRoot, absolute).split(path.sep).join("/");
+      if (relative === "events.jsonl") continue;
+      const file = Bun.file(absolute);
+      if (file.size > 5 * 1024 * 1024)
+        throw new Error(`showcase artifact exceeds 5 MiB: ${relative}`);
+      const text = await file.text();
+      if (entry.name.endsWith(".json"))
+        collected[relative] = sanitizeShowcase(JSON.parse(text), projectRoot);
+      else
+        collected[relative] = sanitizeShowcase(text, projectRoot);
+    }
+  };
+  await visit(runRoot);
+  return collected;
+}
+
+function assertModelResult(value: unknown, command: string): void {
+  const root = value as Record<string, unknown>;
+  const details = root.details as Record<string, unknown> | undefined;
+  const review = details?.agent_review as Record<string, unknown> | undefined;
+  if (details?.model_used !== true || review?.status === "unavailable")
+    throw new Error(`${command} did not produce real model evidence`);
+}
+
+function sanitizeShowcase(value: unknown, projectRoot: string): unknown {
+  const denied = new Set(["raw_text", "project_root", "portal_url", "token", "authorization", "credentials"]);
+  const visit = (current: unknown): unknown => {
+    if (Array.isArray(current)) return current.map(visit);
+    if (current && typeof current === "object")
+      return Object.fromEntries(
+        Object.entries(current as Record<string, unknown>)
+          .filter(([key]) => !denied.has(key.toLowerCase()))
+          .map(([key, nested]) => [key, visit(nested)]),
+      );
+    if (typeof current === "string")
+      return current.replaceAll(projectRoot, "<project>").replaceAll(projectRoot.replaceAll("\\", "/"), "<project>");
+    return current;
+  };
+  return visit(value);
+}
+
+async function uploadArtifact(
+  cli: string,
+  cwd: string,
+  env: Record<string, string | undefined>,
+  runId: string,
+  artifactPath: string,
+  label: string,
+): Promise<void> {
+  await runCli(cli, cwd, env, ["portal", "artifact", "upload", runId, artifactPath, "--label", label]);
+}
+
+async function uploadRequiredReviewArtifacts(
+  cli: string,
+  cwd: string,
+  env: Record<string, string | undefined>,
+  runId: string,
+  stage: string,
+  labels: string[],
+): Promise<void> {
+  const directory = path.join(cwd, ".vos", "showcase", stage, "review");
+  await mkdir(directory, { recursive: true });
+  for (const label of labels) {
+    const variable = `VOS_GLENDA_ARTIFACT_${label.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}`;
+    const sourcePath = required(variable);
+    const extension = path.extname(sourcePath).slice(0, 16);
+    const target = path.join(directory, `${label}${extension}`);
+    await copyFile(sourcePath, target);
+    await uploadArtifact(cli, cwd, env, runId, path.relative(cwd, target), label);
+  }
+}
+
+async function submissionStatus(base: string, token: string, submissionId: string): Promise<string> {
+  const value = (await request(
+    base,
+    `/submissions/${encodeURIComponent(submissionId)}`,
+    { headers: { authorization: `Bearer ${token}` } },
+  ).then((response) => response.json())) as { status?: string };
+  return String(value.status ?? "unknown");
+}
+
+async function waitForTeacherApproval(base: string, token: string, submissionId: string, initial: string): Promise<string> {
+  if (initial !== "candidate") return initial;
+  const timeoutMs = Number(process.env.VOS_GLENDA_REVIEW_TIMEOUT_MS ?? 1_800_000);
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 1_000)
+    throw new Error("VOS_GLENDA_REVIEW_TIMEOUT_MS must be at least 1000");
+  console.error(`submission ${submissionId} is waiting for Portal teacher approval`);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await Bun.sleep(5_000);
+    const status = await submissionStatus(base, token, submissionId);
+    if (status !== "candidate") return status;
+  }
+  throw new Error(`submission ${submissionId} remained candidate until the teacher approval timeout`);
+}
+
+async function applyStageDelta(sourceRoot: string, checkout: string, from: string, to: string): Promise<void> {
+  const producer = Bun.spawn(["git", "diff", "--binary", from, to, "--", "."], {
+    cwd: sourceRoot,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const consumer = Bun.spawn(["git", "apply", "--index", "--3way", "-"], {
+    cwd: checkout,
+    stdin: producer.stdout,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [producerError, consumerOutput, consumerError, producerCode, consumerCode] = await Promise.all([
+    new Response(producer.stderr).text(),
+    new Response(consumer.stdout).text(),
+    new Response(consumer.stderr).text(),
+    producer.exited,
+    consumer.exited,
+  ]);
+  if (producerCode !== 0 || consumerCode !== 0)
+    throw new Error(`failed to advance ${from} to ${to}: ${redact(producerError || consumerError || consumerOutput)}`);
 }
 
 async function runWithLedgerRetry(
@@ -201,52 +395,36 @@ async function runCli(
   return { stdout, stderr, exitCode: code };
 }
 
-async function push(
+async function pushMain(
   cwd: string,
-  branch: string,
   env: Record<string, string | undefined>,
+  firstPush: boolean,
 ): Promise<void> {
   const username = process.env.VOS_GITEA_USERNAME ?? "student";
   const password = process.env.VOS_GITEA_PASSWORD ?? process.env.VOS_GITEA_TOKEN ?? "student";
-  const askpass = path.join(cwd, ".vos-askpass.cmd");
-  await writeFile(
-    askpass,
-    `@echo off\r\nif /I not "%~1"=="Password" (echo ${username}) else (echo ${password})\r\n`,
-  );
-  try {
-    const result = Bun.spawnSync(
-      ["git", "push", "portal", `HEAD:refs/heads/${branch}`],
-      {
-        cwd,
-        env: { ...env, GIT_ASKPASS: askpass },
-        stdout: "pipe",
-        stderr: "pipe",
-      },
-    );
-    if (result.exitCode !== 0)
-      throw new Error(`git push failed: ${redact(result.stderr.toString())}`);
-  } finally {
-    await unlink(askpass).catch(() => undefined);
+  const authEnv = {
+    ...env,
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "http.extraHeader",
+    GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`${username}:${password}`, "utf8").toString("base64")}`,
+  };
+  let lease: string[] = [];
+  if (firstPush) {
+    const remote = runGit(cwd, ["ls-remote", "portal", "refs/heads/main"], authEnv, true);
+    if (remote.exitCode !== 0)
+      throw new Error(`git ls-remote failed: ${redact(remote.stderr || remote.stdout)}`);
+    const sha = remote.stdout.trim().split(/\s+/, 1)[0] ?? "";
+    lease = [`--force-with-lease=refs/heads/main:${sha}`];
   }
+  const pushed = runGit(cwd, ["push", ...lease, "portal", "HEAD:refs/heads/main"], authEnv, true);
+  if (pushed.exitCode !== 0)
+    throw new Error(`git push failed: ${redact(pushed.stderr || pushed.stdout)}`);
 }
 
 function publicRepositoryUrl(repoUrl: string | undefined): string {
   if (!repoUrl) throw new Error("Portal project has no active Gitea repository");
   const parsed = new URL(repoUrl);
   return `${giteaOrigin}${parsed.pathname}`;
-}
-
-async function deleteRemoteBranch(remote: string, branch: string): Promise<void> {
-  const parsed = new URL(remote);
-  const [owner, repository] = parsed.pathname.split("/").filter(Boolean);
-  if (!owner || !repository) throw new Error("Gitea repository URL is invalid");
-  const response = await fetch(
-    `${giteaOrigin}/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository.replace(/\.git$/, ""))}/branches/${encodeURIComponent(branch)}`,
-    { method: "DELETE", headers: { authorization: `token ${required("VOS_GITEA_TOKEN")}` } },
-  );
-  if (response.status === 404) return;
-  if (!response.ok)
-    throw new Error(`Gitea test branch cleanup failed with HTTP ${response.status}`);
 }
 
 function git(cwd: string, args: string[]): string {
@@ -258,6 +436,19 @@ function git(cwd: string, args: string[]): string {
   if (result.exitCode !== 0)
     throw new Error(`git ${args.join(" ")} failed: ${redact(result.stderr.toString())}`);
   return result.stdout.toString();
+}
+
+function runGit(
+  cwd: string,
+  args: string[],
+  env: Record<string, string | undefined>,
+  allowFailure = false,
+): { exitCode: number; stdout: string; stderr: string } {
+  const result = Bun.spawnSync(["git", ...args], { cwd, env, stdout: "pipe", stderr: "pipe" });
+  const output = { exitCode: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
+  if (output.exitCode !== 0 && !allowFailure)
+    throw new Error(`git ${args.join(" ")} failed: ${redact(output.stderr || output.stdout)}`);
+  return output;
 }
 
 function findRunId(result: CliResult): string {
@@ -374,7 +565,10 @@ function cookieValue(header: string, name: string): string | undefined {
 }
 
 function redact(value: string): string {
-  return value.replace(/Bearer\s+[^\s]+/gi, "Bearer <redacted>").slice(0, 800);
+  let redacted = value.replace(/Bearer\s+[^\s]+/gi, "Bearer <redacted>");
+  for (const secret of [process.env.VOS_PORTAL_TOKEN, process.env.VOS_GITEA_TOKEN, process.env.VOS_GITEA_PASSWORD])
+    if (secret) redacted = redacted.replaceAll(secret, "<redacted>");
+  return redacted.slice(0, 800);
 }
 
 function required(name: string): string {
