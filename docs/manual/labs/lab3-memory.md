@@ -97,7 +97,7 @@ free ∩ allocated = ∅
 
 用户映射不得以用户权限指向内核代码、内核数据、页表或设备寄存器。对 `map`、`unmap`、`protect` 和地址翻译分别测试合法路径与越界路径。
 
-页表测试至少覆盖叶条目与非叶条目混淆、重复映射、跨层大页冲突、权限收紧、取消映射后刷新，以及虚拟地址规范性检查。不同 ISA 的页表位和刷新规则以对应附录为准。
+页表测试至少覆盖叶条目与非叶条目混淆、重复映射、跨层大页冲突、权限收紧、取消映射后刷新，以及虚拟地址规范性检查。不同 ISA 的页表位和刷新规则以所选架构规范为准，并在 HAL 层集中处理格式和刷新指令差异。
 
 **自检点**：用一个用户页表访问内核代码地址，确认触发页错误而不是读到内容；再对合法用户页读写，确认正常通过。
 
@@ -200,11 +200,10 @@ Agent 可以审查不变量、生成测试框架和解释页错误证据。学�
 
 旧 TLB 曾掩盖错误映射。保留页表条目转储，确认先发布新条目，再执行符合 ISA 规则的刷新。
 
-## 10. 背景阅读
+## 10. 参考卡
 
 - [Book 第 3 章：内存管理](../book/ch03-memory.md)：内存发现、分配器设计空间与分页原理。
-- [RISC-V 参考](../appendices/riscv-reference.md)：Sv39 页表结构与 `sfence.vma` 规则。
-- [x86-64 启动参考](../appendices/x86-boot-reference.md)：PML4/PDPT/PD/PT 层级与 `invlpg`。
-- [ARM 启动参考](../appendices/arm-boot-reference.md)：AArch64 页表与 TLB 维护。
-- [ModuleSpec](../specs/module-spec.md)：当前严格 schema 与 L1/L2/L3 分级。
-- [SpecPatch](../specs/spec-patch.md)：跨模块语义变化的手写契约。
+
+RISC-V Sv39/Sv48、x86-64 PML4/PDPT/PD/PT 和 AArch64 多级页表在层数、权限位、地址规范性和 TLB 维护上不同。你要记录的是当前平台的页表根、叶条目、权限、保留区和刷新时机，以及这些信息从哪里得到；不要把 QEMU 的 RAM 起始地址、MMIO 区间或页表格式散落在 allocator 和通用映射代码里。把架构特有的页表编码、`sfence.vma`、`invlpg` 或 TLBI 操作包在平台/HAL 接口中，通用内存模块只处理统一语义。
+
+本 Lab 的 ModuleSpec 字段骨架、L3 并发约束和跨模块 SpecPatch 说明已经写在前文。修改 boot 的可观察语义时，按本 Lab 的 SpecPatch 流程记录影响范围，不从仓库内部手册复制旧 schema。

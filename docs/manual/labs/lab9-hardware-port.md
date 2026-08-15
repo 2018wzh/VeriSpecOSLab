@@ -4,10 +4,8 @@
 
 > **本 Lab 概览**
 >
-> - **学完能做什么**：把内核从 QEMU 移植到 canonical board，能独立完成板卡调研、启动链适配、串口与定时器移植，并保持 QEMU 回归全部通过。
-> - **预计耗时**：10–16 小时，建议安排 1–2 周（不含等待硬件的时间）。板卡调研与最小样例约占一半，逐层移植与回归占另一半。
-> - **前置依赖**：已完成 Lab 8（系统功能完整），阅读第 9 章与板卡手册。若没有板卡，本 Lab 可只做调研与移植计划。
-> - **产出物**：DesignSpec 更新、平台 ModuleSpec/InterfaceSpec、必要 SpecPatch、构建与运行投影、板卡运行日志、QEMU 回归证据和移植报告。
+> - **前置依赖**：已完成 Lab 8（系统功能完整），使用 Lab 1 已确定的 canonical board，阅读第 9 章与板卡手册。
+> - **产出物**：与实现一致的 DesignSpec/平台说明、必要的 ModuleSpec/InterfaceSpec/SpecPatch、板卡运行日志、QEMU 回归证据和移植报告。可以由任意 Coding Agent 协助或直接维护这些文件。
 
 ## 1. 设计问题
 
@@ -45,7 +43,7 @@ ENTRY → STACK → BSS → UART → MEMORY → TIMER → IRQ
 
 ## 3. 当前契约映射
 
-DesignSpec 的 `hardware_port` 固定 canonical board、启动、串口和中断约定。板级实现归相应平台 ModuleSpec；公开的驱动边界使用 InterfaceSpec。`vos.yaml` hardware runner 使用结构化 `program + args + cwd + env + timeout`，记录 board、serial、workload、build target 和 artifacts。
+DesignSpec 的 `hardware_port` 固定 canonical board、启动、串口和中断约定。板级实现归相应平台说明；驱动边界使用 InterfaceSpec 或项目已有的稳定 ABI。Lab 9 起可以使用任意 Coding Agent 直接维护这些文件，重点是最终内容与实现一致、实验结果可复核。
 
 平台模块先从无答案骨架开始：
 
@@ -69,25 +67,17 @@ guarantee: [TODO]
 algorithm_intent: TODO
 ```
 
-```sh
-vos agent ask "canonical board、平台模块、驱动 ABI 与 QEMU 复用边界应如何表达？"
-# 学生手写 DesignSpec 更新、平台 ModuleSpec/InterfaceSpec 和必要 SpecPatch
-vos spec lint design
-vos agent review design
-vos spec lint <platform-module-id>
-vos agent review <platform-module-id> -i
-# 学生修改、再次 lint，并手动提交
-vos spec lint all
-git add spec vos.yaml
-git commit -m "[spec][hardware] Define Lab 9 hardware port"
-vos agent implement <platform-module-id>
-vos build
-vos run qemu
-vos verify
-vos run hardware
+```text
+让 Coding Agent 读取当前实现、板卡手册和 Lab 1 的连接记录
+→ 更新平台说明、必要的 Spec/SpecPatch 和实现
+→ 审查 diff，运行项目已有的 build/test/QEMU 命令
+→ 分阶段运行真实板卡并保留完整串口日志
+→ 由学生整理 QEMU 回归、实板结果、失败分析和 HAL 影响
 ```
 
-硬件运行继承当前用户和网络，不是安全沙箱。开发态允许脏树，但权威硬件 evidence 必须绑定 clean HEAD。运行结果保持 `pending_human_review`，工具不能把串口出现 banner 自动写成已通过人工验收。Hardware evidence 记录 board 标识、commit、串口日志和 workload，本地启动记录不能写成已通过人工验收。
+如果仍使用 VOS，可以运行 `vos build`、`vos run qemu`、`vos run hardware` 或 `vos spec lint` 作为辅助检查；这些命令从 Lab 9 起不再是课程流程门禁。
+
+硬件运行继承当前用户和网络，不是安全沙箱。每次报告仍要记录 commit 或其他可定位的构建身份、板卡、串口日志和 workload；工具不能把串口出现 banner 自动写成已通过人工验收。运行结果保持 `pending_human_review`，由教师完成最终人工复核。
 
 > **参考标签**：当前参考标签是 `course/lab9-candidate`。QEMU、FDT/GPT/SD 单元测试、FIT/镜像检查或模拟串口都不能替代实板门禁；只有在 VisionFive 2 上完成四核完整 `usertests` 并经人工复核后，才允许发布 complete 标签。
 
@@ -98,26 +88,28 @@ vos run hardware
 - [ ] RAM 范围、定时器频率和中断控制器与手册/设备树一致。
 - [ ] 串口收发、时钟中断和至少一个 workload 在板卡运行。
 - [ ] QEMU 的全部既有公开门禁继续通过。
-- [ ] hardware evidence 绑定 commit/spec/config/build hashes 和完整串口日志。
+- [ ] hardware evidence 绑定 commit、Spec/配置版本或其他可定位的构建身份和完整串口日志。
 - [ ] 人工验收状态仍为 `pending_human_review`，等待教师确认。
 
 ## 5. 设计理据
 
 解释板卡选择、平台抽象边界、启动方案和已接受限制。每个选择都要能回答：如果换一块板卡，哪些代码必须重写、哪些可以复用？
 
-## 6. AI 使用边界
+## 6. Coding Agent 与 HAL
 
-Agent 可以解释板卡手册、生成设备树对比和整理串口日志。学生必须亲自完成烧录、接线与硬件验收判断。不能让 Agent 把 QEMU 运行结果改写成板卡证据，也不能让 `vos run hardware` 的输出自动通过人工验收。
+可以直接使用任意 Coding Agent 解释板卡手册、生成设备树对比、修改平台实现和整理测试。学生必须亲自完成烧录、接线、复位与硬件验收判断，审查 Agent 的 diff，并在报告中披露使用的工具和任务范围。不能让 Agent 把 QEMU 运行结果改写成板卡证据，也不能让串口 banner 自动通过人工验收。
+
+本 Lab 的核心 HAL 检查是“替换平台实现而不复制核心逻辑”：UART、定时器、IRQ、设备发现、DMA 和缓存约束应有清晰来源与边界；如果仍保留硬编码，说明它属于哪个平台、为什么暂时合理、未来替换点在哪里。
 
 ## 7. 提交物
 
-- [ ] DesignSpec 更新；
-- [ ] 平台 ModuleSpec/InterfaceSpec；
+- [ ] 与实现一致的 DesignSpec 更新；
+- [ ] 平台 ModuleSpec/InterfaceSpec 或等价的平台契约；
 - [ ] 必要 SpecPatch；
-- [ ] 构建与运行投影（`vos.yaml`）；
-- [ ] 板卡运行日志；
+- [ ] 板卡运行日志和失败分析；
 - [ ] QEMU 回归证据；
-- [ ] 移植报告（含调研记录表）。
+- [ ] 移植报告（含调研记录表）；
+- [ ] Coding Agent 使用披露和学生 diff/测试复核说明。
 
 ## 8. 常见问题与排查
 
@@ -133,10 +125,12 @@ Agent 可以解释板卡手册、生成设备树对比和整理串口日志。�
 
 检查缓存、外设复位、持久化状态和烧录区域。硬件 reset 不一定等价于断电冷启动。
 
-## 9. 背景阅读
+## 9. 参考卡
 
 - [Book 第 9 章：硬件移植](../book/ch09-hardware-port.md)：移植流程与常见硬件陷阱。
-- [RISC-V 参考](../appendices/riscv-reference.md)、[x86-64 启动参考](../appendices/x86-boot-reference.md)、[ARM 启动参考](../appendices/arm-boot-reference.md)：按所选板卡阅读。
-- [QEMU 指南](../appendices/qemu-guide.md)：QEMU 与板卡的行为差异。
-- [调试方法论](../appendices/debugging-methodology.md)：无串口时的定位手段。
-- [ModuleSpec](../specs/module-spec.md) 与 [InterfaceSpec](../specs/overview.md)：模块与接口契约写法。
+
+按“入口、栈、BSS、UART、内存、定时器、IRQ、用户态、存储、workload”的顺序推进。QEMU 只证明模拟机器上的行为，不能替代板卡证据；设备树、固件传参、SD/eMMC 分区、UART 时钟和中断路由都要以当前板卡的手册、设备树或实测结果为来源。
+
+没有串口时，先用板载 LED、调试器断点、寄存器快照或最小探针区分“未到入口、链接地址错误、栈不可用、UART 配置错误”。GDB/OpenOCD 的命令只是手段，报告要保留停止位置、寄存器类别和下一步判断，不要只贴一张截图。
+
+平台契约、InterfaceSpec 和 SpecPatch 的内容已经在本 Lab 的设计问题和提交物中展开。Coding Agent 可以直接维护它们，但仍需由学生审查平台边界和 HAL 影响。

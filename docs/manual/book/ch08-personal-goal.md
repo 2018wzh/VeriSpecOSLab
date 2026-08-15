@@ -2195,4 +2195,10 @@ IOKit 的教训：C++ 可以写出比 C 更清晰的内核代码（虚函数替�
 
 从阶段 1 的 DesignSpec 到这里，你完成了从"我打算做一个 OS"到"我做了一个什么样的 OS"的完整闭环。方向速查表帮你 30 秒初筛，详细的方向指南帮你理解每个维度的深度挑战，多个 GoalSpec 和 DesignSpec 组合不变量 模板和示例帮你将设计判断落实为可验证的承诺。
 
-进入 Final Lab 前，确认 `vos verify` 通过。
+进入 Final Lab 前，确认项目声明的正确性、回归、QEMU/硬件和人工复核证据齐全；若使用 VOS，`vos verify` 只是其中一种可选检查。
+
+## 参考卡：Lab 9 起的 Coding Agent 与 HAL 影响分析
+
+Lab 9 起可以让 Codex、Claude Code、Gemini CLI、Copilot 等 Coding Agent 直接修改实现、测试、构建文件和 Spec。学生仍需审查 diff、运行实验并维护最终一致的 DesignSpec、ModuleSpec、InterfaceSpec、GoalSpec/SpecPatch；VOS 命令是可选工程化工具，不是后期门禁。
+
+个性化目标的设计评审增加一张 HAL 影响表：新增的硬件假设、应承接该假设的平台接口、QEMU 与 canonical board 的差异、替换平台实现时不应改动的核心逻辑。报告简要披露 Agent、任务、审查和验证方式，不要求提示词审计。

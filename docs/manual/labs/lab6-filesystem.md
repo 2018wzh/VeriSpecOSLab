@@ -175,10 +175,10 @@ Agent 可以生成磁盘布局可视化、审查状态机和分析恢复日志�
 
 恢复步骤不幂等。为每条日志记录设计可重复应用的条件，并对恢复中途再次断电做故障注入。
 
-## 10. 背景阅读
+## 10. 参考卡
 
 - [Book 第 6 章：文件系统](../book/ch06-filesystem.md)：块设备、cache、inode 与日志的完整背景。
-- [RISC-V 参考](../appendices/riscv-reference.md) 与 [QEMU 指南](../appendices/qemu-guide.md)：virtio 块设备。
-- [链接脚本参考](../appendices/linker-script.md)：如需调整镜像布局。
-- [ModuleSpec](../specs/module-spec.md) 与 [InterfaceSpec](../specs/overview.md)：模块与接口契约写法。
-- [SpecPatch](../specs/spec-patch.md)：跨模块语义变化的手写契约。
+
+QEMU 的 virtio-blk、真实板卡的 SD/eMMC、USB 存储和 NVMe 在发现方式、队列、DMA、缓存一致性和错误恢复上都可能不同。文件系统只依赖统一的块读写和持久化语义；设备发现、队列寄存器、DMA 地址和缓存屏障放在设备/HAL 层。镜像布局、链接地址和存储分区必须来自当前平台文档或设备描述，不能照抄 QEMU 默认值。
+
+本 Lab 前文已经给出 ModuleSpec、InterfaceSpec 和 SpecPatch 的字段与边界。调整日志或锁语义时，记录跨模块影响；不要用忽略设备错误或每次启动重建文件系统的方式掩盖根因。

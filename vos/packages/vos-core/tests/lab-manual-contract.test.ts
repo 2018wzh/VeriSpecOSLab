@@ -27,11 +27,39 @@ describe("Lab 1-10 manual command contract", () => {
     expect(lab).toContain("# Lab 1：CTF 热身与项目初始化");
     expect(lab).toContain("## 1. CTF 双环境热身");
     expect(lab).toContain("Linux flag reader、裸机 flag reader");
+    expect(lab).toContain("### 1.1 Linux 路径");
+    expect(lab).toContain("### 1.2 QEMU 裸机路径");
+    expect(lab).toContain("### 1.4 真实板卡连接");
     expect(lab).toContain("vos agent ask -i");
     expect(lab).toContain("vos spec lint design");
     expect(lab).toContain("vos agent review design");
     expect(lab).toContain("git commit -m \"[spec][design]");
-    expect(lab).toContain("vos agent implement lab/ctf-warmup");
+    expect(lab).toContain("仓库之外");
+    expect(lab).toContain("真实板卡");
+    expect(lab).toContain("canonical board");
+    expect(lab).toContain("手工提交");
+    expect(lab).toContain("usbipd bind --busid <BUSID>");
+    expect(lab).toContain("usbipd attach --wsl --busid <BUSID>");
+    expect(lab).toContain("usbipd detach --busid <BUSID>");
+    expect(lab).not.toContain("vos agent implement lab/ctf-warmup");
+  });
+
+  test("keeps HAL and portability prompts in every published Book/Lab source", () => {
+    const publishedFiles = [
+      "book/ch01-overview-design.md", "book/ch02-boot.md", "book/ch03-memory.md",
+      "book/ch04-interrupts.md", "book/ch05-user-space.md", "book/ch06-filesystem.md",
+      "book/ch07-resource-abi.md", "book/ch08-personal-goal.md", "book/ch09-hardware-port.md",
+      "book/ch10-verification.md", "book/ch11-comprehensive-assessment.md",
+      "labs/lab1-seed.md", "labs/lab2-boot.md", "labs/lab3-memory.md", "labs/lab4-interrupts.md",
+      "labs/lab5-user-space.md", "labs/lab6-filesystem.md", "labs/lab7-resource-abi.md",
+      "labs/lab8-personal-goal.md", "labs/lab9-hardware-port.md", "labs/lab10-verification.md",
+      "labs/final-lab.md",
+    ];
+    for (const file of publishedFiles) {
+      const content = readFileSync(join(repositoryRoot, "docs", "manual", file), "utf8");
+      expect(content).toContain("HAL");
+      expect(content).not.toMatch(/appendices\/|另见附录/);
+    }
   });
 
   test("binds Lab 2-7 agent commands to the cumulative course ModuleSpec IDs", () => {
@@ -56,7 +84,7 @@ describe("Lab 1-10 manual command contract", () => {
       [join(repositoryRoot, "docs", "manual", "book", "ch02-boot.md"), ["spec/modules/kernel/boot.yaml"], /spec\/modules\/boot\.yaml/],
       [join(repositoryRoot, "docs", "manual", "book", "ch03-memory.md"), ["spec/modules/kernel/memory.yaml"], /spec\/modules\/(?:memory|vm)\.yaml/],
       [join(repositoryRoot, "docs", "manual", "book", "ch05-user-space.md"), ["spec/modules/kernel/trap.yaml", "spec/modules/kernel/process.yaml", "spec/modules/kernel/syscall.yaml"], /spec\/modules\/(?:trap|process|syscall|exec)\.yaml/],
-      [join(repositoryRoot, "docs", "manual", "appendices", "vos-commands.md"), ["spec/modules/kernel/memory.yaml"], /spec\/modules\/memory\.yaml/],
+      [join(repositoryRoot, "docs", "manual", "book", "ch10-verification.md"), ["Spec"], /spec\/modules\/memory\.yaml/],
     ];
     for (const [path, expected, retired] of cases) {
       const content = readFileSync(path, "utf8");
@@ -70,19 +98,24 @@ describe("Lab 1-10 manual command contract", () => {
     expect(lab8).toContain("vos agent implement <module>");
     expect(lab8).toContain("vos verify");
     const lab9 = readLab("lab9-hardware-port.md");
-    expect(lab9).toContain("vos run qemu");
-    expect(lab9).toContain("vos run hardware");
+    expect(lab9).toContain("Coding Agent");
+    expect(lab9).toContain("不再是课程流程门禁");
+    expect(lab9).not.toContain("vos agent implement <module>");
     expect(lab9).toContain("pending_human_review");
     const lab10 = readLab("lab10-verification.md");
+    expect(lab10).toContain("Coding Agent");
     expect(lab10).toContain("vos verify");
     expect(lab10).toContain("vos report");
     expect(lab10).toContain("vos submit");
+    const finalLab = readLab("final-lab.md");
+    expect(finalLab).toContain("Codex、Claude Code、Gemini CLI、Copilot");
+    expect(finalLab).toContain("VOS 命令仍可作为工程化助手");
   });
 
-  test("uses the handwritten Spec loop in every Lab and rejects generative Spec commands", () => {
+  test("uses the handwritten Spec loop through Lab 8 and rejects generative Spec commands", () => {
     for (const file of [
-      "lab1-seed.md", "lab2-boot.md", "lab3-memory.md", "lab4-interrupts.md", "lab5-user-space.md",
-      "lab6-filesystem.md", "lab7-resource-abi.md", "lab8-personal-goal.md", "lab9-hardware-port.md", "lab10-verification.md",
+      "lab2-boot.md", "lab3-memory.md", "lab4-interrupts.md", "lab5-user-space.md",
+      "lab6-filesystem.md", "lab7-resource-abi.md", "lab8-personal-goal.md",
     ]) {
       const lab = readLab(file);
       expect(lab).toContain("vos agent ask");
@@ -96,6 +129,14 @@ describe("Lab 1-10 manual command contract", () => {
       expect(lab).not.toContain("vos agent design");
       expect(lab).not.toContain("vos agent spec");
       expect(lab).not.toContain("vos spec check");
+    }
+  });
+
+  test("documents the Lab 9 transition without making the VOS chain a gate", () => {
+    for (const file of ["lab9-hardware-port.md", "lab10-verification.md", "final-lab.md"]) {
+      const content = readLab(file);
+      expect(content).toMatch(/Coding Agent|Codex/);
+      expect(content).not.toContain("vos agent implement <module>");
     }
   });
 });

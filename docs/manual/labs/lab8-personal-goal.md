@@ -103,7 +103,13 @@ vos report
 
 ## 7. AI 使用边界
 
-Agent 可以帮助设计实验、审查统计方法和解释异常。学生必须在看到结果前确定指标与阈值。不能让 Agent 挑选"最好的一次"运行、删除失败样本或把相关性写成因果结论。
+Lab 8 仍使用 VOS 的受限 Agent。Agent 可以帮助设计实验、审查统计方法和解释异常，但不能修改项目或替你确定指标。学生必须在看到结果前确定指标与阈值，不能让 Agent 挑选“最好的一次”运行、删除失败样本或把相关性写成因果结论。
+
+### Lab 9 起的 Coding Agent 过渡
+
+完成 Lab 8 后，Lab 9 起允许直接使用 Codex、Claude Code、Gemini CLI、Copilot 等 Coding Agent 修改实现、测试、构建文件和 Spec。课程不再要求先手写 Spec、再调用 `vos agent implement`，也不把 `vos verify/report/submit` 作为唯一流程。Spec、实验报告、真实硬件证据和人工复核仍是提交物；报告中简要记录使用过的 Agent、任务范围、关键修改和学生自己的验证方式即可。
+
+如果个性化目标涉及驱动、ISA、MMIO、DMA、缓存或定时器，报告必须增加一段 HAL 影响分析：哪些平台假设被引入，来源是什么，哪些代码能保持不变，换 canonical board 时要替换哪一层。硬编码可以是有意的取舍，但不能无说明地散落在核心逻辑中。
 
 ## 8. 提交物
 
@@ -133,9 +139,9 @@ Agent 可以帮助设计实验、审查统计方法和解释异常。学生必�
 
 实验判据必须在看到结果前确定。所有运行样本都进结果表，异常值标注原因但不得删除；只有测量方法出错才能重新采集。
 
-## 10. 背景阅读
+## 10. 参考卡
 
 - [Book 第 8 章：个性化目标](../book/ch08-personal-goal.md)：各方向的设计空间与示例。
-- [ModuleSpec](../specs/module-spec.md) 与 [GoalSpec 相关说明](../specs/overview.md)：GoalSpec 字段写法。
-- [SpecPatch](../specs/spec-patch.md)：跨模块语义变化的手写契约。
-- [验证方法论](../book/ch10-verification.md)：证据组织与可复现实验。
+- [Book 第 10 章：验证](../book/ch10-verification.md)：证据组织与可复现实验。
+
+GoalSpec 只记录稳定 ID、目标、指标、oracle 和正确性护栏；基线、实验变量、样本和负结果放在报告或测试数据中。跨模块语义变化要写清 before/after、影响模块和回归范围。正文不重复完整 schema，提交前对照本 Lab 的字段骨架和 `vos spec lint` 错误逐项修正。

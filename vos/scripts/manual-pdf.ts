@@ -70,10 +70,6 @@ const SECTION_ORDER = [
   "README.md",
   "book",
   "labs",
-  "specs",
-  "appendices",
-  "vos",
-  "teacher",
 ] as const;
 
 const EXPLICIT_FILE_ORDER: Record<string, string[]> = {
@@ -89,61 +85,6 @@ const EXPLICIT_FILE_ORDER: Record<string, string[]> = {
     "lab9-hardware-port.md",
     "lab10-verification.md",
     "final-lab.md",
-  ],
-  appendices: [
-    "ai-policy.md",
-    "common-bugs.md",
-    "ctf-flags.md",
-    "debugging-methodology.md",
-    "dev-environment.md",
-    "dev-environment-setup.md",
-    "final-report-template.md",
-    "gdb-guide.md",
-    "grading.md",
-    "invariant-checker.md",
-    "linker-script.md",
-    "qemu-guide.md",
-    "riscv-reference.md",
-    "x86-boot-reference.md",
-    "arm-boot-reference.md",
-    "stm32-bare-metal-lab.md",
-    "tools-overview.md",
-    "vos-commands.md",
-  ],
-  specs: [
-    "overview.md",
-    "architecture-design-spec.md",
-    "architecture-composition-spec.md",
-    "module-spec.md",
-    "operation-contract.md",
-    "concurrency-spec.md",
-    "goal-validation-contract.md",
-    "spec-workflow.md",
-    "spec-patch.md",
-    "ai-collaboration-log.md",
-  ],
-  teacher: [
-    "course-plan.md",
-    "lab-release-plan.md",
-    "stage-gates.md",
-    "rubric.md",
-    "ta-checklist.md",
-    "judge-policy.md",
-    "ai-audit-policy.md",
-    "defense-questions.md",
-  ],
-  vos: [
-    "index.md",
-    "01-overview.md",
-    "02-commands-spec-arch.md",
-    "03-commands-build-run-test.md",
-    "04-commands-verify-agent-report.md",
-    "05-spec-schema-arch-module-op.md",
-    "06-spec-schema-toolchain-verify-evolution.md",
-    "appendix-a-cheatsheet.md",
-    "appendix-b-glossary.md",
-    "appendix-c-spec-fields.md",
-    "appendix-d-xv6-reference.md",
   ],
 };
 
@@ -221,38 +162,23 @@ const LAB_BUNDLES: Array<{
     },
   ];
 
-const SHARED_BUNDLES: Array<Omit<ManualBundle, "sources"> & { section: string }> = [
-  { id: "shared-specs", title: "Specs 规格手册", outputFileName: "shared/shared-specs.pdf", section: "specs" },
-  { id: "shared-vos", title: "VOS 用户手册", outputFileName: "shared/shared-vos.pdf", section: "vos" },
-  { id: "teacher", title: "Teacher 教师手册", outputFileName: "teacher/teacher.pdf", section: "teacher" },
-];
-
-const APPENDIX_BUNDLES: Array<{
-  id: string;
-  title: string;
-  outputFileName: string;
-  sourcePath: string;
-}> = EXPLICIT_FILE_ORDER.appendices.map((filename) => {
-  const id = filename.replace(/\.md$/, "");
-  const title = filename
-    .replace(/\.md$/, "")
-    .split("-")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-  return {
-    id: `appendix-${id}`,
-    title: `Appendix: ${title}`,
-    outputFileName: `appendices/${id}.pdf`,
-    sourcePath: `appendices/${filename}`,
-  };
-});
-
 export function resolveDefaultPaths(repoRoot = process.cwd()): DefaultManualPdfPaths {
   const root = normalize(repoRoot);
   return {
     manualRoot: normalize(join(root, "docs", "manual")),
     outputDir: normalize(join(root, DEFAULT_OUTPUT_RELATIVE)),
   };
+}
+
+export function prepareManualOutputDir(outputDir: string, manualRoot: string): string {
+  const resolvedOutputDir = resolve(outputDir);
+  const resolvedManualRoot = resolve(manualRoot);
+  if (resolvedOutputDir === resolvedManualRoot || resolvedOutputDir.startsWith(`${resolvedManualRoot}${sep}`)) {
+    throw new Error("manual PDF output directory must not be inside the manual source directory");
+  }
+  rmSync(resolvedOutputDir, { recursive: true, force: true });
+  mkdirSync(resolvedOutputDir, { recursive: true });
+  return resolvedOutputDir;
 }
 
 export function createPlaywrightEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -314,32 +240,7 @@ export function buildManualBundles(manualRoot: string): ManualBundle[] {
     }
   }
 
-  for (const appendix of APPENDIX_BUNDLES) {
-    const source = sourceByPath.get(appendix.sourcePath);
-    if (source) {
-      markAssignedSources([source], assignedSources, appendix.id);
-      bundles.push({
-        id: appendix.id,
-        title: appendix.title,
-        outputFileName: appendix.outputFileName,
-        sources: [source],
-      });
-    }
-  }
-
-  for (const bundle of SHARED_BUNDLES) {
-    const bundleSources = sources.filter((source) => source.relativePath.startsWith(`${bundle.section}/`));
-    if (bundleSources.length > 0) {
-      markAssignedSources(bundleSources, assignedSources, bundle.id);
-      bundles.push({
-        id: bundle.id,
-        title: bundle.title,
-        outputFileName: bundle.outputFileName,
-        sources: bundleSources,
-      });
-    }
-  }
-
+  assertStudentLinksArePublished(manualRoot, sources);
   assertAllManualSourcesAreBundled(sources, assignedSources);
   return bundles;
 }
@@ -367,7 +268,7 @@ function assertAllManualSourcesAreBundled(
 ): void {
   const unassignedSources = sources
     .map((source) => source.relativePath)
-    .filter((relativePath) => relativePath !== "README.md" && !assignedSources.has(relativePath));
+    .filter((relativePath) => isStudentManualSource(relativePath) && !assignedSources.has(relativePath));
 
   if (unassignedSources.length === 0) return;
 
@@ -375,6 +276,43 @@ function assertAllManualSourcesAreBundled(
     "manual markdown files are not assigned to any PDF bundle:",
     ...unassignedSources.map((source) => `- ${source}`),
   ].join("\n"));
+}
+
+function isStudentManualSource(relativePath: string): boolean {
+  return relativePath.startsWith("book/") || relativePath.startsWith("labs/");
+}
+
+function assertStudentLinksArePublished(manualRoot: string, sources: ManualSource[]): void {
+  const allPaths = new Set(sources.map((source) => source.relativePath));
+  const studentPaths = new Set(sources
+    .filter((source) => isStudentManualSource(source.relativePath))
+    .map((source) => source.relativePath));
+  const parser = new MarkdownIt({ html: false });
+  const errors: string[] = [];
+
+  for (const source of sources.filter((item) => isStudentManualSource(item.relativePath))) {
+    const tokens = parser.parse(source.content, {});
+    const linkTokens = tokens.flatMap((token) => token.children ?? []);
+    for (const token of linkTokens) {
+      if (token.type !== "link_open") continue;
+      const href = token.attrGet("href");
+      if (!href || /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("#")) continue;
+      const [rawPath] = href.split("#", 2);
+      if (!rawPath || extname(rawPath).toLowerCase() !== ".md") continue;
+
+      const resolved = normalize(resolve(dirname(join(manualRoot, source.relativePath)), rawPath));
+      const targetPath = toPosixPath(relative(manualRoot, resolved));
+      if (!allPaths.has(targetPath)) {
+        errors.push(`${source.relativePath}: missing Markdown link target ${href}`);
+      } else if (!studentPaths.has(targetPath)) {
+        errors.push(`${source.relativePath}: link targets unpublished manual source ${targetPath}`);
+      }
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new Error(["student Markdown links must target published Book/Lab sources:", ...errors.map((error) => `- ${error}`)].join("\n"));
+  }
 }
 
 export function buildManualHtml(options: ManualHtmlOptions): string {
@@ -429,7 +367,7 @@ export async function exportManualPdf(options: ManualPdfOptions): Promise<string
 export async function exportManualPdfs(options: ManualPdfOptions): Promise<string[]> {
   const paths = resolveDefaultPaths(findRepoRoot(process.cwd()));
   const manualRoot = resolve(options.manualRoot || paths.manualRoot);
-  const outputDir = resolve(options.outputDir || paths.outputDir);
+  const outputDir = prepareManualOutputDir(options.outputDir || paths.outputDir, manualRoot);
   const workDir = join(outputDir, ".manual-pdf-work");
   const bundles = buildManualBundles(manualRoot);
   const allSources = bundles.flatMap((bundle) => bundle.sources);
@@ -437,7 +375,6 @@ export async function exportManualPdfs(options: ManualPdfOptions): Promise<strin
     bundle.sources.map((source) => [source.relativePath, bundle.outputFileName])
   )));
 
-  mkdirSync(outputDir, { recursive: true });
   mkdirSync(workDir, { recursive: true });
 
   process.env.PLAYWRIGHT_BROWSERS_PATH = "0";

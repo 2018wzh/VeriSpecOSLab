@@ -14,7 +14,7 @@ Final Lab 的重点不在做新东西。它要求你把全部工作摆出来，�
 
 DesignSpec 里声明的 `required_mechanisms`，ModuleSpec 是否一一贯彻？每个 GoalSpec 有没有对应的实现和检查？`non_goals` 有没有悄悄混进实现里？
 
-检查方法：从 `spec/design.yaml` 和 `spec/goals/` 出发，逐条追到 ModuleSpec、稳定性质、实现代码，以及 `vos.yaml` 里的 `verifies` 绑定。
+检查方法：从 DesignSpec、GoalSpec 和最终项目测试清单出发，逐条追到 ModuleSpec、稳定性质、实现代码和可重放的测试/运行证据；若使用 `vos.yaml`，把它作为其中一种绑定清单。
 
 ### 维度二：实现正确性
 
@@ -38,7 +38,7 @@ DesignSpec 里声明的 `required_mechanisms`，ModuleSpec 是否一一贯彻？
 
 ### 11.3.1 最终报告
 
-`vos report` 从提交、Spec ID、测试、日志和 evidence 确定性生成报告，不调用模型，也不写入 Git。报告应覆盖：
+报告可以由 `vos report` 或项目自己的脚本生成；无论工具是什么，都应从代码/Spec 身份、测试、日志和 evidence 确定性整理，不调用模型代替学生判断，也不写入 Git。报告应覆盖：
 
 1. **你的 OS 是什么（1-2 页）**：DesignSpec 里的核心目标、关键设计决策、独特剖面
 2. **你的 OS 怎么运作的（3-5 页）**：一张架构图，加上每个模块的职责和数据流
@@ -48,9 +48,10 @@ DesignSpec 里声明的 `required_mechanisms`，ModuleSpec 是否一一贯彻？
 
 ### 11.3.2 验证证据包
 
-- `vos verify` 完整输出
-- 每个模块至少 1 条不变量检查器通过日志
-- 至少 1 条跨组件不变量的验证日志
+- 项目声明的构建、测试、QEMU/硬件运行结果及其代码/配置身份；
+- 每个核心模块至少 1 条不变量检查器通过日志；
+- 至少 1 条跨组件不变量的验证日志；
+- 失败注入、失败分析和人工硬件复核状态（如适用）。
 
 ### 11.3.3 答辩材料
 
@@ -70,7 +71,7 @@ DesignSpec 里声明的 `required_mechanisms`，ModuleSpec 是否一一贯彻？
 - [ ] 至少 5 个不变量检查器可运行且通过
 - [ ] 至少 1 个跨组件不变量已在 DesignSpec 的组合不变量中定义且可验证
 - [ ] 系统运行 10 分钟不崩溃、不内存泄漏
-- [ ] `vos verify` 全部通过
+- [ ] 项目声明的正确性、回归和验收 target 全部通过，失败项有完整分析
 
 ### 文档自洽性
 - [ ] DesignSpec → ModuleSpec / InterfaceSpec / GoalSpec → 实现代码 → 公开检查与 evidence，各层之间没有矛盾
@@ -89,7 +90,7 @@ DesignSpec 里声明的 `required_mechanisms`，ModuleSpec 是否一一贯彻？
 
 | 门禁 | 要求 | 验证方式 |
 |------|------|---------|
-| 公开验证 | clean HEAD 上 `vos verify` 全部通过 | 自动 |
+| 公开验证 | 项目声明的 build/test/QEMU/硬件 target 通过 | 自动或脚本 |
 | 不变量覆盖 | ≥ 5 个不变量检查器 + ≥ 1 个跨组件不变量 | 人工审查 |
 | 失败分析 | ≥ 1 个完整的失败分析案例 | 人工审查 |
 | SpecPatch | 所有实际跨模块语义变化都有有效 SpecPatch | 自动影响分析 + 人工审查 |
@@ -111,6 +112,7 @@ DesignSpec 里声明的 `required_mechanisms`，ModuleSpec 是否一一贯彻？
 ## 11.7 验收命令
 
 ```sh
+# 以项目/课程声明的命令为准；以下仅是使用 VOS 时的一种可选组合
 vos verify
 vos report
 vos submit
@@ -125,3 +127,9 @@ vos submit
 ---
 
 > **对应实验**：[Final Lab：综合验收与答辩](../labs/final-lab.md)
+
+## 参考卡：报告、评分与最终复盘
+
+最终报告按系统目标、架构/ABI、模块与不变量、个性化目标、QEMU/硬件边界、失败案例、未完成项和复现命令组织。评分材料区分自动测试、QEMU、真实板卡和人工验收；大型标准表格与工具版本以权威资料和实际运行记录为准。
+
+答辩前复核 HAL 影响表：平台值的来源、适用范围、集中管理位置、替换平台时保留的核心逻辑，以及仍未抽象的假设。报告简要披露 Coding Agent 使用情况（Agent、主要任务、学生审查与验证），不提交完整提示词或私人协作日志。

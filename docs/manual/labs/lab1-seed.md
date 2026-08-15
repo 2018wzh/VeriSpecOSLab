@@ -4,25 +4,26 @@
 
 > **本 Lab 概览**
 >
-> - **学完能做什么**：在 Linux 和裸机两种环境读取同一份 flag 镜像，建立"操作系统替程序做了什么"的直觉；随后初始化 VOS 项目，完成 DesignSpec 与 Agent、知识库配置，为后续十个 Lab 打地基。
-> - **预计耗时**：8–12 小时，建议安排 1 周。CTF 双环境热身约占一半，项目初始化与 DesignSpec 占另一半。
+> - **学完能做什么**：在 Linux 和裸机两种环境读取同一份 flag 镜像，完成 QEMU 运行，并把同一项目接到真实板卡上输出挑战标记；随后初始化 VOS 项目，完成 DesignSpec 与 Agent、知识库配置，为后续十个 Lab 打地基。
+> - **预计耗时**：10–14 小时，建议安排 1 周。CTF 双环境和实板连接约占一半，项目初始化与 DesignSpec 占另一半。
 > - **前置依赖**：无需前置 Lab。第一次接触 OS 开发也没关系，Book 第 1 章会先解释操作系统、语言、ISA 与设计先行的理由。
-> - **产出物**：双环境 flag 读取程序与证据、学生手写的 `spec/design.yaml`、初始化版 `toolchain.yaml` 与 `vos.yaml`、lint/review evidence、干净且可追溯的 Git HEAD。
+> - **产出物**：双环境 flag 读取结果与 QEMU 证据、实板连接与串口验证报告（仓库外手工提交）、学生手写的 `spec/design.yaml`、初始化版 `toolchain.yaml` 与 `vos.yaml`、lint/review evidence、干净且可追溯的 Git HEAD。
 
-> **参考项目**：参考项目的 `course/lab1-complete` 是独立课程历史的起点：先提交 `vos init` 生成的空项目，再单独提交当期 DesignSpec。Lab 1 只确定项目身份、RISC-V/C、启动目标和开发边界，不包含后续 Lab 的源码、测试名、占位文件或预告性规格。后续设计决策在对应 Lab 以新的 DesignSpec 提交逐步加入。
+> **参考项目**：参考项目的 `course/lab1-complete` 是独立课程历史的代码起点：先提交 `vos init` 生成的空项目，再单独提交当期 DesignSpec。新的课程要求还包括仓库外的真实板卡报告，历史标签不包含这份报告，也不会因此改写。Lab 1 确定项目身份、RISC-V/C、启动目标、canonical board 和开发边界，不包含后续 Lab 的源码、测试名、占位文件或预告性规格。
 
 ## 1. CTF 双环境热身
 
-教师会下发一个包含 `flag1` 和 `flag2` 的文件系统镜像。你要在两种环境中读取同一份内容：
+教师会下发一个包含 `flag1` 和 `flag2` 的文件系统镜像。你要在 Linux 和 QEMU 裸机两种环境中读取同一份内容，再把项目连接到真实板卡完成启动和串口挑战标记验证：
 
 1. 在 Linux 中写普通程序，通过操作系统提供的文件接口读取并交替输出两个 flag。
 2. 在裸机环境中读取镜像，自己完成必要的块读取、文件系统解析和串口输出。
-3. 在 QEMU 中采集非图形串口日志；有合适板卡时，可额外完成真实硬件验证。
-4. 记录 Agent 协作过程，并解释哪些代码来自建议、哪些判断由你完成。
+3. 在 QEMU 中采集非图形串口日志。
+4. 在真实板卡上完成连接、启动和串口挑战标记验证；实板不要求读取 CTF 镜像，也不把 QEMU 日志冒充实板证据。
+5. 记录 Agent 协作过程，并解释哪些建议被采纳、哪些判断由你完成。
 
-这个热身不要求先建立完整内核，也不把轮询交替输出说成真正的多任务。它要让你在第一周看清 Linux 已经代办了哪些工作：设备访问、文件系统、地址空间和系统调用。CTF 与 flag 的背景见[附录](../appendices/ctf-flags.md)。
+这个热身不要求先建立完整内核，也不把轮询交替输出说成真正的多任务。它要让你在第一周看清 Linux 已经代办了哪些工作：设备访问、文件系统、地址空间和系统调用。CTF 只在课程指定的临时工作目录中完成，源码、镜像、flag、日志、二进制和报告都不得进入学生项目仓库。
 
-课程仓库提供 `tests/public/ctf-fixture.ts`，用固定 seed 生成两个非秘密文件、对应的 4096 字节只读镜像和只含长度与 SHA-256 的公开元数据。这个框架只规定镜像目录格式和可验证的遮蔽记录，不实现 Linux 文件读取、裸机镜像解析、UART、RISC-V 入口或 QEMU 启动。学生实现和 Agent 生成的具体测试可以读取它，但不得修改教师框架，也不得把生成值抄进源码。
+教师会通过课程渠道提供临时镜像和验证说明。公开教学代码只说明镜像目录格式、遮蔽记录和失败边界，不包含真实 flag 或学生的读取实现。不要把教师材料复制到项目仓库；报告中只保留遮蔽结果、长度、哈希和诊断摘要。
 
 ### 1.1 Linux 路径
 
@@ -38,7 +39,7 @@ if (fd < 0) {
 
 完整实现还要检查 `read`、短读、缓冲区边界和 `close` 的结果。两个 flag 的输出顺序必须稳定，日志中应能区分每轮读取。
 
-### 1.2 裸机路径
+### 1.2 QEMU 裸机路径
 
 裸机程序至少需要四层能力：
 
@@ -55,8 +56,56 @@ if (fd < 0) {
 - Linux 程序的退出码和标准输出；
 - 裸机镜像的构建身份；
 - QEMU 完整启动命令和串口日志；
-- 两个 flag 的验证结果。公开报告只记录遮蔽后的 flag 或其哈希，不公开学生唯一 flag；
+- 两个 flag 的验证结果。报告只记录遮蔽后的 flag、长度或哈希，不公开学生唯一 flag；
 - 一段对比说明：Linux 路径中哪些机制由内核提供，裸机路径中哪些机制由程序承担。
+
+CTF 的实现源码、镜像、flag、日志、二进制和完整报告均保存在仓库之外，并通过课程指定渠道手工提交。Git 中只保留普通项目代码和不含秘密的课程 Spec；不要建立 `lab/ctf-warmup` ModuleSpec，也不要让 `vos agent implement` 处理 CTF 材料。
+
+### 1.4 真实板卡连接：先建立可观察的链路
+
+真实板卡是本 Lab 的必做部分。板卡型号可以由你选择，但必须从现在起固定为后续 Lab 9 使用的 canonical board。先完成连接和输出验证，再进入复杂移植；不要一上来同时修改启动地址、链接脚本、UART 和存储驱动。
+
+#### 连接前的检查
+
+把板卡手册、SoC 手册、原理图、启动介质说明和调试器文档放在同一份连接记录中，至少填写：
+
+| 项目 | 需要确认的内容 |
+| --- | --- |
+| 供电 | 输入电压、电流余量、USB 供电还是独立电源、上电顺序 |
+| 数据链路 | USB 数据口及其主机/设备/OTG 角色、网络口、SD/eMMC/Flash 或其他启动介质 |
+| 控制台 | UART 芯片或引脚、TTL 电平、TX/RX/GND 对接、默认波特率和流控 |
+| 调试器 | JTAG/SWD/CMSIS-DAP 或板载调试器、复位方式、目标电压检测 |
+| 启动模式 | 跳线、拨码、按键、ROM 下载模式和恢复方法 |
+| 复位与安全 | 是否需要断电冷启动、是否会擦除 Flash、是否有防反接要求、是否能在错误镜像下恢复 |
+
+未确认电平或供电要求前不要插线。不要把 5V UART 直接接到只接受 3.3V 的引脚；TX 对 RX、RX 对 TX、GND 对 GND，不能凭接口外形猜测引脚含义。第一次烧录先使用厂商或开源项目提供的已知可启动镜像，确认板卡和串口链路没有问题，再替换为自己的镜像。
+
+#### Linux 主线流程
+
+1. 断开板卡电源，按手册接好供电、串口和必要的调试/启动介质。
+2. 上电后确认 USB 设备出现，再记录 USB 设备 ID、串口设备名和内核日志；不要只凭桌面工具显示的名称判断设备。
+3. 检查当前用户是否有串口访问权限，确认串口没有被其他终端程序占用。
+4. 使用板卡手册给出的波特率、数据位、停止位和流控打开终端；先观察上电和复位日志，再发送最小的、不会改变 Flash 的探测动作。
+5. 运行课程提供的挑战标记程序，记录完整串口输出和构建身份。板卡没有输出时，分别排查“设备没识别、端口被占用、接线/电平错误、启动介质未加载、入口未执行、UART 参数错误”，每次只改一层。
+6. 结束时停止终端、卸载或安全弹出存储介质，再断电。若板卡进入下载模式或异常循环，按手册执行复位和恢复步骤，不要反复盲目烧录。
+
+macOS 和 Windows 原生环境的设备名、驱动和串口工具不同，但检查顺序相同：先确认设备身份，再确认权限和占用，最后确认串口参数。Windows 上如果编译在 WSL、板卡工具在 Linux 侧运行，按下面的 usbipd 流程把 USB 设备转入 WSL；不需要 USB 直通的串口可以继续使用 Windows 端工具。
+
+#### WSL 连接 USB 板卡
+
+WSL 2 默认不会把 Windows USB 设备直接变成 Linux 设备。板卡开发只需要下面这条短流程，具体版本差异以 [usbipd-win WSL 支持说明](https://github.com/dorssel/usbipd-win/wiki/WSL-support) 和 [项目 README](https://github.com/dorssel/usbipd-win/blob/master/README.md) 为准。
+
+1. 打开一个保持运行的 WSL 2 终端，并确认发行版确实是 WSL 2。
+2. 在 Windows 终端运行 `usbipd list`，记下板卡的 `BUSID`。第一次共享设备时，在管理员终端执行 `usbipd bind --busid <BUSID>`；共享状态会保留，但每次重新 attach 仍需确认设备状态。
+3. 关闭管理员终端，在普通 Windows 终端执行 `usbipd attach --wsl --busid <BUSID>`。执行 `usbipd list`，确认状态为 `Attached`。
+4. 在 WSL 内运行 `lsusb`，必要时查看 `dmesg | tail`，再确认串口、JTAG 或调试器设备节点和权限。一个 USB 设备只能由 Windows 或 WSL 一侧占用，不能同时让两个工具打开。
+5. 板卡复位、拔插或 `wsl --shutdown` 后，设备可能需要重新 attach。实验结束后在 Windows 终端运行 `usbipd detach --busid <BUSID>`，让 Windows 工具重新获得设备。
+
+若 `lsusb` 看不到设备，先检查 Windows 侧是否仍为 `Attached`，再检查 WSL 内核更新、设备驱动和 USB 线缆；不要立刻修改内核。若串口节点出现但无法打开，先结束 Windows 端终端或烧录工具，再检查 Linux 用户组和文件权限。Agent 可以帮助你整理板卡文档和比较设备树，但 Lab 1 仍由你亲自接线、上电、复位和判断证据。
+
+#### 实板报告
+
+实板报告不进入 Git，至少包括：板卡和 SoC 身份、连接拓扑和电压检查、启动/烧录步骤、构建身份、完整串口日志、遮蔽后的挑战标记、失败现象与排查顺序，以及最终的断电和恢复检查。照片或截图只能辅助说明，不能替代日志和构建身份。
 
 ## 2. 项目设计问题
 
@@ -73,7 +122,7 @@ if (fd < 0) {
 | 目标 ISA   | RISC-V 64 / AArch64 / x86-64？各 ISA 的特权级、页表、中断模型有何差异？详见[Book §1.10.3](../book/ch01-overview-design.md#1103-问题三你的-os-跑在什么上)                  |
 | 编程语言   | C / C++ / Rust (no_std) / Zig？四种语言的宏观对比、代码实例、OS 开发 vs 普通开发的差异详见[Book §1.10.4](../book/ch01-overview-design.md#1104-问题四用什么语言写你的内核) |
 | 开发环境   | 本地工具链 vs 容器？交叉编译工具链如何安装？                                                                                                                              |
-| Agent 配置 | 使用什么 LLM provider？Agent 在各阶段能做和不能做什么？详见[Book §1.7](../book/ch01-overview-design.md#ai-agent-的角色)                                                   |
+| Agent 配置 | 使用什么 LLM provider？Lab 1–8 的 VOS Agent 能做和不能做什么？详见[Book §1.7](../book/ch01-overview-design.md#ai-agent-的角色) |
 | 知识库     | 需要导入哪些参考资料？导入时机和策略？                                                                                                                                    |
 
 ## 4. 设计决策引导
@@ -109,7 +158,7 @@ if (fd < 0) {
 
 ### 决策 4：Agent 配置策略
 
-Agent 的定位和约束在 [Book §1.7](../book/ch01-overview-design.md#ai-agent-的角色) 中有详细说明。核心原则：**让 AI 帮你思考，但不替你思考。**
+Lab 1–8 的 Agent 定位和约束在 [Book §1.7](../book/ch01-overview-design.md#ai-agent-的角色) 中有详细说明。核心原则是让 Agent 帮你澄清问题和检查契约，但设计选择仍由你负责。Lab 9 起可以使用直接改动仓库的 Coding Agent，届时要在报告中说明工具和复核方式。
 
 vos-agent 支持五种 LLM provider：**Anthropic**（Claude）、**OpenAI**（GPT/o 系列）、**OpenAI-compatible**（兼容网关，如 Azure/DeepSeek API/自建代理）、**DeepSeek**（原生 DeepSeek API）、**Ollama**（本地模型）。Lab 1 阶段至少配置一个。
 
@@ -214,11 +263,12 @@ Ask Agent 不生成文件。你可以围绕系统目标、语言、ISA、QEMU、
 
 - `system` 中的名称、语言和 ISA 是否与自己的选择一致；
 - `machine.qemu` 是否写清机器型号、内存、固件和串口；
-- `machine.hardware` 是否给出唯一的 canonical board；
+- `machine.hardware` 是否给出唯一的 canonical board，并与实板报告中的板卡一致；
 - `kernel` 是否说明组织方式、执行模型、保护、通信和资源模型；
 - `required_mechanisms` 是否只写真正需要实现的机制；
 - `composition_invariants` 是否为 1～3 条跨模块不变量；
-- `hardware_port` 是否说明启动、控制台和中断入口。
+- `hardware_port` 是否说明本次验证过的启动和控制台入口；尚未实现的中断细节明确标出后续范围；
+- 平台相关常量是否有来源、适用范围和集中管理位置，核心逻辑是否避免直接散落访问硬件。
 
 尚未进入本 Lab 范围的字段也必须保留，值写成 `not in current lab scope`，不要删字段或另造阶段 schema。下面只给字段骨架，不给可直接提交的答案：
 
@@ -234,8 +284,8 @@ machine:
     firmware: TODO
     console: TODO
   hardware:
-    board: not in current lab scope
-    status: not in current lab scope
+    board: TODO_CANONICAL_BOARD
+    status: connected_and_console_verified
 kernel:
   organization: TODO
   execution: TODO
@@ -249,9 +299,9 @@ composition_invariants:
 non_goals:
   - TODO
 hardware_port:
-  board: not in current lab scope
-  boot: not in current lab scope
-  console: not in current lab scope
+  board: TODO_CANONICAL_BOARD
+  boot: TODO_VERIFIED_BOOT_PATH
+  console: TODO_VERIFIED_CONSOLE_PATH
   interrupt: not in current lab scope
 ```
 
@@ -296,40 +346,11 @@ vos kb search "RISC-V supervisor trap entry"
 
 建立索引后可以继续使用 `vos agent ask` 提问。查询日志只保存学生实际看到的片段及其 source、hash 和 range，不复制未展示的检索上下文。
 
-### 步骤 6：检查基线（预计 10 分钟）
+### 步骤 6：完成基线和仓库边界检查（预计 10 分钟）
 
-把前面完成的 CTF 双环境路径也写成学生自己的 ModuleSpec。这个 Spec 不能包含 flag 答案，只描述输入、错误、性质、实现路径和测试路径：
-
-```yaml
-id: lab/ctf-warmup
-module: lab/ctf-warmup
-level: 2
-purpose: TODO
-owns: [TODO_LINUX_READER_PATH, TODO_BARE_METAL_READER_PATH, TODO_TEST_PATH]
-interface: [TODO_READ_OPERATION]
-properties: [TODO]
-errors: [TODO]
-state: { TODO_STATE: TODO }
-preconditions: [TODO]
-postconditions: [TODO]
-invariants: [TODO]
-dependencies: [toolchain]
-```
-
-按统一教学链完成评审、提交和实现验证：
+CTF 代码和报告不属于学生项目仓库。把它们放在课程指定的临时工作目录，完成 Linux、QEMU 和实板验证后手工提交报告。学生项目仓库只保留 VOS 初始化文件、DesignSpec、工具链投影和不含秘密的课程说明。
 
 ```sh
-vos agent ask "怎样验证 flag 确实来自镜像，而不是源码常量？"
-vos spec lint lab/ctf-warmup
-vos agent review lab/ctf-warmup -i
-# 学生修改后再次 lint，并手动提交
-vos spec lint lab/ctf-warmup
-git add spec/modules/ctf-warmup.yaml
-git commit -m "[spec][ctf] Define Lab 1 warm-up contract"
-vos agent implement lab/ctf-warmup
-vos build
-vos run qemu
-vos verify
 vos doctor
 vos spec lint design
 vos agent review design
@@ -337,16 +358,19 @@ git status --short
 git log -2 --oneline
 ```
 
-`vos spec lint` 只检查结构、引用、路径、稳定 ID、等级字段和 manifest 映射，不评价技术选择，也不调用模型。`vos agent review` 给出设计建议，但不替你修改。Lab 1 结束时，工作树应当干净，DesignSpec 应已有独立的学生提交。
+CTF 的三条运行路径通过课程渠道提交报告，不在仓库内建立 ModuleSpec，也不由 VOS Agent 实现。仓库边界和 Spec 的确定性检查只需运行上面的命令。
 
-## 6. 背景阅读
+`vos spec lint` 只检查结构、引用、路径、稳定 ID、等级字段和 manifest 映射，不评价技术选择，也不调用模型。Lab 1 结束时，`spec/design.yaml` 应已单独提交，实板报告通过课程渠道提交，仓库中没有 CTF 镜像、flag、原始日志、二进制、`.env` 或私密报告。
 
-- [Book 第 1 章：系统设计](../book/ch01-overview-design.md)：理解 OS 职责、ISA 与语言选择、参考系统和 Spec-first 方法。
-- [RISC-V 参考](../appendices/riscv-reference.md)：选择 RISC-V 时重点查看特权级、入口寄存器和页表。
-- [x86-64 启动参考](../appendices/x86-boot-reference.md)：选择 x86-64 时重点查看启动协议和长模式入口。
-- [ARM 启动参考](../appendices/arm-boot-reference.md)：选择 AArch64 时重点查看异常级别和设备树。
-- [vos 命令参考](../appendices/vos-commands.md)：只列学生公开 CLI。
-- [CTF 与 flag](../appendices/ctf-flags.md)：热身目标、验证边界与隐私要求。
+## 6. 参考卡
+
+- [Book 第 1 章：系统设计](../book/ch01-overview-design.md)：理解 OS 职责、ISA 与语言选择、平台边界和 Spec-first 方法。
+
+选择 ISA 时，先查对应架构的特权级、入口寄存器、页表和异常模型，再把“应该从哪里读取这些信息”写进 DesignSpec。不要把某个 QEMU 默认地址当成所有板卡的事实；固定值要记录来源，能从固件或设备描述中获得的值应说明发现方式。Lab 1 只需要掌握概念和查阅路径，具体寄存器定义以架构手册、QEMU 机器文档和你选定板卡的手册为准。
+
+配置工具时，优先运行 `vos doctor` 和各工具的版本探针。串口、调试器和 USB 设备的问题先从设备身份、权限、占用和连接状态排查，再进入内核代码。不要把完整标准复制进项目，也不要把外部文档的路径或凭据写进 Spec。
+
+开发环境采用“选择路径、记录实际工具、运行最小探针”的方式，不复制一份会迅速过时的安装清单。RISC-V、x86-64 和 AArch64 分别核对交叉编译器、QEMU 机器和 GDB 目标；至少记录实际的编译器三元组、`qemu-system-* --version`、GDB 版本、串口工具和板卡工具版本。先编译一个只输出固定标记的最小裸机程序，再运行一次 QEMU 或板卡启动探针；版本、可执行文件名或包管理器在 Linux、macOS、Windows/WSL 上不同，以工具官方文档和探针结果为准。后续遇到链接、入口或串口问题，回到本卡的最小探针，不要同时升级整套工具链。
 
 ## 7. 质量门禁
 
@@ -354,7 +378,8 @@ git log -2 --oneline
 
 - [ ] Linux 程序从文件读取并交替输出两个 flag，所有 I/O 错误都显式失败。
 - [ ] 裸机程序在 QEMU 中从文件系统镜像读取两个 flag，串口日志可追溯到构建身份。
-- [ ] 源码中没有硬编码 flag，Git 中没有提交真实 flag、`.env` 或原始私密日志。
+- [ ] 实板成功连接、启动并输出课程指定挑战标记，完整日志可追溯到构建身份。
+- [ ] 源码中没有硬编码 flag，Git 中没有提交 CTF 镜像、真实 flag、原始日志、二进制、`.env` 或私密报告。
 - [ ] `vos doctor` 通过，或每个失败项都有明确的可执行修复说明。
 - [ ] `vos spec lint design` 通过，并保存 Review Agent 的评审 run ID。
 - [ ] `.env` 和 `.vos/` 未被 Git 跟踪。
@@ -369,21 +394,24 @@ git log -2 --oneline
 - [ ] 能说明 canonical board、QEMU 机器和真实硬件移植目标的关系。
 - [ ] 能区分 DesignSpec 中的系统约束与后续 ModuleSpec 中的实现契约。
 - [ ] 能说明 linked worktree 为什么不是安全沙箱。
+- [ ] 能指出一个平台相关假设、它的来源和未来应放入 HAL 的位置。
 
 ## 8. 提交物
 
-- [ ] Linux flag reader、裸机 flag reader、链接与构建文件；
-- [ ] 遮蔽敏感 flag 的双环境运行证据和代码解读；
+- [ ] Linux flag reader、裸机 flag reader、链接与构建文件（保存在仓库外的 CTF 工作目录）；
+- [ ] 遮蔽敏感 flag 的双环境运行证据和代码解读（手工提交，不进入 Git）；
+- [ ] 实板连接、启动和串口挑战标记报告（手工提交，不进入 Git）；
 - [ ] Agent 协作记录，包含采纳与拒绝理由；
 - [ ] `spec/design.yaml`；
 - [ ] `spec/modules/toolchain.yaml` 和 `vos.yaml` 的初始化版本；
 - [ ] lint 与 review evidence；
 - [ ] 一段不采用备选 ISA 或语言的理由；
-- [ ] 干净且可追溯的 Git HEAD。
+- [ ] 干净且可追溯的 Git HEAD；
+- [ ] 仓库中没有 CTF 镜像、flag、原始日志、二进制、`.env` 或私密报告。
 
 ## 9. AI 使用边界
 
-Agent 可以解释 ISA 差异、对比语言优劣和审查 DesignSpec 字段。学生必须亲自决定项目身份、技术路线和知识库策略，手写 Spec，并逐项判断是否采纳 Review Agent 的建议。`ask`、`review`、`debug` 和 `verify` 都不修改项目。
+Lab 1 使用 VOS 的 `ask`、`review`、`debug` 和 `verify` 进行只读讨论和检查；这些角色不修改项目。Agent 可以整理板卡手册、比较 ISA 和指出 DesignSpec 缺口，但学生必须亲自接线、上电、运行实板验证并决定是否采纳建议。Lab 9 以后才允许直接修改项目的 Coding Agent。
 
 ## 10. 常见问题
 
@@ -410,3 +438,15 @@ Agent 可以解释 ISA 差异、对比语言优劣和审查 DesignSpec 字段。
 ### 知识库来源哈希不匹配
 
 确认 revision 指向的内容是否发生变化。只有在明确接受新内容后才更新 revision 和 hash，并把这次变更作为普通配置修改提交。
+
+### 实板没有串口输出
+
+先确认 Windows/Linux 侧都能识别板卡，再确认设备没有被另一端的终端、烧录器或调试器占用。随后按“供电与复位、启动模式、镜像是否加载、入口是否执行、UART 接线、电平和参数”的顺序排查。不要同时修改多个平台相关层；每一步都保留一个可观察标记。
+
+### CTF 材料是否可以放进项目仓库
+
+不可以。CTF 源码、镜像、flag、原始日志、二进制和完整报告都在仓库外完成并手工提交。项目仓库只保留不含秘密的设计说明和普通工程代码。
+
+### 我应该在哪里写硬件地址
+
+先查板卡手册、设备树或固件传入的信息。确实只能固定的值，集中放在平台适配层并说明来源和适用范围；核心模块通过 HAL 或稳定接口使用它，不要在多个文件里复制同一个地址。

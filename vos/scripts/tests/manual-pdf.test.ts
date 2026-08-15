@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, normalize, resolve } from "node:path";
 import {
@@ -8,6 +8,7 @@ import {
   createChromiumPdfArgs,
   createPlaywrightEnv,
   discoverManualSources,
+  prepareManualOutputDir,
   resolveDefaultPaths,
 } from "../manual-pdf.ts";
 
@@ -54,11 +55,11 @@ describe("manual PDF export support", () => {
       "labs/lab2-boot.md",
       "labs/lab10-verification.md",
       "labs/final-lab.md",
-      "specs/overview.md",
-      "appendices/dev-environment.md",
-      "vos/index.md",
       "vos/01-overview.md",
+      "appendices/dev-environment.md",
+      "specs/overview.md",
       "teacher/course-plan.md",
+      "vos/index.md",
     ]);
   });
 
@@ -76,10 +77,6 @@ describe("manual PDF export support", () => {
       ["lab10-lab", "lab10/lab10-lab.pdf"],
       ["final-lab-book", "final-lab/final-lab-book.pdf"],
       ["final-lab-lab", "final-lab/final-lab-lab.pdf"],
-      ["appendix-dev-environment", "appendices/dev-environment.pdf"],
-      ["shared-specs", "shared/shared-specs.pdf"],
-      ["shared-vos", "shared/shared-vos.pdf"],
-      ["teacher", "teacher/teacher.pdf"],
     ]);
     expect(bundles.flatMap((bundle) => bundle.sources.map((source) => source.relativePath))).not.toContain("README.md");
     expect(bundles.find((bundle) => bundle.id === "lab1-book")?.sources.map((source) => source.relativePath)).toEqual([
@@ -88,10 +85,9 @@ describe("manual PDF export support", () => {
     expect(bundles.find((bundle) => bundle.id === "lab1-lab")?.sources.map((source) => source.relativePath)).toEqual([
       "labs/lab1-seed.md",
     ]);
-    expect(bundles.find((bundle) => bundle.id === "shared-vos")?.sources.map((source) => source.relativePath)).toEqual([
-      "vos/index.md",
-      "vos/01-overview.md",
-    ]);
+    expect(bundles.flatMap((bundle) => bundle.sources.map((source) => source.relativePath)).some((path) => (
+      path.startsWith("specs/") || path.startsWith("vos/") || path.startsWith("teacher/") || path.startsWith("appendices/")
+    ))).toBe(false);
   });
 
   test("fails when a manual markdown file is not assigned to any PDF", () => {
@@ -100,6 +96,56 @@ describe("manual PDF export support", () => {
     writeFileSync(join(manualRoot, "book", "ch99-extra.md"), "# Extra Chapter\n");
 
     expect(() => buildManualBundles(manualRoot)).toThrow("manual markdown files are not assigned to any PDF bundle");
+  });
+
+  test("publishes exactly the 22 Book/Lab PDFs", () => {
+    const repoRoot = resolve(join(import.meta.dir, "../../.."));
+    const bundles = buildManualBundles(join(repoRoot, "docs", "manual"));
+
+    expect(bundles).toHaveLength(22);
+    expect(bundles.map((bundle) => bundle.outputFileName)).toEqual([
+      "lab1/lab1-book.pdf", "lab1/lab1-lab.pdf",
+      "lab2/lab2-book.pdf", "lab2/lab2-lab.pdf",
+      "lab3/lab3-book.pdf", "lab3/lab3-lab.pdf",
+      "lab4/lab4-book.pdf", "lab4/lab4-lab.pdf",
+      "lab5/lab5-book.pdf", "lab5/lab5-lab.pdf",
+      "lab6/lab6-book.pdf", "lab6/lab6-lab.pdf",
+      "lab7/lab7-book.pdf", "lab7/lab7-lab.pdf",
+      "lab8/lab8-book.pdf", "lab8/lab8-lab.pdf",
+      "lab9/lab9-book.pdf", "lab9/lab9-lab.pdf",
+      "lab10/lab10-book.pdf", "lab10/lab10-lab.pdf",
+      "final-lab/final-lab-book.pdf", "final-lab/final-lab-lab.pdf",
+    ]);
+  });
+
+  test("cleans retired output folders before creating the managed publication directory", () => {
+    const repoRoot = createManualFixture();
+    const manualRoot = join(repoRoot, "docs", "manual");
+    const outputDir = join(repoRoot, "dist", "manual");
+    const retiredPath = join(outputDir, "appendices", "old.pdf");
+    mkdirSync(join(outputDir, "appendices"), { recursive: true });
+    writeFileSync(retiredPath, "stale");
+
+    prepareManualOutputDir(outputDir, manualRoot);
+
+    expect(existsSync(retiredPath)).toBe(false);
+    expect(existsSync(outputDir)).toBe(true);
+  });
+
+  test("fails when a published document links to an unpublished manual source", () => {
+    const repoRoot = createManualFixture();
+    const manualRoot = join(repoRoot, "docs", "manual");
+    writeFileSync(join(manualRoot, "labs", "lab2-boot.md"), "# Lab 2\n\nSee [internal](../specs/overview.md).\n");
+
+    expect(() => buildManualBundles(manualRoot)).toThrow("unpublished manual source specs/overview.md");
+  });
+
+  test("fails when a published document links to a missing Markdown file", () => {
+    const repoRoot = createManualFixture();
+    const manualRoot = join(repoRoot, "docs", "manual");
+    writeFileSync(join(manualRoot, "labs", "lab2-boot.md"), "# Lab 2\n\nSee [missing](../book/no-such-chapter.md).\n");
+
+    expect(() => buildManualBundles(manualRoot)).toThrow("missing Markdown link target");
   });
 
   test("renders internal markdown links as local PDF anchors", () => {

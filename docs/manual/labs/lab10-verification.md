@@ -7,17 +7,17 @@
 > - **学完能做什么**：建立 Spec ID 到测试证据的完整追溯链，会设计不变量检查、故障注入和失败分析，能产出一份可重放的确定性验证报告并提交归档。
 > - **预计耗时**：8–12 小时，建议安排 1 周。覆盖清单与故障注入约占一半，证据整理与报告归档占另一半。
 > - **前置依赖**：已完成 Lab 1–9（系统与实验全部完成），阅读第 10 章。
-> - **产出物**：Spec ID–target 覆盖表、不变量与故障注入矩阵、clean HEAD 的 verify evidence、一份失败分析、确定性报告与可复现提交归档。
+> - **产出物**：Spec ID–target 覆盖表、不变量与故障注入矩阵、可定位的构建与测试证据、一份失败分析、确定性报告与可复现提交归档。
 
 ## 1. 建立覆盖清单
 
-从所有 DesignSpec、ModuleSpec、InterfaceSpec 和 GoalSpec 的稳定 ID 出发，列出对应 public/contract targets。每个 target 在 `vos.yaml` 中声明 `verifies`；反向检查每个必须验证的 Spec ID 至少有一条有效证据。
+从所有 DesignSpec、ModuleSpec、InterfaceSpec 和 GoalSpec 的稳定 ID 出发，列出对应测试目标。目标可以记录在 `vos.yaml` 或项目自己的测试清单中；关键是每个目标都能反向指向它验证的 Spec ID，每个必须验证的 Spec ID 至少有一条有效证据。
 
 覆盖不是简单计数。同一条启动 smoke test 不能同时证明内存唯一所有权、syscall 指针安全和文件系统崩溃一致性。
 
 建议维护以下审计列：
 
-| Spec ID | 性质/错误 | target | 证据类型 | clean HEAD | 最近结果 | 缺口 |
+| Spec ID | 性质/错误 | target | 证据类型 | 运行身份 | 最近结果 | 缺口 |
 | --- | --- | --- | --- | --- | --- | --- |
 | `kernel/memory` | unique ownership | allocator_contract | contract | yes | pass | none |
 
@@ -66,58 +66,47 @@ properties: [TODO_PROPERTY_WITH_ORACLE]
 errors: [TODO]
 ```
 
-```sh
-vos agent ask "哪些 Spec 性质仍缺少独立 oracle，哪些 target 只是重复 smoke test？"
-# 学生手写或修订验证相关 ModuleSpec、GoalSpec、SpecPatch 与 vos.yaml 映射
-vos spec lint all
-vos agent review all -i
-# 学生修改、再次 lint，并手动提交
-vos spec lint all
-git add spec vos.yaml tests
-git commit -m "[spec][verify] Complete Lab 10 verification contracts"
-vos agent implement <verification-module>
-vos build
-vos run qemu
-git status --short
-vos verify
-vos verify --hidden
-vos report
-vos submit
+```text
+让 Coding Agent 读取 Spec、测试和已有失败记录，指出没有独立 oracle 的性质
+→ 学生确认覆盖表、不变量和故障注入矩阵
+→ Agent 或学生实现检查器、测试和故障注入
+→ 运行项目已有的 build/test/QEMU/hardware 命令
+→ 重新执行所有受影响目标，整理失败分析和可复现报告
 ```
 
-`vos verify` 在 clean HEAD 上依次执行 spec lint、build、全部 public、contract、固定种子 fuzz 和有界 trace targets，不调用模型。`vos verify --hidden` 显式执行绑定当前 Spec、配置、content hash、模型、seed 和生成 run 的本地 hidden tests，再把验证结果绑定当前 commit；这些测试可由学生读取，不是保密边界。`vos report` 从 commits、Spec IDs、测试、日志和 evidence 生成 `.vos` 内报告。`vos submit` 要求当前 hidden 验证已通过，并创建绑定 commit/spec/config/test hashes 的私有归档。
+`vos verify`、`vos report` 和 `vos submit` 可以作为结构化证据助手，但不再是本 Lab 的唯一流程或门禁。无论使用哪种工具，都要把证据绑定到构建/测试身份、Spec 或配置版本、target、状态、产物和有界日志；不要用一段模型总结替代可重放的命令结果。
 
-> **参考项目**：参考项目在干净 clone 中按 `spec lint → build → verify → verify --hidden → report → submit` 执行。`.vos/` 只保存本地证据，不进入 Git。只要 Lab 9 的实体板 evidence 仍为 `pending_human_review`，Lab 10 也只能发布 `course/lab10-candidate`；candidate 标签不得通过代码、QEMU 或模拟串口结果升级为 complete。
+> **参考项目**：参考项目的 VOS replay 展示了一种可追溯实现方式，但不是唯一要求。`.vos/` 只保存本地证据，不进入 Git。只要 Lab 9 的实体板 evidence 仍为 `pending_human_review`，Lab 10 也只能发布 `course/lab10-candidate`；candidate 标签不得通过代码、QEMU 或模拟串口结果升级为 complete。
 
 ## 4. 证据质量
 
-一份可提交 evidence 至少包含：运行 ID、commit、Spec/config hash、target、结构化 argv、退出状态、开始/结束时间、产物 hash 和受限日志。脏树 build/QEMU/hardware 证据必须标为不可提交。
+一份可提交 evidence 至少包含：运行 ID、代码或构建身份、Spec/config 版本、target、结构化 argv、退出状态、开始/结束时间、产物标识和受限日志。若工具能提供 commit 或 content hash 就一并记录；脏树 build/QEMU/hardware 证据必须明确标为不可提交。
 
 导出时遮蔽凭据，把绝对路径替换为稳定别名。原始 `.vos/audit` 不进 Git；submit 包含经过出口扫描的明文日志。硬件证据保持 `pending_human_review`。
 
 证据包按运行而不是按截图组织。截图只能作为辅助展示，不能替代结构化退出码、完整串口日志和产物 hash。超时、panic 和主动中止必须是不同终态。
 
-## 5. 质量门禁
+## 5. 质量检查清单
 
-- [ ] `vos spec lint`、build、全部 public/contract/fuzz/trace targets 通过。
-- [ ] 当前 clean HEAD 的 `vos verify --hidden` 通过，绑定信息与归档一致。
+- [ ] 项目声明的 build、测试、QEMU/硬件 target 均通过，或对失败给出完整分析。
+- [ ] 每次关键运行都有可复现的代码、Spec/config、命令和产物身份。
 - [ ] 必须验证的稳定 Spec ID 没有覆盖缺口。
 - [ ] 每个核心模块至少有一条可运行不变量检查。
 - [ ] 至少一条组合不变量跨越三个模块或边界。
 - [ ] 每个检查器至少有一次有效故障注入证据。
 - [ ] 至少记录一个完整失败案例：现象、证据、根因、修复、回归。
-- [ ] report/submit 可在同一 commit 上重放并得到相同 manifest hashes。
+- [ ] 报告或归档可在同一输入身份上重放，并得到一致的目标清单和结果摘要。
 - [ ] 出口扫描没有凭据、本机绝对路径或未遮蔽 flag。
 
 ## 6. AI 使用边界
 
-`vos agent verify` 和 `vos agent review` 只读，可以指出覆盖缺口或证据矛盾；权威 `vos verify/report/submit` 不调用模型。不能让 Agent 改写失败日志、补造硬件验收或用 Fixture 代替真实运行。
+Lab 9 起，Coding Agent 可以直接实现检查器、测试、构建文件和 Spec；学生必须审查 diff、运行结果和失败分析。不能让 Agent 改写失败日志、补造硬件验收或用 Fixture 代替真实运行。报告只需简要披露使用的 Agent、主要任务、学生如何审查修改并验证结果，不要求完整提示词审计。
 
 ## 7. 提交物
 
 - [ ] Spec ID–target 覆盖表；
 - [ ] 不变量与故障注入矩阵；
-- [ ] clean HEAD 的 verify evidence；
+- [ ] 可复现的构建、测试、QEMU/硬件验证 evidence；
 - [ ] 一份失败分析；
 - [ ] 确定性报告与可复现提交归档；
 - [ ] 硬件人工审查待办（如适用）。
@@ -126,7 +115,7 @@ vos submit
 
 ### target 通过但没有 `verifies`
 
-执行成功不代表追溯链完整。每个 public/contract target 都必须在 `vos.yaml` 中声明 `verifies`，并绑定至少一个稳定 Spec ID。
+执行成功不代表追溯链完整。每个目标都必须在项目测试清单或 `vos.yaml` 中绑定至少一个稳定 Spec ID，并说明它实际验证的性质。
 
 ### 日志含本机路径或 token
 
@@ -136,8 +125,9 @@ vos submit
 
 配置或 Spec hash 已变，旧证据不再有效。任何测试、Spec 或配置改动后都必须重新验证，不能沿用历史证据。
 
-## 9. 背景阅读
+## 9. 参考卡
 
-- [Book 第 10 章：验证](../book/ch10-verification.md)：验证方法论与 Final Lab 验证密度要求。
-- [vos 命令参考](../appendices/vos-commands.md)：`verify`、`report`、`submit` 的公开用法。
-- [不变量检查器附录](../appendices/invariant-checker.md)：检查器写法与故障注入示例。
+- [Book 第 10 章：验证](../book/ch10-verification.md)：不变量、故障注入、证据分层和失败分析。
+- 先定义可观察状态与独立 oracle，再选择快速断言、完整扫描或跨模块验收；故障注入必须能证明检查器会失败。
+- 使用项目已有的测试、QEMU、串口、GDB 或硬件工具复现结果；标准、寄存器和工具版本应查权威文档并记录实际环境。
+- 检查 HAL 边界：验证性质不应只在 QEMU/virtio 的偶然实现上成立，报告应说明哪些平台假设仍未抽象。
