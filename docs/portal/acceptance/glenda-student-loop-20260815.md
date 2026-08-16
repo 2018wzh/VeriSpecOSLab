@@ -28,10 +28,26 @@ Portal 的 stage contract 使用 `required_showcase_artifacts` 强制提交 run 
 - Lab 8 的 `agent ask` 和 `agent review` 因已配置的 Anthropic 凭据环境变量缺失而失败。本次在显式开启 `VOS_GLENDA_ALLOW_AGENT_FAILURE_SKIP=1` 后，将这两步记为 `passed_with_approved_skips`。这不是模型复核通过，也不影响 build、QEMU、verify、report、Runner evidence 和 submit 的硬性门槛。
 - 本地重写历史中的 `course/lab9-candidate` 指向 `1d88f7d334af415bb8fc780791b723654260e42f`，`course/lab10-candidate` 指向 `163118aca6374f597fe797088a9c7ebb50cfc5b4`。两者只是交给后续 harness 的候选输入，不是 connected 或正式发布证据。
 - 十阶段历史审计已经通过：历史只有一个 orphan root，标签祖先链连续，未来路径和术语泄漏为 0。Lab 9、Lab 10 仍是 candidate，不是 complete。
+- 旧 M1–M5 标签已经保存到不入库的离线 Git bundle，`git bundle verify` 确认其中五个引用及其完整历史可恢复。
 - Orange Pi Prime 实体板的 BROM/SPL、冷启动、重复复位、四核、UART、timer/IRQ/IPI、SD 和完整工作负载证据尚未采集。
 - Lab 9、Lab 10 仍缺实体板证据、connected replay 和教师审批，因此不能发布 complete 标签，也不能替换课程远端。
 
 当前 connected 记录只确认到 Lab 8。Demo、本地 `vos verify`、外部 Linux 启动和 QEMU 仿真都不能填入 Lab 9/10 的 connected 结果。
+
+### Lab 1–8 connected 通过表
+
+下表直接对应当前 Portal 数据库中的权威记录。每个 final run 均为 2/2 `passed`，submission 均为 `complete`，并绑定已验证的 `${stage}-replay-bundle`、`${stage}-showcase-index`、course evidence 和 runner manifest。
+
+| 阶段 | 学生提交 | public run | final run | submission |
+| --- | --- | --- | --- | --- |
+| Lab 1 | `7bf49577ed8330b02b7cad86a29fffe255560acb` | `run-de996ef2-aff8-4dab-81e3-d80a306765ef` | `run-9ca79a6a-1853-484c-981f-a6faca1b9027` | `submission-420d3ec2-7256-4a88-9647-4cc22030382c` |
+| Lab 2 | `f1c34a4f62eebcf29062fb72e56bd51a8a476124` | `run-1a7f8b39-3917-4a9b-92e8-34ae0d42d173` | `run-e2be2b40-ab58-4c61-8230-db462e166fc2` | `submission-ce2633dd-35d7-4e9f-9a22-91c58119d6c4` |
+| Lab 3 | `c7e4f8cb4c7f8d0ad1986ffcde27bc941329fc67` | `run-f2f4a546-ca75-4721-90b1-dd64001fa9c4` | `run-7311d901-be60-48d0-a1e9-39d72fef1f77` | `submission-6ea4893c-e6da-4af6-9ec1-a2948c3e16fd` |
+| Lab 4 | `29d56a580f12c16fcf0d562e1a5e2b74f753fa21` | `run-34868710-5c56-46b2-a4a6-4d02a456ad5e` | `run-ce0a2e1b-a1b7-43d5-a32f-ce94f1573830` | `submission-44ec1af2-696d-4e77-bd9d-1b07a2c7edac` |
+| Lab 5 | `d6e63112610358122ac1ab248065f62bf0b6112d` | `run-9d098659-253d-45db-9ef5-0a701f2318f4` | `run-d8049363-7991-4daf-809e-6a3e4f345487` | `submission-7ad7d4c4-03e1-450d-84b4-2ad1a251a5fa` |
+| Lab 6 | `ee1223884786181359b81c38fa2de52cd3a380ef` | `run-1c5116f7-b6cc-406b-aba4-32c07b825769` | `run-dc369d81-1ece-4dfc-bf1d-d9776ed4904a` | `submission-b0cb510f-7351-4b9f-a137-ff594fbfbbcd` |
+| Lab 7 | `52500273f1972705f4e072b1d7b1373c292e3aa8` | `run-27522b1c-d2fa-4ee3-8944-51e011bf8ab6` | `run-5c3971e3-8482-489c-ad94-441bf13de77d` | `submission-0d5ff294-b113-43d7-b0e9-659568cb7bec` |
+| Lab 8 | `911641dfaff1cfda57a016908348ca7b87b2c0af` | `run-3a6d9914-7cee-477d-b104-aa4796c08718` | `run-02d4a945-b436-454c-84c2-9e6f441569f3` | `submission-45836c8e-a488-4806-840e-428511e1ec32` |
 
 ## 获批跳过边界
 
@@ -47,6 +63,7 @@ Portal 的 stage contract 使用 `required_showcase_artifacts` 强制提交 run 
 - Lab 9 必须上传 `lab9-replay-bundle`、`h5-simulation-report`、`orangepi-prime-serial-log` 和 `orangepi-prime-hardware-report`。
 - Lab 10 必须上传 `lab10-replay-bundle`、`lab10-verification-report`、`lab10-reproducibility-package` 和 `orangepi-prime-hardware-report`。
 - 候选重放需要显式设置 `VOS_GLENDA_ALLOW_CANDIDATE_REFS=1`，并将 `VOS_GLENDA_STUDENT_THROUGH` 设为 `lab9` 或 `lab10`。该开关只允许读取 candidate 引用，不绕过硬件与人工门槛。
+- review artifact 文件分别通过 `VOS_GLENDA_ARTIFACT_H5_SIMULATION_REPORT`、`VOS_GLENDA_ARTIFACT_ORANGEPI_PRIME_SERIAL_LOG`、`VOS_GLENDA_ARTIFACT_ORANGEPI_PRIME_HARDWARE_REPORT`、`VOS_GLENDA_ARTIFACT_LAB10_VERIFICATION_REPORT` 和 `VOS_GLENDA_ARTIFACT_LAB10_REPRODUCIBILITY_PACKAGE` 传入；值由执行者设置为待上传文件，不写进仓库。
 - 实板必须覆盖 BROM/SPL → TF-A → U-Boot → Glenda、冷启动、重复复位、四核身份、UART、timer/IRQ/IPI、SD 数据路径、文件系统和完整工作负载，并单列 QEMU 绕过 SPL 的边界。
 - 材料上传后停在 candidate，等待教师在 Portal 中核对 artifact 并批准。其他 harness 不得自称教师，也不得把 candidate 改为 complete。
 
@@ -74,7 +91,7 @@ export VOS_GLENDA_HISTORY_REPORT_REQUIRED=1
 bun run --cwd apps/vos-portal test:glenda:connected
 ```
 
-`VOS_GLENDA_ALLOW_CANDIDATE_REFS=1` 只用于本地候选验收；它允许 Lab 9/10 使用 candidate 标签，但不修改课程 manifest，也不能绕过实体 artifact 和教师审批。
+`VOS_GLENDA_ALLOW_CANDIDATE_REFS=1` 只用于 Lab 9/10 候选边界验收；它允许 connected replay 读取 candidate 标签，但不修改课程 manifest，也不能绕过实体 artifact 和教师审批。
 
 发布前还要从仓库根目录审计课程历史。路径由调用者显式传入：
 
