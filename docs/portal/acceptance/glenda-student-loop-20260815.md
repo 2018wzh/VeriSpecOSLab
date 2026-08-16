@@ -44,6 +44,12 @@ export VOS_GITEA_PASSWORD=<local-secret>
 bun run --cwd apps/vos-portal test:glenda:connected
 ```
 
+发布前还要从仓库根目录审计课程历史。路径由调用者显式传入：
+
+```sh
+python scripts/audit-glenda-history.py <glenda-checkout> --through 10
+```
+
 Lab 9 和 Lab 10 上传完必需材料后，脚本会停在 candidate 状态等待教师在 Portal 中审批。脚本只轮询审批结果，不代替教师操作。任何硬件、connected、artifact 或审批失败都会保留原状态，并停止正式发布。
 
 ## 发布边界

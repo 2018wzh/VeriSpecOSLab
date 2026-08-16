@@ -1,0 +1,14 @@
+{
+  "version": "glenda-history-policy.v1",
+  "introductions": [
+    { "stage": 2, "paths": ["kernel/**", "drivers/**", "spec/modules/boot-asm.yaml", "spec/modules/uart.yaml", "spec/interfaces/opensbi-entry.yaml"], "terms": ["boot-asm", "opensbi-entry", "boot-banner-public", "uart-known-registers"] },
+    { "stage": 3, "paths": ["spec/modules/dtb.yaml", "spec/modules/mem.yaml", "tests/public/dtb.sh", "tests/public/memory.sh", "tests/trace/memory_vm.sh"], "terms": ["dtb-discovery-public", "mem-frame-unique-public", "mem-sv39-layout-binding"] },
+    { "stage": 4, "paths": ["spec/modules/irq.yaml", "spec/modules/sbi.yaml", "spec/interfaces/kernel-trap-entry.yaml", "spec/patches/lab4-trap-wiring.yaml", "tests/public/interrupts.sh", "tests/public/sbi.sh"], "terms": ["trap-classification-public", "timer-stress-public", "sbi-hart-start-public", "kernel-trap-entry"] },
+    { "stage": 5, "paths": ["spec/modules/proc.yaml", "spec/modules/syscall.yaml", "spec/modules/userland.yaml", "spec/interfaces/syscall-abi.yaml", "spec/interfaces/trap-frame.yaml", "spec/patches/lab5-process-syscall.yaml", "tests/public/process.sh"], "terms": ["proc-lifecycle-public", "proc-preemption-public", "syscall-dispatch-public", "trap-frame-layout-contract"] },
+    { "stage": 6, "paths": ["spec/modules/virtio.yaml", "spec/modules/fs.yaml", "spec/modules/fs-log.yaml", "spec/patches/lab6-storage-transaction.yaml", "tests/public/filesystem.sh", "tests/public/fs_recovery.sh"], "terms": ["virtio-blk-rw-public", "fs-transaction-atomic-public", "fs-recovery-idempotent-public", "fs-log"] },
+    { "stage": 7, "paths": ["spec/modules/file.yaml", "spec/modules/pipe.yaml", "spec/patches/lab7-descriptor-pipe-shell.yaml", "tests/public/pipes.sh", "tests/public/shell.sh"], "terms": ["fd-lifetime-public", "fd-shared-offset-public", "pipe-blocking-public", "shell-e2e-public"] },
+    { "stage": 8, "paths": ["spec/goals/scheduler-bitmap.yaml", "spec/patches/lab8-*.yaml", "tests/performance/**"], "terms": ["scheduler-performance-goal", "scheduler-profile-regression", "scheduler-linear-baseline", "scheduler-bitmap"] },
+    { "stage": 9, "paths": ["kernel-h5/**", "spec/goals/h5-platform.yaml", "spec/modules/arch-aarch64.yaml", "spec/modules/platform-h5.yaml", "spec/modules/mmc-h5.yaml", "spec/interfaces/platform-hal.yaml", "spec/patches/lab9-*.yaml", "tests/toolchain/h5_probe.py", "tests/trace/h5_assert.py", "tests/contract/h5_*.sh", "tests/contract/platform_hal.sh"], "terms": ["orangepi-prime", "arch-aarch64", "platform-h5", "mmc-h5", "h5-firmware-chain-trace"] },
+    { "stage": 10, "paths": ["spec/goals/lab10-*.yaml", "spec/modules/verification*.yaml", "spec/patches/lab10-*.yaml", "tests/verification/**", "tests/fault-injection/**"], "terms": ["lab10-verification", "reproducibility-package", "verification-matrix"] }
+  ]
+}

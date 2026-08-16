@@ -6,6 +6,8 @@ This repository is a spec-first OS lab platform. The student contract is the v2 
 
 The `examples/xv6-spec` main branch is an orphan-root Lab 1-10 course history. Preserve annotated `course/lab1-complete` through `course/lab8-complete` and the explicitly unaccepted `course/lab9-candidate` / `course/lab10-candidate` boundary. A course tag must not contain future paths, identifiers, tests, placeholders, or terminology; run the submodule history audit after any rewrite. Physical VisionFive 2 four-hart `usertests` plus human review are required before candidate tags can become complete. The historical tags remain code baselines; the student manual may require additional out-of-repository hardware reports without rewriting that history.
 
+The Glenda course follows the same orphan-root and no-future-leakage discipline under `course/lab1-complete` through `course/lab10-complete`. Run `scripts/audit-glenda-history.py` with the explicit Glenda checkout and intended final stage after every history change. Lab 9 and Lab 10 remain unpublished until Orange Pi Prime physical evidence, connected Portal replay and teacher review are complete. Every connected stage uploads a redacted replay bundle before authoritative evaluation and a Portal timeline index after closure; failed replay bundles remain valid showcase records but never satisfy a passing gate.
+
 ## Build, Test, and Development Commands
 
 Run workspace commands from `vos/`:
