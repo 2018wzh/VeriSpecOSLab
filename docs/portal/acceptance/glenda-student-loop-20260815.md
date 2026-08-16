@@ -29,6 +29,7 @@ Portal 的 stage contract 使用 `required_showcase_artifacts` 强制提交 run 
 - 本地重写历史中的 `course/lab9-candidate` 指向 `1d88f7d334af415bb8fc780791b723654260e42f`，`course/lab10-candidate` 指向 `163118aca6374f597fe797088a9c7ebb50cfc5b4`。两者只是交给后续 harness 的候选输入，不是 connected 或正式发布证据。
 - 十阶段历史审计已经通过：历史只有一个 orphan root，标签祖先链连续，未来路径和术语泄漏为 0。Lab 9、Lab 10 仍是 candidate，不是 complete。
 - 旧 M1–M5 标签已经保存到不入库的离线 Git bundle，`git bundle verify` 确认其中五个引用及其完整历史可恢复。
+- 当前 Lab 1–10 候选链也已保存为单独的离线 Git bundle，并确认十个 annotated tag 及其完整历史可恢复。该 bundle 只用于向外部 harness 交付候选输入，不代表正式发布。
 - Orange Pi Prime 实体板的 BROM/SPL、冷启动、重复复位、四核、UART、timer/IRQ/IPI、SD 和完整工作负载证据尚未采集。
 - Lab 9、Lab 10 仍缺实体板证据、connected replay 和教师审批，因此不能发布 complete 标签，也不能替换课程远端。
 
@@ -49,6 +50,8 @@ Portal 的 stage contract 使用 `required_showcase_artifacts` 强制提交 run 
 | Lab 7 | `52500273f1972705f4e072b1d7b1373c292e3aa8` | `run-27522b1c-d2fa-4ee3-8944-51e011bf8ab6` | `run-5c3971e3-8482-489c-ad94-441bf13de77d` | `submission-0d5ff294-b113-43d7-b0e9-659568cb7bec` |
 | Lab 8 | `911641dfaff1cfda57a016908348ca7b87b2c0af` | `run-3a6d9914-7cee-477d-b104-aa4796c08718` | `run-02d4a945-b436-454c-84c2-9e6f441569f3` | `submission-45836c8e-a488-4806-840e-428511e1ec32` |
 
+Portal 还保留 11 条失败 run：4 条在 Runner 执行前失败的基础设施记录均有 pipeline event，7 条验证失败记录另有 runner manifest，能够区分失败发生在哪个环节。Lab 8 还有三次“公开 Runner 已通过、后续本地 replay 失败”的中间记录；对应失败 replay bundle 已分别绑定到原 public run。它们都不是 complete submission。
+
 ## 获批跳过边界
 
 `VOS_GLENDA_ALLOW_AGENT_FAILURE_SKIP=1` 只允许 connected replay 在可审计的模型调用故障下跳过 `agent ask` 或 `agent review`。脚本必须保留原始失败分类、命令状态和显式批准配置；只有已配置 provider 的凭据缺失，或同时满足 provider 故障与瞬态故障分类时，才能进入 `passed_with_approved_skips`。其他模型错误、Spec 错误、实现错误和验证失败仍应立即终止。
@@ -59,6 +62,7 @@ Portal 的 stage contract 使用 `required_showcase_artifacts` 强制提交 run 
 
 本任务不再执行移植或开发板测试。后续 harness 以本地候选引用为输入，并继续使用 Glenda 专用的 Orange Pi Prime 课程契约：
 
+- `VOS_GLENDA_SPEC_ROOT` 必须指向最终候选 checkout，而不是仍含旧候选标签的参考仓库。启动前应确认 `course/lab9-candidate` 解析为 `1d88f7d334af415bb8fc780791b723654260e42f`，`course/lab10-candidate` 解析为 `163118aca6374f597fe797088a9c7ebb50cfc5b4`。
 - 先验收 H5 QEMU，再验收实体 Orange Pi Prime；两类证据分开记录，QEMU 不代替实板。
 - Lab 9 必须上传 `lab9-replay-bundle`、`h5-simulation-report`、`orangepi-prime-serial-log` 和 `orangepi-prime-hardware-report`。
 - Lab 10 必须上传 `lab10-replay-bundle`、`lab10-verification-report`、`lab10-reproducibility-package` 和 `orangepi-prime-hardware-report`。
@@ -79,8 +83,16 @@ export VOS_PORTAL_PROJECT_ID=<project-id>
 export VOS_GITEA_PUBLIC_ORIGIN=https://<gitea-host>
 export VOS_GITEA_USERNAME=<student-user>
 export VOS_GITEA_PASSWORD=<local-secret>
+export VOS_GLENDA_SPEC_ROOT=<glenda-checkout>
 
 bun run --cwd apps/vos-portal test:glenda:connected
+```
+
+外部 harness 在执行前应固定并核对候选提交：
+
+```sh
+test "$(git -C "$VOS_GLENDA_SPEC_ROOT" rev-parse "course/lab9-candidate^{commit}")" = "1d88f7d334af415bb8fc780791b723654260e42f"
+test "$(git -C "$VOS_GLENDA_SPEC_ROOT" rev-parse "course/lab10-candidate^{commit}")" = "163118aca6374f597fe797088a9c7ebb50cfc5b4"
 ```
 
 实体材料尚未具备时，只连续闭环 Lab 1–8，避免提前创建 Lab 9 的权威提交：
