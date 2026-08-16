@@ -76,6 +76,9 @@ describe("student v2 workflow", () => {
     expect(existsSync(join(root, "spec", "design.yaml"))).toBe(true);
     expect(readFileSync(join(root, "vos.yaml"), "utf8")).not.toContain("knowledge:");
     expect(existsSync(join(root, "spec", "modules", "toolchain.yaml"))).toBe(true);
+    expect(existsSync(join(root, "spec", "qemu", "request.yaml.example"))).toBe(true);
+    expect(existsSync(join(root, "references", "qemu", "README.md"))).toBe(true);
+    expect(readFileSync(join(root, ".gitignore"), "utf8")).toContain("references/qemu/**/*");
     expect(existsSync(join(root, ".vos", "project.yaml"))).toBe(false);
     expect(existsSync(join(root, ".vos", "policy.yaml"))).toBe(false);
     expect(readFileSync(join(root, "vos.yaml"), "utf8")).toContain("program: bun");

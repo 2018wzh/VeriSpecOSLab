@@ -13,6 +13,7 @@ import {
   interfaceSpecSchema,
   moduleV2Schema,
   projectManifestSchema,
+  qemuPortSpecSchema,
   specPatchV2Schema,
 } from "./schemas.ts";
 import type {
@@ -25,6 +26,7 @@ import type {
   NormalizedInterface,
   NormalizedOperation,
   NormalizedSpecBundle,
+  NormalizedQemuPortSpec,
   PatchImpactReport,
   SpecDiagnostic,
   SpecDocumentKind,
@@ -58,6 +60,7 @@ export type {
   NormalizedInterface,
   NormalizedOperation,
   NormalizedSpecBundle,
+  NormalizedQemuPortSpec,
   PatchImpactReport,
   SpecDiagnostic,
   SpecDocumentKind,
@@ -66,11 +69,16 @@ export type {
 } from "./types.ts";
 
 export type ProjectManifest = z.infer<typeof projectManifestSchema>;
+export type QemuPortSpec = z.infer<typeof qemuPortSpecSchema>;
 
 export { moduleMatches } from "./utils.ts";
 
 export function parseProjectManifest(value: unknown): ProjectManifest {
   return projectManifestSchema.parse(value);
+}
+
+export function parseQemuPortSpec(value: unknown): QemuPortSpec {
+  return qemuPortSpecSchema.parse(value);
 }
 
 export function parseAgentSpecReview(value: unknown, rawText?: string): AgentSpecReview {
@@ -104,6 +112,7 @@ export async function buildNormalizedSpecBundle(params: {
   const decisions: NormalizedSpecBundle["architecture"]["decisions"] = [];
   const compositions: NormalizedSpecBundle["composition"] = [];
   const goals: NormalizedSpecBundle["goals"] = [];
+  const qemuPorts: NormalizedQemuPortSpec[] = [];
   const toolchainProfiles: NormalizedSpecBundle["toolchain_profiles"] = [];
   const publicRequirements: NormalizedSpecBundle["verification"]["public_requirements"] = [];
   const patchRecords: SpecPatchRecord[] = [];
@@ -198,6 +207,22 @@ export async function buildNormalizedSpecBundle(params: {
           affected_operations: [],
           required_regressions: [],
         });
+      } else if (kind === "qemu_port") {
+        const doc = qemuPortSpecSchema.parse(parsed);
+        qemuPorts.push({
+          id: doc.id,
+          request_id: doc.request_id ?? doc.id,
+          revision: doc.revision,
+          status: doc.status,
+          path: rel,
+          target: doc.target,
+          qemu: doc.qemu,
+          materials_dir: doc.materials_dir ?? `references/qemu/${doc.id}`,
+          materials: doc.materials ?? [],
+          findings: doc.preflight?.findings ?? [],
+          owns: doc.implementation?.owns ?? [],
+          document: doc as Record<string, unknown>,
+        });
       }
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -251,6 +276,7 @@ export async function buildNormalizedSpecBundle(params: {
     composition: compositions.sort(byId),
     patch_records: patchRecords.sort(byId),
     goals: goals.sort((a, b) => a.goal_id.localeCompare(b.goal_id)),
+    qemu_ports: qemuPorts.sort(byId),
     toolchain_profiles: toolchainProfiles.sort(byPath),
     verification: {
       public_requirements: publicRequirements.sort(byId),
@@ -282,7 +308,7 @@ function validateStudentSourceKinds(
       diagnostics.push(errorDiagnostic("spec.legacy_kind_rejected", "student projects require patches under spec/patches using the strict v2 SpecPatch schema", source.path));
       continue;
     }
-    if (!["design", "module", "interface", "goal", "spec_patch"].includes(source.kind)) {
+    if (!["design", "module", "interface", "goal", "spec_patch", "qemu_port"].includes(source.kind)) {
       diagnostics.push(errorDiagnostic("spec.legacy_kind_rejected", `student projects do not accept legacy Spec kind ${source.kind}`, source.path));
     }
   }
@@ -989,6 +1015,7 @@ function classifySpecFile(relPath: string): SpecDocumentKind {
     if (!rel.endsWith("/module.yaml") && !rel.endsWith("/concurrency.yaml") && !rel.endsWith("/tests.yaml")) return "module";
   }
   if (rel.startsWith("spec/patches/") && (rel.endsWith(".yaml") || rel.endsWith(".yml"))) return "spec_patch";
+  if (rel.startsWith("spec/qemu/") && (rel.endsWith(".yaml") || rel.endsWith(".yml"))) return "qemu_port";
   if (rel.startsWith("spec/modules/") && rel.endsWith("/module.yaml")) return "module";
   if (rel.startsWith("spec/modules/") && rel.includes("/ops/")) return "operation";
   if (rel.startsWith("spec/modules/") && rel.endsWith("/concurrency.yaml")) return "concurrency";

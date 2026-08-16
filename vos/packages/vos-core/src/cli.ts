@@ -2,6 +2,8 @@ import type {
   AgentAskCommand,
   AgentDebugCommand,
   AgentImplementCommand,
+  AgentQemuPreflightCommand,
+  AgentQemuExecuteCommand,
   AgentVerifyCommand,
   AgentReviewCommand,
   AgentConfigCommand,
@@ -443,9 +445,32 @@ function parseCommand(tokens: string[], global: GlobalOptions): StudentCliComman
       }
       return { kind: "agent_implement", module, resumeRunId } satisfies AgentImplementCommand;
     }
+    if (second === "qemu") {
+      const action = rest[1];
+      if (action !== "preflight" && action !== "execute") {
+        throw new Error("agent qemu requires preflight or execute");
+      }
+      const target = rest[2];
+      if (!target || target.startsWith("-")) {
+        throw new Error(`agent qemu ${action} requires <QemuSpec ID|path>`);
+      }
+      let resumeRunId: string | undefined;
+      for (let index = 3; index < rest.length; index++) {
+        if (rest[index] !== "--resume") {
+          throw new Error(`agent qemu ${action} accepts only --resume <run-id>`);
+        }
+        resumeRunId = rest[++index];
+        if (!resumeRunId || resumeRunId.startsWith("-")) {
+          throw new Error(`agent qemu ${action} --resume requires <run-id>`);
+        }
+      }
+      return action === "preflight"
+        ? { kind: "agent_qemu_preflight", target, resumeRunId } satisfies AgentQemuPreflightCommand
+        : { kind: "agent_qemu_execute", target, resumeRunId } satisfies AgentQemuExecuteCommand;
+    }
     if (second === "verify") {
-      if (rest.length > 1) throw new Error("agent verify accepts no command-specific options");
-      return { kind: "agent_verify" } satisfies AgentVerifyCommand;
+      const resumeRunId = parseOnlyResume(rest.slice(1), "agent verify");
+      return { kind: "agent_verify", ...(resumeRunId ? { resumeRunId } : {}) } satisfies AgentVerifyCommand;
     }
     if (second === "ask") {
       const question = rest.slice(1).filter((arg) => !isInteractiveDisplayFlag(arg)).join(" ").trim() || undefined;
@@ -456,14 +481,26 @@ function parseCommand(tokens: string[], global: GlobalOptions): StudentCliComman
       return { kind: "agent_ask", question, interactive } satisfies AgentAskCommand;
     }
     if (second === "review") {
-      const positional = rest.slice(1).filter((arg) => !isInteractiveDisplayFlag(arg));
+      const args = rest.slice(1);
+      let resumeRunId: string | undefined;
+      const positional: string[] = [];
+      for (let index = 0; index < args.length; index++) {
+        if (isInteractiveDisplayFlag(args[index])) continue;
+        if (args[index] === "--resume") {
+          resumeRunId = args[++index];
+          if (!resumeRunId || resumeRunId.startsWith("-")) throw new Error("agent review --resume requires <run-id>");
+          continue;
+        }
+        positional.push(args[index]);
+      }
       if (positional.length > 1) throw new Error("agent review accepts at most one Spec ID, path, design, or all target");
       if (positional[0]?.startsWith("-")) throw new Error(`unknown flag for agent review: ${positional[0]}`);
-      return { kind: "agent_review", target: positional[0], ...(rest.some(isInteractiveDisplayFlag) ? { display: true } : {}) } satisfies AgentReviewCommand;
+      if (resumeRunId && rest.some(isInteractiveDisplayFlag)) throw new Error("agent review --resume cannot be combined with interactive display");
+      return { kind: "agent_review", target: positional[0], ...(resumeRunId ? { resumeRunId } : {}), ...(rest.some(isInteractiveDisplayFlag) ? { display: true } : {}) } satisfies AgentReviewCommand;
     }
     if (second === "debug") {
-      if (rest.length > 1) throw new Error("agent debug accepts no command-specific options");
-      return { kind: "agent_debug", keepWorktree: false } satisfies AgentDebugCommand;
+      const resumeRunId = parseOnlyResume(rest.slice(1), "agent debug");
+      return { kind: "agent_debug", keepWorktree: false, ...(resumeRunId ? { resumeRunId } : {}) } satisfies AgentDebugCommand;
     }
     if (second === "review-spec") {
       throw new Error("agent review-spec was removed; use `vos agent review [target] [-i]`");
@@ -476,6 +513,14 @@ function parseCommand(tokens: string[], global: GlobalOptions): StudentCliComman
   }
 
   throw new Error(`unknown command: ${command}`);
+}
+
+function parseOnlyResume(args: string[], command: string): string | undefined {
+  if (args.length === 0) return undefined;
+  if (args.length !== 2 || args[0] !== "--resume" || !args[1] || args[1].startsWith("-")) {
+    throw new Error(`${command} accepts only --resume <run-id>`);
+  }
+  return args[1];
 }
 
 function parsePortalCommand(args:string[]):StudentCliCommand{

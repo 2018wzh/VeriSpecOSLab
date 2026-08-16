@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import {
   buildAgentEnv,
+  loadAgentRecovery,
   runAgentInteractiveTask,
   runAgentWithPrompt,
   runAgentWithValidatedSubmission,
@@ -34,6 +35,40 @@ afterEach(() => {
 });
 
 describe("vos-cli package agent runner", () => {
+  test("persists and validates recovery metadata when a long Agent call is interrupted", async () => {
+    const projectRoot = makeProject();
+    const binding = {
+      runId: "run-recovery",
+      command: "agent-review",
+      target: "design",
+      baseHead: "abc1234",
+      specHash: "spec-hash",
+      storageRoot: projectRoot,
+    };
+    await expect(runAgentWithPrompt({
+      projectRoot,
+      taskPrompt: "review",
+      resultSubmissionSchema: "spec_review.v1",
+      recovery: binding,
+      taskRunner: async (options) => {
+        await options.onEvent?.({ type: "model.usage", thread_id: "thread-recovery" } as never);
+        throw new Error("interrupted");
+      },
+    })).rejects.toThrow("interrupted");
+    const loaded = await loadAgentRecovery(projectRoot, "run-recovery", {
+      command: "agent-review",
+      target: "design",
+      baseHead: "abc1234",
+      specHash: "spec-hash",
+    });
+    expect(loaded.threadId).toBe("thread-recovery");
+    await expect(loadAgentRecovery(projectRoot, "run-recovery", {
+      command: "agent-review",
+      target: "other",
+      baseHead: "abc1234",
+      specHash: "spec-hash",
+    })).rejects.toThrow("does not match");
+  });
   test("calls vos-agent task package API through injectable runner", async () => {
     const projectRoot = makeProject();
     let captured: AgentTaskRequest | undefined;

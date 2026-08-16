@@ -149,6 +149,12 @@ export async function executeCommand(command: CliCommand, context: ExecContext):
     case "agent_implement":
       return handlers.executeAgentImplement(command, context, evidence);
 
+    case "agent_qemu_preflight":
+      return handlers.executeAgentQemuPreflight(command, context, evidence);
+
+    case "agent_qemu_execute":
+      return handlers.executeAgentQemuExecute(command, context, evidence);
+
     case "agent_verify":
       return handlers.executeAgentVerify(command, context, evidence);
 

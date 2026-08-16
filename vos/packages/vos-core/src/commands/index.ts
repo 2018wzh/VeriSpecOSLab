@@ -7,3 +7,4 @@ export * from "./ledger.ts";
 export * from "./kb.ts";
 export * from "./seed.ts";
 export * from "./agent.ts";
+export * from "./qemu-port.ts";

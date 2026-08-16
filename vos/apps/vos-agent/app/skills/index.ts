@@ -7,6 +7,7 @@ import { instrumentationTestingSkill } from "./instrumentation-testing.ts";
 import { moduleImplementationSkill } from "./module-implementation.ts";
 import { osSpecAuthoringSkill } from "./os-spec-authoring.ts";
 import { qemuMonitorSkill } from "./qemu-monitor.ts";
+import { qemuBoardPortSkill } from "./qemu-board-port.ts";
 import { referencePolicySkill } from "./reference-policy.ts";
 import { teachingExplanationSkill } from "./teaching-explanation.ts";
 import { toolchainAuthoringSkill } from "./toolchain-authoring.ts";
@@ -25,6 +26,7 @@ const BUILT_IN_SKILLS: Record<string, BuiltInSkill> = {
   "teaching-explanation": teachingExplanationSkill,
   "gdb-debug": gdbDebugSkill,
   "qemu-monitor": qemuMonitorSkill,
+  "qemu-board-port": qemuBoardPortSkill,
   "bret-victor-tutor": bretVictorTutorSkill,
   "visualization": visualizationSkill,
   "verification-diagnosis": verificationDiagnosisSkill,

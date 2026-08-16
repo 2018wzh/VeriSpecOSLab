@@ -288,6 +288,7 @@ export interface AgentDebugCommand extends BaseCommand {
   runId?: string;
   keepWorktree: boolean;
   display?: boolean;
+  resumeRunId?: string;
 }
 
 export interface AgentImplementCommand extends BaseCommand {
@@ -297,15 +298,29 @@ export interface AgentImplementCommand extends BaseCommand {
   display?: boolean;
 }
 
+export interface AgentQemuPreflightCommand extends BaseCommand {
+  kind: "agent_qemu_preflight";
+  target: string;
+  resumeRunId?: string;
+}
+
+export interface AgentQemuExecuteCommand extends BaseCommand {
+  kind: "agent_qemu_execute";
+  target: string;
+  resumeRunId?: string;
+}
+
 export interface AgentVerifyCommand extends BaseCommand {
   kind: "agent_verify";
   display?: boolean;
+  resumeRunId?: string;
 }
 
 export interface AgentReviewCommand extends BaseCommand {
   kind: "agent_review";
   target?: string;
   display?: boolean;
+  resumeRunId?: string;
 }
 
 export type AgentProviderName = "anthropic" | "openai" | "openai-compatible" | "deepseek" | "ollama";
@@ -397,6 +412,8 @@ export type StudentCliCommand =
   | SubmitPackCommand
   | AgentDebugCommand
   | AgentImplementCommand
+  | AgentQemuPreflightCommand
+  | AgentQemuExecuteCommand
   | AgentVerifyCommand
   | AgentReviewCommand
   | AgentConfigCommand

@@ -26,6 +26,24 @@ import {
 } from "../progress/agent.ts";
 import { readProjectEnv } from "../utils/dotenv.ts";
 import { readAgentConfig } from "./config.ts";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+export interface AgentRecoveryBinding {
+  runId: string;
+  command: string;
+  target: string;
+  baseHead: string;
+  specHash: string;
+  storageRoot?: string;
+}
+
+interface StoredAgentRecovery extends AgentRecoveryBinding {
+  version: "vos.agent-recovery.v1";
+  threadId?: string;
+  createdAt: string;
+}
 
 export interface AgentRunResult {
   resultText: string;
@@ -78,13 +96,17 @@ export async function runAgentWithPrompt(params: {
   extraMcpServers?: readonly McpServerConfig[];
   onEvent?: (event: Record<string, unknown>) => void | Promise<void>;
   taskRunner?: HeadlessAgentTaskRunner;
+  recovery?: AgentRecoveryBinding;
 }): Promise<AgentRunResult> {
   const bootstrap = buildAgentEnv({
     projectRoot: params.configurationRoot ?? params.projectRoot,
     env: process.env,
   });
 
-  const result = await (params.taskRunner ?? runAgentTask)({
+  let observedThreadId = params.threadId;
+  let result;
+  try {
+    result = await (params.taskRunner ?? runAgentTask)({
     projectRoot: params.projectRoot,
     task: appendAgentProgressInstructions(params.taskPrompt, params.resultSubmissionSchema),
     taskKind: params.taskKind,
@@ -117,10 +139,15 @@ export async function runAgentWithPrompt(params: {
     onEvent: async (event) => {
       if (event) {
         const raw = event as Record<string, unknown>;
+        if (typeof raw.thread_id === "string") observedThreadId = raw.thread_id;
         await (params.onEvent?.(raw));
       }
     },
-  });
+    });
+  } catch (error) {
+    if (params.recovery) await saveAgentRecovery(params.recovery.storageRoot ?? params.projectRoot, params.recovery, observedThreadId);
+    throw error;
+  }
   const rawEvents = result.events.map((event) => event as Record<string, unknown>);
   const submitted = extractAcceptedMcpSubmission(rawEvents, params.resultSubmissionSchema);
 
@@ -133,6 +160,44 @@ export async function runAgentWithPrompt(params: {
     threadId: result.threadId ?? lastAgentThreadId(rawEvents),
     iterations: maxAgentIteration(rawEvents),
   };
+}
+
+export async function loadAgentRecovery(
+  projectRoot: string,
+  runId: string,
+  expected: Omit<AgentRecoveryBinding, "runId">,
+): Promise<{ threadId?: string }> {
+  const file = agentRecoveryPath(projectRoot, runId);
+  if (!existsSync(file)) throw new AgentOutputError(`agent recovery state was not found: ${runId}`);
+  const stored = JSON.parse(await readFile(file, "utf8")) as StoredAgentRecovery;
+  if (stored.version !== "vos.agent-recovery.v1"
+    || stored.command !== expected.command
+    || stored.target !== expected.target
+    || stored.baseHead !== expected.baseHead
+    || stored.specHash !== expected.specHash) {
+    throw new AgentOutputError("agent recovery state does not match the command, target, HEAD, or Spec hash");
+  }
+  return { threadId: stored.threadId };
+}
+
+async function saveAgentRecovery(
+  projectRoot: string,
+  binding: AgentRecoveryBinding,
+  threadId?: string,
+): Promise<void> {
+  const file = agentRecoveryPath(projectRoot, binding.runId);
+  await mkdir(path.dirname(file), { recursive: true });
+  const stored: StoredAgentRecovery = {
+    version: "vos.agent-recovery.v1",
+    ...binding,
+    threadId,
+    createdAt: new Date().toISOString(),
+  };
+  await writeFile(file, `${JSON.stringify(stored, null, 2)}\n`);
+}
+
+function agentRecoveryPath(projectRoot: string, runId: string): string {
+  return path.join(projectRoot, ".vos", "agent-runs", runId, "recovery.json");
 }
 
 export async function runAgentWithValidatedSubmission<T>(params: Parameters<typeof runAgentWithPrompt>[0] & {

@@ -6,11 +6,62 @@ import {
   buildNormalizedSpecBundle,
   deriveTestMatrix,
   hasBlockingDiagnostics,
+  parseQemuPortSpec,
   parseProjectManifest,
   resolveSpecPatch,
 } from "./index.ts";
 
 describe("vos-spec semantic bundle", () => {
+  test("keeps request QemuSpecs free of generated preflight fields", () => {
+    expect(() => parseQemuPortSpec({
+      version: "vos.qemu-port.v1",
+      id: "qemu.board",
+      revision: 0,
+      status: "request",
+      target: { board: "Demo Board" },
+      qemu: { version: "11.1.0", source_path: "qemu", commit: "abcdef1" },
+    })).toThrow("generated only after preflight");
+  });
+
+  test("normalizes request and approved QemuSpecs and rejects unresolved approved blockers", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vos-qemu-spec-"));
+    await mkdir(path.join(root, "spec", "qemu"), { recursive: true });
+    await writeFile(path.join(root, "spec", "qemu", "board.yaml"), [
+      "version: vos.qemu-port.v1",
+      "id: qemu.board",
+      "revision: 0",
+      "status: request",
+      "target: { board: Demo Board }",
+      "qemu: { version: 11.1.0, source_path: qemu }",
+      "",
+    ].join("\n"));
+    let bundle = await buildNormalizedSpecBundle({ projectRoot: root });
+    expect(bundle.qemu_ports[0]?.status).toBe("request");
+    expect(bundle.sources[0]?.kind).toBe("qemu_port");
+
+    await writeFile(path.join(root, "spec", "qemu", "board.r1.yaml"), [
+      "version: vos.qemu-port.v1",
+      "id: qemu.board.r1",
+      "request_id: qemu.board",
+      "revision: 1",
+      "status: approved",
+      "target: { board: Demo Board }",
+      "qemu: { version: 11.1.0, source_path: qemu, commit: abcdef1 }",
+      "materials_dir: references/qemu/qemu.board",
+      `materials: [{ id: manual, role: hardware-manual, path: references/qemu/qemu.board/manual.pdf, sha256: '${"0".repeat(64)}', size: 1, caveats: [] }]`,
+      "preflight:",
+      "  run_id: run-1",
+      "  boot_path: { entry: bl31 }",
+      "  reuse_matrix: [{ device: uart, decision: integrate }]",
+      "  findings: [{ id: missing-registers, severity: blocker, message: missing, evidence: [] }]",
+      "  notes: []",
+      "implementation: { owns: [qemu/hw/arm], phases: [{ id: boot }], dependencies: [] }",
+      "acceptance: { goal: shell, agent_defined: true }",
+      "",
+    ].join("\n"));
+    bundle = await buildNormalizedSpecBundle({ projectRoot: root });
+    expect(bundle.diagnostics.some((item) => item.message.includes("unresolved blocker"))).toBe(true);
+  });
   test("normalizes the student v2 contract and manifest", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "vos-spec-v2-"));
     await mkdir(path.join(root, "spec", "modules"), { recursive: true });

@@ -43,6 +43,10 @@ describe("student CLI contract", () => {
       .toEqual({ kind: "agent_ask", question: undefined, interactive: true });
     expect(parseArgs(["bun", "vos", "agent", "review", "design", "-i"]).command)
       .toEqual({ kind: "agent_review", target: "design", display: true });
+    expect(parseArgs(["bun", "vos", "agent", "qemu", "preflight", "qemu.board"]).command)
+      .toEqual({ kind: "agent_qemu_preflight", target: "qemu.board", resumeRunId: undefined });
+    expect(parseArgs(["bun", "vos", "agent", "qemu", "execute", "qemu.board.r1", "--resume", "run-1"]).command)
+      .toEqual({ kind: "agent_qemu_execute", target: "qemu.board.r1", resumeRunId: "run-1" });
   });
 
   test("parses Agent provider configuration without reading secrets", () => {
@@ -169,7 +173,13 @@ describe("student CLI contract", () => {
     expect(parseArgs(["bun", "vos", "agent", "implement", "memory", "--resume", "run-1"]).command)
       .toEqual({ kind: "agent_implement", module: "memory", resumeRunId: "run-1" });
     expect(() => parseArgs(["bun", "vos", "agent", "debug", "--run", "run-1"]))
-      .toThrow("accepts no command-specific options");
+      .toThrow("accepts only --resume");
+    expect(parseArgs(["bun", "vos", "agent", "debug", "--resume", "run-1"]).command)
+      .toEqual({ kind: "agent_debug", keepWorktree: false, resumeRunId: "run-1" });
+    expect(parseArgs(["bun", "vos", "agent", "verify", "--resume", "run-1"]).command)
+      .toEqual({ kind: "agent_verify", resumeRunId: "run-1" });
+    expect(parseArgs(["bun", "vos", "agent", "review", "design", "--resume", "run-1"]).command)
+      .toEqual({ kind: "agent_review", target: "design", resumeRunId: "run-1" });
   });
 
   test("help lists only the student surface", () => {

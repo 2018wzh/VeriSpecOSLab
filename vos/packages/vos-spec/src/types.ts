@@ -20,6 +20,7 @@ export type SpecDocumentKind =
   | "interface"
   | "goal"
   | "spec_patch"
+  | "qemu_port"
   | "unknown"
   // Frozen Portal projections. The public bundle validator always reports
   // these as errors; they are not a student compatibility surface.
@@ -136,6 +137,7 @@ export interface NormalizedSpecBundle {
   composition: Array<{ id: string; title?: string; path: string; affected_modules: string[]; tests: string[] }>;
   patch_records: SpecPatchRecord[];
   goals: Array<{ goal_id: string; category?: string; path: string; evidence_required: string[] }>;
+  qemu_ports: NormalizedQemuPortSpec[];
   toolchain_profiles: Array<{ path: string; id?: string; includes: string[] }>;
   manifest?: {
     path: string;
@@ -150,6 +152,44 @@ export interface NormalizedSpecBundle {
   hashes: Record<string, string>;
   visibility: Record<string, "public" | "agent-only" | "platform-only">;
   diagnostics: SpecDiagnostic[];
+}
+
+export interface QemuPortMaterial {
+  id: string;
+  role: string;
+  path: string;
+  sha256: string;
+  size: number;
+  provenance?: string;
+  version?: string;
+  caveats: string[];
+}
+
+export interface QemuPortFinding {
+  id: string;
+  severity: "info" | "warning" | "blocker";
+  message: string;
+  evidence: string[];
+  resolution?: {
+    status: "resolved";
+    rationale: string;
+    evidence: string[];
+  };
+}
+
+export interface NormalizedQemuPortSpec {
+  id: string;
+  request_id: string;
+  revision: number;
+  status: "request" | "candidate" | "approved";
+  path: string;
+  target: { board: string };
+  qemu: { version: string; source_path: string; commit?: string };
+  materials_dir: string;
+  materials: QemuPortMaterial[];
+  findings: QemuPortFinding[];
+  owns: string[];
+  document: Record<string, unknown>;
 }
 
 export interface ArchitectureCompositionReport {
