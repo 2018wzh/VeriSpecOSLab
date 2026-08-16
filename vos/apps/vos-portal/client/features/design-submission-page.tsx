@@ -1,3 +1,4 @@
+import { Button, Input, Textarea } from "@fluentui/react-components";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type {
@@ -6,19 +7,20 @@ import type {
 } from "vos-core/portal-contracts";
 import { useTranslation } from "react-i18next";
 import { useRepository } from "../repository-context.tsx";
-import "../design-submission.css";
+import { portalQueryKey, usePortalScope } from "../portal-scope.tsx";
 
 export function DesignSubmissionPage() {
   const { t, i18n } = useTranslation();
   const repository = useRepository();
+  const scope = usePortalScope();
   const queryClient = useQueryClient();
   const dashboard = useQuery({
-    queryKey: ["dashboard"],
+    queryKey: portalQueryKey(scope, "dashboard"),
     queryFn: () => repository.dashboard(),
   });
   const projectId = dashboard.data?.project.project_id;
   const designs = useQuery({
-    queryKey: ["design-submissions", projectId],
+    queryKey: portalQueryKey(scope, "design-submissions"),
     queryFn: () => repository.designSubmissions(projectId!),
     enabled: Boolean(projectId),
   });
@@ -51,8 +53,7 @@ export function DesignSubmissionPage() {
     try {
       await action();
       setMessage(success);
-      await queryClient.invalidateQueries({ queryKey: ["design-submissions"] });
-      await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      await queryClient.invalidateQueries({ queryKey: ["portal"] });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -162,53 +163,53 @@ export function DesignSubmissionPage() {
             <div className="design-form">
               <label>
                 {t("标题")}
-                <input
+                <Input
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
                 />
               </label>
               <label>
                 {t("设计摘要")}
-                <textarea
+                <Textarea
                   value={summary}
                   onChange={(event) => setSummary(event.target.value)}
                 />
               </label>
               <label>
                 {t("关键不变量（每行一条）")}
-                <textarea
+                <Textarea
                   value={invariants}
                   onChange={(event) => setInvariants(event.target.value)}
                 />
               </label>
               <label>
                 {t("接口名称")}
-                <input
+                <Input
                   value={interfaceName}
                   onChange={(event) => setInterfaceName(event.target.value)}
                 />
               </label>
               <label>
                 {t("接口契约")}
-                <textarea
+                <Textarea
                   value={interfaceContract}
                   onChange={(event) => setInterfaceContract(event.target.value)}
                 />
               </label>
               <label>
                 {t("操作理由")}
-                <textarea
+                <Textarea
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}
                 />
               </label>
-              <button
-                className="button primary"
+              <Button
+                appearance="primary"
                 disabled={busy || reason.trim().length < 10}
                 onClick={() => void run(submit, t("设计修订已提交。"))}
               >
                 {t("提交设计")}
-              </button>
+              </Button>
             </div>
           ) : isStudent ? (
             <div className="empty-panel">
@@ -218,33 +219,33 @@ export function DesignSubmissionPage() {
             <div className="design-form">
               <label>
                 {t("审核反馈")}
-                <textarea
+                <Textarea
                   value={feedback}
                   onChange={(event) => setFeedback(event.target.value)}
                 />
               </label>
               <label>
                 {t("审计理由")}
-                <textarea
+                <Textarea
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}
                 />
               </label>
               <div className="action-row">
                 {latest.status === "submitted" ? (
-                  <button
-                    className="button outline"
+                  <Button
+                    appearance="secondary"
                     disabled={busy}
                     onClick={() =>
                       void run(() => review("review"), t("修订已进入审核。"))
                     }
                   >
                     {t("开始审核")}
-                  </button>
+                  </Button>
                 ) : null}
                 {latest.status === "submitted" || latest.status === "review" ? (
-                  <button
-                    className="button outline"
+                  <Button
+                    appearance="secondary"
                     disabled={busy}
                     onClick={() =>
                       void run(
@@ -254,31 +255,31 @@ export function DesignSubmissionPage() {
                     }
                   >
                     {t("要求修改")}
-                  </button>
+                  </Button>
                 ) : null}
                 {latest.status === "review" ? (
-                  <button
-                    className="button primary"
+                  <Button
+                    appearance="primary"
                     disabled={busy}
                     onClick={() =>
                       void run(() => review("passed"), t("设计修订已通过。"))
                     }
                   >
                     {t("通过设计")}
-                  </button>
+                  </Button>
                 ) : null}
                 {latest.status === "passed" &&
                 (data.actor.role === "teacher" ||
                   data.actor.role === "admin") ? (
-                  <button
-                    className="button primary"
+                  <Button
+                    appearance="primary"
                     disabled={busy}
                     onClick={() =>
                       void run(() => review("frozen"), t("设计修订已冻结。"))
                     }
                   >
                     {t("冻结设计")}
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             </div>

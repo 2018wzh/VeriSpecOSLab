@@ -1,7 +1,10 @@
+import { Button, Textarea } from "@fluentui/react-components";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useRepository } from "../repository-context.tsx";
+import { portalQueryKey, usePortalScope } from "../portal-scope.tsx";
+import { PageError, PageLoading } from "../ui/page-state.tsx";
 
 const copy = {
   courses: ["课程配置", "版本化维护课程、阶段门禁、评分规则与 AI policy。"],
@@ -16,15 +19,17 @@ const copy = {
 export function WorkspacePage({ kind }: { kind: keyof typeof copy }) {
   const { t } = useTranslation();
   const repository = useRepository();
+  const scope = usePortalScope();
   const queryClient = useQueryClient();
-  const dashboard = useQuery({ queryKey: ["dashboard"], queryFn: () => repository.dashboard() });
+  const dashboard = useQuery({ queryKey: portalQueryKey(scope, "dashboard"), queryFn: () => repository.dashboard() });
   const [text, setText] = useState("");
   const [message, setMessage] = useState("");
   const [qa, setQa] = useState<string[]>([]);
   const stopQa=useRef<(()=>void)|null>(null);
   useEffect(()=>()=>stopQa.current?.(),[]);
-  const audits = useQuery({ queryKey: ["agent-audits"], queryFn: () => repository.agentAudits(), enabled: kind === "qa" && Boolean(dashboard.data && dashboard.data.actor.role !== "student") });
-  if (!dashboard.data) return <div className="page-loading">{t("正在加载…")}</div>;
+  const audits = useQuery({ queryKey: portalQueryKey(scope, "agent-audits"), queryFn: () => repository.agentAudits(), enabled: kind === "qa" && Boolean(dashboard.data && dashboard.data.actor.role !== "student") });
+  if (dashboard.isLoading) return <PageLoading label={t("正在加载…")} />;
+  if (dashboard.isError || !dashboard.data) return <PageError message={dashboard.error instanceof Error ? dashboard.error.message : t("无法加载工作台")} retryLabel={t("重试")} onRetry={() => void dashboard.refetch()} />;
   const data = dashboard.data;
   const qaIsAudit = kind === "qa" && data.actor.role !== "student";
 
@@ -52,7 +57,7 @@ export function WorkspacePage({ kind }: { kind: keyof typeof copy }) {
     <div className="page-heading"><div><h1>{t(copy[kind][0])}</h1><p>{t(copy[kind][1])}</p></div></div>
     <div className="workspace-layout">
       <section className="surface"><header><h2>{t(kind === "courses" ? "当前课程版本" : kind === "admin" ? "服务状态" : "当前上下文")}</h2></header><dl className="detail-list"><div><dt>{t("课程")}</dt><dd>{data.course.name} · {data.course.term}</dd></div><div><dt>{t("项目")}</dt><dd>{data.project.project_id}</dd></div><div><dt>{t("阶段")}</dt><dd>{data.project.current_stage.name}</dd></div><div><dt>{t("策略快照")}</dt><dd>{data.project.policy_snapshot_ref}</dd></div></dl></section>
-      <section className="surface"><header><h2>{t(qaIsAudit ? "Agent 审计" : kind === "qa" ? "阶段问答" : kind === "grades" || kind === "appeals" ? "提交申诉" : "当前教学事实")}</h2></header>{qaIsAudit ? <div className="structured-list">{audits.data?.length ? audits.data.map((audit) => <div key={audit.id}><b>{audit.task_kind} · {audit.model}</b><span>{audit.risk_level} · {audit.prompt_summary}</span></div>) : <div><b>{t("暂无 Agent 审计")}</b><span>{t("完成的课程问答会在此展示")}</span></div>}</div> : kind === "qa" || kind === "grades" || kind === "appeals" ? <><div className="messages">{qa.map((item) => <p key={item}>{item}</p>)}</div><label className="reason">{t(kind === "qa" ? "问题" : "申诉说明")}<textarea value={text} onChange={(event) => setText(event.target.value)} placeholder={t(kind === "qa" ? "询问当前阶段的设计问题" : "说明争议并引用相关证据")} /></label><button className="button primary" disabled={!text.trim()} onClick={() => void submit()}>{t("提交操作")}</button>{message ? <p className="operation-message">{message}</p> : null}</> : <div className="structured-list">{facts.map(([label, value]) => <div key={label}><b>{t(label)}</b><span>{value}</span></div>)}</div>}</section>
+      <section className="surface"><header><h2>{t(qaIsAudit ? "Agent 审计" : kind === "qa" ? "阶段问答" : kind === "grades" || kind === "appeals" ? "提交申诉" : "当前教学事实")}</h2></header>{qaIsAudit ? <div className="structured-list">{audits.isError ? <PageError message={audits.error instanceof Error ? audits.error.message : String(audits.error)} retryLabel={t("重试")} onRetry={() => void audits.refetch()} /> : audits.data?.length ? audits.data.map((audit) => <div key={audit.id}><b>{audit.task_kind} · {audit.model}</b><span>{audit.risk_level} · {audit.prompt_summary}</span></div>) : <div><b>{t("暂无 Agent 审计")}</b><span>{t("完成的课程问答会在此展示")}</span></div>}</div> : kind === "qa" || kind === "grades" || kind === "appeals" ? <><div className="messages">{qa.map((item) => <p key={item}>{item}</p>)}</div><label className="reason">{t(kind === "qa" ? "问题" : "申诉说明")}<Textarea value={text} onChange={(event) => setText(event.target.value)} placeholder={t(kind === "qa" ? "询问当前阶段的设计问题" : "说明争议并引用相关证据")} /></label><Button appearance="primary" disabled={!text.trim()} onClick={() => void submit()}>{t("提交操作")}</Button>{message ? <p className="operation-message">{message}</p> : null}</> : <div className="structured-list">{facts.map(([label, value]) => <div key={label}><b>{t(label)}</b><span>{value}</span></div>)}</div>}</section>
     </div>
   </div>;
 }

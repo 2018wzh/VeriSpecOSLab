@@ -1,3 +1,4 @@
+import { Button, Checkbox, Input, Select, Textarea } from "@fluentui/react-components";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -6,6 +7,7 @@ import type {
   ModelQuotaPolicyInputV1,
 } from "vos-core/portal-contracts";
 import { useRepository } from "../repository-context.tsx";
+import { portalQueryKey, usePortalScope } from "../portal-scope.tsx";
 
 const initialProvider: ModelProviderInputV1 = {
   version: "model-provider-input.v1",
@@ -34,12 +36,13 @@ export function AdminModelControl({
   const { t } = useTranslation(),
     repository = useRepository(),
     client = useQueryClient();
+  const scope = usePortalScope();
   const providers = useQuery({
-    queryKey: ["admin", "model-providers"],
+    queryKey: portalQueryKey(scope, "admin", "model-providers"),
     queryFn: () => repository.modelProviders(),
   });
   const quotas = useQuery({
-    queryKey: ["admin", "model-quotas"],
+    queryKey: portalQueryKey(scope, "admin", "model-quotas"),
     queryFn: () => repository.modelQuotas(),
   });
   const [provider, setProvider] = useState(initialProvider),
@@ -117,7 +120,7 @@ export function AdminModelControl({
         expected_revision: saved.revision,
       }));
       await client.invalidateQueries({
-        queryKey: ["admin", "model-providers"],
+        queryKey: portalQueryKey(scope, "admin", "model-providers"),
       });
     } catch (error) {
       setProviderMessage(
@@ -132,7 +135,7 @@ export function AdminModelControl({
       const saved = await repository.saveModelQuota(quota);
       setQuotaMessage(t("模型额度已更新。"));
       setQuota((value) => ({ ...value, expected_revision: saved.revision }));
-      await client.invalidateQueries({ queryKey: ["admin", "model-quotas"] });
+      await client.invalidateQueries({ queryKey: portalQueryKey(scope, "admin", "model-quotas") });
     } catch (error) {
       setQuotaMessage(error instanceof Error ? error.message : String(error));
     }
@@ -152,7 +155,7 @@ export function AdminModelControl({
           <h3>{t("模型 Provider")}</h3>
           <div className="structured-list">
             {providers.data?.map((item) => (
-              <button
+              <Button
                 className="list-button"
                 type="button"
                 key={item.id}
@@ -166,7 +169,7 @@ export function AdminModelControl({
                   {item.secret_configured ? t("凭据已配置") : t("缺少凭据")} · v
                   {item.revision}
                 </span>
-              </button>
+              </Button>
             ))}
             {providers.isLoading ? <p>{t("正在加载…")}</p> : null}
             {!providers.isLoading && providers.data?.length === 0 ? (
@@ -182,21 +185,21 @@ export function AdminModelControl({
           >
             <label>
               {t("标识")}
-              <input
+              <Input
                 value={provider.id}
                 onChange={(event) => pf("id", event.target.value)}
               />
             </label>
             <label>
               {t("显示名称")}
-              <input
+              <Input
                 value={provider.name}
                 onChange={(event) => pf("name", event.target.value)}
               />
             </label>
             <label>
               {t("类型")}
-              <select
+              <Select
                 value={provider.kind}
                 onChange={(event) =>
                   pf("kind", event.target.value as ModelProviderInputV1["kind"])
@@ -211,18 +214,18 @@ export function AdminModelControl({
                 ].map((kind) => (
                   <option key={kind}>{kind}</option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label className="wide">
               Base URL
-              <input
+              <Input
                 value={provider.base_url}
                 onChange={(event) => pf("base_url", event.target.value)}
               />
             </label>
             <label className="wide">
               {t("模型列表（逗号分隔）")}
-              <input
+              <Input
                 value={provider.models.join(", ")}
                 onChange={(event) =>
                   pf(
@@ -237,14 +240,14 @@ export function AdminModelControl({
             </label>
             <label>
               {t("默认模型")}
-              <input
+              <Input
                 value={provider.default_model}
                 onChange={(event) => pf("default_model", event.target.value)}
               />
             </label>
             <label>
               {t("Provider 凭据")}
-              <input
+              <Input
                 type="password"
                 autoComplete="new-password"
                 value={provider.secret ?? ""}
@@ -255,11 +258,11 @@ export function AdminModelControl({
             </label>
             <label>
               {t("输入费用 / 百万 Token（USD）")}
-              <input
+              <Input
                 type="number"
                 min="0"
                 step="0.000001"
-                value={provider.input_cost_per_million_usd}
+                value={String(provider.input_cost_per_million_usd)}
                 onChange={(event) =>
                   pf("input_cost_per_million_usd", Number(event.target.value))
                 }
@@ -267,11 +270,11 @@ export function AdminModelControl({
             </label>
             <label>
               {t("输出费用 / 百万 Token（USD）")}
-              <input
+              <Input
                 type="number"
                 min="0"
                 step="0.000001"
-                value={provider.output_cost_per_million_usd}
+                value={String(provider.output_cost_per_million_usd)}
                 onChange={(event) =>
                   pf("output_cost_per_million_usd", Number(event.target.value))
                 }
@@ -279,10 +282,10 @@ export function AdminModelControl({
             </label>
             <label>
               {t("最大输出 Token")}
-              <input
+              <Input
                 type="number"
                 min="256"
-                value={provider.max_output_tokens}
+                value={String(provider.max_output_tokens)}
                 onChange={(event) =>
                   pf("max_output_tokens", Number(event.target.value))
                 }
@@ -290,20 +293,15 @@ export function AdminModelControl({
             </label>
             <label className="wide">
               {t("审计理由")}
-              <textarea
+              <Textarea
                 value={provider.reason}
                 onChange={(event) => pf("reason", event.target.value)}
               />
             </label>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={provider.enabled}
-                onChange={(event) => pf("enabled", event.target.checked)}
-              />
-              {t("启用 Provider")}
-            </label>
-            <button
+            <div className="check">
+              <Checkbox checked={provider.enabled} onChange={(_, data) => pf("enabled", data.checked === true)} label={t("启用 Provider")} />
+            </div>
+            <Button
               className="button primary"
               disabled={
                 demo ||
@@ -314,7 +312,7 @@ export function AdminModelControl({
               }
             >
               {t("加密保存")}
-            </button>
+            </Button>
             {providerMessage ? (
               <p className="operation-message wide" role="status">
                 {providerMessage}
@@ -326,7 +324,7 @@ export function AdminModelControl({
           <h3>{t("月度额度")}</h3>
           <div className="structured-list">
             {quotas.data?.map((item) => (
-              <button
+              <Button
                 className="list-button"
                 type="button"
                 key={item.id}
@@ -344,7 +342,7 @@ export function AdminModelControl({
                   {item.used_cost_usd + item.reserved_cost_usd} / $
                   {item.monthly_cost_limit_usd}
                 </span>
-              </button>
+              </Button>
             ))}
             {quotas.isLoading ? <p>{t("正在加载…")}</p> : null}
             {!quotas.isLoading && quotas.data?.length === 0 ? (
@@ -360,14 +358,14 @@ export function AdminModelControl({
           >
             <label>
               {t("课程 ID")}
-              <input
+              <Input
                 value={quota.course_id}
                 onChange={(event) => qf("course_id", event.target.value)}
               />
             </label>
             <label>
               {t("成员 ID（留空为课程总额）")}
-              <input
+              <Input
                 value={quota.user_id ?? ""}
                 onChange={(event) =>
                   qf("user_id", event.target.value || undefined)
@@ -376,10 +374,10 @@ export function AdminModelControl({
             </label>
             <label>
               {t("月请求上限")}
-              <input
+              <Input
                 type="number"
                 min="1"
-                value={quota.monthly_request_limit}
+                value={String(quota.monthly_request_limit)}
                 onChange={(event) =>
                   qf("monthly_request_limit", Number(event.target.value))
                 }
@@ -387,10 +385,10 @@ export function AdminModelControl({
             </label>
             <label>
               {t("月 Token 上限")}
-              <input
+              <Input
                 type="number"
                 min="1000"
-                value={quota.monthly_token_limit}
+                value={String(quota.monthly_token_limit)}
                 onChange={(event) =>
                   qf("monthly_token_limit", Number(event.target.value))
                 }
@@ -398,11 +396,11 @@ export function AdminModelControl({
             </label>
             <label>
               {t("月费用上限（USD）")}
-              <input
+              <Input
                 type="number"
                 min="0.000001"
                 step="0.01"
-                value={quota.monthly_cost_limit_usd}
+                value={String(quota.monthly_cost_limit_usd)}
                 onChange={(event) =>
                   qf("monthly_cost_limit_usd", Number(event.target.value))
                 }
@@ -410,25 +408,20 @@ export function AdminModelControl({
             </label>
             <label className="wide">
               {t("审计理由")}
-              <textarea
+              <Textarea
                 value={quota.reason}
                 onChange={(event) => qf("reason", event.target.value)}
               />
             </label>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={quota.enabled}
-                onChange={(event) => qf("enabled", event.target.checked)}
-              />
-              {t("启用额度")}
-            </label>
-            <button
+            <div className="check">
+              <Checkbox checked={quota.enabled} onChange={(_, data) => qf("enabled", data.checked === true)} label={t("启用额度")} />
+            </div>
+            <Button
               className="button primary"
               disabled={quota.reason.trim().length < 10}
             >
               {t("保存额度")}
-            </button>
+            </Button>
             {quotaMessage ? (
               <p className="operation-message wide" role="status">
                 {quotaMessage}

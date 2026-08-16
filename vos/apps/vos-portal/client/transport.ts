@@ -1,6 +1,6 @@
 import type { PortalRepository, LoginInput, ReviewInput } from "../domain/repository.ts";
 import {
-  AgentAuditV1Schema, AppealRecordV1Schema, AppealSubmitV1Schema, AppealTransitionV1Schema, CourseGroupMutationV1Schema, CourseGroupV1Schema, CourseManifestDryRunV1Schema, CourseManifestImportV1Schema, CourseManifestV1Schema, CourseManifestVersionV1Schema, CourseOperationsV1Schema, DesignReviewInputV1Schema, DesignSubmissionInputV1Schema, DesignSubmissionV1Schema, EnrollmentCsvImportV1Schema, EnrollmentImportResultV1Schema, EnrollmentInviteCreateV1Schema, EnrollmentInviteIssuedV1Schema, EnrollmentInviteRedeemV1Schema, EnrollmentInviteRedemptionV1Schema, EnrollmentInviteSummaryV1Schema, EvidenceBundleV1Schema, PipelineRequestV1Schema, PipelineSummaryV1Schema,
+  AgentAuditV1Schema, AppealRecordV1Schema, AppealSubmitV1Schema, AppealTransitionV1Schema, CourseGroupMutationV1Schema, CourseGroupV1Schema, CourseManifestDryRunV1Schema, CourseManifestImportV1Schema, CourseManifestV1Schema, CourseManifestVersionV1Schema, CourseOperationsV2Schema, DesignReviewInputV1Schema, DesignSubmissionInputV1Schema, DesignSubmissionV1Schema, EnrollmentCsvImportV1Schema, EnrollmentImportResultV1Schema, EnrollmentInviteCreateV1Schema, EnrollmentInviteIssuedV1Schema, EnrollmentInviteRedeemV1Schema, EnrollmentInviteRedemptionV1Schema, EnrollmentInviteSummaryV1Schema, EvidenceBundleV1Schema, PipelineRequestV1Schema, PipelineSummaryV1Schema,
   ModelCredentialInputV1Schema, ModelCredentialRefV1Schema, ModelProviderInputV1Schema, ModelProviderSummaryV1Schema, ModelQuotaPolicyInputV1Schema, ModelQuotaPolicyV1Schema, NotificationReadV1Schema, NotificationV1Schema, OAuthProviderInputV1Schema, OAuthProviderSummaryV1Schema, OidcProviderInputV1Schema, OidcProviderSummaryV1Schema, PortalActorSchema, PortalContextV1Schema, PortalDashboardSchema, ProjectProvisionOptionsV1Schema, ProjectProvisionRequestV1Schema, ProjectProvisionStatusV1Schema, QaThreadV1Schema, ScoreSnapshotV1Schema,
   RetentionPolicyUpdateV1Schema, RetentionPolicyV1Schema, ScoreAdjustmentInputV1Schema, ScoreCalculationV1Schema, ScoreTransitionV1Schema,
   type AppealSubmitV1, type AppealTransitionV1, type CourseGroupMutationV1, type CourseManifestV1, type DesignReviewInputV1, type DesignSubmissionInputV1, type EnrollmentCsvImportV1, type EnrollmentInviteCreateV1, type EnrollmentInviteRedeemV1, type ModelCredentialInputV1, type ModelProviderInputV1, type ModelQuotaPolicyInputV1, type OAuthProviderInputV1, type OAuthProviderSummaryV1, type OidcProviderInputV1, type PipelineRequestV1, type ProjectProvisionRequestV1, type RetentionPolicyUpdateV1, type ScoreAdjustmentInputV1, type ScoreCalculationV1, type ScoreTransitionV1,
@@ -24,7 +24,11 @@ export class HttpPortalRepository implements PortalRepository {
   async login(input: LoginInput) { return PortalActorSchema.parse(await request("/auth/login", { method: "POST", body: JSON.stringify(input) })); }
   async logout() { await request("/auth/logout", { method: "POST" }); }
   async currentActor() {
-    try { return PortalActorSchema.parse(await request("/auth/me")); } catch { return null; }
+    try { return PortalActorSchema.parse(await request("/auth/me")); }
+    catch (error) {
+      if (error instanceof Error && /HTTP (401|403)\b/.test(error.message)) return null;
+      throw error;
+    }
   }
   async oidcProviders(){return OidcProviderSummaryV1Schema.array().parse(await request("/auth/oidc/providers"));}
   async adminOidcProviders(){return OidcProviderSummaryV1Schema.array().parse(await request("/admin/oidc/providers"));}
@@ -43,7 +47,7 @@ export class HttpPortalRepository implements PortalRepository {
   async contexts(){return PortalContextV1Schema.array().parse(await request("/contexts"));}
   async selectContext(projectId:string){const contexts=await this.contexts();if(!contexts.some(item=>item.project.id===projectId))throw new Error("项目上下文不存在或不可访问");this.selectedProjectId=projectId;sessionStorage.setItem("vos.portal.selected-project",projectId);}
   async dashboard() { const query=this.selectedProjectId?`?project_id=${encodeURIComponent(this.selectedProjectId)}`:"";return PortalDashboardSchema.parse(await request(`/dashboard${query}`)); }
-  async courseOperations(courseId:string){return CourseOperationsV1Schema.parse(await request(`/courses/${encodeURIComponent(courseId)}/operations`));}
+  async courseOperations(courseId:string){return CourseOperationsV2Schema.parse(await request(`/courses/${encodeURIComponent(courseId)}/operations`));}
   async setNotificationRead(notificationId:string,read:boolean){const input=NotificationReadV1Schema.parse({notification_id:notificationId,read});return NotificationV1Schema.parse(await request(`/notifications/${encodeURIComponent(notificationId)}`,{method:"PATCH",body:JSON.stringify(input)}));}
   async dryRunCourseManifest(manifest:unknown){return CourseManifestDryRunV1Schema.parse(await request("/courses/import/dry-run",{method:"POST",body:JSON.stringify(manifest)}));}
   async importCourseManifest(manifest:CourseManifestV1,reason:string){const input=CourseManifestImportV1Schema.parse({manifest,reason});return CourseManifestVersionV1Schema.parse(await request("/courses/import",{method:"POST",body:JSON.stringify(input)}));}

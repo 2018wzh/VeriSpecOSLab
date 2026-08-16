@@ -13,7 +13,7 @@ import type {
   CourseManifestDryRunV1,
   CourseManifestV1,
   CourseManifestVersionV1,
-  CourseOperationsV1,
+  CourseOperationsV2,
   DesignReviewInputV1,
   DesignSubmissionInputV1,
   DesignSubmissionV1,
@@ -1521,27 +1521,37 @@ export class PostgresPortalRepository {
   async courseOperations(
     current: PortalActor,
     courseId: string,
-  ): Promise<CourseOperationsV1> {
+  ): Promise<CourseOperationsV2> {
     assertStaff(current);
     const allowed = await this
       .sql`select c.id from courses c left join course_memberships cm on cm.course_id=c.id and cm.user_id=${current.id} where c.id=${courseId} and c.deleted_at is null and (${current.role === "admin"} or cm.role in ('teacher','ta'))`;
     if (!allowed[0]) throw new Error("课程不存在或无运营权限");
     const rows = await this
-      .sql`select p.id project_id,p.status,sg.key stage_key,sg.name stage_name,coalesce((select jsonb_agg(u.display_name order by u.display_name,u.id) from project_members pm join users u on u.id=pm.user_id where pm.project_id=p.id),'[]'::jsonb) member_names,(select pr.status from pipeline_runs pr where pr.project_id=p.id order by pr.created_at desc,pr.id desc limit 1) latest_run_status,(select ss.state from score_snapshots ss where ss.project_id=p.id order by ss.snapshot_version desc limit 1) score_state,(select ss.final_score from score_snapshots ss where ss.project_id=p.id order by ss.snapshot_version desc limit 1) final_score,(select count(*)::int from pipeline_runs pr where pr.project_id=p.id and pr.status='failed') failed_runs,(select count(*)::int from appeals a where a.project_id=p.id and a.status<>'closed') open_appeals,(select ds.status from design_submissions ds where ds.project_id=p.id and ds.stage_gate_id=p.current_stage_id order by ds.revision desc limit 1) design_status from projects p join experiments e on e.id=p.experiment_id join stage_gates sg on sg.id=p.current_stage_id where e.course_id=${courseId} and p.deleted_at is null order by sg.sequence,p.id`;
+      .sql`select p.id project_id,p.status,sg.key stage_key,sg.name stage_name,coalesce((select jsonb_agg(u.display_name order by u.display_name,u.id) from project_members pm join users u on u.id=pm.user_id where pm.project_id=p.id),'[]'::jsonb) member_names,(select jsonb_build_object('id',pr.id,'status',pr.status,'stage_key',pr.stage_key,'created_at',pr.created_at,'passed',coalesce(pr.passed,0),'total',coalesce(pr.total,0),'failure_class',pr.failure_class,'public_message',pr.public_message) from pipeline_runs pr where pr.project_id=p.id order by pr.created_at desc,pr.id desc limit 1) latest_run,(select ss.state from score_snapshots ss where ss.project_id=p.id order by ss.snapshot_version desc limit 1) score_state,(select ss.final_score from score_snapshots ss where ss.project_id=p.id order by ss.snapshot_version desc limit 1) final_score,(select count(*)::int from pipeline_runs pr where pr.project_id=p.id and pr.status='failed') failed_runs,(select count(*)::int from appeals a where a.project_id=p.id and a.status<>'closed') open_appeals,(select ds.status from design_submissions ds where ds.project_id=p.id and ds.stage_gate_id=p.current_stage_id order by ds.revision desc limit 1) design_status from projects p join experiments e on e.id=p.experiment_id join stage_gates sg on sg.id=p.current_stage_id where e.course_id=${courseId} and p.deleted_at is null order by sg.sequence,p.id`;
     return {
-      version: "course-operations.v1",
+      version: "course-operations.v2",
       course_id: courseId,
       generated_at: new Date().toISOString(),
       projects: rows.map((row) => ({
         project_id: String(row.project_id),
-        status: row.status as CourseOperationsV1["projects"][number]["status"],
+        status: row.status as CourseOperationsV2["projects"][number]["status"],
         stage_key: String(row.stage_key),
         stage_name: String(row.stage_name),
         member_names: (row.member_names as string[]) ?? [],
-        latest_run_status:
-          row.latest_run_status as CourseOperationsV1["projects"][number]["latest_run_status"],
+        latest_run: row.latest_run
+          ? {
+              id: String((row.latest_run as Record<string, unknown>).id),
+              status: (row.latest_run as Record<string, unknown>).status as NonNullable<CourseOperationsV2["projects"][number]["latest_run"]>["status"],
+              stage_key: String((row.latest_run as Record<string, unknown>).stage_key),
+              created_at: new Date(String((row.latest_run as Record<string, unknown>).created_at)).toISOString(),
+              passed: Number((row.latest_run as Record<string, unknown>).passed),
+              total: Number((row.latest_run as Record<string, unknown>).total),
+              ...((row.latest_run as Record<string, unknown>).failure_class ? { failure_class: String((row.latest_run as Record<string, unknown>).failure_class) } : {}),
+              public_message: String((row.latest_run as Record<string, unknown>).public_message ?? ""),
+            }
+          : undefined,
         score_state:
-          row.score_state as CourseOperationsV1["projects"][number]["score_state"],
+          row.score_state as CourseOperationsV2["projects"][number]["score_state"],
         final_score:
           row.final_score === null || row.final_score === undefined
             ? undefined
@@ -1549,7 +1559,7 @@ export class PostgresPortalRepository {
         failed_runs: Number(row.failed_runs),
         open_appeals: Number(row.open_appeals),
         design_status:
-          row.design_status as CourseOperationsV1["projects"][number]["design_status"],
+          row.design_status as CourseOperationsV2["projects"][number]["design_status"],
       })),
     };
   }

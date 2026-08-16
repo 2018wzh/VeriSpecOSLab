@@ -1375,9 +1375,9 @@ export const PortalDashboardSchema = z
   })
   .strict();
 export type PortalDashboard = z.infer<typeof PortalDashboardSchema>;
-export const CourseOperationsV1Schema = z
+export const CourseOperationsV2Schema = z
   .object({
-    version: z.literal("course-operations.v1"),
+    version: z.literal("course-operations.v2"),
     course_id: z.string(),
     generated_at: z.string().datetime(),
     projects: z.array(
@@ -1394,16 +1394,26 @@ export const CourseOperationsV1Schema = z
           stage_key: z.string(),
           stage_name: z.string(),
           member_names: z.array(z.string()),
-          latest_run_status: z
-            .enum([
-              "queued",
-              "leased",
-              "running",
-              "passed",
-              "failed",
-              "cancelled",
-              "timed_out",
-            ])
+          latest_run: z
+            .object({
+              id: z.string(),
+              status: z.enum([
+                "queued",
+                "leased",
+                "running",
+                "passed",
+                "failed",
+                "cancelled",
+                "timed_out",
+              ]),
+              stage_key: z.string(),
+              created_at: z.string().datetime(),
+              passed: z.number().int().nonnegative(),
+              total: z.number().int().nonnegative(),
+              failure_class: z.string().optional(),
+              public_message: z.string().optional(),
+            })
+            .strict()
             .optional(),
           score_state: z.enum(["draft", "frozen", "published"]).optional(),
           final_score: z.number().optional(),
@@ -1423,7 +1433,7 @@ export const CourseOperationsV1Schema = z
     ),
   })
   .strict();
-export type CourseOperationsV1 = z.infer<typeof CourseOperationsV1Schema>;
+export type CourseOperationsV2 = z.infer<typeof CourseOperationsV2Schema>;
 
 export const PortalContractSchemas = {
   CourseManifestV1: CourseManifestV1Schema,
@@ -1629,7 +1639,7 @@ export function portalOpenApiDocument(): Record<string, unknown> {
       ["AdminSystemStatusV1", AdminSystemStatusV1Schema] as const,
       ["RetentionPolicyV1", RetentionPolicyV1Schema] as const,
       ["RetentionPolicyUpdateV1", RetentionPolicyUpdateV1Schema] as const,
-      ["CourseOperationsV1", CourseOperationsV1Schema] as const,
+      ["CourseOperationsV2", CourseOperationsV2Schema] as const,
     ].map(([name, schema]) => [
       name,
       z.toJSONSchema(schema, { unrepresentable: "any" }),
@@ -2185,7 +2195,7 @@ export function portalOpenApiDocument(): Record<string, unknown> {
             "200": {
               description:
                 "Staff class-level project, stage, run, grade, appeal and design projection",
-              content: json("CourseOperationsV1"),
+              content: json("CourseOperationsV2"),
             },
           },
         },

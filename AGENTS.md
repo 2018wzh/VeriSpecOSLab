@@ -64,3 +64,12 @@ When editing existing Chinese documentation with `humanizer-zh`, default to a li
 The student manual publication contract is limited to the 11 stage pairs in `docs/manual/book/` and `docs/manual/labs/` (Lab 1–10 plus Final Lab): the PDF exporter must produce exactly 22 Book/Lab PDFs. `docs/manual/specs/`, `docs/manual/vos/`, `docs/manual/teacher/`, and retired `docs/manual/appendices/` are internal or migrated material and must not be emitted or linked from student Book/Lab sources.
 
 Hardware-port teaching must keep a separate QEMU-versus-board evidence boundary. Where the selected canonical board needs it, the manual and Lab 9 must document the U-Boot/SPL handoff and independently verify real clock/reset/pinmux, UART, timer/IRQ, SDIO/eMMC/SPI and other workload-required peripherals; a U-Boot `fatload` or QEMU virtio result alone is not kernel-driver evidence.
+
+Portal UI direction: `vos/apps/vos-portal` uses Fluent UI React v9 as its only component
+system. The root `FluentProvider` follows the system light/dark preference and the CSS token
+layer covers forced-colors and reduced-motion. Shared role shell, Drawer, Dialog, status, loading
+and error states are the source of truth; page-specific legacy CSS and Lucide components must not
+be reintroduced. Portal query keys use the current role/course/project scope, and context changes
+must clear the Portal query cache before navigating to the role home. The staff projection is
+`CourseOperationsV2` with a structured `latest_run`; do not restore the V1 projection or move
+Runner/QEMU/offline CLI execution into the Portal UI.

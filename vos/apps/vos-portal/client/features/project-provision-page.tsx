@@ -1,17 +1,20 @@
+import { Button, Input, Select, Textarea } from "@fluentui/react-components";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ProjectProvisionStatusV1 } from "vos-core/portal-contracts";
 import { useRepository } from "../repository-context.tsx";
+import { portalQueryKey, usePortalScope } from "../portal-scope.tsx";
 import { useTranslation } from "react-i18next";
-import "../provision.css";
+import { PageError, PageLoading } from "../ui/page-state.tsx";
 
 const ACTIVE_PROVISION_STATUSES = new Set(["queued", "provisioning"]);
 
 export function ProjectProvisionPage() {
   const { t } = useTranslation();
   const repository = useRepository();
+  const scope = usePortalScope();
   const options = useQuery({
-    queryKey: ["project-provision-options"],
+    queryKey: portalQueryKey(scope, "project-provision-options"),
     queryFn: () => repository.projectProvisionOptions(),
   });
   const [experimentId, setExperimentId] = useState("");
@@ -39,7 +42,7 @@ export function ProjectProvisionPage() {
   }, [eligibleMembers, memberId]);
 
   const status = useQuery({
-    queryKey: ["project-provisioning", created?.project_id],
+    queryKey: portalQueryKey(scope, "project-provisioning", created?.project_id),
     queryFn: () => repository.projectProvisioning(created!.project_id),
     enabled: Boolean(created),
     initialData: created,
@@ -93,37 +96,37 @@ export function ProjectProvisionPage() {
     <div className="workspace-layout">
       <section className="surface">
         <header><h2>{t("创建教学项目")}</h2></header>
-        {options.isLoading ? <div className="empty-panel" role="status">{t("正在加载实验与成员…")}</div> : null}
-        {options.isError ? <p className="form-error" role="alert">{String(options.error)}</p> : null}
+        {options.isLoading ? <PageLoading label={t("正在加载实验与成员…")} /> : null}
+        {options.isError ? <PageError message={options.error instanceof Error ? options.error.message : String(options.error)} retryLabel={t("重试")} onRetry={() => void options.refetch()} /> : null}
         {options.data ? <form className="provision-form" onSubmit={event => void submit(event)}>
           <label>{t("实验版本")}
-            <select value={experimentId} onChange={event => setExperimentId(event.target.value)} required>
+            <Select value={experimentId} onChange={event => setExperimentId(event.target.value)} required>
               {options.data.experiments.map(item => <option key={item.id} value={item.id}>{item.title} · {item.spec_version}</option>)}
-            </select>
+            </Select>
           </label>
           <label>{t("项目成员")}
-            <select value={memberId} onChange={event => setMemberId(event.target.value)} required>
+            <Select value={memberId} onChange={event => setMemberId(event.target.value)} required>
               {eligibleMembers.map(item => <option key={item.id} value={item.id}>{item.display_name} · {item.username}</option>)}
-            </select>
+            </Select>
           </label>
           <div className="form-pair">
-            <label>{t("Gitea 所有者")}<input value={owner} onChange={event => setOwner(event.target.value)} pattern="[A-Za-z0-9_.\-]+" required /></label>
-            <label>{t("仓库名")}<input value={repositoryName} onChange={event => setRepositoryName(event.target.value)} pattern="[A-Za-z0-9_.\-]+" required /></label>
+            <label>{t("Gitea 所有者")}<Input value={owner} onChange={event => setOwner(event.target.value)} pattern="[A-Za-z0-9_.\-]+" required /></label>
+            <label>{t("仓库名")}<Input value={repositoryName} onChange={event => setRepositoryName(event.target.value)} pattern="[A-Za-z0-9_.\-]+" required /></label>
           </div>
           <div className="form-pair">
-            <label>{t("模板所有者")}<input value={templateOwner} onChange={event => setTemplateOwner(event.target.value)} required /></label>
-            <label>{t("模板仓库")}<input value={templateRepository} onChange={event => setTemplateRepository(event.target.value)} required /></label>
+            <label>{t("模板所有者")}<Input value={templateOwner} onChange={event => setTemplateOwner(event.target.value)} required /></label>
+            <label>{t("模板仓库")}<Input value={templateRepository} onChange={event => setTemplateRepository(event.target.value)} required /></label>
           </div>
-          <label>{t("仓库说明")}<input value={description} onChange={event => setDescription(event.target.value)} maxLength={255} required /></label>
-          <label>{t("创建理由")}<textarea value={reason} onChange={event => setReason(event.target.value)} minLength={10} maxLength={500} required /></label>
+          <label>{t("仓库说明")}<Input value={description} onChange={event => setDescription(event.target.value)} maxLength={255} required /></label>
+          <label>{t("创建理由")}<Textarea value={reason} onChange={event => setReason(event.target.value)} minLength={10} maxLength={500} required /></label>
           <p className="form-hint">{t("仓库固定为私有；供应失败不会激活项目，也不会回退到本地仓库。")}</p>
-          <button className="button primary" disabled={submitting} type="submit">{t(submitting ? "正在提交…" : "创建并进入供应队列")}</button>
+          <Button appearance="primary" disabled={submitting} type="submit">{t(submitting ? "正在提交…" : "创建并进入供应队列")}</Button>
           {error ? <p className="form-error" role="alert">{error}</p> : null}
         </form> : null}
       </section>
       <section className="surface">
         <header><h2>{t("供应状态")}</h2></header>
-        {status.data ? <div className="provision-status" aria-live="polite">
+        {status.isError ? <PageError message={status.error instanceof Error ? status.error.message : String(status.error)} retryLabel={t("重试")} onRetry={() => void status.refetch()} /> : status.data ? <div className="provision-status" aria-live="polite">
           <dl className="detail-list">
             <div><dt>{t("项目")}</dt><dd>{status.data.project_id}</dd></div>
             <div><dt>{t("仓库")}</dt><dd>{status.data.owner}/{status.data.repository}</dd></div>
@@ -133,8 +136,8 @@ export function ProjectProvisionPage() {
           </dl>
           {status.data.last_error ? <p className="form-error" role="alert">{status.data.last_error}</p> : null}
           {status.data.status === "failed" ? <>
-            <label className="reason">{t("重试理由")}<textarea value={retryReason} onChange={event => setRetryReason(event.target.value)} minLength={10} /></label>
-            <button className="button outline" disabled={retryReason.trim().length < 10} onClick={() => void retry()}>{t("重新进入供应队列")}</button>
+            <label className="reason">{t("重试理由")}<Textarea value={retryReason} onChange={event => setRetryReason(event.target.value)} minLength={10} /></label>
+            <Button appearance="secondary" disabled={retryReason.trim().length < 10} onClick={() => void retry()}>{t("重新进入供应队列")}</Button>
           </> : null}
         </div> : <div className="empty-panel">{t("尚未创建新的供应任务。")}</div>}
       </section>

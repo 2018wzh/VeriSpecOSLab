@@ -1,6 +1,6 @@
 import {
   AppealSubmitV1Schema, AppealTransitionV1Schema, CourseGroupMutationV1Schema, CourseManifestV1Schema, DesignReviewInputV1Schema, DesignSubmissionInputV1Schema, EnrollmentCsvImportV1Schema, EnrollmentInviteCreateV1Schema, EnrollmentInviteRedeemV1Schema, PipelineRequestV1Schema, ProjectProvisionRequestV1Schema, RetentionPolicyUpdateV1Schema, ScoreAdjustmentInputV1Schema, ScoreCalculationV1Schema, ScoreTransitionV1Schema, type AgentAuditV1, type AppealRecordV1, type AppealSubmitV1, type AppealTransitionV1, type CourseGroupMutationV1, type CourseGroupV1, type CourseManifestDryRunV1, type CourseManifestV1, type CourseManifestVersionV1, type DesignReviewInputV1, type DesignSubmissionInputV1, type DesignSubmissionV1, type EnrollmentCsvImportV1, type EnrollmentImportResultV1, type EnrollmentInviteCreateV1, type EnrollmentInviteIssuedV1, type EnrollmentInviteRedeemV1, type EnrollmentInviteRedemptionV1, type EnrollmentInviteSummaryV1, type OAuthProviderInputV1, type OAuthProviderSummaryV1, type PipelineRequestV1, type PortalActor,
-  ModelProviderInputV1Schema, ModelQuotaPolicyInputV1Schema, type ModelCredentialInputV1, type ModelCredentialRefV1, type ModelProviderInputV1, type ModelProviderSummaryV1, type ModelQuotaPolicyInputV1, type ModelQuotaPolicyV1, type NotificationV1, type OidcProviderInputV1, type OidcProviderSummaryV1, type PortalDashboard, type PortalRole, type ProjectProvisionOptionsV1, type ProjectProvisionRequestV1, type ProjectProvisionStatusV1, type QaThreadV1, type RetentionPolicyUpdateV1, type RetentionPolicyV1, type ScoreAdjustmentInputV1, type ScoreCalculationV1, type ScoreSnapshotV1, type ScoreTransitionV1,
+  ModelProviderInputV1Schema, ModelQuotaPolicyInputV1Schema, PortalDashboardSchema, type ModelCredentialInputV1, type ModelCredentialRefV1, type ModelProviderInputV1, type ModelProviderSummaryV1, type ModelQuotaPolicyInputV1, type ModelQuotaPolicyV1, type NotificationV1, type OidcProviderInputV1, type OidcProviderSummaryV1, type PortalDashboard, type PortalRole, type ProjectProvisionOptionsV1, type ProjectProvisionRequestV1, type ProjectProvisionStatusV1, type QaThreadV1, type RetentionPolicyUpdateV1, type RetentionPolicyV1, type ScoreAdjustmentInputV1, type ScoreCalculationV1, type ScoreSnapshotV1, type ScoreTransitionV1,
 } from "vos-core/portal-contracts";
 import type { AdminSystemStatusV1 } from "vos-core/portal-contracts";
 import type { LoginInput, PortalRepository, ReviewInput } from "../domain/repository.ts";
@@ -10,11 +10,25 @@ import { parseEnrollmentCsv } from "../domain/enrollment-csv.ts";
 import { transitionCourse as applyCourseTransition, type CourseState } from "../domain/state-machines.ts";
 
 const STORAGE_KEY = "vos-portal.demo.v1";
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 interface DemoInvite extends EnrollmentInviteSummaryV1 { code:string; redeemed_user_ids:string[] }
-interface DemoState { schema_version: 10; signed_in:boolean; dashboard: PortalDashboard; qa: QaThreadV1; appeals: AppealRecordV1[]; scores:ScoreSnapshotV1[]; provisions:ProjectProvisionStatusV1[]; course_versions:CourseManifestVersionV1[]; enrollment_imports:EnrollmentImportResultV1[]; invites:DemoInvite[]; course_groups:CourseGroupV1[]; designs:DesignSubmissionV1[]; retention:RetentionPolicyV1; model_providers:ModelProviderSummaryV1[]; model_quotas:ModelQuotaPolicyV1[] }
+interface DemoState { schema_version: 11; signed_in:boolean; dashboard: PortalDashboard; qa: QaThreadV1; appeals: AppealRecordV1[]; scores:ScoreSnapshotV1[]; provisions:ProjectProvisionStatusV1[]; course_versions:CourseManifestVersionV1[]; enrollment_imports:EnrollmentImportResultV1[]; invites:DemoInvite[]; course_groups:CourseGroupV1[]; designs:DesignSubmissionV1[]; retention:RetentionPolicyV1; model_providers:ModelProviderSummaryV1[]; model_quotas:ModelQuotaPolicyV1[] }
 
 function initialState(): DemoState { const dashboard=createDemoDashboard();const now="2026-05-16T08:40:00.000Z";return { schema_version: SCHEMA_VERSION,signed_in:true, dashboard, qa: createQaThread(), appeals: [],scores:[dashboard.score],provisions:[],course_versions:[],enrollment_imports:[],invites:[],course_groups:[{version:"course-group.v1",id:"group-demo-3",course_id:dashboard.course.id,name:"第 03 组",member_ids:[demoActors.student.id],revision:1,created_at:now,updated_at:now}],designs:[{version:"design-submission.v1",id:"design-demo-1",project_id:dashboard.project.project_id,stage_key:dashboard.project.current_stage.key,commit_sha:dashboard.runs[0]?.commit_sha??"a".repeat(40),revision:1,title:"内存映射与 TLB 一致性设计",summary:"将页表修改、跨核失效通知与完成屏障组织为可验证的单向状态转换。",invariants:["释放物理页前，所有相关 hart 必须确认旧 TLB 项已经失效。","页表写入必须先于跨核失效请求对其他 hart 可见。"],interfaces:[{name:"vm_unmap",contract:"移除页表项并在返回前完成相关 hart 的 TLB 失效确认。"}],evidence_refs:[dashboard.runs[0]?.id??"run-demo"],status:"submitted",submitted_by:demoActors.student.id,created_at:now,updated_at:now}],retention:{version:"retention-policy.v1",ordinary_days:30,records_days:365,revision:1,updated_at:now},model_providers:[{version:"model-provider-summary.v1",id:"school-model-demo",name:"学校托管模型（演示）",kind:"openai-compatible",base_url:"https://models.demo.invalid/v1",models:["school-model-demo"],default_model:"school-model-demo",input_cost_per_million_usd:0.5,output_cost_per_million_usd:1.5,max_output_tokens:4096,enabled:true,secret_configured:true,revision:1,updated_at:now}],model_quotas:[{version:"model-quota-policy.v1",id:"quota-demo-course",course_id:dashboard.course.id,monthly_request_limit:1000,monthly_token_limit:1000000,monthly_cost_limit_usd:50,enabled:true,revision:1,period:"2026-05",used_requests:48,used_tokens:125440,used_cost_usd:3.42,reserved_requests:1,reserved_tokens:4096,reserved_cost_usd:0.01,updated_at:now}] }; }
+function migrateV10Dashboard(value: unknown): PortalDashboard {
+  if (!value || typeof value !== "object") throw new Error("v10 demo dashboard is missing");
+  const source = structuredClone(value) as Partial<PortalDashboard>;
+  if (!source.project || !Array.isArray(source.stages) || !Array.isArray(source.runs)) throw new Error("v10 demo dashboard is missing stage data");
+  const passedStages = new Set(source.runs.filter((run) => run.status === "passed").map((run) => run.stage_key));
+  const stages = source.stages.map((stage) => ({
+    ...stage,
+    status: stage.status ?? (stage.key === source.project?.current_stage.key ? "review" : passedStages.has(stage.key) ? "passed" : "locked"),
+  }));
+  const currentStage = stages.find((stage) => stage.key === source.project?.current_stage.key);
+  if (!currentStage) throw new Error("v10 demo dashboard current stage is missing");
+  const runs = source.runs.map((run) => ({ ...run, public_message: run.public_message ?? "历史运行未提供公开说明。" }));
+  return PortalDashboardSchema.parse({ ...source, stages, runs, project: { ...source.project, current_stage: currentStage } });
+}
 async function checksum(value:unknown):Promise<string>{const bytes=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify(value)));return [...new Uint8Array(bytes)].map(item=>item.toString(16).padStart(2,"0")).join("");}
 
 export class LocalStoragePortalRepository implements PortalRepository {
@@ -25,12 +39,56 @@ export class LocalStoragePortalRepository implements PortalRepository {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return this.save(initialState());
     try {
-      const parsed = JSON.parse(raw) as Partial<DemoState> & {schema_version?:number};
-      if(parsed.schema_version&&parsed.schema_version<SCHEMA_VERSION&&parsed.dashboard&&parsed.qa&&parsed.appeals){const migratedScore={...parsed.dashboard.score,snapshot_version:parsed.dashboard.score.snapshot_version??1};parsed.dashboard.score=migratedScore;const defaults=initialState();return this.save({schema_version:SCHEMA_VERSION,signed_in:parsed.signed_in??true,dashboard:parsed.dashboard,qa:parsed.qa,appeals:parsed.appeals,scores:parsed.scores??[migratedScore],provisions:parsed.provisions??[],course_versions:parsed.course_versions??[],enrollment_imports:parsed.enrollment_imports??[],invites:parsed.invites??[],course_groups:parsed.course_groups??defaults.course_groups,designs:parsed.designs??[],retention:parsed.retention??defaults.retention,model_providers:defaults.model_providers,model_quotas:defaults.model_quotas});}
+      const parsed = JSON.parse(raw) as Omit<Partial<DemoState>, "schema_version"> & {schema_version?:number};
+      if (parsed.schema_version !== undefined && parsed.schema_version >= 1 && parsed.schema_version < 10) {
+        if (!parsed.dashboard || !parsed.qa || !parsed.appeals) throw new Error("legacy demo data is missing required fields");
+        const defaults = initialState();
+        const migratedScore = { ...parsed.dashboard.score, snapshot_version: parsed.dashboard.score.snapshot_version ?? 1 };
+        return this.save({
+          schema_version: SCHEMA_VERSION,
+          signed_in: parsed.signed_in ?? true,
+          dashboard: parsed.dashboard,
+          qa: parsed.qa,
+          appeals: parsed.appeals,
+          scores: parsed.scores ?? [migratedScore],
+          provisions: parsed.provisions ?? [],
+          course_versions: parsed.course_versions ?? [],
+          enrollment_imports: parsed.enrollment_imports ?? [],
+          invites: parsed.invites ?? [],
+          course_groups: parsed.course_groups ?? defaults.course_groups,
+          designs: parsed.designs ?? [],
+          retention: parsed.retention ?? defaults.retention,
+          model_providers: parsed.model_providers ?? defaults.model_providers,
+          model_quotas: parsed.model_quotas ?? defaults.model_quotas,
+        });
+      }
+      if (parsed.schema_version === 10) {
+        if (!parsed.dashboard || !parsed.qa || !parsed.appeals) throw new Error("v10 demo data is missing required fields");
+        const dashboard = migrateV10Dashboard(parsed.dashboard);
+        const defaults = initialState();
+        const migratedScore = { ...dashboard.score, snapshot_version: dashboard.score.snapshot_version ?? 1 };
+        return this.save({
+          schema_version: SCHEMA_VERSION,
+          signed_in: parsed.signed_in ?? true,
+          dashboard,
+          qa: parsed.qa,
+          appeals: parsed.appeals,
+          scores: parsed.scores ?? [migratedScore],
+          provisions: parsed.provisions ?? [],
+          course_versions: parsed.course_versions ?? [],
+          enrollment_imports: parsed.enrollment_imports ?? [],
+          invites: parsed.invites ?? [],
+          course_groups: parsed.course_groups ?? defaults.course_groups,
+          designs: parsed.designs ?? [],
+          retention: parsed.retention ?? defaults.retention,
+          model_providers: parsed.model_providers ?? defaults.model_providers,
+          model_quotas: parsed.model_quotas ?? defaults.model_quotas,
+        });
+      }
       if (parsed.schema_version !== SCHEMA_VERSION || typeof parsed.signed_in!=="boolean" || !parsed.dashboard || !parsed.qa || !parsed.appeals || !parsed.scores || !parsed.provisions || !parsed.course_versions || !parsed.enrollment_imports || !parsed.invites || !parsed.course_groups || !parsed.designs || !parsed.retention || !parsed.model_providers || !parsed.model_quotas) {
         throw new Error("unsupported demo data version");
       }
-      this.cache = parsed as DemoState;
+      this.cache = { ...(parsed as DemoState), dashboard: PortalDashboardSchema.parse(parsed.dashboard) };
       return this.cache;
     } catch (error) {
       throw new Error(`演示数据已损坏：${error instanceof Error ? error.message : String(error)}。请使用“重置演示”。`);
@@ -72,7 +130,7 @@ export class LocalStoragePortalRepository implements PortalRepository {
     }
     return dashboard;
   }
-  async courseOperations(courseId:string){const state=this.load();assertStaff(state.dashboard.actor);if(courseId!==state.dashboard.course.id)throw new Error("演示课程不存在");const latestRun=state.dashboard.runs[0];const latestDesign=state.designs.toSorted((a,b)=>b.revision-a.revision)[0];return{version:"course-operations.v1" as const,course_id:courseId,generated_at:new Date().toISOString(),projects:[{project_id:state.dashboard.project.project_id,status:"active" as const,stage_key:state.dashboard.project.current_stage.key,stage_name:state.dashboard.project.current_stage.name,member_names:[demoActors.student.display_name,"陈同学"],latest_run_status:latestRun?.status,score_state:state.dashboard.score.state,final_score:state.dashboard.score.final_score,failed_runs:state.dashboard.runs.filter(run=>run.status==="failed").length,open_appeals:state.appeals.filter(item=>item.status!=="closed").length,design_status:latestDesign?.status}]};}
+  async courseOperations(courseId:string){const state=this.load();assertStaff(state.dashboard.actor);if(courseId!==state.dashboard.course.id)throw new Error("演示课程不存在");const latestRun=state.dashboard.runs[0];const latestDesign=state.designs.toSorted((a,b)=>b.revision-a.revision)[0];return{version:"course-operations.v2" as const,course_id:courseId,generated_at:new Date().toISOString(),projects:[{project_id:state.dashboard.project.project_id,status:"active" as const,stage_key:state.dashboard.project.current_stage.key,stage_name:state.dashboard.project.current_stage.name,member_names:[demoActors.student.display_name,"陈同学"],latest_run:latestRun?{id:latestRun.id,status:latestRun.status,stage_key:latestRun.stage_key,created_at:latestRun.created_at,passed:latestRun.passed,total:latestRun.total,...(latestRun.failure_class?{failure_class:latestRun.failure_class}:{}),public_message:latestRun.public_message}:undefined,score_state:state.dashboard.score.state,final_score:state.dashboard.score.final_score,failed_runs:state.dashboard.runs.filter(run=>run.status==="failed").length,open_appeals:state.appeals.filter(item=>item.status!=="closed").length,design_status:latestDesign?.status}]};}
   async setNotificationRead(notificationId:string,read:boolean):Promise<NotificationV1>{const state=this.load();const notification=state.dashboard.notifications.find(item=>item.id===notificationId);if(!notification)throw new Error("演示通知不存在");notification.read=read;this.save(state);return structuredClone(notification);}
   async dryRunCourseManifest(raw:unknown):Promise<CourseManifestDryRunV1>{assertTeacher(this.load().dashboard.actor);const parsed=CourseManifestV1Schema.safeParse(raw);if(!parsed.success)return{version:"course-manifest-dry-run.v1",valid:false,changes:[],issues:parsed.error.issues.map(issue=>({path:issue.path.join("."),message:issue.message}))};const state=this.load();const courseId=parsed.data.course.code===state.dashboard.course.code&&parsed.data.course.term===state.dashboard.course.term?state.dashboard.course.id:undefined;return{version:"course-manifest-dry-run.v1",valid:true,course_id:courseId,next_manifest_version:Math.max(0,...state.course_versions.filter(item=>item.course_id===(courseId??"course-demo-new")).map(item=>item.manifest_version))+1,checksum:await checksum(parsed.data),changes:[courseId?"为现有演示课程创建新草稿":"创建演示课程草稿",`配置 ${parsed.data.stages.length} 个 StageGate`],issues:[]};}
   async importCourseManifest(raw:CourseManifestV1,reason:string){const state=this.load();assertTeacher(state.dashboard.actor);if(reason.trim().length<10)throw new Error("导入理由至少需要 10 个字符");const manifest=CourseManifestV1Schema.parse(raw);const courseId=manifest.course.code===state.dashboard.course.code&&manifest.course.term===state.dashboard.course.term?state.dashboard.course.id:`course-demo-${Date.now()}`;const contentChecksum=await checksum(manifest);if(state.course_versions.some(item=>item.course_id===courseId&&item.checksum===contentChecksum))throw new Error("相同内容的课程清单版本已存在");for(const item of state.course_versions)if(item.course_id===courseId&&item.state==="draft")item.state="superseded";const now=new Date().toISOString();const version:CourseManifestVersionV1={version:"course-manifest-version.v1",course_id:courseId,manifest_version:Math.max(0,...state.course_versions.filter(item=>item.course_id===courseId).map(item=>item.manifest_version))+1,state:"draft",manifest,checksum:contentChecksum,created_at:now};state.course_versions.push(version);this.save(state);return structuredClone(version);}

@@ -1,3 +1,4 @@
+import { Button, MessageBar, MessageBarBody } from "@fluentui/react-components";
 import { lazy, Suspense, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Navigate, Route, Routes } from "react-router-dom";
@@ -9,6 +10,8 @@ import { useTranslation } from "react-i18next";
 const StudentDashboard=lazy(()=>import("./features/student-dashboard.tsx").then(module=>({default:module.StudentDashboard})));
 const OperationsDashboard=lazy(()=>import("./features/operations-dashboard.tsx").then(module=>({default:module.OperationsDashboard})));
 const RunDetailPage=lazy(()=>import("./features/run-detail-page.tsx").then(module=>({default:module.RunDetailPage})));
+const RunsPage=lazy(()=>import("./features/runs-page.tsx").then(module=>({default:module.RunsPage})));
+const StageDetailPage=lazy(()=>import("./features/stage-detail-page.tsx").then(module=>({default:module.StageDetailPage})));
 const WorkspacePage=lazy(()=>import("./features/workspace-page.tsx").then(module=>({default:module.WorkspacePage})));
 const DeviceApprovalPage=lazy(()=>import("./features/device-approval-page.tsx").then(module=>({default:module.DeviceApprovalPage})));
 const ProjectProvisionPage=lazy(()=>import("./features/project-provision-page.tsx").then(module=>({default:module.ProjectProvisionPage})));
@@ -23,12 +26,13 @@ export function App({ demo }: { demo: boolean }) {
   const { t } = useTranslation();
   const repository = useRepository();
   const [sessionRevision, setSessionRevision] = useState(0);
-  const actor = useQuery({ queryKey: ["actor", sessionRevision], queryFn: () => repository.currentActor() });
-  if (actor.isLoading) return <main className="center-state">{t("正在加载 VOS Portal…")}</main>;
+  const actor = useQuery({ queryKey: ["portal", "actor", sessionRevision], queryFn: () => repository.currentActor() });
+  if (actor.isLoading) return <div className="center-state" role="status">{t("正在加载 VOS Portal…")}</div>;
+  if (actor.isError) return <MessageBar intent="error"><MessageBarBody>{actor.error instanceof Error ? actor.error.message : t("无法连接 VOS Portal")}</MessageBarBody><Button appearance="secondary" onClick={() => void actor.refetch()}>{t("重试")}</Button></MessageBar>;
   if (!actor.data) return <LoginPage demo={demo} onLogin={() => setSessionRevision((value) => value + 1)} />;
   return (
     <PortalShell actor={actor.data} demo={demo} onSessionChange={() => setSessionRevision((value) => value + 1)}>
-      <Suspense fallback={<main className="center-state">{t("正在加载 VOS Portal…")}</main>}><Routes>
+      <Suspense fallback={<div className="center-state" role="status">{t("正在加载 VOS Portal…")}</div>}><Routes>
         <Route path="/" element={<Navigate to="/workspace" replace />} />
         <Route
           path="/workspace"
@@ -39,10 +43,11 @@ export function App({ demo }: { demo: boolean }) {
           }
         />
         <Route path="/runs/:runId" element={<RunDetailPage />} />
+        <Route path="/runs" element={<RunsPage />} />
         <Route path="/courses" element={actor.data.role === "teacher" || actor.data.role === "admin" ? <CourseControlPage /> : <WorkspacePage kind="courses" />} />
         <Route path="/enroll" element={actor.data.role==="student"||actor.data.role==="ta"?<EnrollmentInvitePage />:<Navigate to="/workspace" replace />} />
         <Route path="/projects/new" element={actor.data.role==="teacher"||actor.data.role==="admin"?<ProjectProvisionPage />:<Navigate to="/workspace" replace />} />
-        <Route path="/stages" element={<WorkspacePage kind="stages" />} />
+        <Route path="/stages" element={<StageDetailPage />} />
         <Route path="/architecture" element={<DesignSubmissionPage />} />
         <Route path="/qa" element={<WorkspacePage kind="qa" />} />
         <Route path="/credentials" element={<ModelCredentialsPage demo={demo} />} />
