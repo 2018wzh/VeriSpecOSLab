@@ -56,6 +56,7 @@ try {
     GIT_SSL_NO_VERIFY: process.env.GIT_SSL_NO_VERIFY ?? "1",
   };
   const results: Array<Record<string, string | number>> = [];
+  const sessionTimeline: ShowcaseEvent[] = [];
   const studentCheckout = path.join(workspace, "student-main");
   let worktreeAdded = false;
   try {
@@ -71,11 +72,18 @@ try {
       await runCli(cli, studentCheckout, env, ["portal", "login", portalUrl]);
     else
       await runCliDeviceLogin(cli, studentCheckout, env, portalUrl, webSession);
+    recordShowcaseEvent(sessionTimeline, "portal-login", { status: "passed" });
     await runCli(cli, studentCheckout, env, ["portal", "whoami", portalUrl]);
+    recordShowcaseEvent(sessionTimeline, "portal-whoami", { status: "passed" });
     const firstBinding = await client.getProjectBinding(portalUrl, token, projectId);
     await runCli(cli, studentCheckout, env, ["portal", "bind", portalUrl, projectId]);
     git(studentCheckout, ["add", ".gitignore", ".vos/project.yaml"]);
     git(studentCheckout, ["commit", "-m", `[course][portal] Bind glenda ${stages[0].key} project`]);
+    recordShowcaseEvent(sessionTimeline, "portal-bind", {
+      status: "passed",
+      project_id: projectId,
+      commit_sha: git(studentCheckout, ["rev-parse", "HEAD"]).trim(),
+    });
     const remote = publicRepositoryUrl(firstBinding.repo_url);
     git(studentCheckout, ["remote", "add", "portal", remote]);
 
@@ -90,19 +98,37 @@ try {
         await applyStageDelta(source, studentCheckout, stages[index - 1].source_ref, stage.source_ref);
         git(studentCheckout, ["commit", "-m", `[course][replay] Advance glenda ${stage.key}`]);
       }
+      const portalTimeline: ShowcaseEvent[] = sessionTimeline.map((event) => ({ ...event }));
+      recordShowcaseEvent(portalTimeline, "stage-checkout", {
+        status: "passed",
+        stage: stage.key,
+        source_ref: stage.source_ref,
+        commit_sha: git(studentCheckout, ["rev-parse", "HEAD"]).trim(),
+      });
       await pushMain(studentCheckout, env, index === 0);
+      recordShowcaseEvent(portalTimeline, "gitea-push-main", {
+        status: "passed",
+        commit_sha: git(studentCheckout, ["rev-parse", "HEAD"]).trim(),
+      });
       await Bun.sleep(1_500);
 
       const publicRun = await runWithLedgerRetry(cli, studentCheckout, env, [
         "portal", "run", "--stage", stage.key, "--watch",
       ]);
       const publicRunId = findRunId(publicRun);
+      recordShowcaseEvent(portalTimeline, "portal-public-run", { status: "passed", run_id: publicRunId });
       const evidence = await runCli(cli, studentCheckout, env, [
         "portal", "evidence", publicRunId, "--out", `.vos/student-public-evidence/${stage.key}`,
       ]);
       const evidenceStatus = String((parseJson(evidence.stdout) as Record<string, unknown>).status ?? "unknown");
+      recordShowcaseEvent(portalTimeline, "portal-evidence", { status: evidenceStatus, run_id: publicRunId });
       const replay = await runReplay(cli, studentCheckout, env, stage.key, stage.source_ref, publicRunId, evidenceStatus);
       await uploadArtifact(cli, studentCheckout, env, publicRunId, replay.path, `${stage.key}-replay-bundle`);
+      recordShowcaseEvent(portalTimeline, "portal-replay-upload", {
+        status: "verified",
+        run_id: publicRunId,
+        label: `${stage.key}-replay-bundle`,
+      });
       if (replay.status !== "passed")
         throw new Error(`${stage.key} local replay failed after its failure bundle was uploaded`);
 
@@ -116,18 +142,34 @@ try {
       const submissionRunId = String(submissionRecord.run_id ?? "");
       if (!submissionId || !submissionRunId)
         throw new Error("CLI submission response did not contain submission and run ids");
+      recordShowcaseEvent(portalTimeline, "portal-submit", {
+        status: "created",
+        submission_id: submissionId,
+        run_id: submissionRunId,
+      });
       await uploadArtifact(cli, studentCheckout, env, submissionRunId, replay.path, `${stage.key}-replay-bundle`);
       await uploadRequiredReviewArtifacts(cli, studentCheckout, env, submissionRunId, stage.key, stage.required_review_artifacts);
+      recordShowcaseEvent(portalTimeline, "portal-submission-artifacts", {
+        status: "verified",
+        run_id: submissionRunId,
+        labels: [`${stage.key}-replay-bundle`, ...stage.required_review_artifacts],
+      });
       const status = await runCli(cli, studentCheckout, env, [
         "portal", "status", submissionRunId, "--watch",
       ]);
       const terminal = nestedRunStatus(parseJson(status.stdout));
+      recordShowcaseEvent(portalTimeline, "portal-authoritative-run", { status: terminal, run_id: submissionRunId });
       if (terminal !== "passed")
         throw new Error(`authoritative student CLI run ended with ${terminal}`);
       const evaluated = await submissionStatus(portalUrl, token, submissionId);
       const finalStatus = stage.manual_review_required
         ? await waitForTeacherApproval(portalUrl, token, submissionId, evaluated)
         : evaluated;
+      recordShowcaseEvent(portalTimeline, "portal-stage-closure", {
+        status: finalStatus,
+        submission_id: submissionId,
+        review: stage.manual_review_required ? "teacher-approved" : "not-required",
+      });
       if (finalStatus !== "complete")
         throw new Error(`${stage.source_ref} submission ended with ${finalStatus}, expected complete`);
       const showcaseIndex = await writeShowcaseIndex(studentCheckout, stage.key, {
@@ -140,6 +182,7 @@ try {
         evidence_status: evidenceStatus,
         submission_status: finalStatus,
         replay_bundle_label: `${stage.key}-replay-bundle`,
+        portal_timeline: portalTimeline,
       });
       await uploadArtifact(cli, studentCheckout, env, submissionRunId, showcaseIndex, `${stage.key}-showcase-index`);
       results.push({
@@ -242,13 +285,21 @@ async function runReplay(
 async function writeShowcaseIndex(
   cwd: string,
   stage: string,
-  record: Record<string, string>,
+  record: Record<string, unknown>,
 ): Promise<string> {
   const directory = path.join(cwd, ".vos", "showcase", stage);
   await mkdir(directory, { recursive: true });
   const target = path.join(directory, "portal-index.json");
   await writeFile(target, `${JSON.stringify({ version: "glenda-showcase-index.v1", stage, ...record }, null, 2)}\n`);
   return path.relative(cwd, target);
+}
+
+function recordShowcaseEvent(
+  timeline: ShowcaseEvent[],
+  action: string,
+  details: Record<string, unknown>,
+): void {
+  timeline.push({ recorded_at: new Date().toISOString(), action, details });
 }
 
 async function collectRunArtifacts(projectRoot: string, commandResult: unknown): Promise<Record<string, unknown>> {
@@ -612,3 +663,4 @@ function required(name: string): string {
 }
 
 type CliResult = { stdout: string; stderr: string; exitCode: number };
+type ShowcaseEvent = { recorded_at: string; action: string; details: Record<string, unknown> };

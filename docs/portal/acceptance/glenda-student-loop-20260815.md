@@ -1,58 +1,59 @@
-# glenda-spec 学生闭环 connected 验收记录
+# Glenda Lab 1–10 connected 验收记录
 
-本记录保存一次真实 Compose 环境中的 Glenda 课程学生闭环验收结果。测试使用课程清单 `courses/glenda-spec/course.yaml` 声明的真实 `course/glenda-m1-complete` 至 `course/glenda-m4-complete` 与候选标签 `course/glenda-m5-candidate`；Portal、Gitea、PostgreSQL、MinIO、worker 与隔离 Runner 均为运行中的服务。没有使用 Demo、本地验证或工作树快照替代远程测评。
+这份记录说明 Glenda 课程历史重放在 Portal 中如何留痕，以及目前真正完成到哪一步。旧课程历史的 connected 结果不再作为 Lab 1–10 的验收依据；新历史必须从 `course/lab1-complete` 沿同一条学生 `main` 分支逐阶段推进。
 
-## 前置变更
+## 展示材料记录
 
-- Portal/CLI schema 通用化：course manifest 的 `source_ref`、`hardware_gate` 不再绑定 xv6 词汇（阶段 1）。
-- Runner 镜像补充 Rust nightly + riscv64gc target + xPack riscv GCC，Glenda 内核可在隔离 Runner 中构建（阶段 2）。
-- Worker 证据报告新增阶段键控记录：`suite=<stage_key>`、`case_name=public`，使课程清单 `required_evidence` 在教师人工批准门禁可被满足（`worker/runner-evidence.ts`、`worker/worker.ts`）。
-- Runner 镜像烤入 Glenda 离线 crate 注册表（`runner-cache/glenda-cargo-registry.tar.gz`，78 crate，含 spin 0.9.8/0.10.0）并设 `CARGO_NET_OFFLINE=true`；隔离 Runner 无外网，依赖必须在镜像内预置。该 tarball 体积约 56MB，已在 `vos/.gitignore` 中排除；重建 Runner 镜像前需先重新生成：取一个干净 `CARGO_HOME`，在 m1–m4 四个 tag 的检出树上分别 `cargo fetch --locked`（取并集，覆盖 m1–m3 的 spin 0.9.8 与 m4 的 0.10.0），再将该 `CARGO_HOME/registry` 打包为 `apps/vos-portal/runner-cache/glenda-cargo-registry.tar.gz`。
-- 课程 tag 的 `tests/public/verify.sh` 在每处串口日志捕获后追加 `sed -i 's/\r$//'`：内核 UART 输出 CRLF，Linux Runner 保留 `\r` 会让锚定匹配 `grep '^GLENDA_BOOT_OK$'` 计数为 0；本地 Windows/MSYS 重定向会把 CRLF 归一为 LF，故离线通过而在线失败。五个 tag 与 master 已重打。
+connected 脚本会为每个 Lab 保存一份 `glenda-replay-bundle.v1`。其中包含当前提交与 tree 标识、从课程根提交到当前阶段的父子关系和提交标题，以及以下命令的结构化结果：
 
-## 离线学生仿真（D:\Workspace\glenda-spec）
+- `vos spec lint all`
+- `vos agent ask`
+- `vos agent review all`
+- `vos build`
+- `vos run qemu`
+- `vos verify`
+- `vos report`
 
-- 五文件族 Spec 手写并通过 `vos spec lint all`；`vos agent review`（ecnu-max）发现的冲突逐条修正。
-- toolchain 里程碑：`agent implement` 结构化提交循环（schema 修复 6 轮以上）因 boot-console-binding 跨所有权不可收敛，按预案手动落盘并记录偏差 `spec/patches/toolchain-manual-landing.yaml`（commit 758c4b5，补丁记录 commit 9a4498b）。
-- M1-M5 里程碑自参考分支移植（每次含 GLENDA_BOOT_OK 适配与 spec patch 记录），标签 `course/glenda-m1-complete` … `course/glenda-m4-complete`、`course/glenda-m5-candidate`。
+命令对应的 manifest、报告、串口日志和模型复核材料一并收进重放包。脚本会删除凭据字段，将学生检出目录替换为 `<project>`，不上传本机路径、token 或原始私密配置。重放失败时也会先上传失败包，再停止阶段推进。
 
-## 复现命令
+每个阶段闭环后，脚本还会上传 `glenda-showcase-index.v1`。该索引按时间记录 Portal 登录、项目绑定、Gitea `main` 推送、公开 run、evidence 获取、重放包上传、正式 submit、权威 run、人工复核和阶段关闭，并保存相关 project、commit、run 和 submission 标识。这样，展示页面既能还原学生在本地做了什么，也能追到 Portal 中哪条权威记录接收了这些材料。
 
-Windows 宿主复现需先解决本地 SNI 与 CA 信任：
+Portal 的 stage contract 使用 `required_showcase_artifacts` 强制提交 run 绑定 `${stage}-replay-bundle`。Lab 9 和 Lab 10 另有 `required_review_artifacts`，教师批准前必须存在已验证的仿真报告、实体串口日志、硬件报告或可复现交付包。普通 Runner evidence 不能代替这些人工复核材料。
 
-- `hosts`（需管理员/UAC 提权）追加 `127.0.0.1 git.localhost` 与 `127.0.0.1 objects.localhost`，否则 `git.localhost:8443` 无法解析。
-- `NODE_EXTRA_CA_CERTS` 指向 Caddy 内部 CA 证书，使 Node/Bun 的 `fetch` 信任 `https://localhost:8443`。
-- git 侧用 `GIT_CONFIG_COUNT=1 / GIT_CONFIG_KEY_0=http.sslBackend / GIT_CONFIG_VALUE_0=schannel`（或 `GIT_SSL_NO_VERIFY=1`）信任自签证书。
-- MSYS/Git-Bash 下给 `NODE_EXTRA_CA_CERTS` 传路径要用正斜杠（`D:/...`）或原始单反斜杠；双反斜杠会被环境转换吞掉，导致证书加载失败。
+## 当前状态
+
+- Lab 1–8 的本地历史、Spec、真实模型复核和阶段验收已经完成。
+- Lab 9 已完成 Orange Pi Prime QEMU 的 BL31 → U-Boot → Glenda 启动，以及四核、MMU、GICv2、generic timer、IPI、MMC 和磁盘文件系统验证。
+- 最新模型复核确认，AArch64 侧的 descriptor、pipe 和 shell 仍是内核内机制自检，不是完整的用户态 syscall/trap/shell 工作负载。因此 Lab 9 尚未形成可发布 candidate，更不能标记 complete。
+- Orange Pi Prime 实体板的 BROM/SPL、冷启动、重复复位、四核、UART、timer/IRQ/IPI、SD 和完整工作负载证据尚未采集。
+- Lab 10、全新 Compose connected 重放和教师审批尚未执行。
+
+当前没有 Lab 1–10 的 connected 通过表。只有在全新 Compose 环境中完成 Portal、Gitea、PostgreSQL、MinIO、worker 和隔离 Runner 的连续重放后，才能在本节加入新的 run、submission、artifact 与最终状态。Demo、本地 `vos verify`、外部 Linux 启动和 QEMU 仿真都不能填入 connected 结果。
+
+## 运行入口
+
+环境值来自未跟踪的本地配置，不写入文档或仓库：
 
 ```sh
-export VOS_PORTAL_URL=https://localhost:8443
-export VOS_PORTAL_PROJECT_ID=<PROJECT_ID>
-export VOS_GITEA_PUBLIC_ORIGIN=<GITEA_ORIGIN>
-export VOS_GITEA_USERNAME=student
-export VOS_GITEA_PASSWORD=<from local env>
-export VOS_GITEA_TOKEN=<from local env>
+export VOS_PORTAL_URL=https://<portal-host>
+export VOS_PORTAL_PROJECT_ID=<project-id>
+export VOS_GITEA_PUBLIC_ORIGIN=https://<gitea-host>
+export VOS_GITEA_USERNAME=<student-user>
+export VOS_GITEA_PASSWORD=<local-secret>
 
-bun run --cwd apps/vos-portal test:glenda:student-cli:course  # M1-M4
-bun run --cwd apps/vos-portal test:glenda:student-cli         # M5 candidate
-bun run --cwd apps/vos-portal test:glenda:connected           # 课程清单逐阶段 run/submit
+bun run --cwd apps/vos-portal test:glenda:connected
 ```
 
-## 实际结果
+Lab 9 和 Lab 10 上传完必需材料后，脚本会停在 candidate 状态等待教师在 Portal 中审批。脚本只轮询审批结果，不代替教师操作。任何硬件、connected、artifact 或审批失败都会保留原状态，并停止正式发布。
 
-| stage | public run | authoritative run | evidence | submission |
-| --- | --- | --- | --- | --- |
-| m1 | `run-c545f7a7` | `run-9511606d` | passed | complete |
-| m2 | `run-e2434306` | `run-9897864e` | passed | complete |
-| m3 | `run-7e4df385` | `run-cddeefb7` | passed | complete |
-| m4 | `run-4eb85f70` | `run-ab8948aa` | passed | complete |
-| m5 | `run-424b93c0` | `run-fdde1024` | passed | candidate（预期） |
+## 发布边界
 
-项目：`project-ddeb695a-0d48-4dbc-9dfe-4c4fa9206491`。五个阶段的学生 CLI 全链路（login→whoami→bind→run→evidence→submit→status）均在同一次真实 Compose 环境中按顺序推进，未使用快照或旁路。
+课程远端仍保持不变。正式替换 `spec` 和十个 annotated tags 之前，必须同时满足以下条件：
 
-M5 的 candidate 结果来自容器/QEMU 自动测评；Orange Pi Prime（Allwinner H5）实机证据与教师人工复核是候选阶段的必要门禁，不能升级为 complete。
+- 十个阶段的历史审计、Spec lint、构建、公开/contract/trace 检查和报告全部通过；
+- Lab 9 的 AArch64 用户态累计工作负载和实体板验收闭环；
+- Lab 10 的验证矩阵、可复现提交包和实体板证据通过；
+- connected 重放为每个阶段留下 replay bundle、showcase index、run、submission 与最终状态；
+- 教师完成 Lab 9、Lab 10 的人工复核。
 
-## 回归与已知问题
-
-- `bun run typecheck`：通过（vos 全工作区，2026-08-15，含 worker 证据接线修改）。
-- `bun run test`：177/178 通过（2026-08-15）。唯一失败为 `student-flow.test.ts` 的「initializes an empty student project」在 Windows 上 30s 超时；`git stash` 还原到干净基线后单独复跑仍同样超时，确认为既有环境问题，与本次改动无关（本次改动不触及 `init` 空项目路径）。其余含 contracts 课程门槛新断言全部通过。
+在这些条件满足前，只保留本地分支、离线旧历史 bundle 和真实失败记录，不推送正式标签，也不更新主仓库中的课程引用。

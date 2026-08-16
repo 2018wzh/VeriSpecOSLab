@@ -47,4 +47,15 @@ test("Glenda connected replay preserves command, Git and Portal lineage for show
   expect(script).toContain("public_run_id: publicRunId");
   expect(script).toContain("submission_run_id: submissionRunId");
   expect(script).toContain("showcase_index_label");
+  for (const action of [
+    "portal-login",
+    "portal-bind",
+    "gitea-push-main",
+    "portal-public-run",
+    "portal-evidence",
+    "portal-submit",
+    "portal-authoritative-run",
+    "portal-stage-closure",
+  ]) expect(script).toContain(`"${action}"`);
+  expect(script).toContain("portal_timeline: portalTimeline");
 });
