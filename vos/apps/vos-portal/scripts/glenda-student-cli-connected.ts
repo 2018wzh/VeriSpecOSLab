@@ -6,12 +6,22 @@ import { HttpPortalClient } from "vos-core";
 import { CourseManifestV1Schema } from "vos-core/portal-contracts";
 import { parse } from "yaml";
 
-const portalUrl = required("VOS_PORTAL_URL").replace(/\/$/, "");
-const projectId = required("VOS_PORTAL_PROJECT_ID");
 const source = path.resolve(
   process.env.VOS_GLENDA_SPEC_ROOT ??
     path.join(import.meta.dirname, "../../../../../glenda-spec"),
 );
+if (process.argv.includes("--prepare-history-journal")) {
+  const output = path.resolve(required("VOS_GLENDA_HISTORY_JOURNAL_OUT"));
+  const journal = await readHistoryReplayJournal(source);
+  if (!journal) throw new Error("source .vos/report.json is required to prepare a history journal");
+  await mkdir(path.dirname(output), { recursive: true });
+  await writeFile(output, `${JSON.stringify(journal, null, 2)}\n`);
+  const value = journal as Record<string, unknown>;
+  console.log(JSON.stringify({ output, run_count: value.run_count, status_counts: value.status_counts }));
+  process.exit(0);
+}
+const portalUrl = required("VOS_PORTAL_URL").replace(/\/$/, "");
+const projectId = required("VOS_PORTAL_PROJECT_ID");
 const sourceRef = process.env.VOS_GLENDA_STUDENT_REF ?? "course/lab10-complete";
 const expectedStage = process.env.VOS_GLENDA_STUDENT_STAGE ?? "lab10";
 const courseManifest = CourseManifestV1Schema.parse(
@@ -22,12 +32,26 @@ const courseManifest = CourseManifestV1Schema.parse(
     ),
   ),
 );
-const stages = (process.env.VOS_GLENDA_STUDENT_ALL === "1" || process.argv.includes("--all"))
+const requestedStages = (process.env.VOS_GLENDA_STUDENT_ALL === "1" || process.argv.includes("--all"))
   ? courseManifest.stages
   : [
       courseManifest.stages.find((stage) => stage.key === expectedStage) ??
         ({ key: expectedStage, source_ref: sourceRef } as (typeof courseManifest.stages)[number]),
     ];
+const through = process.env.VOS_GLENDA_STUDENT_THROUGH?.trim();
+const throughIndex = through
+  ? requestedStages.findIndex((stage) => stage.key === through)
+  : requestedStages.length - 1;
+if (through && throughIndex < 0)
+  throw new Error(`VOS_GLENDA_STUDENT_THROUGH does not select a requested stage: ${through}`);
+const allowCandidateRefs = process.env.VOS_GLENDA_ALLOW_CANDIDATE_REFS === "1";
+const stages = requestedStages.slice(0, throughIndex + 1).map((stage) => {
+  if (refExists(source, stage.source_ref)) return stage;
+  const candidate = stage.source_ref.replace(/-complete$/, "-candidate");
+  if (allowCandidateRefs && candidate !== stage.source_ref && refExists(source, candidate))
+    return { ...stage, source_ref: candidate };
+  throw new Error(`Glenda source ref is unavailable: ${stage.source_ref}`);
+});
 if (stages.length === 0) throw new Error("glenda course manifest has no stages");
 const giteaOrigin = process.env.VOS_GITEA_PUBLIC_ORIGIN?.replace(/\/$/, "");
 if (!giteaOrigin)
@@ -57,6 +81,7 @@ try {
   };
   const results: Array<Record<string, string | number>> = [];
   const sessionTimeline: ShowcaseEvent[] = [];
+  const historyReplayJournal = await readHistoryReplayJournal(source);
   const studentCheckout = path.join(workspace, "student-main");
   let worktreeAdded = false;
   try {
@@ -122,7 +147,16 @@ try {
       ]);
       const evidenceStatus = String((parseJson(evidence.stdout) as Record<string, unknown>).status ?? "unknown");
       recordShowcaseEvent(portalTimeline, "portal-evidence", { status: evidenceStatus, run_id: publicRunId });
-      const replay = await runReplay(cli, studentCheckout, env, stage.key, stage.source_ref, publicRunId, evidenceStatus);
+      const replay = await runReplay(
+        cli,
+        studentCheckout,
+        env,
+        stage.key,
+        stage.source_ref,
+        publicRunId,
+        evidenceStatus,
+        stage.key === "lab10" ? historyReplayJournal : null,
+      );
       await uploadArtifact(cli, studentCheckout, env, publicRunId, replay.path, `${stage.key}-replay-bundle`);
       recordShowcaseEvent(portalTimeline, "portal-replay-upload", {
         status: "verified",
@@ -218,6 +252,7 @@ async function runReplay(
   sourceRef: string,
   publicRunId: string,
   evidenceStatus: string,
+  historyReplayJournal: unknown,
 ): Promise<{ path: string; status: "passed" | "failed" }> {
   const commands: Array<{ name: string; args: string[]; result: unknown; artifacts: Record<string, unknown> }> = [];
   let status: "passed" | "failed" = "passed";
@@ -277,9 +312,73 @@ async function runReplay(
       status,
       commands,
       report,
+      history_replay_journal: historyReplayJournal,
     }, null, 2)}\n`,
   );
   return { path: path.relative(cwd, target), status };
+}
+
+async function readHistoryReplayJournal(sourceRoot: string): Promise<unknown> {
+  const reportPath = path.join(sourceRoot, ".vos", "report.json");
+  if (!(await Bun.file(reportPath).exists())) {
+    if (process.env.VOS_GLENDA_HISTORY_REPORT_REQUIRED === "1")
+      throw new Error("VOS_GLENDA_HISTORY_REPORT_REQUIRED requires source .vos/report.json");
+    return null;
+  }
+  const report = JSON.parse(await readFile(reportPath, "utf8")) as Record<string, unknown>;
+  const evidence = report.evidence as Record<string, unknown> | undefined;
+  const reportRuns = Array.isArray(evidence?.runs) ? evidence.runs : [];
+  const runs: Array<Record<string, unknown>> = [];
+  const statusCounts: Record<string, number> = {};
+  for (const item of reportRuns) {
+    const run = item as Record<string, unknown>;
+    const runId = typeof run.run_id === "string" ? run.run_id : "";
+    if (!runId || !/^[a-zA-Z0-9-]+$/.test(runId))
+      throw new Error("source history report contains an invalid run id");
+    const manifestPath = path.join(sourceRoot, ".vos", "runs", runId, "manifest.json");
+    if (!(await Bun.file(manifestPath).exists()))
+      throw new Error(`source history run has no manifest: ${runId}`);
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>;
+    const status = String(manifest.status ?? run.status ?? "unknown");
+    statusCounts[status] = (statusCounts[status] ?? 0) + 1;
+    const artifactRecords: Record<string, unknown> = {};
+    const artifacts = Array.isArray(manifest.artifacts) ? manifest.artifacts : [];
+    for (const artifactValue of artifacts) {
+      const artifact = artifactValue as Record<string, unknown>;
+      const artifactPath = typeof artifact.path === "string" ? artifact.path : "";
+      const prefix = `.vos/runs/${runId}/artifacts/`;
+      if (!artifactPath.startsWith(prefix) || !artifactPath.endsWith(".json")) continue;
+      const absolute = path.join(sourceRoot, ...artifactPath.split("/"));
+      const file = Bun.file(absolute);
+      if (!(await file.exists()) || file.size > 1024 * 1024) continue;
+      artifactRecords[artifactPath.slice(prefix.length)] = sanitizeShowcase(
+        JSON.parse(await file.text()),
+        sourceRoot,
+      );
+    }
+    runs.push({
+      run_id: runId,
+      command: manifest.command ?? run.command ?? [],
+      status,
+      git_rev: manifest.git_rev,
+      parent_sha: manifest.parent_sha,
+      spec_hash: manifest.spec_hash,
+      started_at: manifest.started_at ?? run.started_at,
+      finished_at: manifest.finished_at ?? run.finished_at,
+      manifest: sanitizeShowcase(manifest, sourceRoot),
+      artifact_records: artifactRecords,
+    });
+  }
+  return {
+    version: "glenda-history-replay-journal.v1",
+    commit_sha: report.commit_sha,
+    spec_hash: report.spec_hash,
+    generated_at: report.generated_at,
+    run_count: runs.length,
+    status_counts: statusCounts,
+    failed_run_ids: runs.filter((run) => run.status !== "passed").map((run) => run.run_id),
+    runs,
+  };
 }
 
 async function writeShowcaseIndex(
@@ -351,8 +450,14 @@ function sanitizeShowcase(value: unknown, projectRoot: string): unknown {
           .filter(([key]) => !denied.has(key.toLowerCase()))
           .map(([key, nested]) => [key, visit(nested)]),
       );
-    if (typeof current === "string")
-      return current.replaceAll(projectRoot, "<project>").replaceAll(projectRoot.replaceAll("\\", "/"), "<project>");
+    if (typeof current === "string") {
+      const withoutProject = current
+        .replaceAll(projectRoot, "<project>")
+        .replaceAll(projectRoot.replaceAll("\\", "/"), "<project>");
+      return redact(withoutProject)
+        .replace(/[A-Za-z]:[\\/][^\s"'<>]*/g, "<local-path>")
+        .replace(/\/(?:home|Users|mnt\/[a-z])\/[^\s"'<>]*/g, "<local-path>");
+    }
     return current;
   };
   return visit(value);
@@ -521,6 +626,14 @@ function git(cwd: string, args: string[]): string {
   if (result.exitCode !== 0)
     throw new Error(`git ${args.join(" ")} failed: ${redact(result.stderr.toString())}`);
   return result.stdout.toString();
+}
+
+function refExists(cwd: string, reference: string): boolean {
+  return Bun.spawnSync(["git", "rev-parse", "--verify", "--quiet", reference], {
+    cwd,
+    stdout: "ignore",
+    stderr: "ignore",
+  }).exitCode === 0;
 }
 
 function runGit(

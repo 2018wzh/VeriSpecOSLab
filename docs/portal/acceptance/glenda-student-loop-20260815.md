@@ -14,7 +14,7 @@ connected 脚本会为每个 Lab 保存一份 `glenda-replay-bundle.v1`。其中
 - `vos verify`
 - `vos report`
 
-命令对应的 manifest、报告、串口日志和模型复核材料一并收进重放包。脚本会删除凭据字段，将学生检出目录替换为 `<project>`，不上传本机路径、token 或原始私密配置。重放失败时也会先上传失败包，再停止阶段推进。
+命令对应的 manifest、报告、串口日志和模型复核材料一并收进重放包。Lab 10 还会嵌入 `glenda-history-replay-journal.v1`：它逐条索引源历史中的 VOS run、状态、提交、manifest 和有界 JSON artifact，并单列失败 run，因而能展示本次历史重放的完整收敛过程。脚本会删除凭据和模型原始文本字段，将本机路径替换为占位符，不上传 token 或原始私密配置。重放失败时也会先上传失败包，再停止阶段推进。
 
 每个阶段闭环后，脚本还会上传 `glenda-showcase-index.v1`。该索引按时间记录 Portal 登录、项目绑定、Gitea `main` 推送、公开 run、evidence 获取、重放包上传、正式 submit、权威 run、人工复核和阶段关闭，并保存相关 project、commit、run 和 submission 标识。这样，展示页面既能还原学生在本地做了什么，也能追到 Portal 中哪条权威记录接收了这些材料。
 
@@ -46,6 +46,16 @@ export VOS_GITEA_PASSWORD=<local-secret>
 
 bun run --cwd apps/vos-portal test:glenda:connected
 ```
+
+实体材料尚未具备时，只连续闭环 Lab 1–8，避免提前创建 Lab 9 的权威提交：
+
+```sh
+export VOS_GLENDA_STUDENT_THROUGH=lab8
+export VOS_GLENDA_HISTORY_REPORT_REQUIRED=1
+bun run --cwd apps/vos-portal test:glenda:connected
+```
+
+`VOS_GLENDA_ALLOW_CANDIDATE_REFS=1` 只用于本地候选验收；它允许 Lab 9/10 使用 candidate 标签，但不修改课程 manifest，也不能绕过实体 artifact 和教师审批。
 
 发布前还要从仓库根目录审计课程历史。路径由调用者显式传入：
 

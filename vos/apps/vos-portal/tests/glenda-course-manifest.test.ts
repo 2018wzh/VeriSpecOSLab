@@ -43,6 +43,11 @@ test("Glenda connected replay preserves command, Git and Portal lineage for show
     expect(script).toContain(`name: "${step}"`);
   expect(script).toContain('"glenda-replay-bundle.v1"');
   expect(script).toContain('"glenda-showcase-index.v1"');
+  expect(script).toContain('"glenda-history-replay-journal.v1"');
+  expect(script).toContain("VOS_GLENDA_STUDENT_THROUGH");
+  expect(script).toContain("VOS_GLENDA_ALLOW_CANDIDATE_REFS");
+  expect(script).toContain("failed_run_ids");
+  expect(script).toContain('"--prepare-history-journal"');
   expect(script).toContain('"--format=%H%x09%P%x09%s"');
   expect(script).toContain("public_run_id: publicRunId");
   expect(script).toContain("submission_run_id: submissionRunId");
