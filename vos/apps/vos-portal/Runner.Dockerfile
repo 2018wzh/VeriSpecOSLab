@@ -18,10 +18,13 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
 FROM oven/bun:1.3.14-debian
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    ca-certificates curl gcc g++ gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu git make python3 qemu-system-misc xz-utils \
+    ca-certificates clang curl gcc g++ gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu git lld make python3 qemu-system-misc xz-utils \
   && rm -rf /var/lib/apt/lists/* \
   && groupadd --gid 10001 runner \
   && useradd --uid 10001 --gid runner --no-create-home --home-dir /tmp/runner-home runner
+RUN apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends llvm \
+  && rm -rf /var/lib/apt/lists/*
 ENV RUSTUP_HOME=/opt/rustup \
     CARGO_HOME=/opt/cargo \
     CC_riscv64gc_unknown_none_elf=riscv64-unknown-elf-gcc \
