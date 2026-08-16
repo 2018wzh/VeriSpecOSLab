@@ -1,4 +1,5 @@
 import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Buffer } from "node:buffer";
@@ -68,7 +69,7 @@ try {
     : await webLogin(portalUrl);
   const token = webSession.token;
   const cli = path.resolve(import.meta.dirname, "../../vos-cli/app/main.ts");
-  const env = {
+  const env = withGitShellPath({
     ...process.env,
     VOS_AUTH_STORE: authStore,
     ...(process.env.VOS_PORTAL_TOKEN ? { VOS_PORTAL_TOKEN: process.env.VOS_PORTAL_TOKEN } : {}),
@@ -78,7 +79,7 @@ try {
     GIT_COMMITTER_EMAIL: "glenda-student@vos.invalid",
     GIT_TERMINAL_PROMPT: "0",
     GIT_SSL_NO_VERIFY: process.env.GIT_SSL_NO_VERIFY ?? "1",
-  };
+  });
   const results: Array<Record<string, string | number>> = [];
   const sessionTimeline: ShowcaseEvent[] = [];
   const historyReplayJournal = await readHistoryReplayJournal(source);
@@ -730,6 +731,28 @@ function configurePortalRemote(cwd: string, remote: string): void {
     return;
   }
   git(cwd, ["remote", "add", "portal", remote]);
+}
+
+function withGitShellPath(
+  env: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  if (process.platform !== "win32") return env;
+  const currentPath = env.PATH ?? "";
+  const direct = Bun.spawnSync(["sh", "-c", "exit 0"], {
+    env,
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  if (direct.exitCode === 0) return env;
+  const gitExecPath = runGit(process.cwd(), ["--exec-path"], env, true);
+  if (gitExecPath.exitCode !== 0)
+    throw new Error(`cannot locate Git shell: ${redact(gitExecPath.stderr || gitExecPath.stdout)}`);
+  const gitRoot = path.resolve(gitExecPath.stdout.trim(), "../../..");
+  const candidates = [path.join(gitRoot, "usr", "bin"), path.join(gitRoot, "bin")];
+  const shellDirectory = candidates.find((candidate) => existsSync(path.join(candidate, "sh.exe")));
+  if (!shellDirectory)
+    throw new Error("Git for Windows does not provide sh.exe; install a complete Git distribution");
+  return { ...env, PATH: [shellDirectory, currentPath].filter(Boolean).join(path.delimiter) };
 }
 
 function hasStagedChanges(cwd: string): boolean {
