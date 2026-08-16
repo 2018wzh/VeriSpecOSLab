@@ -47,6 +47,7 @@ test("Glenda connected replay preserves command, Git and Portal lineage for show
   expect(script).toContain("VOS_GLENDA_STUDENT_THROUGH");
   expect(script).toContain("VOS_GLENDA_ALLOW_CANDIDATE_REFS");
   expect(script).toContain("VOS_GLENDA_RESUME_BASE_REF");
+  expect(script).toContain("already_applied: true");
   expect(script).toContain("VOS_GLENDA_HISTORY_AUDIT_REQUIRED");
   expect(script).toContain('runGit(process.cwd(), ["--exec-path"]');
   expect(script).toContain('path.join(candidate, "sh.exe")');

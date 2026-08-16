@@ -117,6 +117,15 @@ try {
           source_ref: activeStages[0].source_ref,
           commit_sha: git(studentCheckout, ["rev-parse", "HEAD"]).trim(),
         });
+      } else {
+        const latestSubject = git(studentCheckout, ["log", "-1", "--format=%s"]).trim();
+        if (latestSubject === `[course][replay] Repair glenda ${activeStages[0].key} source`)
+          recordShowcaseEvent(sessionTimeline, "source-repair", {
+            status: "passed",
+            stage: activeStages[0].key,
+            already_applied: true,
+            commit_sha: git(studentCheckout, ["rev-parse", "HEAD"]).trim(),
+          });
       }
     }
     const privateAgentConfig = path.join(source, ".vos", "config.toml");
