@@ -205,10 +205,19 @@ try {
         ? await writeHistoryAuditArtifact(studentCheckout, historyAudit.report)
         : null;
       await uploadArtifact(cli, studentCheckout, env, publicRunId, replay.path, `${stage.key}-replay-bundle`);
+      for (const skipped of replay.skippedModelSteps)
+        recordShowcaseEvent(portalTimeline, "model-step-skip", {
+          status: "approved",
+          stage: stage.key,
+          step: skipped.name,
+          reason: skipped.reason,
+          approval_env: skipped.approval_env,
+        });
       recordShowcaseEvent(portalTimeline, "portal-replay-upload", {
-        status: "verified",
+        status: replay.status === "passed" ? "verified" : replay.status === "passed_with_approved_skips" ? "verified_with_approved_skips" : "failed",
         run_id: publicRunId,
         label: `${stage.key}-replay-bundle`,
+        replay_status: replay.status,
       });
       if (historyAuditArtifact) {
         await uploadArtifact(cli, studentCheckout, env, publicRunId, historyAuditArtifact, "glenda-history-audit");
@@ -218,7 +227,7 @@ try {
           label: "glenda-history-audit",
         });
       }
-      if (replay.status !== "passed")
+      if (replay.status === "failed")
         throw new Error(`${stage.key} local replay failed after its failure bundle was uploaded`);
 
       const submission = await runCli(cli, studentCheckout, env, [
@@ -272,6 +281,8 @@ try {
         submission_run_id: submissionRunId,
         evidence_status: evidenceStatus,
         submission_status: finalStatus,
+        replay_status: replay.status,
+        approved_model_skips: replay.skippedModelSteps,
         replay_bundle_label: `${stage.key}-replay-bundle`,
         history_audit_label: historyAuditArtifact ? "glenda-history-audit" : null,
         portal_timeline: portalTimeline,
@@ -284,6 +295,8 @@ try {
         public_run_id: publicRunId,
         submission_run_id: submissionRunId,
         evidence_status: evidenceStatus,
+        replay_status: replay.status,
+        approved_model_skips: replay.skippedModelSteps.length,
         submission_status: finalStatus,
         showcase_index_label: `${stage.key}-showcase-index`,
         pushed_branch: "main",
@@ -312,13 +325,41 @@ async function runReplay(
   evidenceStatus: string,
   historyReplayJournal: unknown,
   historyAudit: unknown,
-): Promise<{ path: string; status: "passed" | "failed" }> {
+): Promise<{
+  path: string;
+  status: "passed" | "failed" | "passed_with_approved_skips";
+  skippedModelSteps: Array<{ name: string; reason: "provider_failure"; approval_env: string }>;
+}> {
   const commands: Array<{ name: string; args: string[]; result: unknown; artifacts: Record<string, unknown> }> = [];
-  let status: "passed" | "failed" = "passed";
+  const skippedModelSteps: Array<{ name: string; reason: "provider_failure"; approval_env: string }> = [];
+  const allowModelFailureSkip = env.VOS_GLENDA_ALLOW_AGENT_FAILURE_SKIP === "1";
+  let status: "passed" | "failed" | "passed_with_approved_skips" = "passed";
+  const recordApprovedModelSkip = (
+    name: string,
+    args: string[],
+    original: unknown,
+    artifacts: Record<string, unknown>,
+  ): void => {
+    const skip = { name, reason: "provider_failure" as const, approval_env: "VOS_GLENDA_ALLOW_AGENT_FAILURE_SKIP" };
+    skippedModelSteps.push(skip);
+    commands.push({
+      name,
+      args,
+      result: {
+        status: "skipped",
+        skip_reason: skip.reason,
+        approval_env: skip.approval_env,
+        original_failure: original,
+      },
+      artifacts,
+    });
+    status = "passed_with_approved_skips";
+  };
   const execute = async (name: string, args: string[], requireModel = false): Promise<boolean> => {
+    let parsed: unknown;
     try {
       const result = await runCli(cli, cwd, env, args, true);
-      const parsed = parseJson(result.stdout);
+      parsed = parseJson(result.stdout);
       const commandRecord = {
         name,
         args,
@@ -326,6 +367,10 @@ async function runReplay(
         artifacts: await collectRunArtifacts(cwd, parsed),
       };
       if (result.exitCode !== 0) {
+        if (requireModel && allowModelFailureSkip && isProviderFailure(parsed, result.stderr || result.stdout)) {
+          recordApprovedModelSkip(name, args, commandRecord.result, commandRecord.artifacts);
+          return true;
+        }
         commands.push(commandRecord);
         status = "failed";
         return false;
@@ -334,11 +379,16 @@ async function runReplay(
       commands.push(commandRecord);
       return true;
     } catch (error) {
+      const message = redact(error instanceof Error ? error.message : String(error));
+      if (requireModel && allowModelFailureSkip && isProviderFailure(parsed, message)) {
+        recordApprovedModelSkip(name, args, sanitizeShowcase(parsed ?? { status: "failed", error: message }, cwd), {});
+        return true;
+      }
       status = "failed";
       commands.push({
         name,
         args,
-        result: { status: "failed", error: redact(error instanceof Error ? error.message : String(error)) },
+        result: { status: "failed", error: message },
         artifacts: {},
       });
       return false;
@@ -379,9 +429,10 @@ async function runReplay(
       report,
       history_replay_journal: historyReplayJournal,
       history_audit: historyAudit,
+      approved_model_skips: skippedModelSteps,
     }, null, 2)}\n`,
   );
-  return { path: path.relative(cwd, target), status };
+  return { path: path.relative(cwd, target), status, skippedModelSteps };
 }
 
 async function readHistoryAudit(
@@ -538,6 +589,13 @@ function assertModelResult(value: unknown, command: string): void {
   const review = details?.agent_review as Record<string, unknown> | undefined;
   if (details?.model_used !== true || review?.status === "unavailable")
     throw new Error(`${command} did not produce real model evidence`);
+}
+
+function isProviderFailure(value: unknown, message: string): boolean {
+  const serialized = `${message}\n${JSON.stringify(value ?? {})}`;
+  const providerFailure = /(?:chat request|provider|model).{0,120}(?:failed|error|unavailable)/is.test(serialized);
+  const transientFailure = /(?:\b5\d{2}\b|internal server error|temporarily unavailable|timeout|timed out)/i.test(serialized);
+  return providerFailure && transientFailure;
 }
 
 function sanitizeShowcase(value: unknown, projectRoot: string): unknown {
