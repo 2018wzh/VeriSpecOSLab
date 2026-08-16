@@ -146,6 +146,7 @@ import {
 import {
   runAgentWithPrompt,
   runAgentWithValidatedSubmission,
+  loadAgentRecovery,
   runInteractiveAgentWithPrompt,
   runAgentInteractiveTask,
   startAgentReadonlyDisplay,
@@ -155,6 +156,7 @@ import {
   type ReadonlyAgentDisplayHandle,
   type ReadonlyAgentDisplayStarter,
   type ValidatedAgentRunResult,
+  type AgentRecoveryBinding,
 } from "./agent/runner.ts";
 import {
   isRecord,
@@ -446,6 +448,8 @@ function assertStudentCommandSurface(
     "spec_lint",
     "agent_config",
     "agent_implement",
+    "agent_qemu_preflight",
+    "agent_qemu_execute",
     "agent_debug",
     "agent_verify",
     "agent_ask",
@@ -1120,6 +1124,8 @@ function isReproControlledCommand(command: CliCommand): boolean {
     case "toolchain_init":
     case "agent_generate":
     case "agent_implement":
+    case "agent_qemu_preflight":
+    case "agent_qemu_execute":
     case "agent_verify":
     case "agent_apply_patch":
     case "agent_validate_generated":
@@ -1184,6 +1190,8 @@ const INIT_COMMIT_TARGETS = [
   "vos.yaml",
   "spec/design.yaml",
   "spec/modules/toolchain.yaml",
+  "spec/qemu/request.yaml.example",
+  "references/qemu/README.md",
 ];
 
 function snapshotInitCommitTargets(
@@ -1219,7 +1227,31 @@ async function ensureStudentProjectFiles(projectRoot: string): Promise<void> {
   });
   await mkdir(path.join(projectRoot, "spec", "goals"), { recursive: true });
   await mkdir(path.join(projectRoot, "spec", "patches"), { recursive: true });
+  await mkdir(path.join(projectRoot, "spec", "qemu"), { recursive: true });
+  await mkdir(path.join(projectRoot, "references", "qemu"), { recursive: true });
   const files: Record<string, string> = {
+    "spec/qemu/request.yaml.example": [
+      "# Copy to spec/qemu/<request-id>.yaml and replace the example values.",
+      "version: vos.qemu-port.v1",
+      "id: qemu.example-board",
+      "revision: 0",
+      "status: request",
+      "target:",
+      "  board: Example Board",
+      "qemu:",
+      "  version: 11.1.0",
+      "  source_path: qemu",
+      "",
+    ].join("\n"),
+    "references/qemu/README.md": [
+      "# QEMU port reference material",
+      "",
+      "Place all student-supplied hardware material for a request under",
+      "`references/qemu/<request-id>/`. VOS inventories files by content and",
+      "records repository-relative paths, roles, sizes, and SHA-256 hashes in",
+      "a successful candidate QemuSpec. Hardware facts are not filled from the network.",
+      "",
+    ].join("\n"),
     "spec/design.yaml": [
       "# VOS DesignSpec. Discuss choices with `vos agent ask`, then replace every TODO by hand.",
       "system:",
@@ -1321,7 +1353,15 @@ async function ensureStudentProjectFiles(projectRoot: string): Promise<void> {
     : "";
   const normalizedExisting = existing.replace(/^\.vos\/\s*$/m, ".vos/*");
   const lines = normalizedExisting.split(/\r?\n/).filter(Boolean);
-  const additions = [".vos/*", "!.vos/project.yaml", ".env", "build/", "fs.img"];
+  const additions = [
+    ".vos/*",
+    "!.vos/project.yaml",
+    ".env",
+    "build/",
+    "fs.img",
+    "references/qemu/**/*",
+    "!references/qemu/README.md",
+  ];
   const missing = additions.filter((entry) => !lines.includes(entry));
   if (missing.length > 0)
     await writeFile(
@@ -2134,6 +2174,11 @@ function resolveStudentSpecTarget(
   for (const item of bundle.patch_records) {
     if ([item.id, item.path].includes(target) || item.path === normalized) {
       matches.push({ path: item.path ?? normalized, refs: [item.id] });
+    }
+  }
+  for (const item of bundle.qemu_ports) {
+    if ([item.id, item.request_id, item.path].includes(target) || item.path === normalized) {
+      matches.push({ path: item.path, refs: [item.id, item.request_id] });
     }
   }
   if (matches.length === 0) {
@@ -4408,8 +4453,34 @@ async function legacyHiddenBindingMatches(
   return true;
 }
 
+async function prepareLongAgentRecovery(params: {
+  projectRoot: string;
+  runId: string;
+  resumeRunId?: string;
+  command: string;
+  target: string;
+  bundle: NormalizedSpecBundle;
+}): Promise<{ threadId?: string; binding: AgentRecoveryBinding }> {
+  const binding: AgentRecoveryBinding = {
+    runId: params.runId,
+    command: params.command,
+    target: params.target,
+    baseHead: currentHead(params.projectRoot) ?? "",
+    specHash: hashString(JSON.stringify(params.bundle.hashes)),
+    storageRoot: params.projectRoot,
+  };
+  if (!params.resumeRunId) return { binding };
+  const loaded = await loadAgentRecovery(params.projectRoot, params.resumeRunId, {
+    command: binding.command,
+    target: binding.target,
+    baseHead: binding.baseHead,
+    specHash: binding.specHash,
+  });
+  return { threadId: loaded.threadId, binding };
+}
+
 export async function executeAgentVerify(
-  _command: AgentVerifyCommand,
+  command: AgentVerifyCommand,
   context: ExecContext,
   evidence: EvidenceWriter,
 ): Promise<CommandOutcome> {
@@ -4436,6 +4507,14 @@ export async function executeAgentVerify(
       evidence,
     );
     const bundle = await buildNormalizedSpecBundle({ projectRoot: worktree });
+    const recoveryState = await prepareLongAgentRecovery({
+      projectRoot: context.projectRoot,
+      runId: evidence.run_id,
+      resumeRunId: command.resumeRunId,
+      command: "agent-verify",
+      target: "public",
+      bundle,
+    });
     const readonlyBefore = await studentGitFingerprint(worktree);
     const agentProgress = createAgentProgressParams(context, "agent verify");
     const response = await runAgentWithValidatedSubmission({
@@ -4472,6 +4551,8 @@ export async function executeAgentVerify(
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
       taskRunner: context.agentRunner,
+      threadId: recoveryState.threadId,
+      recovery: recoveryState.binding,
       validateSubmission: (submission) => {
         const review = parseStudentVerificationReview(submission);
         if (review.deterministic_status !== verification.status) {
@@ -4540,6 +4621,14 @@ export async function executeAgentReview(
     manifest: bundle.manifest,
     spec: studentSpecContext(bundle, target.label),
   };
+  const recoveryState = await prepareLongAgentRecovery({
+    projectRoot,
+    runId: evidence.run_id,
+    resumeRunId: command.resumeRunId,
+    command: "agent-review",
+    target: target.label,
+    bundle,
+  });
   if (command.display) {
     context.progress?.hide();
     await runAgentInteractiveTask({
@@ -4577,6 +4666,8 @@ export async function executeAgentReview(
     bundle,
     context,
     evidence,
+    threadId: recoveryState.threadId,
+    recovery: recoveryState.binding,
   });
   const after = await studentGitFingerprint(projectRoot);
   assertStudentReadonlyFingerprint(before, after, "agent review");
@@ -4606,6 +4697,7 @@ function studentSpecContext(
     interfaces: bundle.interfaces,
     goals: bundle.goals,
     patches: bundle.patch_records,
+    qemu_ports: bundle.qemu_ports,
     manifest: bundle.manifest,
     diagnostics: bundle.diagnostics,
   };
@@ -7889,6 +7981,15 @@ export async function executeAgentDebug(
   if (!logPath) {
     return { status: "failed", details: { message: "log path required" } };
   }
+  const debugBundle = await buildNormalizedSpecBundle({ projectRoot });
+  const recoveryState = await prepareLongAgentRecovery({
+    projectRoot,
+    runId: evidence.run_id,
+    resumeRunId: command.resumeRunId,
+    command: "agent-debug",
+    target: path.relative(projectRoot, logPath),
+    bundle: debugBundle,
+  });
   const text = await readFile(logPath, "utf8");
   const readonlyBefore = existsSync(path.join(projectRoot, "vos.yaml"))
     ? await studentGitFingerprint(projectRoot)
@@ -7941,6 +8042,8 @@ export async function executeAgentDebug(
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
       taskRunner: context.agentRunner,
+      threadId: recoveryState.threadId,
+      recovery: recoveryState.binding,
       validateSubmission: (submission) => {
         const parsed = parseDebugOutput(submission);
         sanitizeAgentVisualizationHtml(parsed.visualization_html);
@@ -8806,6 +8909,8 @@ async function runDefaultAgentSpecReview(params: {
   impact?: unknown;
   context: ExecContext;
   evidence: EvidenceWriter;
+  threadId?: string;
+  recovery?: AgentRecoveryBinding;
 }): Promise<AgentSpecReview> {
   const targetRefs = new Set(params.targetRefs ?? []);
   const targetPaths = new Set(params.targetPaths ?? []);
@@ -8884,6 +8989,8 @@ async function runDefaultAgentSpecReview(params: {
       extraMcpServers: agentProgress.extraMcpServers,
       onEvent: agentProgress.onEvent,
       taskRunner: params.context.agentRunner,
+      threadId: params.threadId,
+      recovery: params.recovery,
       validateSubmission: (submission, _events, resultText) =>
         parseAgentSpecReview(submission, resultText),
     });
@@ -9287,6 +9394,7 @@ export function commandToArray(command: CliCommand): string[] {
         ...(command.logPath ? ["--log", command.logPath] : []),
         ...(command.runId ? ["--run", command.runId] : []),
         ...(command.keepWorktree ? ["--keep-worktree"] : []),
+        ...(command.resumeRunId ? ["--resume", command.resumeRunId] : []),
       ];
     case "agent_implement":
       return [
@@ -9296,13 +9404,18 @@ export function commandToArray(command: CliCommand): string[] {
         ...(command.resumeRunId ? ["--resume", command.resumeRunId] : []),
         ...(command.display ? ["--interactive"] : []),
       ];
+    case "agent_qemu_preflight":
+      return ["agent", "qemu", "preflight", command.target, ...(command.resumeRunId ? ["--resume", command.resumeRunId] : [])];
+    case "agent_qemu_execute":
+      return ["agent", "qemu", "execute", command.target, ...(command.resumeRunId ? ["--resume", command.resumeRunId] : [])];
     case "agent_verify":
-      return ["agent", "verify", ...(command.display ? ["--interactive"] : [])];
+      return ["agent", "verify", ...(command.resumeRunId ? ["--resume", command.resumeRunId] : []), ...(command.display ? ["--interactive"] : [])];
     case "agent_review":
       return [
         "agent",
         "review",
         ...(command.target ? [command.target] : []),
+        ...(command.resumeRunId ? ["--resume", command.resumeRunId] : []),
         ...(command.display ? ["--interactive"] : []),
       ];
     case "agent_log":
@@ -10334,6 +10447,7 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
     "  spec lint [<Spec ID|path|design|all>]",
     "  agent config [--show|--check|--reset]",
     "  agent implement <module>",
+    "  agent qemu preflight|execute <QemuSpec ID|path>",
     "  agent debug",
     "  agent verify",
     "  agent ask [question]",
@@ -10378,10 +10492,11 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
     ["vos spec lint", "vos spec lint spec/modules/memory.yaml"],
   ),
   agent: helpBlock(
-    "agent config|implement|debug|verify|ask|review",
+    "agent config|implement|qemu|debug|verify|ask|review",
     [
       "config [--show|--check|--reset]",
       "implement <module>",
+      "qemu preflight|execute <QemuSpec ID|path> [--resume <run-id>]",
       "debug",
       "verify",
       "ask [question]",
@@ -10392,6 +10507,7 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
       'vos agent ask "What is a syscall boundary?"',
       "vos agent review design",
       "vos agent implement memory",
+      "vos agent qemu preflight qemu.example-board",
     ],
   ),
   "agent config": helpBlock(
@@ -10427,13 +10543,24 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
       "vos agent implement memory --resume 202608120845459-350b6984",
     ],
   ),
+  "agent qemu": helpBlock(
+    "agent qemu preflight|execute <QemuSpec ID|path> [--resume <run-id>]",
+    [
+      "preflight inventories references/qemu/<request-id>, rejects incomplete evidence without generating a candidate, and creates a new candidate revision only after an accepted read-only Agent assessment.",
+      "execute requires a committed approved QemuSpec, unchanged material hashes and QEMU pin, and an unresolved-blocker-free contract. It works in a detached worktree and never pushes.",
+    ],
+    [
+      "vos agent qemu preflight qemu.orange-pi-prime",
+      "vos agent qemu execute qemu.orange-pi-prime.r1",
+    ],
+  ),
   "agent debug": helpBlock(
-    "agent debug",
+    "agent debug [--resume <run-id>]",
     ["Read-only root-cause and evidence summary."],
     ["vos agent debug"],
   ),
   "agent verify": helpBlock(
-    "agent verify",
+    "agent verify [--resume <run-id>]",
     [
       "Runs deterministic public verification in a disposable worktree, then asks the read-only Validation Agent to review evidence and stable Spec ID coverage.",
     ],
@@ -10447,7 +10574,7 @@ const STUDENT_HELP_TOPICS: Record<string, string[]> = {
     ['vos agent ask "What is a syscall boundary?"', "vos agent ask"],
   ),
   "agent review": helpBlock(
-    "agent review [<Spec ID|path|design|all>] [-i]",
+    "agent review [<Spec ID|path|design|all>] [-i] [--resume <run-id>]",
     [
       "Runs deterministic lint first, then reviews the selected handwritten Spec, related Specs, and verifies mappings without modifying files. Non-interactive blocker findings fail validation; -i begins with a full review and continues as advisory Q&A.",
     ],

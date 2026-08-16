@@ -36,6 +36,7 @@ vos agent review design
 
 - `spec/design.yaml`：唯一 DesignSpec，记录系统目标、语言、ISA、内核组织、QEMU、canonical board、硬件移植和最多三个组合不变量。
 - `spec/modules/<module>.yaml`：ModuleSpec。操作、接口、性质、错误、状态、并发、rely/guarantee 和算法意图集中在同一文件。
+- `spec/qemu/*.yaml`：可选 QemuSpec。学生先写只含目标板、QEMU 版本和源码路径的 request；预检成功后生成新的 candidate revision，学生调整、改为 `approved` 并提交后才能执行移植。
 - `spec/interfaces/<interface>.yaml`：syscall、IPC、驱动和用户/内核 ABI 等跨边界接口。
 - `spec/goals/<goal>.yaml`：可选的性能、兼容性和形式化目标。
 - `spec/patches/<patch>.yaml`：架构或跨模块语义变化的手写影响声明。
@@ -50,6 +51,8 @@ vos init                         vos doctor
 vos spec lint [<ID|path|design|all>]
 vos agent config
 vos agent implement <module>    vos agent debug
+vos agent qemu preflight <QemuSpec ID|path>
+vos agent qemu execute <approved QemuSpec ID|path>
 vos agent verify                vos agent ask [question]
 vos agent review [<ID|path|design|all>] [-i]
 vos build
@@ -58,6 +61,8 @@ vos verify [--hidden]           vos report
 vos submit                      vos kb add|list|search|remove|clear
 vos kb export-manifest         vos kb import-manifest <path>
 ```
+
+QEMU 板卡移植材料放在 `references/qemu/<request-id>/`。预检要求 request 与当前 `HEAD` 完全一致；材料目录缺失或为空时会在调用 Agent 前直接失败，其他缺失则由只读 Agent 输出具体原因并保留可恢复线程，任何失败都不生成 candidate。执行要求 clean HEAD、已提交的 approved revision、未漂移的材料哈希和 QEMU commit，并在隔离 worktree 中形成本地提交。硬件事实只来自学生材料；TF-A、U-Boot 等软件依赖可以从官方仓库固定版本。该流程生成独立 QEMU 移植产物，不自动改写 `vos.yaml`。
 
 `--project-root`、`--json`、`--verbose` 和 `--progress` 是通用参数。`agent ask` 用于写 Spec 前的概念讨论，`agent review` 评审学生已经写好的 Spec；二者都不修改文件。`agent debug` 和 `agent verify` 也保持只读。`implement` 在 detached linked worktree 中生成实现和测试；VOS 校验 Agent 返回的 target 提案后更新 `vos.yaml`，跑完 build、public、contract、固定种子 fuzz 和有界 trace 门禁，成功后才写回原工作树并创建带 Run-ID 和 Spec-Hash trailer 的提交。
 

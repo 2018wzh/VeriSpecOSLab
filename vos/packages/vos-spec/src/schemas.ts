@@ -116,6 +116,90 @@ export const specPatchV2Schema = z.object({
   new_invariants: z.array(z.string().min(1)).default([]),
 }).strict();
 
+const repoRelativePathSchema = z.string().min(1).refine((value) => {
+  const normalized = value.replace(/\\/g, "/");
+  return !normalized.startsWith("/") && !/^[A-Za-z]:\//.test(normalized)
+    && normalized !== ".." && !normalized.startsWith("../") && !normalized.includes("/../");
+}, "path must be repository-relative and cannot traverse");
+
+const qemuPortMaterialSchema = z.object({
+  id: z.string().min(1),
+  role: z.string().min(1),
+  path: repoRelativePathSchema,
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  size: z.number().int().nonnegative(),
+  provenance: z.string().min(1).optional(),
+  version: z.string().min(1).optional(),
+  caveats: v2StringArray,
+}).strict();
+
+const qemuPortFindingSchema = z.object({
+  id: z.string().min(1),
+  severity: z.enum(["info", "warning", "blocker"]),
+  message: z.string().min(1),
+  evidence: v2StringArray,
+  resolution: z.object({
+    status: z.literal("resolved"),
+    rationale: z.string().min(1),
+    evidence: z.array(z.string().min(1)).min(1),
+  }).strict().optional(),
+}).strict();
+
+const qemuPortBaseSchema = z.object({
+  version: z.literal("vos.qemu-port.v1"),
+  id: z.string().min(1),
+  request_id: z.string().min(1).optional(),
+  revision: z.number().int().nonnegative(),
+  status: z.enum(["request", "candidate", "approved"]),
+  target: z.object({ board: z.string().min(1) }).strict(),
+  qemu: z.object({
+    version: z.string().min(1),
+    source_path: repoRelativePathSchema,
+    commit: z.string().regex(/^[a-f0-9]{7,64}$/i).optional(),
+  }).strict(),
+  materials_dir: repoRelativePathSchema.optional(),
+  materials: z.array(qemuPortMaterialSchema).optional(),
+  preflight: z.object({
+    run_id: z.string().min(1),
+    boot_path: z.record(z.unknown()),
+    reuse_matrix: z.array(z.record(z.unknown())),
+    findings: z.array(qemuPortFindingSchema),
+    notes: v2StringArray,
+  }).strict().optional(),
+  implementation: z.object({
+    owns: z.array(repoRelativePathSchema).min(1),
+    phases: z.array(z.record(z.unknown())).min(1),
+    dependencies: z.array(z.record(z.unknown())).default([]),
+  }).strict().optional(),
+  acceptance: z.object({
+    goal: z.literal("shell"),
+    agent_defined: z.literal(true),
+  }).strict().optional(),
+}).strict();
+
+export const qemuPortSpecSchema = qemuPortBaseSchema.superRefine((doc, ctx) => {
+  if (doc.status === "request") {
+    if (doc.revision !== 0) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["revision"], message: "request revision must be 0" });
+    for (const field of ["request_id", "materials_dir", "materials", "preflight", "implementation", "acceptance"] as const) {
+      if (doc[field] !== undefined) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message: `${field} is generated only after preflight` });
+    }
+    if (doc.qemu.commit) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["qemu", "commit"], message: "qemu.commit is generated only after preflight" });
+    return;
+  }
+  if (doc.revision < 1) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["revision"], message: `${doc.status} revision must be at least 1` });
+  for (const field of ["request_id", "materials_dir", "materials", "preflight", "implementation", "acceptance"] as const) {
+    if (doc[field] === undefined) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message: `${field} is required for ${doc.status} QemuSpec` });
+  }
+  if (!doc.qemu.commit) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["qemu", "commit"], message: `qemu.commit is required for ${doc.status} QemuSpec` });
+  if (doc.status === "approved") {
+    for (const [index, finding] of (doc.preflight?.findings ?? []).entries()) {
+      if (finding.severity === "blocker" && !finding.resolution) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["preflight", "findings", index, "resolution"], message: "approved QemuSpec cannot contain an unresolved blocker" });
+      }
+    }
+  }
+});
+
 const v2EnvSchema = z.preprocess(
   (value) => Array.isArray(value)
     ? value

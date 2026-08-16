@@ -39,7 +39,9 @@ type OutputSchemaId =
   | "report_narrative.v1"
   | "reference_payload.v1"
   | "student_implementation_result.v1"
-  | "knowledgebase_answer.v1";
+  | "knowledgebase_answer.v1"
+  | "qemu_preflight_result.v1"
+  | "qemu_execution_result.v1";
 
 type VisibilityScope =
   | "student-public"
@@ -109,6 +111,26 @@ const DEFAULT_SYSTEM_PROMPT = [
 ].join("\n");
 
 const PROFILE_CONFIGS: AgentTaskProfileConfig[] = [
+  {
+    promptId: "qemu-port-preflight.v1",
+    mode: "deep",
+    taskKinds: ["qemu_port_preflight"],
+    toolProfile: "readonly-doctor",
+    skills: ["qemu-board-port", "reference-policy", "toolchain-authoring"],
+    mcpServers: ["spec-index", "evidence-store"],
+    outputSchema: "qemu_preflight_result.v1",
+    visibilityScope: "student-public",
+  },
+  {
+    promptId: "qemu-port-execution.v1",
+    mode: "deep",
+    taskKinds: ["qemu_port_execution"],
+    toolProfile: "student-implementation",
+    skills: ["qemu-board-port", "module-implementation", "toolchain-authoring", "verification-diagnosis"],
+    mcpServers: ["spec-index", "evidence-store"],
+    outputSchema: "qemu_execution_result.v1",
+    visibilityScope: "student-public",
+  },
   {
     promptId: "student-implementation.v2",
     mode: "smart",

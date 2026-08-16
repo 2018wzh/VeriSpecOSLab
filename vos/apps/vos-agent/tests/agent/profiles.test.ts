@@ -61,6 +61,8 @@ describe("agent task profiles", () => {
     "report_narrative",
     "spec_review",
     "arch_review",
+    "qemu_port_preflight",
+    "qemu_port_execution",
   ];
 
   test("routes every VOS CLI agent task kind to an explicit profile", () => {
@@ -84,6 +86,8 @@ describe("agent task profiles", () => {
       report_narrative: "report_narrative.v1",
       spec_review: "spec_review.v1",
       arch_review: "spec_review.v1",
+      qemu_port_preflight: "qemu_preflight_result.v1",
+      qemu_port_execution: "qemu_execution_result.v1",
     };
 
     for (const [taskKind, outputSchema] of Object.entries(expected)) {
