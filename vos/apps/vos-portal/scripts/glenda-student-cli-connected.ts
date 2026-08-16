@@ -747,12 +747,11 @@ function withGitShellPath(
 ): Record<string, string | undefined> {
   if (process.platform !== "win32") return env;
   const currentPath = env.PATH ?? "";
-  const direct = Bun.spawnSync(["sh", "-c", "exit 0"], {
-    env,
-    stdout: "ignore",
-    stderr: "ignore",
-  });
-  if (direct.exitCode === 0) return env;
+  const directShell = currentPath
+    .split(path.delimiter)
+    .filter(Boolean)
+    .some((directory) => existsSync(path.join(directory, "sh.exe")));
+  if (directShell) return env;
   const gitExecPath = runGit(process.cwd(), ["--exec-path"], env, true);
   if (gitExecPath.exitCode !== 0)
     throw new Error(`cannot locate Git shell: ${redact(gitExecPath.stderr || gitExecPath.stdout)}`);
