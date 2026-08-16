@@ -51,6 +51,8 @@ test("Glenda connected replay preserves command, Git and Portal lineage for show
   expect(script).toContain("passed_with_approved_skips");
   expect(script).toContain("model-step-skip");
   expect(script).toContain("isProviderFailure");
+  expect(script).toContain("missingConfiguredCredential");
+  expect(script).toContain("provider credential");
   expect(script).toContain("already_applied: true");
   expect(script).toContain("VOS_GLENDA_HISTORY_AUDIT_REQUIRED");
   expect(script).toContain('runGit(process.cwd(), ["--exec-path"]');
