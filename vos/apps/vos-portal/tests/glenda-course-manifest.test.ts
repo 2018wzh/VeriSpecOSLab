@@ -51,6 +51,7 @@ test("Glenda connected replay preserves command, Git and Portal lineage for show
   expect(script).toContain("VOS_GLENDA_HISTORY_AUDIT_REQUIRED");
   expect(script).toContain('runGit(process.cwd(), ["--exec-path"]');
   expect(script).toContain('path.join(candidate, "sh.exe")');
+  expect(script).toContain('key.toLowerCase() !== "path"');
   expect(script).toContain('"glenda-history-audit"');
   expect(script).toContain("failed_run_ids");
   expect(script).toContain('"--prepare-history-journal"');

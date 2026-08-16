@@ -746,7 +746,7 @@ function withGitShellPath(
   env: Record<string, string | undefined>,
 ): Record<string, string | undefined> {
   if (process.platform !== "win32") return env;
-  const currentPath = env.PATH ?? "";
+  const currentPath = env.PATH ?? env.Path ?? process.env.PATH ?? process.env.Path ?? "";
   const directShell = currentPath
     .split(path.delimiter)
     .filter(Boolean)
@@ -760,7 +760,10 @@ function withGitShellPath(
   const shellDirectory = candidates.find((candidate) => existsSync(path.join(candidate, "sh.exe")));
   if (!shellDirectory)
     throw new Error("Git for Windows does not provide sh.exe; install a complete Git distribution");
-  return { ...env, PATH: [shellDirectory, currentPath].filter(Boolean).join(path.delimiter) };
+  const normalized = Object.fromEntries(
+    Object.entries(env).filter(([key]) => key.toLowerCase() !== "path"),
+  );
+  return { ...normalized, PATH: [shellDirectory, currentPath].filter(Boolean).join(path.delimiter) };
 }
 
 function hasStagedChanges(cwd: string): boolean {
