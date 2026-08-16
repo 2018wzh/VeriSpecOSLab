@@ -236,8 +236,8 @@ services:
       DATABASE_URL: postgres://vos_portal:${VOS_PORTAL_DB_PASSWORD}@postgres:5432/vos_portal
       DOCKER_HOST: tcp://docker-socket-proxy:2375
       VOS_RUNNER_IMAGE: vos-runner:local
-      VOS_RUNNER_CHECKOUT_NETWORK: vos-portal-checkout
-      VOS_RUNNER_NETWORK: vos-portal-runner
+      VOS_RUNNER_CHECKOUT_NETWORK: ${VOS_RUNNER_CHECKOUT_NETWORK:-vos-portal-checkout}
+      VOS_RUNNER_NETWORK: ${VOS_RUNNER_NETWORK:-vos-portal-runner}
       VOS_RUNNER_PORTAL_URL: ${VOS_RUNNER_PORTAL_URL:-http://vos-portal:8787}
       VOS_RUNNER_CPUS: ${VOS_RUNNER_CPUS:-2}
       VOS_RUNNER_MEMORY_BYTES: ${VOS_RUNNER_MEMORY_BYTES:-2147483648}
@@ -271,11 +271,11 @@ services:
 
 networks:
   control: { internal: true }
-  checkout: { internal: true, name: vos-portal-checkout }
+  checkout: { internal: true, name: "${VOS_RUNNER_CHECKOUT_NETWORK:-vos-portal-checkout}" }
   ingress: {}
   objects: {}
-  runner: { internal: true, name: vos-portal-runner }
-  runtime-control: { internal: true, name: vos-portal-runtime-control }
+  runner: { internal: true, name: "${VOS_RUNNER_NETWORK:-vos-portal-runner}" }
+  runtime-control: { internal: true, name: "${VOS_RUNTIME_CONTROL_NETWORK:-vos-portal-runtime-control}" }
 
 volumes:
   vos_postgres_data:

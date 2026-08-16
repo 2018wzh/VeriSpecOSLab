@@ -82,12 +82,42 @@ try {
   const results: Array<Record<string, string | number>> = [];
   const sessionTimeline: ShowcaseEvent[] = [];
   const historyReplayJournal = await readHistoryReplayJournal(source);
+  const historyAudit = await readHistoryAudit(source);
+  const firstBinding = await client.getProjectBinding(portalUrl, token, projectId);
+  const startIndex = stages.findIndex((stage) => stage.key === firstBinding.current_stage.key);
+  if (startIndex < 0)
+    throw new Error(`project ${projectId} current stage ${firstBinding.current_stage.key} is outside the requested replay range`);
+  const activeStages = stages.slice(startIndex);
   const studentCheckout = path.join(workspace, "student-main");
   let worktreeAdded = false;
   try {
-    git(source, ["worktree", "add", "--detach", studentCheckout, stages[0].source_ref]);
-    worktreeAdded = true;
-    git(studentCheckout, ["switch", "-c", "main"]);
+    if (startIndex === 0) {
+      git(source, ["worktree", "add", "--detach", studentCheckout, activeStages[0].source_ref]);
+      worktreeAdded = true;
+    } else {
+      cloneStudentRepository(studentCheckout, publicRepositoryUrl(firstBinding.repo_url), env);
+      recordShowcaseEvent(sessionTimeline, "portal-resume", {
+        status: "passed",
+        stage: activeStages[0].key,
+        commit_sha: git(studentCheckout, ["rev-parse", "HEAD"]).trim(),
+      });
+      const resumeBaseRef = process.env.VOS_GLENDA_RESUME_BASE_REF?.trim();
+      if (resumeBaseRef) {
+        await applyStageDelta(source, studentCheckout, resumeBaseRef, activeStages[0].source_ref);
+        if (!hasStagedChanges(studentCheckout))
+          throw new Error(
+            `resume repair ${resumeBaseRef} to ${activeStages[0].source_ref} produced no staged changes`,
+          );
+        git(studentCheckout, ["commit", "-m", `[course][replay] Repair glenda ${activeStages[0].key} source`]);
+        recordShowcaseEvent(sessionTimeline, "source-repair", {
+          status: "passed",
+          stage: activeStages[0].key,
+          from_ref: resumeBaseRef,
+          source_ref: activeStages[0].source_ref,
+          commit_sha: git(studentCheckout, ["rev-parse", "HEAD"]).trim(),
+        });
+      }
+    }
     const privateAgentConfig = path.join(source, ".vos", "config.toml");
     if (await Bun.file(privateAgentConfig).exists()) {
       await mkdir(path.join(studentCheckout, ".vos"), { recursive: true });
@@ -100,27 +130,30 @@ try {
     recordShowcaseEvent(sessionTimeline, "portal-login", { status: "passed" });
     await runCli(cli, studentCheckout, env, ["portal", "whoami", portalUrl]);
     recordShowcaseEvent(sessionTimeline, "portal-whoami", { status: "passed" });
-    const firstBinding = await client.getProjectBinding(portalUrl, token, projectId);
-    await runCli(cli, studentCheckout, env, ["portal", "bind", portalUrl, projectId]);
-    git(studentCheckout, ["add", ".gitignore", ".vos/project.yaml"]);
-    git(studentCheckout, ["commit", "-m", `[course][portal] Bind glenda ${stages[0].key} project`]);
-    recordShowcaseEvent(sessionTimeline, "portal-bind", {
-      status: "passed",
-      project_id: projectId,
-      commit_sha: git(studentCheckout, ["rev-parse", "HEAD"]).trim(),
-    });
+    if (startIndex === 0) {
+      await runCli(cli, studentCheckout, env, ["portal", "bind", portalUrl, projectId]);
+      git(studentCheckout, ["add", ".gitignore", ".vos/project.yaml"]);
+      git(studentCheckout, ["commit", "-m", `[course][portal] Bind glenda ${activeStages[0].key} project`]);
+      recordShowcaseEvent(sessionTimeline, "portal-bind", {
+        status: "passed",
+        project_id: projectId,
+        commit_sha: git(studentCheckout, ["rev-parse", "HEAD"]).trim(),
+      });
+    } else if (!(await Bun.file(path.join(studentCheckout, ".vos", "project.yaml")).exists())) {
+      throw new Error("resumed student history has no committed Portal binding");
+    }
     const remote = publicRepositoryUrl(firstBinding.repo_url);
-    git(studentCheckout, ["remote", "add", "portal", remote]);
+    configurePortalRemote(studentCheckout, remote);
 
-    for (let index = 0; index < stages.length; index++) {
-      const stage = stages[index];
+    for (let index = 0; index < activeStages.length; index++) {
+      const stage = activeStages[index];
       const binding = await client.getProjectBinding(portalUrl, token, projectId);
       if (binding.current_stage.key !== stage.key)
         throw new Error(
           `project ${projectId} is at ${binding.current_stage.key}, expected ${stage.key}`,
         );
       if (index > 0) {
-        await applyStageDelta(source, studentCheckout, stages[index - 1].source_ref, stage.source_ref);
+        await applyStageDelta(source, studentCheckout, activeStages[index - 1].source_ref, stage.source_ref);
         git(studentCheckout, ["commit", "-m", `[course][replay] Advance glenda ${stage.key}`]);
       }
       const portalTimeline: ShowcaseEvent[] = sessionTimeline.map((event) => ({ ...event }));
@@ -130,7 +163,7 @@ try {
         source_ref: stage.source_ref,
         commit_sha: git(studentCheckout, ["rev-parse", "HEAD"]).trim(),
       });
-      await pushMain(studentCheckout, env, index === 0);
+      await pushMain(studentCheckout, env, startIndex === 0 && index === 0);
       recordShowcaseEvent(portalTimeline, "gitea-push-main", {
         status: "passed",
         commit_sha: git(studentCheckout, ["rev-parse", "HEAD"]).trim(),
@@ -156,13 +189,25 @@ try {
         publicRunId,
         evidenceStatus,
         stage.key === "lab10" ? historyReplayJournal : null,
+        stage.key === "lab10" ? historyAudit?.report ?? null : null,
       );
+      const historyAuditArtifact = stage.key === "lab10" && historyAudit
+        ? await writeHistoryAuditArtifact(studentCheckout, historyAudit.report)
+        : null;
       await uploadArtifact(cli, studentCheckout, env, publicRunId, replay.path, `${stage.key}-replay-bundle`);
       recordShowcaseEvent(portalTimeline, "portal-replay-upload", {
         status: "verified",
         run_id: publicRunId,
         label: `${stage.key}-replay-bundle`,
       });
+      if (historyAuditArtifact) {
+        await uploadArtifact(cli, studentCheckout, env, publicRunId, historyAuditArtifact, "glenda-history-audit");
+        recordShowcaseEvent(portalTimeline, "portal-history-audit-upload", {
+          status: "verified",
+          run_id: publicRunId,
+          label: "glenda-history-audit",
+        });
+      }
       if (replay.status !== "passed")
         throw new Error(`${stage.key} local replay failed after its failure bundle was uploaded`);
 
@@ -182,6 +227,8 @@ try {
         run_id: submissionRunId,
       });
       await uploadArtifact(cli, studentCheckout, env, submissionRunId, replay.path, `${stage.key}-replay-bundle`);
+      if (historyAuditArtifact)
+        await uploadArtifact(cli, studentCheckout, env, submissionRunId, historyAuditArtifact, "glenda-history-audit");
       await uploadRequiredReviewArtifacts(cli, studentCheckout, env, submissionRunId, stage.key, stage.required_review_artifacts);
       recordShowcaseEvent(portalTimeline, "portal-submission-artifacts", {
         status: "verified",
@@ -216,6 +263,7 @@ try {
         evidence_status: evidenceStatus,
         submission_status: finalStatus,
         replay_bundle_label: `${stage.key}-replay-bundle`,
+        history_audit_label: historyAuditArtifact ? "glenda-history-audit" : null,
         portal_timeline: portalTimeline,
       });
       await uploadArtifact(cli, studentCheckout, env, submissionRunId, showcaseIndex, `${stage.key}-showcase-index`);
@@ -253,20 +301,27 @@ async function runReplay(
   publicRunId: string,
   evidenceStatus: string,
   historyReplayJournal: unknown,
+  historyAudit: unknown,
 ): Promise<{ path: string; status: "passed" | "failed" }> {
   const commands: Array<{ name: string; args: string[]; result: unknown; artifacts: Record<string, unknown> }> = [];
   let status: "passed" | "failed" = "passed";
   const execute = async (name: string, args: string[], requireModel = false): Promise<boolean> => {
     try {
-      const result = await runCli(cli, cwd, env, args);
+      const result = await runCli(cli, cwd, env, args, true);
       const parsed = parseJson(result.stdout);
-      if (requireModel) assertModelResult(parsed, name);
-      commands.push({
+      const commandRecord = {
         name,
         args,
         result: sanitizeShowcase(parsed, cwd),
         artifacts: await collectRunArtifacts(cwd, parsed),
-      });
+      };
+      if (result.exitCode !== 0) {
+        commands.push(commandRecord);
+        status = "failed";
+        return false;
+      }
+      if (requireModel) assertModelResult(parsed, name);
+      commands.push(commandRecord);
       return true;
     } catch (error) {
       status = "failed";
@@ -313,9 +368,37 @@ async function runReplay(
       commands,
       report,
       history_replay_journal: historyReplayJournal,
+      history_audit: historyAudit,
     }, null, 2)}\n`,
   );
   return { path: path.relative(cwd, target), status };
+}
+
+async function readHistoryAudit(
+  sourceRoot: string,
+): Promise<{ path: string; report: Record<string, unknown> } | null> {
+  const configured = process.env.VOS_GLENDA_HISTORY_AUDIT?.trim();
+  const auditPath = path.resolve(sourceRoot, configured || path.join(".vos", "history-audit.json"));
+  if (!(await Bun.file(auditPath).exists())) {
+    if (process.env.VOS_GLENDA_HISTORY_AUDIT_REQUIRED === "1")
+      throw new Error("VOS_GLENDA_HISTORY_AUDIT_REQUIRED requires a history audit report");
+    return null;
+  }
+  const report = JSON.parse(await readFile(auditPath, "utf8")) as Record<string, unknown>;
+  if (report.version !== "glenda-history-audit.v1" || report.status !== "passed")
+    throw new Error("Glenda history audit must be a passing glenda-history-audit.v1 report");
+  return { path: auditPath, report: sanitizeShowcase(report, sourceRoot) as Record<string, unknown> };
+}
+
+async function writeHistoryAuditArtifact(
+  projectRoot: string,
+  report: Record<string, unknown>,
+): Promise<string> {
+  const directory = path.join(projectRoot, ".vos", "showcase", "lab10");
+  await mkdir(directory, { recursive: true });
+  const target = path.join(directory, "history-audit.json");
+  await writeFile(target, `${JSON.stringify(report, null, 2)}\n`);
+  return path.relative(projectRoot, target);
 }
 
 async function readHistoryReplayJournal(sourceRoot: string): Promise<unknown> {
@@ -435,6 +518,13 @@ async function collectRunArtifacts(projectRoot: string, commandResult: unknown):
 function assertModelResult(value: unknown, command: string): void {
   const root = value as Record<string, unknown>;
   const details = root.details as Record<string, unknown> | undefined;
+  if (
+    command === "agent-ask" &&
+    details?.answer &&
+    Array.isArray(details.raw_events) &&
+    details.raw_events.length > 0
+  )
+    return;
   const review = details?.agent_review as Record<string, unknown> | undefined;
   if (details?.model_used !== true || review?.status === "unavailable")
     throw new Error(`${command} did not produce real model evidence`);
@@ -590,14 +680,7 @@ async function pushMain(
   env: Record<string, string | undefined>,
   firstPush: boolean,
 ): Promise<void> {
-  const username = process.env.VOS_GITEA_USERNAME ?? "student";
-  const password = process.env.VOS_GITEA_PASSWORD ?? process.env.VOS_GITEA_TOKEN ?? "student";
-  const authEnv = {
-    ...env,
-    GIT_CONFIG_COUNT: "1",
-    GIT_CONFIG_KEY_0: "http.extraHeader",
-    GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`${username}:${password}`, "utf8").toString("base64")}`,
-  };
+  const authEnv = giteaAuthEnv(env);
   let lease: string[] = [];
   if (firstPush) {
     const remote = runGit(cwd, ["ls-remote", "portal", "refs/heads/main"], authEnv, true);
@@ -611,10 +694,49 @@ async function pushMain(
     throw new Error(`git push failed: ${redact(pushed.stderr || pushed.stdout)}`);
 }
 
+function cloneStudentRepository(
+  target: string,
+  remote: string,
+  env: Record<string, string | undefined>,
+): void {
+  const parent = path.dirname(target);
+  const cloned = runGit(parent, ["clone", "--no-checkout", remote, target], giteaAuthEnv(env), true);
+  if (cloned.exitCode !== 0)
+    throw new Error(`git clone failed: ${redact(cloned.stderr || cloned.stdout)}`);
+  git(target, ["checkout", "--detach", "origin/main"]);
+}
+
+function giteaAuthEnv(env: Record<string, string | undefined>): Record<string, string | undefined> {
+  const username = process.env.VOS_GITEA_USERNAME ?? "student";
+  const password = process.env.VOS_GITEA_PASSWORD ?? process.env.VOS_GITEA_TOKEN ?? "student";
+  return {
+    ...env,
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "http.extraHeader",
+    GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`${username}:${password}`, "utf8").toString("base64")}`,
+  };
+}
+
 function publicRepositoryUrl(repoUrl: string | undefined): string {
   if (!repoUrl) throw new Error("Portal project has no active Gitea repository");
   const parsed = new URL(repoUrl);
   return `${giteaOrigin}${parsed.pathname}`;
+}
+
+function configurePortalRemote(cwd: string, remote: string): void {
+  const existing = runGit(cwd, ["remote", "get-url", "portal"], process.env, true);
+  if (existing.exitCode === 0) {
+    git(cwd, ["remote", "set-url", "portal", remote]);
+    return;
+  }
+  git(cwd, ["remote", "add", "portal", remote]);
+}
+
+function hasStagedChanges(cwd: string): boolean {
+  const result = runGit(cwd, ["diff", "--cached", "--quiet"], process.env, true);
+  if (result.exitCode === 0) return false;
+  if (result.exitCode === 1) return true;
+  throw new Error(`failed to inspect staged replay changes: ${redact(result.stderr || result.stdout)}`);
 }
 
 function git(cwd: string, args: string[]): string {

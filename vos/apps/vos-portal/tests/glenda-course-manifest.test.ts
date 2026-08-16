@@ -46,6 +46,9 @@ test("Glenda connected replay preserves command, Git and Portal lineage for show
   expect(script).toContain('"glenda-history-replay-journal.v1"');
   expect(script).toContain("VOS_GLENDA_STUDENT_THROUGH");
   expect(script).toContain("VOS_GLENDA_ALLOW_CANDIDATE_REFS");
+  expect(script).toContain("VOS_GLENDA_RESUME_BASE_REF");
+  expect(script).toContain("VOS_GLENDA_HISTORY_AUDIT_REQUIRED");
+  expect(script).toContain('"glenda-history-audit"');
   expect(script).toContain("failed_run_ids");
   expect(script).toContain('"--prepare-history-journal"');
   expect(script).toContain('"--format=%H%x09%P%x09%s"');
@@ -55,6 +58,9 @@ test("Glenda connected replay preserves command, Git and Portal lineage for show
   for (const action of [
     "portal-login",
     "portal-bind",
+    "portal-resume",
+    "source-repair",
+    "portal-history-audit-upload",
     "gitea-push-main",
     "portal-public-run",
     "portal-evidence",
