@@ -34,6 +34,57 @@
 
 如果一项只在 QEMU 有值，标记为 `qemu_only`；如果 U-Boot 能加载但内核驱动没有读写证据，标记为 `bootloader_only`，两者都不能写入实板通过项。
 
+### VOS QEMU 板级移植：先预检，再批准，再执行
+
+本节是可选的 QEMU 源码移植路径；它不能替代本 Lab 的真实板卡验收。`vos run qemu` 仍用于运行你的内核回归，`vos agent qemu` 则用于把 canonical board 的机器/SoC 行为实现到固定版本的 QEMU 中。
+
+#### 1. 准备 request 和材料
+
+确认 Lab 1 的板卡身份、启动介质和串口记录已经提交，并在项目中准备：
+
+```text
+spec/qemu/<request-id>.yaml
+references/qemu/<request-id>/
+```
+
+request 保持最小形状：`version: vos.qemu-port.v1`、唯一 `id`、`revision: 0`、`status: request`、`target.board`，以及 `qemu.version` 和 `qemu.source_path`。QEMU 源码路径必须是仓库相对路径、指向带 `VERSION` 文件的 Git worktree。材料目录放板卡/SoC 手册、原理图、设备树、已知固件/镜像和已验证启动日志；不要把 CTF、凭据或隐私报告复制进材料目录。
+
+预检只信任这些学生材料中的硬件事实，不会从网络补齐缺失寄存器或板级连线。官方 TF-A/U-Boot 等软件依赖可以在后续执行阶段固定版本。目录为空时预检在调用 Agent 前失败；材料不足时返回缺口并保持 `candidate_created: false`。
+
+#### 2. 运行只读预检
+
+```sh
+vos agent qemu preflight <QemuSpec ID|path>
+```
+
+预检会检查 request 是否和当前 clean HEAD 一致，盘点并哈希材料，核对 QEMU `VERSION`/commit，并要求只读 Agent 给出：真实 boot path、每个设备的复用分类、findings/blocker、分阶段实现计划、依赖和允许写入的 `owns` 路径。复用分类不能只看设备名、地址或 DT `compatible`；必须比较复位状态、寄存器行为、IRQ/DMA/clock wiring、guest-visible ID 和固件路径。成功后工具才写入 `spec/qemu/<request-id>.rN.yaml` candidate；失败只保留缺口和可恢复的 run。
+
+#### 3. 审查 candidate 并批准
+
+逐项审查 candidate 的 `boot_path`、bypass、`reuse_matrix`、findings、phases、dependencies 和 `implementation.owns`。任何跳过 BootROM/SPL、预加载 kernel/DTB 或简化固件服务，都要在 boot path 中写出原因和影响。确认 blocker 已有证据支持的 resolution 后，手工把 `status: candidate` 改为 `status: approved` 并提交：
+
+```sh
+vos spec lint spec/qemu/<request-id>.rN.yaml
+git add spec/qemu/<request-id>.rN.yaml
+git commit -m "[spec][qemu] Approve <request-id> revision"
+```
+
+candidate 是唯一允许 Agent 生成的 Spec 例外；没有学生批准和当前 HEAD 的普通 Git 提交，不能进入执行。
+
+#### 4. 执行 QEMU 模型移植
+
+```sh
+vos agent qemu execute <approved QemuSpec ID|path>
+```
+
+执行重新核对 approved Spec、QEMU commit 和材料哈希，在 detached worktree 中按批准的 `owns` 路径构建、启动到 shell、运行邻居 QEMU 机器回归并提交变更。它不拥有 `spec/`、`vos.yaml`、`.vos/` 或 `references/qemu/`，也不会 push；成功后只落本地实现提交。若 Agent 被外部条件阻塞，先保存 blocker 和 `resume_steps`，不要修改日志冒充通过；在命令、HEAD、Spec hash 和 worktree 未漂移时才可执行：
+
+```sh
+vos agent qemu execute <approved QemuSpec ID|path> --resume <run-id>
+```
+
+QEMU port 的接受条件是 QEMU 构建、最小固件路径 boot-to-shell、邻居回归和结构化阶段证据全部可复现。它仍只产生 `qemu_only` 的模型证据，不能把真实板卡的电源、pinmux、UART 电平、U-Boot、SDIO/SPI、DMA/cache 或人工复核状态写成通过。
+
 ## 2. 移植顺序
 
 1. 收集 SoC/板卡手册、启动日志、设备树和已知可启动镜像，记录版本与哈希。

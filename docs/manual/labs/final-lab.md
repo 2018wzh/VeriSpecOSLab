@@ -47,7 +47,7 @@ Final Lab 不是重复执行一遍命令。它审查从设计、实现、验证�
 
 ### 2.3 验证证据
 
-提交 Lab 10 的覆盖表、不变量/故障注入矩阵、可复现的构建/测试/QEMU 串口日志、可复现归档和硬件 `pending_human_review` 记录。原始协作日志不进入 Git；导出证据应遮蔽凭据并使用稳定路径别名。VOS manifest 可作为辅助，不是唯一归档格式。
+提交 Lab 10 的覆盖表、不变量/故障注入矩阵、可复现的构建/测试/QEMU 串口日志、可复现归档和硬件 `pending_human_review` 记录。若使用 QEMU 板级移植，还要附上 approved QemuSpec、材料清单/哈希、QEMU commit、boot path/bypass 和邻居回归，并把它标为 `qemu_only`；不得把它当作真实板卡证据。原始协作日志不进入 Git；导出证据应遮蔽凭据并使用稳定路径别名。VOS manifest 可作为辅助，不是唯一归档格式。
 
 ### 2.4 答辩材料
 

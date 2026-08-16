@@ -49,6 +49,42 @@ Linux 内核的早期版本移植到新 SoC 时，经常遇到"在 QEMU 上一�
 
 把表中“真实板卡必须核对”逐项映射到 `hardware_port` 和平台 HAL。未验证的项应标为待办或 `pending_human_review`，不能用 QEMU 日志填空。
 
+### 9.1.2 VOS 的 QEMU 板级移植工作流
+
+如果课程要求把 Lab 1 的 canonical board 先带入 QEMU，VOS 提供了一条证据门控的 QEMU 源码移植链。它和 `vos run qemu` 的区别必须先说清楚：`run qemu` 运行你的内核；下面的 `agent qemu` 负责修改固定版本的 QEMU 机器/SoC 模型，并按真实板卡的启动链验证模型。它不替代真实硬件，也不自动更新项目的 `vos.yaml`。
+
+#### 申请与材料边界
+
+在项目初始化后，学生手写 `spec/qemu/<request-id>.yaml`。request 只包含目标板、QEMU 版本和仓库相对的 QEMU 源码路径，保持 `revision: 0`、`status: request`；不要把 Agent 生成的寄存器猜测直接写入 request。对应的学生材料放在 `references/qemu/<request-id>/`，例如：
+
+| 材料 | 用来证明什么 |
+| --- | --- |
+| 板卡/SoC 手册、勘误 | 寄存器复位值、时钟/复位、IRQ、DMA 和设备语义 |
+| 原理图、pinmux/电源表 | UART、SDIO/eMMC、SPI、调试器和启动介质的真实连线 |
+| DTB/DTS、已知启动固件或镜像 | 设备发现、内存范围、固件交接和镜像格式 |
+| 已验证的启动日志、版本记录 | BootROM/SPL/OpenSBI/U-Boot/内核阶段和实际约束 |
+
+预检会为这些文件建立路径、角色、大小和 SHA-256 清单。材料目录缺失或为空时，在调用 Agent 前直接失败；材料不足时只返回具体缺口，不生成 candidate。硬件事实只能来自这些材料，不能用网络搜索或“相似板卡”填空。执行阶段可以从官方仓库固定 TF-A、U-Boot 等软件依赖，但必须记录不可变版本和来源。
+
+#### 预检、批准与执行
+
+```sh
+vos agent qemu preflight <QemuSpec ID|path>
+# 审查 spec/qemu/<request-id>.rN.yaml
+# 将 status: candidate 改为 status: approved 后提交
+vos agent qemu execute <approved QemuSpec ID|path>
+```
+
+预检是只读的：它核对 QEMU 源码树的 `VERSION` 和当前 commit，重建真实 boot path，比较每个设备的复位状态、寄存器行为、IRQ/DMA/clock wiring、guest-visible ID 和固件路径，并把设备分为直接复用、集成复用、兼容变体、新模型或明确不支持。成功的结构化 `sufficient` 结果才会产生 candidate；其中的 `boot_path`、bypass、reuse matrix、findings、phases、dependencies 和 `implementation.owns` 是学生批准前必须逐项检查的内容。任何跳过 BootROM/SPL、预加载 kernel/DTB 或简化固件服务都要写成显式 bypass。
+
+candidate 是唯一允许 Agent 生成的 Spec 例外。学生必须核对缺口和 blocker 的 resolution，把它改为 `approved`，并用普通 Git 提交；未提交、被 `.gitignore` 忽略或与当前 HEAD 不一致的 approved Spec 都不能执行。
+
+执行只接受 clean HEAD、已提交的 approved revision、未变化的材料哈希和 QEMU commit。VOS 在 detached worktree 中按批准的 `owns` 路径工作，要求 QEMU 构建、Agent 定义的 boot-to-shell loop 和邻居机器回归；成功后落一个本地提交并清理 worktree。`spec/`、`vos.yaml`、`.vos/` 和材料目录是保护路径，执行不 push。中断时保留 recovery 记录，只有命令、target、HEAD、Spec hash 和 worktree 仍匹配才能用 `--resume <run-id>` 继续。
+
+#### QEMU 模型证据不等于板卡证据
+
+QEMU 移植的通过项应绑定 QEMU 源码 commit、QemuSpec revision、材料清单、阶段提交、构建命令、完整有界日志和邻居回归结果。它可以证明“模型按声明的最小固件路径到达 shell”，但不能填充差异矩阵中的真实电源、DDR training、pinmux、电平、U-Boot 控制台、SDIO/SPI 时序、DMA/cache 一致性或 `pending_human_review`。这些仍必须由 Lab 9 的真实板卡流程单独验证。
+
 ## 9.2 设计维度
 
 ### 维度 1：选择目标硬件

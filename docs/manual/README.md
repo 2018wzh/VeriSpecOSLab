@@ -21,11 +21,13 @@ spec/modules/toolchain.yaml
 spec/interfaces/
 spec/goals/
 spec/patches/
+spec/qemu/
+references/qemu/README.md
 vos.yaml
 .gitignore
 ```
 
-它还会创建初始 Git 提交。请先配置 Git 的 user.name 和 user.email。`vos doctor` 的错误应当告诉你缺少哪个命令、文件或字段，以及下一步命令。
+它还会创建 `spec/qemu/request.yaml.example` 和 `references/qemu/README.md`，供需要做 QEMU 板级移植的项目复制和填写。`spec/qemu/` 中的 request 由学生手写；`references/qemu/<request-id>/` 只放学生掌握的板卡手册、原理图、设备树、固件或镜像等材料，目录内容默认被忽略，不会因为 `vos init` 自动进入 Git。`vos init` 还会创建初始 Git 提交，请先配置 Git 的 user.name 和 user.email。`vos doctor` 的错误应当告诉你缺少哪个命令、文件或字段，以及下一步命令。
 
 ## 日常循环
 
@@ -37,6 +39,16 @@ Lab 9–Final：学生与 Coding Agent 共同维护 Spec/实现 → 项目 build
 Lab 1–8 中，Spec 由学生亲手编写和提交。`spec lint` 不调用模型；`agent review` 先运行 lint，再结合相关 Spec 与 `vos.yaml` 的 `verifies` 映射给出建议，不写文件。`implement` 需要 clean HEAD 和已提交 Spec；成功后自动创建 `[vos][agent] Implement <module>` 提交。失败、越界、全量回归失败或 HEAD 漂移只保留诊断和 patch，不修改原工作树。
 
 从 Lab 9 开始，课程允许直接使用 Codex、Claude Code、Gemini CLI、Copilot 等 Coding Agent 修改代码、测试、构建文件和 Spec。此时 VOS 的 Agent 角色和顺序不再是课程门禁；Lab 仍要求提交与实现一致的 Spec、实验报告和真实证据，并在报告中简要说明使用过的 Agent、任务范围和自己的复核方式。
+
+QEMU 还有一条与日常 `vos run qemu` 不同的板级移植主链。它用于把固定 canonical board 的启动链和 SoC/外设行为带入 QEMU，而不是替学生运行已有内核：
+
+```sh
+vos agent qemu preflight <QemuSpec ID|path>
+# 学生审查 candidate，将 status 改为 approved 并提交
+vos agent qemu execute <approved QemuSpec ID|path>
+```
+
+预检只使用 `references/qemu/<request-id>/` 中的硬件材料，材料缺失或不足时不会生成 candidate，也不会用网络资料补齐硬件事实。执行要求已提交的 `approved` revision、未漂移的材料和 QEMU commit，在 detached worktree 中完成构建、启动到 shell 和邻居回归；它可以从官方仓库固定 TF-A/U-Boot 等软件依赖，但不改写 `vos.yaml`、不 push。中断后只有在命令、HEAD、Spec hash 和 worktree 仍匹配时才使用 `--resume <run-id>` 恢复。QEMU 结果仍不能替代真实板卡的串口、SDIO/SPI、DMA/cache 和人工复核证据。
 
 ## 教材与实验索引
 

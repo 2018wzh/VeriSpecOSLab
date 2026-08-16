@@ -291,6 +291,15 @@ checks:
 
 示例中的程序名、镜像参数、成功/失败模式和产物路径必须按所选平台调整。所有 `cwd` 与 artifact 都是仓库相对路径；`env` 只是允许继承的变量名。QEMU 建议使用非图形串口，避免图形界面让日志采集失去确定性。成功模式应匹配完整、稳定的完成标记，失败模式则覆盖 panic、致命错误和未预期 trap。两者都没命中时，超时仍会单独报告为 `timed_out`。
 
+这里的 `runners.qemu` 只负责启动你的项目和采集证据。它与 Lab 9 的 QEMU 板级移植命令不是一回事：`vos run qemu` 不会修改 QEMU 源码；`vos agent qemu preflight/execute` 也不会替你补全这个 runner 或改写 `vos.yaml`。如果后续进行板级 QEMU 移植，仍要保留当前 runner 的 QEMU 回归，并另外记录 QemuSpec 的版本、材料和机器模型 commit。
+
+**结构约束自检：**
+
+- `qemu-system-*` 命令必须有 `-nographic`，不能依赖图形窗口判断成功；
+- `success_pattern` 与 `failure_pattern` 都要是有效正则，且不能把半条 banner、panic 前的输出或退出码缺失误判为通过；
+- QEMU 日志和镜像产物写到仓库相对路径，运行身份绑定当前 build/HEAD；
+- 机器名、内存、固件和 UART 参数来自当前 ISA/QEMU 文档，不能把 `virt` 的固定地址直接当作 canonical board 的硬件事实。
+
 ### 步骤 4：先验证 Spec 和构建投影
 
 ```sh

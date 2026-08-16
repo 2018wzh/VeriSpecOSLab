@@ -663,6 +663,12 @@ RISC-V/ARM 板卡常见的启动链是 `Boot ROM → SPL/TPL → OpenSBI/TF-A �
 
 板卡 bring-up 时先在 U-Boot 命令行手动 `mmc list`、`mmc rescan`、列出分区并加载内核/DTB，再让内核打印 `a0/a1` 或等价交接寄存器。`fatload`/`booti` 成功只证明 bootloader 路径，不证明内核的 SDIO/SPI 块设备或文件系统可用；后者必须在相应 Lab 单独验证。
 
+#### 两种 QEMU 能力不要混用
+
+本 Lab 使用的 `vos run qemu` 是项目 runner：它读取 `vos.yaml` 的 `runners.qemu`，构造结构化 `program + args`，启动已经存在的内核镜像并收集串口证据。若程序名是 `qemu-system-*`，runner 必须包含 `-nographic`；还必须声明可编译的 `success_pattern` 和 `failure_pattern`。成功正则只能匹配稳定的完整标记，panic、fatal 和未预期 trap 应落入失败正则，超时则单独记为 `timed_out`。
+
+`vos agent qemu preflight/execute` 是另一条在 Lab 9 使用的 QEMU 板级移植链：它修改固定版本的 QEMU 机器模型和必要的启动依赖，以复现 canonical board 的 boot path。它不替代 `vos run qemu` 的内核回归，也不把 QEMU 模型结果写进 `vos.yaml`。在设计启动时，先把“项目如何运行内核”和“QEMU 如何模拟板卡”分成两张清单：前者记录镜像、runner、串口模式和成功/失败正则，后者记录 QemuSpec、材料、复用矩阵、固件 bypass 和 QEMU commit。
+
 ### 维度 3：入口与初始化序列
 
 从固件跳转到你的内核入口点后，你需要建立最基本的执行环境：

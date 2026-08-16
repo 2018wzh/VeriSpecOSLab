@@ -220,9 +220,19 @@ git config user.email "you@example.com"
 vos init
 ```
 
-`vos init` 会创建空的 `spec/design.yaml`、`spec/modules/toolchain.yaml`、`vos.yaml` 和 `.gitignore`，并建立五类 Spec 所需的目录。`.gitignore` 已包含 `.vos/` 和 `.env`，API key 文件与 VOS 运行目录不会被 Git 跟踪。如果当前目录还不是 Git 仓库，`vos init` 会先执行 `git init`。初始提交只包含它创建或维护的入口文件，不会顺带提交你的草稿。
+`vos init` 会创建空的 `spec/design.yaml`、`spec/modules/toolchain.yaml`、`vos.yaml`、`.gitignore`、`spec/qemu/request.yaml.example` 和 `references/qemu/README.md`，并建立五类 Spec 所需的目录。`.gitignore` 已包含 `.vos/` 和 `.env`，API key 文件、VOS 运行目录和 QEMU 板级材料不会被 Git 跟踪。如果当前目录还不是 Git 仓库，`vos init` 会先执行 `git init`。初始提交只包含它创建或维护的入口文件，不会顺带提交你的草稿。
 
 如果 `vos init` 提示缺少 Git 用户名或邮箱，先按上面的命令配置本仓库的 Git identity。
+
+### 步骤 2a：为后续 QEMU 板级移植准备材料（可选，不在 Lab 1 执行移植）
+
+Lab 1 已经选定 canonical board。如果课程或你的项目要在 Lab 9 使用 VOS 的 QEMU 板级移植能力，现在只做“准备请求和材料”两件事，不运行 `preflight` 或 `execute`，也不让 Agent 代写项目代码：
+
+1. 将 `spec/qemu/request.yaml.example` 复制为 `spec/qemu/<request-id>.yaml`，手写 `id`、`target.board`、QEMU 的精确 `version` 和仓库相对的 `source_path`。保持 `revision: 0`、`status: request`，不要提前添加 commit、材料清单或 implementation 字段。
+2. 在 `references/qemu/<request-id>/` 放入你实际取得的板卡/SoC 手册、原理图、设备树、已知启动固件或镜像等资料，并在连接报告中记录来源和版本。不要把 CTF flag、私密凭据或完整串口报告放进这里；CTF 仍按本 Lab 的仓库外规则处理。
+3. 只把 request Spec 提交到项目仓库；材料目录默认被忽略。缺少能够证明启动链、寄存器语义、板级连线或 shell 验收的资料时，Lab 9 的预检必须报告缺口，而不是用网络搜索猜测。
+
+Lab 1 的实板报告只证明你能识别并启动 canonical board；QEMU 移植 request 也不替代真实板卡的 U-Boot、UART、SDIO/SPI 或人工验收。Lab 9 再按 [第 9 章](../book/ch09-hardware-port.md) 的批准流程运行 `vos agent qemu preflight` 和 `vos agent qemu execute`。
 
 ### 步骤 3：配置 Agent 并完成 DesignSpec（预计 45 分钟）
 

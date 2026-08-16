@@ -158,6 +158,40 @@ describe("Lab 1-10 manual command contract", () => {
     expect(readBook("ch06-filesystem.md")).toContain("真实板卡的 SDIO/SPI 存储 bring-up");
     expect(readLab("lab6-filesystem.md")).toContain("步骤 2a：把 QEMU virtio-blk 换成真实 SDIO/SPI");
   });
+
+  test("documents the VOS QEMU board-port workflow without weakening the hardware boundary", () => {
+    const overview = readBook("ch01-overview-design.md");
+    const boot = readBook("ch02-boot.md");
+    const book = readBook("ch09-hardware-port.md");
+    const lab1 = readLab("lab1-seed.md");
+    const lab2 = readLab("lab2-boot.md");
+    const lab9 = readLab("lab9-hardware-port.md");
+    const lab10 = readLab("lab10-verification.md");
+    expect(overview).toContain("vos agent qemu preflight");
+    expect(overview).toContain("candidate 是唯一允许 Agent 生成的 Spec 例外");
+    expect(overview).toContain("不会自动替你改好内核的 `vos.yaml`");
+    expect(overview).toContain("--resume <run-id>");
+    expect(boot).toContain("两种 QEMU 能力不要混用");
+    expect(boot).toContain("success_pattern");
+    expect(boot).toContain("`vos agent qemu preflight/execute`");
+    expect(book).toContain("VOS 的 QEMU 板级移植工作流");
+    expect(book).toContain("references/qemu/<request-id>/");
+    expect(book).toContain("直接复用、集成复用、兼容变体、新模型或明确不支持");
+    expect(book).toContain("执行不 push");
+    expect(lab1).toContain("spec/qemu/<request-id>.yaml");
+    expect(lab1).toContain("只做“准备请求和材料”两件事");
+    expect(lab1).toContain("不运行 `preflight` 或 `execute`");
+    expect(lab2).toContain("`runners.qemu`");
+    expect(lab2).toContain("必须有 `-nographic`");
+    expect(lab9).toContain("VOS QEMU 板级移植");
+    expect(lab9).toContain("candidate_created: false");
+    expect(lab9).toContain("status: approved");
+    expect(lab9).toContain("--resume <run-id>");
+    expect(lab9).toContain("不拥有 `spec/`、`vos.yaml`、`.vos/`");
+    expect(lab10).toContain("QEMU 板级移植");
+    expect(lab10).toContain("qemu_only");
+    expect(lab10).toContain("材料不足时预检应保持 `candidate_created: false`");
+  });
 });
 
 function readLab(file: string): string {

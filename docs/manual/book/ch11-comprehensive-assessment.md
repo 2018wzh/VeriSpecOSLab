@@ -49,6 +49,7 @@ DesignSpec 里声明的 `required_mechanisms`，ModuleSpec 是否一一贯彻？
 ### 11.3.2 验证证据包
 
 - 项目声明的构建、测试、QEMU/硬件运行结果及其代码/配置身份；
+- 如果使用 QEMU 板级移植，附上已批准的 QemuSpec revision、材料/哈希、QEMU 源码 commit、boot path/bypass、阶段提交和邻居回归，并单独标明 `qemu_only`；
 - 每个核心模块至少 1 条不变量检查器通过日志；
 - 至少 1 条跨组件不变量的验证日志；
 - 失败注入、失败分析和人工硬件复核状态（如适用）。

@@ -334,6 +334,34 @@ Agent 依赖你导入的知识库（KB）来回答问题。KB 是你的 Agent �
 
 > **详细操作**：Agent 的 Provider 配置、板卡连接、WSL USB 直通和 Lab 1–8 的使用边界见 [Lab 1 实验卡片](../labs/lab1-seed.md)。Lab 9 以后可以使用任意合适的 Coding Agent，但仍要在报告中简要披露工具、任务范围和复核方法。
 
+### QEMU 板卡移植能力：把“能模拟”变成可审查的机器模型
+
+`vos run qemu` 和新增的 QEMU 板卡移植工作流解决的是两件不同的事：前者按照项目已有的 `vos.yaml` runner 启动你的内核，后者在 Lab 9 以后帮助你把 Lab 1 选定的 canonical board 的启动链、SoC 和外设行为实现到 QEMU 源码中。后者不等于真实板卡验收，也不会自动替你改好内核的 `vos.yaml`。
+
+如果项目需要这条移植链，`vos init` 会创建一个 request 示例。学生先手写一个很小的 `spec/qemu/<request-id>.yaml`，只声明目标板、QEMU 版本和仓库相对的源码路径：
+
+```yaml
+version: vos.qemu-port.v1
+id: qemu.my-board
+revision: 0
+status: request
+target:
+  board: My canonical board
+qemu:
+  version: 11.1.0
+  source_path: qemu
+```
+
+板卡手册、原理图、设备树、已知固件或镜像等材料放在 `references/qemu/qemu.my-board/`。材料目录是证据边界：预检只从这里读取和计算清单，不能用网络搜索补齐硬件事实；TF-A、U-Boot 等软件依赖可以在执行阶段从官方仓库固定版本。材料缺失或目录为空时，工具应在调用 Agent 前失败。
+
+工作流分成三个明确状态：
+
+1. `vos agent qemu preflight qemu.my-board` 只读检查材料和固定版本的 QEMU，重建真实启动链，并为每个设备标成直接复用、集成复用、兼容变体、新模型或明确不支持。只有结构化结果为 `sufficient` 时，工具才生成新的 `candidate` revision；资料不足时只返回缺口并保留可恢复的运行记录。
+2. 学生审查 candidate 中的 boot path、bypass、发现/复用矩阵、实现阶段、依赖和 `owns` 路径。确认每个跳过的 BootROM/SPL 或预加载镜像都写清楚后，把 `status` 改为 `approved`，再用普通 Git 提交。candidate 是唯一允许 Agent 生成的 Spec 例外，不能绕过人工批准。
+3. `vos agent qemu execute qemu.my-board.r1` 只接受当前 HEAD 已提交的 approved revision，重新核对材料哈希和 QEMU commit，在 detached worktree 中按阶段构建、启动到 shell、运行邻居机器回归并提交变更；它不能 push，也不能拥有 `spec/`、`vos.yaml`、`.vos/` 或材料目录。中断后可用匹配的 `--resume <run-id>` 恢复，HEAD、Spec、材料或 QEMU 发生漂移就必须重新开始。
+
+这条链的成功证据是“QEMU 模型按声明的最小固件路径启动到 shell，并且邻居机器未回归”；它不能填充真实板卡的电源、pinmux、U-Boot、UART 电平、SDIO/SPI、DMA/cache 或人工复核列。真实硬件仍按第 9 章和 Lab 9 单独验收。
+
 ## 1.8 开始之前
 
 确认你的环境：

@@ -82,6 +82,13 @@ errors: [TODO]
 
 一份可提交 evidence 至少包含：运行 ID、代码或构建身份、Spec/config 版本、target、结构化 argv、退出状态、开始/结束时间、产物标识和受限日志。若工具能提供 commit 或 content hash 就一并记录；脏树 build/QEMU/hardware 证据必须明确标为不可提交。
 
+如果 Lab 9 使用了 VOS QEMU 板级移植，还要把两类 QEMU 证据分开记账：
+
+- `vos run qemu` 的内核回归：记录项目 runner、`-nographic` 串口日志、成功/失败正则和当前 build/HEAD 身份；
+- `vos agent qemu preflight/execute` 的模型移植：记录已提交的 QemuSpec revision、材料清单和哈希、QEMU 源码 commit、boot path/bypass、阶段提交、boot-to-shell 结果和邻居机器回归。
+
+材料不足时预检应保持 `candidate_created: false`；执行被阻塞时保留 blocker、`resume_steps` 和 recovery run，不得用模型总结或模拟串口填补缺失证据。QEMU 模型通过只证明 `qemu_only` 的启动路径，不能升级真实板卡的 U-Boot、UART、SDIO/SPI、DMA/cache 或 `pending_human_review` 状态。
+
 导出时遮蔽凭据，把绝对路径替换为稳定别名。原始 `.vos/audit` 不进 Git；submit 包含经过出口扫描的明文日志。硬件证据保持 `pending_human_review`。
 
 证据包按运行而不是按截图组织。截图只能作为辅助展示，不能替代结构化退出码、完整串口日志和产物 hash。超时、panic 和主动中止必须是不同终态。
@@ -97,6 +104,7 @@ errors: [TODO]
 - [ ] 至少记录一个完整失败案例：现象、证据、根因、修复、回归。
 - [ ] 报告或归档可在同一输入身份上重放，并得到一致的目标清单和结果摘要。
 - [ ] 出口扫描没有凭据、本机绝对路径或未遮蔽 flag。
+- [ ] 如使用 QEMU 板级移植，QemuSpec、材料、QEMU commit、阶段提交和邻居回归均可重放，且没有把 `qemu_only` 当作实板通过。
 
 ## 6. AI 使用边界
 
