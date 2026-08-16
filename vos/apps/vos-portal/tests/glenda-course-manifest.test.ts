@@ -88,6 +88,6 @@ test("Glenda Runner image carries the complete LLVM user-program toolchain", asy
     dockerfile.matchAll(/apt-get install -y --no-install-recommends\s+(.+?)\s+&& rm/g),
     (match) => match[1].trim().split(/\s+/),
   ).flat();
-  for (const toolPackage of ["clang", "lld", "llvm"])
+  for (const toolPackage of ["clang", "lld", "llvm", "python-is-python3"])
     expect(installCommands).toContain(toolPackage);
 });

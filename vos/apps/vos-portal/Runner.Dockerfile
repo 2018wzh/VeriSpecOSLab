@@ -23,7 +23,7 @@ RUN apt-get update \
   && groupadd --gid 10001 runner \
   && useradd --uid 10001 --gid runner --no-create-home --home-dir /tmp/runner-home runner
 RUN apt-get update \
-  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends llvm \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends llvm python-is-python3 \
   && rm -rf /var/lib/apt/lists/*
 ENV RUSTUP_HOME=/opt/rustup \
     CARGO_HOME=/opt/cargo \
