@@ -22,16 +22,35 @@ Portal 的 stage contract 使用 `required_showcase_artifacts` 强制提交 run 
 
 ## 当前状态
 
-- Lab 1–8 的本地历史、Spec、真实模型复核和阶段验收已经完成。
-- Lab 9 已形成本地 `course/lab9-candidate`。Orange Pi Prime QEMU 完成了 BL31 → U-Boot → Glenda 启动，以及四核、MMU、GICv2、generic timer、IPI、MMC 和磁盘文件系统验证。
-- AArch64 侧已经进入真实 EL0，沿 SVC 和 lower-EL timer 路径运行 Lab 5、Lab 7、Lab 8 的累计工作负载，包括地址空间、坏指针、fork/wait/exit、descriptor、pipe、从 MMC 文件系统加载的 shell、8 个 worker 和抢占调度。七项 H5 trace、`h5-platform` 聚合 GoalSpec 与完整 `vos verify` 均通过；完整验证共运行 68 个检查。
-- Lab 10 已形成本地 `course/lab10-candidate`。最终提交 `02a3e72` 的 `vos verify` run `202608160458080-b998d0e1` 通过 80/80；覆盖报告列出 21 个模块、6 个接口、3 个 GoalSpec 和 42/42 个 operation，orphan 数为 0。验证闭环还包含真实故障矩阵、两次字节一致的可复现包、RISC-V QEMU、H5 仿真，以及保持 pending 的实体板和教师状态。
-- 最终模型复核 run `202608160509471-030eaa6f` 没有 blocker 或 error。复核链保留了所有权重叠、TrapContext 尺寸歧义、mmap barrier 发布竞态、跨架构 user-copy/scheduler 契约、aggregate constituent 复验和 YAML schema 失败等发现与修复，不以最后一次成功覆盖之前的失败过程。这些记录将随 replay bundle 和 showcase index 进入 Portal。
-- 十阶段历史审计已经通过：历史只有一个 orphan root，Lab 1–10 标签均为 annotated tag 且祖先链连续，未来路径和术语泄漏为 0。Lab 9、Lab 10 仍是 candidate，不是 complete。
+- Lab 1–7 已在同一条学生 Gitea `main` 历史中完成 connected 闭环。Lab 8 也已闭环，Portal 当前停在 Lab 9。
+- Lab 8 的学生提交是 `911641dfaff1cfda57a016908348ca7b87b2c0af`。公开 run `run-3a6d9914-7cee-477d-b104-aa4796c08718` 通过 2/2；权威 run `run-02d4a945-b436-454c-84c2-9e6f441569f3` 通过；submission `submission-45836c8e-a488-4806-840e-428511e1ec32` 状态为 `complete`。
+- Lab 8 的公开 run 和权威 run 均绑定了 `lab8-replay-bundle`，权威 run 还绑定了 `lab8-showcase-index`。重放包记录了全部成功步骤、获批跳过和此前失败尝试；失败记录没有被最后一次成功覆盖。
+- Lab 8 的 `agent ask` 和 `agent review` 因已配置的 Anthropic 凭据环境变量缺失而失败。本次在显式开启 `VOS_GLENDA_ALLOW_AGENT_FAILURE_SKIP=1` 后，将这两步记为 `passed_with_approved_skips`。这不是模型复核通过，也不影响 build、QEMU、verify、report、Runner evidence 和 submit 的硬性门槛。
+- 本地重写历史中的 `course/lab9-candidate` 指向 `1d88f7d334af415bb8fc780791b723654260e42f`，`course/lab10-candidate` 指向 `163118aca6374f597fe797088a9c7ebb50cfc5b4`。两者只是交给后续 harness 的候选输入，不是 connected 或正式发布证据。
+- 十阶段历史审计已经通过：历史只有一个 orphan root，标签祖先链连续，未来路径和术语泄漏为 0。Lab 9、Lab 10 仍是 candidate，不是 complete。
 - Orange Pi Prime 实体板的 BROM/SPL、冷启动、重复复位、四核、UART、timer/IRQ/IPI、SD 和完整工作负载证据尚未采集。
-- Lab 9、Lab 10 仍缺实体板证据和教师审批，因此只能保留 candidate。全新 Compose connected 重放和教师审批尚未执行。
+- Lab 9、Lab 10 仍缺实体板证据、connected replay 和教师审批，因此不能发布 complete 标签，也不能替换课程远端。
 
-当前没有 Lab 1–10 的 connected 通过表。只有在全新 Compose 环境中完成 Portal、Gitea、PostgreSQL、MinIO、worker 和隔离 Runner 的连续重放后，才能在本节加入新的 run、submission、artifact 与最终状态。Demo、本地 `vos verify`、外部 Linux 启动和 QEMU 仿真都不能填入 connected 结果。
+当前 connected 记录只确认到 Lab 8。Demo、本地 `vos verify`、外部 Linux 启动和 QEMU 仿真都不能填入 Lab 9/10 的 connected 结果。
+
+## 获批跳过边界
+
+`VOS_GLENDA_ALLOW_AGENT_FAILURE_SKIP=1` 只允许 connected replay 在可审计的模型调用故障下跳过 `agent ask` 或 `agent review`。脚本必须保留原始失败分类、命令状态和显式批准配置；只有已配置 provider 的凭据缺失，或同时满足 provider 故障与瞬态故障分类时，才能进入 `passed_with_approved_skips`。其他模型错误、Spec 错误、实现错误和验证失败仍应立即终止。
+
+这项批准只用于尽快完成历史 replay，不把跳过操作伪装成模型成功，也不降低下列门槛：Spec lint、build、QEMU、`vos verify`、报告、Runner evidence、artifact 上传、Lab 9/10 实体板测试和教师人工复核。
+
+## Lab 9/10 外部 harness 交接
+
+本任务不再执行移植或开发板测试。后续 harness 以本地候选引用为输入，并继续使用 Glenda 专用的 Orange Pi Prime 课程契约：
+
+- 先验收 H5 QEMU，再验收实体 Orange Pi Prime；两类证据分开记录，QEMU 不代替实板。
+- Lab 9 必须上传 `lab9-replay-bundle`、`h5-simulation-report`、`orangepi-prime-serial-log` 和 `orangepi-prime-hardware-report`。
+- Lab 10 必须上传 `lab10-replay-bundle`、`lab10-verification-report`、`lab10-reproducibility-package` 和 `orangepi-prime-hardware-report`。
+- 候选重放需要显式设置 `VOS_GLENDA_ALLOW_CANDIDATE_REFS=1`，并将 `VOS_GLENDA_STUDENT_THROUGH` 设为 `lab9` 或 `lab10`。该开关只允许读取 candidate 引用，不绕过硬件与人工门槛。
+- 实板必须覆盖 BROM/SPL → TF-A → U-Boot → Glenda、冷启动、重复复位、四核身份、UART、timer/IRQ/IPI、SD 数据路径、文件系统和完整工作负载，并单列 QEMU 绕过 SPL 的边界。
+- 材料上传后停在 candidate，等待教师在 Portal 中核对 artifact 并批准。其他 harness 不得自称教师，也不得把 candidate 改为 complete。
+
+交接材料不得包含本机绝对路径、凭据或未经脱敏的原始私密日志。
 
 ## 运行入口
 
