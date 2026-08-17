@@ -2,6 +2,14 @@
 
 > **对应实验**：[Lab 4：中断与设备驱动——响应外部事件](../labs/lab4-interrupts.md)
 
+> **学完本章你能：**
+>
+> 1. 描述从硬件事件到处理程序返回的完整 trap 路径：入口保存、分发、claim/complete、返回恢复；
+> 2. 写出 trap 入口、定时器、外部中断与 UART 的 ModuleSpec，定义可重入边界、锁顺序与未知 IRQ 行为；
+> 3. 配置并验证时钟中断、PLIC 路由与中断驱动 UART，在压力测试下证明无死锁、无丢失；
+> 4. 用 GDB 在 claim/complete 处打断点、检查 PLIC 寄存器，区分"中断未触发"与"触发后未处理"；
+> 5. 设计中断嵌套与 bottom-half 策略，说明每核中断目标与 IPI 的验证方法。
+
 ## 4.1 本章要解决的问题
 
 到目前为止，你的内核只能按预定的顺序执行代码，无法"被打断"。中断机制改变了这一点：硬件可以在任何时候通知 CPU"有事情发生了"，CPU 暂停当前任务，进行处理，然后回到原来的任务。
@@ -22,17 +30,17 @@ ERA（后来被 Remington Rand 收购）的工程师在 UNIVAC 1103A 上实现�
 
 但 UNIVAC 1103A 的中断有一个很大的局限：**它只有一个中断源。** 磁帶、打印机、控制台，所有设备共享同一个中断入口。CPU 不知道是谁触发了中断。它必须轮询每个设备的"就绪"标志位才知道发生了什么。
 
-> **原始文献：** Remington Rand Univac, "UNIVAC 1103A Central Computer: Programmer's Reference Manual," 1956. 第 4 章定义了中断系统的完整行为。这份手册中的中断处理流程图与现代 OS 的 trap 分发逻辑在结构上惊人地相似。
+> **原始文献：** Remington Rand Univac, "UNIVAC 1103A Central Computer: Programmer's Reference Manual," 1956. 第 4 章定义了中断系统的完整行为。这份手册中的中断处理流程图与现代 OS 的 trap 分发逻辑在结构上惊人地相似。扫描件见 bitsavers（搜索 `UNIVAC 1103A`，https://bitsavers.org）。
 
 **IBM System/360（1964）：中断的标准化。** 如果说 UNIVAC 1103A 发明了"中断"这个概念，IBM System/360 就是把它变成了一个工业标准。System/360 定义了五类中断（程序中断、时钟中断、I/O 中断、机器检查中断、外部中断）和一个统一的中断入口机制。每种中断类别有固定的 Program Status Word（PSW）地址，CPU 在中断时自动把旧 PSW 保存到预设位置、加载新 PSW、然后继续执行。
 
 这个"中断类别 → PSW 地址 → 中断处理程序"的三级路由机制，是今天你的 RISC-V `stvec`（中断向量基址）+ `scause`（中断原因）组合的直接祖先。你在 `trap_handler()` 中写的 `switch(scause)`，本质上是 IBM 在 1964 年定义的"通过中断原因分派不同处理程序"的模式。
 
-> **原始文献：** IBM, "IBM System/360 Principles of Operation," Form A22-6821-0, 1964. 第 5 章（"Interruptions"）约 40 页，定义了至今仍然通用的中断响应流程。第六版（GA22-6821-6, 1975）是最广泛引用的版本。
+> **原始文献：** IBM, "IBM System/360 Principles of Operation," Form A22-6821-0, 1964. 第 5 章（"Interruptions"）约 40 页，定义了至今仍然通用的中断响应流程。第六版（GA22-6821-6, 1975）是最广泛引用的版本。扫描件见 bitsavers（https://bitsavers.org/pdf/ibm/360/）。
 
 **PDP-11（1970）：向量化中断的发明。** IBM System/360 解决了"中断怎么分发"的问题，但有一个性能痛点：每个 I/O 中断进来后，CPU 都要扫描所有设备，找出谁触发了中断。PDP-11（DEC 公司的 16 位小型机，也是 Unix 的诞生平台）做了一个关键的改进：**每个设备在申请中断时，把自己的"向量地址"放在总线上**。CPU 直接跳到该地址，无需扫描。这就是"向量化中断"（vectored interrupt）。你的 RISC-V PLIC 的 `plic_claim()` 返回中断号然后查表分发的模式，就是从 PDP-11 的向量化中断演化而来的。
 
-> **原始文献：** Digital Equipment Corporation, "PDP-11/40 Processor Handbook," 1972. 第 6 章定义了中断优先级和向量地址。UNIBUS 总线的中断仲裁协议至今在嵌入式系统中仍能看到影子。
+> **原始文献：** Digital Equipment Corporation, "PDP-11/40 Processor Handbook," 1972. 第 6 章定义了中断优先级和向量地址。UNIBUS 总线的中断仲裁协议至今在嵌入式系统中仍能看到影子。扫描件见 bitsavers（https://bitsavers.org/pdf/dec/pdp11/）。
 
 **但中断也带来了一种全新的 bug 类别：** 中断处理程序不在任何进程的"上下文"中运行。它不能睡眠、不能调用任何可能阻塞的函数。它和"普通的内核代码"之间共享的数据结构需要特殊的保护。这些约束从 System/360 时代就存在。1960 年代的内核程序员和你在处理的是同一类问题。
 
@@ -236,13 +244,15 @@ void dispatch_irq(int irq);
 
 ### ModuleSpec（interrupt）与 DesignSpec 更新
 
-`spec/modules/interrupt.yaml`
+`spec/modules/kernel/trap.yaml`
 
 ### ModuleSpec
 
-- `spec/modules/interrupt.yaml`：中断子系统
-- `spec/modules/uart.yaml`：UART 设备（中断驱动版本）
-- `spec/modules/timer.yaml`：时钟中断模块
+- `spec/modules/kernel/trap.yaml`：中断子系统（trap 入口、分发、PLIC）
+- `spec/modules/kernel/uart.yaml`：UART 设备（中断驱动版本）
+- `spec/modules/kernel/timer.yaml`：时钟中断模块
+
+与 Lab 4 骨架一致，模块统一放在 `spec/modules/kernel/` 下。模块 ID 由你自定，但目录约定固定，不要用扁平名另起一套。
 
 ### 设计理由
 
@@ -307,7 +317,7 @@ irq_dispatch(irq_num)  // 查找并调用注册的 handler
 
 **这个框架的长期价值**：当你在阶段 8 添加 USB 或 PCI 驱动时，你只需要用 `irq_register()` 注册新设备的中断 handler，不需要修改中断子系统的核心代码。这是你的 HAL 和驱动模型之间的关键接口。
 
-**验证**：注册两个不同的 handler 到不同的 IRQ，通过 QEMU monitor 注入中断，验证正确的 handler 被调用。
+**验证**：注册两个不同的 handler 到不同的 IRQ，通过 GDB 直接写 PLIC 寄存器触发（或在测试 harness 里用测试设备主动产生中断），验证正确的 handler 被调用。QEMU monitor 没有通用的"注入任意中断"命令；`info qtree` 只转储设备树，不能当注入手段。
 
 ## 4.8 质量门禁
 
@@ -341,7 +351,7 @@ irq_dispatch(irq_num)  // 查找并调用注册的 handler
 4. **在中断上下文中使用 sleeplock**：这会导致死锁或未定义行为。
 5. **设备树解析错误**：DTB 格式有严格的规范。建议使用成熟的 DTB 解析库或参考代码，不要从零实现。
 6. **时钟中断配置错误导致"无 tick"**：你设置了 `mtimecmp`，但忘了使能 `sie` 中的 timer 中断位（`sie.STIE`）。症状：系统启动后 banner 正常输出，但时钟中断从不触发，tick 计数器永远是 0。排查：`csrr sie` 检查 STIE 是否为 1；`csrr sstatus` 检查 SIE 是否为 1。
-7. **UART 中断"只触发一次"然后死寂**：handler 中读了 `UART_DR`（数据寄存器）但没有读 `UART_SR`（状态寄存器）。某些 UART 实现要求在读数据后手动清除中断标志。或者，PLIC 的 complete 被调用在了 claim 之前，这会导致中断控制器状态混乱。**验证：在 QEMU monitor 中 `info qtree` 查看 PLIC 状态。**
+7. **UART 中断"只触发一次"然后死寂**：handler 中读了 `UART_DR`（数据寄存器）但没有读 `UART_SR`（状态寄存器）。某些 UART 实现要求在读数据后手动清除中断标志。或者，PLIC 的 complete 被调用在了 claim 之前，这会导致中断控制器状态混乱。**验证：用 GDB 在 claim/complete 处打断点，查看 PLIC 的 claim 寄存器（读一次就相当于 claim）；QEMU monitor 的 `info qtree` 只转储设备树模型，不能显示运行时中断状态。**
 8. **多 HART 竞争 PLIC claim**：两个 HART 同时调用 `plic_claim()`，但 PLIC 只为每个中断源分发到一个 HART 的 context。HART A claim 到了 IRQ 10，HART B 的 claim 返回 0（无中断）。**关键：claim 返回 0 是正常的（不是错误），在代码中正确处理。**
 
 ## 4.10 与前后阶段的接口

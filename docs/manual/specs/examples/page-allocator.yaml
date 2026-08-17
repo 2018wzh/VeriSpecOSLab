@@ -1,4 +1,16 @@
 # ModuleSpec example: physical page allocator
+# 这是一份带注释的完整示例，供学生对照"字段填到什么程度算合格"。
+# 它与课程任何 Lab 的验收点没有直接对应关系，只示范写法。
+#
+# 阅读顺序建议：
+# 1. id/module/level 定义模块身份与深度；
+# 2. purpose 一句话说清职责；
+# 3. owns 声明实现与测试的仓库相对路径（必须覆盖两者）；
+# 4. interface 列出外部可调用的操作，每个操作给 pre/post/errors；
+# 5. properties/invariants 把"可验证的性质"显式写出来；
+# 6. state/preconditions/postconditions 描述状态机；
+# 7. dependencies 声明依赖的其他模块。
+
 id: kernel/memory
 module: kernel/memory
 level: 2

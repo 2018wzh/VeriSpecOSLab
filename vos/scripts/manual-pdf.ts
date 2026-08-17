@@ -88,6 +88,8 @@ const EXPLICIT_FILE_ORDER: Record<string, string[]> = {
   ],
 };
 
+const STUDENT_GLOSSARY_PATH = "glossary.md" as const;
+
 const LAB_BUNDLES: Array<{
   id: string;
   label: string;
@@ -98,7 +100,7 @@ const LAB_BUNDLES: Array<{
       id: "lab1",
       label: "Lab 1",
       bookSources: ["book/ch01-overview-design.md"],
-      labSources: ["labs/lab1-seed.md"],
+      labSources: ["labs/lab1-seed.md", STUDENT_GLOSSARY_PATH],
     },
     {
       id: "lab2",
@@ -110,7 +112,7 @@ const LAB_BUNDLES: Array<{
       id: "lab3",
       label: "Lab 3",
       bookSources: ["book/ch03-memory.md"],
-      labSources: ["labs/lab3-memory.md"],
+      labSources: ["labs/lab3-memory.md", "labs/example-page-allocator.md"],
     },
     {
       id: "lab4",
@@ -279,7 +281,11 @@ function assertAllManualSourcesAreBundled(
 }
 
 function isStudentManualSource(relativePath: string): boolean {
-  return relativePath.startsWith("book/") || relativePath.startsWith("labs/");
+  return (
+    relativePath.startsWith("book/") ||
+    relativePath.startsWith("labs/") ||
+    relativePath === STUDENT_GLOSSARY_PATH
+  );
 }
 
 function assertStudentLinksArePublished(manualRoot: string, sources: ManualSource[]): void {

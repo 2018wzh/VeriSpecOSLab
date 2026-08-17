@@ -4,8 +4,12 @@
 
 > **本 Lab 概览**
 >
+> - **学完能做什么**：把 QEMU 上验证过的内核搬到 canonical board，独立完成启动链、串口、定时器/中断和至少一个存储外设的板级验收，并保持 QEMU 回归；能在没有串口输出时用 LED、调试器或最小探针定位启动阶段。
+> - **预计耗时**：20–40 小时，建议安排 1–2 周，视板卡难度浮动。板卡调研与启动链约占三分之一，外设 bring-up 约占三分之一，回归、证据与报告约占三分之一。
 > - **前置依赖**：已完成 Lab 8（系统功能完整），使用 Lab 1 已确定的 canonical board，阅读第 9 章与板卡手册。
 > - **产出物**：与实现一致的 DesignSpec/平台说明、必要的 ModuleSpec/InterfaceSpec/SpecPatch、板卡运行日志、QEMU 回归证据和移植报告。可以由任意 Coding Agent 协助或直接维护这些文件。
+> - **评分构成**：质量门禁 70% + 设计理据 20% + 挑战/加分 10%（可选）。实际分值以教师公布为准；硬件验收需人工复核。
+> - **实际耗时**：在提交物里记录本次 Lab 实际投入小时数（硬件阶段的弹性最大，这个数字对课程计划校准很重要）。
 
 ## 1. 设计问题
 
@@ -40,7 +44,7 @@
 
 #### 1. 准备 request 和材料
 
-确认 Lab 1 的板卡身份、启动介质和串口记录已经提交，并在项目中准备：
+request 与材料按 [Lab 1 步骤 2a](../labs/lab1-seed.md) 的准备清单维护（本 Lab 不重复定义形状规则）：
 
 ```text
 spec/qemu/<request-id>.yaml
@@ -225,7 +229,29 @@ algorithm_intent: TODO
 - [ ] SDIO/SPI 等真实外设的探针、读写回环、DMA/cache 和故障证据；
 - [ ] QEMU 回归证据；
 - [ ] 移植报告（含调研记录表）；
+- [ ] 实际耗时（一个整数小时数）；
 - [ ] Coding Agent 使用披露和学生 diff/测试复核说明。
+
+## 7a. 最小成功输出样例
+
+板卡串口日志应展示完整的启动交接链。示例（阶段标记以你的固件链为准）：
+
+```text
+BootROM: load SPL from eMMC ... OK
+U-Boot SPL: DDR training ok, jump to U-Boot
+U-Boot 2023.04: booti 0x40200000 - 0x40800000
+[0] kernel boot: entry=0x40200000
+[0] boot banner: XV6_BOOT_OK
+[0] timer irq ok (sbi timer)
+[0] mmc read ok: 1 block @ 0x1000
+```
+
+对照门禁：
+
+- 从 BootROM/SPL 到内核入口的每个阶段都有日志或可观察标记（对应"启动交接记录"）；
+- `XV6_BOOT_OK` 与 QEMU 基线一致（对应"QEMU/板卡差异矩阵"中的共享部分）；
+- 定时器与存储外设各有独立成功输出（对应"真实外设探针/读写回环"）；
+- 同一份日志不能既当 QEMU 证据又当板卡证据；板卡证据保持 `pending_human_review`。
 
 ## 8. 常见问题与排查
 

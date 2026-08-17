@@ -7,7 +7,9 @@
 > - **学完能做什么**：把文件、pipe、设备和未来 IPC 收敛为一个可解释的资源模型，实现句柄生命周期、引用计数与退出回收，并用一个可交互 shell 串起前六个 Lab 的成果。
 > - **预计耗时**：12–16 小时，建议安排 1–2 周。资源表与引用计数约占一半，pipe、shell 与回收测试占另一半。
 > - **前置依赖**：已完成 Lab 6（文件系统可用），阅读第 7 章。
-> - **产出物**：resource ModuleSpec、`spec/interfaces/resource.yaml`、实现与 shell 演示、泄漏/并发证据、错误码测试。
+> - **产出物**：resource 与 pipe 两个 ModuleSpec、`spec/interfaces/resource.yaml`、实现与 shell 演示、泄漏/并发证据、错误码测试。
+> - **评分构成**：质量门禁 70% + 设计理据 20% + 挑战/加分 10%（可选）。实际分值以教师公布为准。
+> - **实际耗时**：在提交物里记录本次 Lab 实际投入小时数。
 
 ## 1. 设计问题
 
@@ -21,7 +23,7 @@
 
 ## 2. 实施范围
 
-至少完成资源表、引用计数、文件描述符操作、pipe 和一个可交互 shell。资源对象的内部状态放入 ModuleSpec；syscall、pipe 端点或跨模块驱动接口放入 InterfaceSpec。
+本 Lab 至少产出两个骨架：`kernel/resource` 模块（对象表/引用计数/回收）与 `kernel/pipe` 模块（pipe 作为资源模型的第一个实例）。资源对象的内部状态放入 ModuleSpec；syscall、pipe 端点或跨模块驱动接口放入 InterfaceSpec。
 
 推荐按以下顺序推进：
 
@@ -82,10 +84,11 @@ vos verify
 - [ ] 句柄越界、类型错误、权限不足和重复关闭返回稳定错误。
 - [ ] shell 能启动程序、等待退出、处理重定向和至少一条管道。
 - [ ] public/contract target 覆盖资源模块及 ABI Spec ID。
+- [ ] `kernel/resource` 与 `kernel/pipe` 两个骨架都存在，`owns` 分别覆盖各自实现与测试。
 
 ## 5. 设计理据
 
-解释句柄表示、共享范式、引用计数与销毁时机。若选择 capability 模型，还要说明权限衰减和不可伪造性；若选择 Unix fd 模型，要说明进程表与全局对象表的边界。
+解释句柄表示、共享范式、引用计数与销毁时机。若选择 capability 模型，还要说明权限衰减和不可伪造性；若选择 Unix fd 模型，要说明进程表与全局对象表的边界。resource 是通用机制，pipe 是首个实例：说清楚哪些保证来自 resource 模块，哪些是 pipe 特有的。
 
 ## 6. AI 使用边界
 
@@ -93,15 +96,38 @@ Agent 可以审查生命周期状态机、生成并发测试和解释泄漏日�
 
 ## 7. 提交物
 
-- [ ] resource ModuleSpec；
+- [ ] `kernel/resource` ModuleSpec；
+- [ ] `kernel/pipe` ModuleSpec；
 - [ ] `spec/interfaces/resource.yaml`；
 - [ ] 实现与公开测试；
 - [ ] shell 演示记录；
 - [ ] 泄漏/并发证据；
 - [ ] 错误码测试；
+- [ ] 实际耗时（一个整数小时数）；
 - [ ] 必要 SpecPatch。
 
+## 7a. 最小成功输出样例
+
+运行 `vos run qemu` 进入 shell 后，执行 `echo hello | cat`（或等价命令），示例交互：
+
+```text
+$ echo hello | cat
+hello
+$ exit
+```
+
+对照门禁：
+
+- shell 有提示符，能启动程序并等待退出（对应"shell 能启动程序"门禁）；
+- 管道输出与预期一致（对应"至少一条管道"门禁）；
+- `exit` 后进程退出、无句柄/对象泄漏（对应"退出后无泄漏"门禁）；
+- 演示记录中的泄漏检查输出 0 泄漏。
+
 ## 8. 常见问题与排查
+
+### 泄漏/死锁排查三连（对应 ch07 参考卡）
+
+先确认现象属于泄漏还是死锁：泄漏通常表现为对象计数持续增长、可用资源归零；死锁表现为全体等待者永久睡眠。排查顺序：先打印对象表与引用计数（挂上计数 dump），再检查锁获取顺序（把每个锁的 acquire/release 记日志），最后核对等待队列的唤醒点。不要同时改多处锁逻辑，每次只验证一个假设。
 
 ### `dup` 后关闭一个 fd 导致另一个失效
 

@@ -8,6 +8,8 @@
 > - **预计耗时**：10–14 小时，建议安排 1 周。**本 Lab 不要求学生手写实现代码**，时间花在 Spec 设计、工具链投影、Agent 实现审查与验证上。
 > - **前置依赖**：已完成 Lab 1（DesignSpec 已提交），阅读第 2 章和你在 Lab 1 选定板卡的启动文档。
 > - **产出物**：`spec/modules/kernel/boot.yaml`（L3）、更新后的工具链 ModuleSpec 与 `vos.yaml`、启动实现、QEMU 串口 evidence、clean HEAD 验证结果。
+> - **评分构成**：质量门禁 70% + 设计理据 20% + 挑战/加分 10%（可选）。实际分值以教师公布为准。
+> - **实际耗时**：在提交物里记录本次 Lab 实际投入小时数。
 
 ## 1. 设计问题
 
@@ -21,15 +23,17 @@
 
 > **关于内核架构**：此时你还不必决定宏内核还是微内核，这个选择推迟到 Lab 5。Lab 2-4 默认沿宏内核路径（所有内核模块在同一地址空间），这是最简单、参考资料最丰富的路线。如果你已有明确计划走微内核，先按宏内核走完 Lab 2-4，到 Lab 5 再通过设计理由切换。
 
-| 决策     | 你需要回答的问题                                                              | 对应 Spec 制品                                    |
-| -------- | ----------------------------------------------------------------------------- | ------------------------------------------------- |
-| 启动序列 | 固件→内核的交接状态是什么？从入口到主初始化之间需要哪些步骤？                | `entry` + `kernel_main` ModuleSpec 操作条目     |
-| 启动方式 | 固件直启、bootloader 还是 UEFI？每种方式把 CPU 留在什么特权级、给你什么信息？ | ModuleSpec 顶层 `rely` 与 `entry.pre` |
-| 多核策略 | 多个核心同时启动还是主从模式？非启动核心如何等待？                            | ModuleSpec 的 concurrency 契约（内联到各 ModuleSpec 操作条目）     |
-| 内存布局 | 栈放哪里？代码和数据段的加载地址？BSS 在哪里？                                | `spec/modules/toolchain.yaml` 与 `vos.yaml` |
-| 输出通道 | 你的内核通过什么机制输出第一条消息？UART MMIO？SBI ecall？BIOS INT 10h？      | `console_output` ModuleSpec 操作条目              |
-| 构建链路 | 什么编译器？链接脚本定义了什么入口符号和段布局？                              | `spec/modules/toolchain.yaml`                 |
-| 验证手段 | 如何确认启动成功？banner 内容检查还是超时检测？                               | `vos.yaml` 的 QEMU runner 与 public check |
+> **与教材的关系**：下表是本 Lab 的决策问题清单，设计维度的详细论述见[教材第 2 章 §2.3](../book/ch02-boot.md)。两处如有出入，以教材为准；本表只负责把教材维度映射到本 Lab 要写进 Spec 的字段。
+
+| 决策     | 你需要回答的问题                                                              | 对应 Spec 制品                                    | 教材维度 |
+| -------- | ----------------------------------------------------------------------------- | ------------------------------------------------- | --- |
+| 启动序列 | 固件→内核的交接状态是什么？从入口到主初始化之间需要哪些步骤？                | `entry` + `kernel_main` ModuleSpec 操作条目     | 维度 3 |
+| 启动方式 | 固件直启、bootloader 还是 UEFI？每种方式把 CPU 留在什么特权级、给你什么信息？ | ModuleSpec 顶层 `rely` 与 `entry.pre` | 维度 2 |
+| 多核策略 | 多个核心同时启动还是主从模式？非启动核心如何等待？                            | ModuleSpec 的 concurrency 契约（内联到各 ModuleSpec 操作条目）     | 维度 4 |
+| 内存布局 | 栈放哪里？代码和数据段的加载地址？BSS 在哪里？                                | `spec/modules/toolchain.yaml` 与 `vos.yaml` | 维度 6 |
+| 输出通道 | 你的内核通过什么机制输出第一条消息？UART MMIO？SBI ecall？BIOS INT 10h？      | `console_output` ModuleSpec 操作条目              | 维度 5（HAL 边界） |
+| 构建链路 | 什么编译器？链接脚本定义了什么入口符号和段布局？                              | `spec/modules/toolchain.yaml`                 | 维度 6 |
+| 验证手段 | 如何确认启动成功？banner 内容检查还是超时检测？                               | `vos.yaml` 的 QEMU runner 与 public check | 维度 7 |
 
 > **预读**：[Book 第 1 章](../book/ch01-overview-design.md) §1.10.3 问题三（ISA 差异）和 §1.9（为什么先设计再写代码）。平台特定细节见本章末尾的[参考卡](#4-参考卡)。
 
@@ -400,8 +404,27 @@ Agent 可以解释启动链、生成入口汇编草案和审查 Spec 字段。�
 - [ ] 更新后的 `vos.yaml`；
 - [ ] 启动实现与公开测试；
 - [ ] QEMU 串口 evidence；
+- [ ] 实际耗时（一个整数小时数）；
 - [ ] clean HEAD 上的验证结果；
 - [ ] 如有跨模块变更，对应的已提交 SpecPatch。
+
+## 7a. 最小成功输出样例
+
+运行 `vos run qemu` 后，串口日志应包含稳定、完整的 banner。示例（字段与顺序以你的内核为准）：
+
+```text
+[0] kernel boot: entry=0x80000000 stack=0x80001000
+[0] bss zeroed: 4096 bytes
+[0] boot banner: XV6_BOOT_OK
+```
+
+对照门禁：
+
+- `XV6_BOOT_OK` 一行完整出现，且之后没有 panic/异常输出（对应 `success_pattern: 'XV6_BOOT_OK'`）；
+- 多核启动时每条 banner 前带核心 ID，字符不交错（对应"多核 banner 完整"门禁）；
+- 日志文件落在仓库相对路径，可追溯到当前 build/HEAD。
+
+失败形态示例：banner 只出现一半（例如 `XV6_BOOT_` 后无输出），说明输出在完成前被打断，先查 UART 初始化与 shutdown 顺序；出现 `panic` 文本则直接读 panic 信息。
 
 ## 8. 常见问题与排查
 

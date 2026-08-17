@@ -23,12 +23,16 @@ function createManualFixture(): string {
   mkdirSync(join(manualRoot, "vos"), { recursive: true });
 
   writeFileSync(join(manualRoot, "README.md"), "# Manual\n\nRead [Lab 1](labs/lab1-seed.md).\n");
+  writeFileSync(join(manualRoot, "glossary.md"), "# Glossary\n");
   writeFileSync(join(manualRoot, "book", "ch01-overview-design.md"), "# Chapter 1\n");
   writeFileSync(join(manualRoot, "book", "ch02-boot.md"), "# Chapter 2\n");
+  writeFileSync(join(manualRoot, "book", "ch03-memory.md"), "# Chapter 3\n");
   writeFileSync(join(manualRoot, "book", "ch10-verification.md"), "# Chapter 10\n");
   writeFileSync(join(manualRoot, "book", "ch11-comprehensive-assessment.md"), "# Chapter 11\n");
   writeFileSync(join(manualRoot, "labs", "lab1-seed.md"), "# Lab 1\n\nSee [Chapter 1](../book/ch01-overview-design.md).\n");
   writeFileSync(join(manualRoot, "labs", "lab2-boot.md"), "# Lab 2\n");
+  writeFileSync(join(manualRoot, "labs", "lab3-memory.md"), "# Lab 3\n");
+  writeFileSync(join(manualRoot, "labs", "example-page-allocator.md"), "# Example Spec\n");
   writeFileSync(join(manualRoot, "labs", "lab10-verification.md"), "# Lab 10\n");
   writeFileSync(join(manualRoot, "labs", "final-lab.md"), "# Final Lab\n");
   writeFileSync(join(manualRoot, "specs", "overview.md"), "# Specs Overview\n");
@@ -49,14 +53,18 @@ describe("manual PDF export support", () => {
       "README.md",
       "book/ch01-overview-design.md",
       "book/ch02-boot.md",
+      "book/ch03-memory.md",
       "book/ch10-verification.md",
       "book/ch11-comprehensive-assessment.md",
       "labs/lab1-seed.md",
       "labs/lab2-boot.md",
+      "labs/lab3-memory.md",
       "labs/lab10-verification.md",
       "labs/final-lab.md",
+      "labs/example-page-allocator.md",
       "vos/01-overview.md",
       "appendices/dev-environment.md",
+      "glossary.md",
       "specs/overview.md",
       "teacher/course-plan.md",
       "vos/index.md",
@@ -73,6 +81,8 @@ describe("manual PDF export support", () => {
       ["lab1-lab", "lab1/lab1-lab.pdf"],
       ["lab2-book", "lab2/lab2-book.pdf"],
       ["lab2-lab", "lab2/lab2-lab.pdf"],
+      ["lab3-book", "lab3/lab3-book.pdf"],
+      ["lab3-lab", "lab3/lab3-lab.pdf"],
       ["lab10-book", "lab10/lab10-book.pdf"],
       ["lab10-lab", "lab10/lab10-lab.pdf"],
       ["final-lab-book", "final-lab/final-lab-book.pdf"],
@@ -84,6 +94,7 @@ describe("manual PDF export support", () => {
     ]);
     expect(bundles.find((bundle) => bundle.id === "lab1-lab")?.sources.map((source) => source.relativePath)).toEqual([
       "labs/lab1-seed.md",
+      "glossary.md",
     ]);
     expect(bundles.flatMap((bundle) => bundle.sources.map((source) => source.relativePath)).some((path) => (
       path.startsWith("specs/") || path.startsWith("vos/") || path.startsWith("teacher/") || path.startsWith("appendices/")

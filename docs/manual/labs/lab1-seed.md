@@ -6,10 +6,106 @@
 >
 > - **学完能做什么**：在 Linux 和裸机两种环境读取同一份 flag 镜像，完成 QEMU 运行，并把同一项目接到真实板卡上输出挑战标记；随后初始化 VOS 项目，完成 DesignSpec 与 Agent、知识库配置，为后续十个 Lab 打地基。
 > - **预计耗时**：10–14 小时，建议安排 1 周。CTF 双环境和实板连接约占一半，项目初始化与 DesignSpec 占另一半。
-> - **前置依赖**：无需前置 Lab。第一次接触 OS 开发也没关系，Book 第 1 章会先解释操作系统、语言、ISA 与设计先行的理由。
+> - **前置依赖**：无需前置 Lab。第一次接触 OS 开发也没关系，Book 第 1 章会先解释操作系统、语言、ISA 与设计先行的理由；参考卡的零基础自检表会把"不会 C/Git/GDB"逐项指向入门资源。
 > - **产出物**：双环境 flag 读取结果与 QEMU 证据、实板连接与串口验证报告（仓库外手工提交）、学生手写的 `spec/design.yaml`、初始化版 `toolchain.yaml` 与 `vos.yaml`、lint/review evidence、干净且可追溯的 Git HEAD。
+> - **评分构成**：质量门禁 70% + 设计理据 20% + 挑战/加分 10%（可选）。实际分值以教师公布为准；本行为各 Lab 统一的评分维度提示。
+> - **实际耗时**：在提交物里记录本次 Lab 实际投入小时数，用于课程校准各 Lab 的预计耗时。
 
 > **参考项目**：参考项目的 `course/lab1-complete` 是独立课程历史的代码起点：先提交 `vos init` 生成的空项目，再单独提交当期 DesignSpec。新的课程要求还包括仓库外的真实板卡报告，历史标签不包含这份报告，也不会因此改写。Lab 1 确定项目身份、RISC-V/C、启动目标、canonical board 和开发边界，不包含后续 Lab 的源码、测试名、占位文件或预告性规格。
+
+## 0. 零基础热身（第一次使用这些工具时做）
+
+这一节给第一次接触 Git、QEMU 和内核工具链的学生。已经会用的人可以直接跳到第 1 节。
+
+### 0.1 Git 五分钟演练
+
+课程从头到尾都在用 Git：提交 Spec、切换分支、检查工作树。先在一个临时目录里跑一遍基本流程：
+
+```sh
+mkdir git-demo && cd git-demo
+git init
+echo "hello" > demo.txt
+git status          # demo.txt 出现在 "Untracked files" 里
+git add demo.txt
+git commit -m "first commit"   # 首次提交前会要求配置 user.name/user.email
+git log --oneline   # 看到刚才的提交
+echo "world" >> demo.txt
+git diff            # 看到未暂存的改动
+git checkout -- demo.txt   # 丢弃改动，回到上次提交的内容
+```
+
+后面各 Lab 用到的命令只有几种：`git status` 看工作树是否干净（`vos implement`/`verify`/`submit` 要求 clean HEAD）、`git add` + `git commit` 提交 Spec、`git diff` 检查改动。不要急着学 rebase 这类高级操作；用到时本手册会当场说明。
+
+### 0.2 内核工具链安装卡
+
+Lab 1 步骤 1 已安装 Bun 与 vos CLI。这里补内核工具链：RISC-V（或你选定的 ISA）交叉编译器、QEMU、GDB。按你的操作系统选一条路径：
+
+**Linux（Debian/Ubuntu）：**
+
+```sh
+sudo apt-get update && sudo apt-get upgrade
+sudo apt-get install git build-essential gdb-multiarch \
+  qemu-system-misc gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu
+```
+
+**macOS：**
+
+```sh
+xcode-select --install
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+brew tap riscv/riscv
+brew install riscv-tools qemu
+# 若 riscv 工具链没有进入 PATH，在 ~/.zshrc 里加：
+# export PATH=$PATH:/usr/local/opt/riscv-gnu-toolchain/bin
+```
+
+**Windows：** 用 WSL2 装 Ubuntu，再按 Linux 路径执行。先确认用的是 WSL2 而不是 WSL1：
+
+```sh
+wsl -l -v   # 应显示 VERSION 为 2
+```
+
+**安装后验证（三件套）：** 每条命令都应输出版本号，而不是 `command not found`：
+
+```sh
+qemu-system-riscv64 --version
+riscv64-linux-gnu-gcc --version   # 或 riscv64-unknown-elf-gcc --version
+gdb-multiarch --version           # 或 riscv64-unknown-elf-gdb --version
+```
+
+版本下限：QEMU 5.1+，GDB 8.3+，交叉编译器任意近两年发行版。若 QEMU 版本过低（比如 Ubuntu 20.04 自带的），按官方源码编译安装或换更新发行版；不要用低版本 QEMU 做后续 Lab。选 x86-64 或 AArch64 的学生，把上面命令里的 `riscv64` 换成对应三元组即可。
+
+**装完跑不起来的检查清单**（先查版本，再查工具，最后才碰内核代码）：
+
+1. `command not found`：工具没进 PATH，或安装没完成；不要重复安装两套工具链。
+2. QEMU 版本过低：换发行版软件源或源码编译。
+3. `vos doctor` 报缺命令：按它提示安装并重新验证版本。
+4. 串口/调试器/USB 设备问题：先查设备身份、权限、占用和连接，再进内核代码。
+
+### 0.3 QEMU 交互热键卡
+
+QEMU 的 `-nographic` 模式下，键盘输入直接进内核。常用的几个组合键：
+
+| 组合键 | 作用 |
+| --- | --- |
+| `Ctrl-a x` | 退出 QEMU（在 `-nographic` 模式下） |
+| `Ctrl-a c` | 进入 QEMU monitor（可执行 `info mem`、`info registers` 等查询） |
+| `Ctrl-a h` | 列出全部 `Ctrl-a` 快捷键 |
+| 从 monitor 回到串口 | 再次按 `Ctrl-a c` |
+
+在 QEMU 里输入命令卡住、或者想确认页表状态时，先试 `Ctrl-a c` 进 monitor 用 `info mem` 查看；退出则按 `Ctrl-a x`。各 Lab 的参考卡不再重复这套按键，需要时回到本卡。
+
+### 0.4 零基础自检表
+
+| 技能 | 不会的话先做 |
+| --- | --- |
+| C 语言 | 读 K&R《The C Programming Language》前几章（指针、结构体、字符串）；Lab 1 只用到文件读取和输出 |
+| Git | 完成 0.1 的演练 |
+| GDB | 第 2 章 §2.8a 有首次 GDB 演练；Lab 1 只需要知道 `b`（断点）、`c`（继续）、`si`（单步）、`p`（打印）四个命令 |
+| 汇编/链接脚本 | 第 2 章会边用边讲，不需要提前学 |
+| 操作系统概念 | 第 1 章正文就是入门，不需要前置课程 |
+
+术语表在[这里](../glossary.md)，标注了每个术语首次出现的位置。
 
 ## 1. CTF 双环境热身
 
@@ -375,6 +471,8 @@ CTF 的三条运行路径通过课程渠道提交报告，不在仓库内建立 
 ## 6. 参考卡
 
 - [Book 第 1 章：系统设计](../book/ch01-overview-design.md)：理解 OS 职责、ISA 与语言选择、平台边界和 Spec-first 方法。
+- [术语表](../glossary.md)：课程特有术语与 OS 常用术语，标注首次出现位置。
+- `examples/xv6-spec` 参考子模块（Lab 1 的 `course/lab1-complete` 起可对照阅读）：完整 Spec 与实现，参考源码可读，不作为保密边界；它是你手写 Spec 的锚点，不是替身。
 
 选择 ISA 时，先查对应架构的特权级、入口寄存器、页表和异常模型，再把“应该从哪里读取这些信息”写进 DesignSpec。不要把某个 QEMU 默认地址当成所有板卡的事实；固定值要记录来源，能从固件或设备描述中获得的值应说明发现方式。Lab 1 只需要掌握概念和查阅路径，具体寄存器定义以架构手册、QEMU 机器文档和你选定板卡的手册为准。
 
@@ -416,6 +514,7 @@ CTF 的三条运行路径通过课程渠道提交报告，不在仓库内建立 
 - [ ] `spec/modules/toolchain.yaml` 和 `vos.yaml` 的初始化版本；
 - [ ] lint 与 review evidence；
 - [ ] 一段不采用备选 ISA 或语言的理由；
+- [ ] 实际耗时（提交物头部或 `time.txt`，一个整数小时数）；
 - [ ] 干净且可追溯的 Git HEAD；
 - [ ] 仓库中没有 CTF 镜像、flag、原始日志、二进制、`.env` 或私密报告。
 

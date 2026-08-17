@@ -54,21 +54,25 @@ vos agent qemu execute <approved QemuSpec ID|path>
 
 教材保留完整的背景、设计空间、参考实现、故障分析和进阶方向。实验卡片负责把这些内容映射到当前学生契约；两者不能互相替代。
 
-| 阶段 | 教材 | 实验 |
-| --- | --- | --- |
-| 系统设计 | [第 1 章](book/ch01-overview-design.md) | [Lab 1](labs/lab1-seed.md) |
-| 启动 | [第 2 章](book/ch02-boot.md) | [Lab 2](labs/lab2-boot.md) |
-| 内存 | [第 3 章](book/ch03-memory.md) | [Lab 3](labs/lab3-memory.md) |
-| 中断与设备 | [第 4 章](book/ch04-interrupts.md) | [Lab 4](labs/lab4-interrupts.md) |
-| 用户空间 | [第 5 章](book/ch05-user-space.md) | [Lab 5](labs/lab5-user-space.md) |
-| 文件系统 | [第 6 章](book/ch06-filesystem.md) | [Lab 6](labs/lab6-filesystem.md) |
-| 资源与 ABI | [第 7 章](book/ch07-resource-abi.md) | [Lab 7](labs/lab7-resource-abi.md) |
-| 个性化目标 | [第 8 章](book/ch08-personal-goal.md) | [Lab 8](labs/lab8-personal-goal.md) |
-| 硬件移植 | [第 9 章](book/ch09-hardware-port.md) | [Lab 9](labs/lab9-hardware-port.md) |
-| 验证 | [第 10 章](book/ch10-verification.md) | [Lab 10](labs/lab10-verification.md) |
-| 综合验收 | [第 11 章](book/ch11-comprehensive-assessment.md) | [Final Lab](labs/final-lab.md) |
+| 阶段 | 教材 | 实验 | 预计耗时 |
+| --- | --- | --- | --- |
+| 系统设计 | [第 1 章](book/ch01-overview-design.md) | [Lab 1](labs/lab1-seed.md) | 10–14 小时 |
+| 启动 | [第 2 章](book/ch02-boot.md) | [Lab 2](labs/lab2-boot.md) | 10–14 小时 |
+| 内存 | [第 3 章](book/ch03-memory.md) | [Lab 3](labs/lab3-memory.md) | 15–20 小时 |
+| 中断与设备 | [第 4 章](book/ch04-interrupts.md) | [Lab 4](labs/lab4-interrupts.md) | 12–18 小时 |
+| 用户空间 | [第 5 章](book/ch05-user-space.md) | [Lab 5](labs/lab5-user-space.md) | 15–20 小时 |
+| 文件系统 | [第 6 章](book/ch06-filesystem.md) | [Lab 6](labs/lab6-filesystem.md) | 15–22 小时 |
+| 资源与 ABI | [第 7 章](book/ch07-resource-abi.md) | [Lab 7](labs/lab7-resource-abi.md) | 12–18 小时 |
+| 个性化目标 | [第 8 章](book/ch08-personal-goal.md) | [Lab 8](labs/lab8-personal-goal.md) | 15–25 小时 |
+| 硬件移植 | [第 9 章](book/ch09-hardware-port.md) | [Lab 9](labs/lab9-hardware-port.md) | 20–40 小时（视板卡） |
+| 验证 | [第 10 章](book/ch10-verification.md) | [Lab 10](labs/lab10-verification.md) | 8–12 小时 |
+| 综合验收 | [第 11 章](book/ch11-comprehensive-assessment.md) | [Final Lab](labs/final-lab.md) | 8–12 小时 |
 
-命令、平台和调试要点已经放在各章与对应 Lab 的“参考卡”中。学生发布包只包含 `book/` 与 `labs/`；`specs/`、`vos/` 和 `teacher/` 是仓库内部资料，不属于学生发布内容。
+合计约 130–170 小时，建议按 1–2 个学期规划。这是首轮估计，各 Lab 卡片会随学生实测耗时（提交物里的"实际耗时"字段）持续修订。
+
+命令、平台和调试要点已经放在各章与对应 Lab 的"参考卡"中。学生发布包只包含 `book/`、`labs/` 与 [术语表](glossary.md)；`specs/`、`vos/` 和 `teacher/` 是仓库内部资料，不属于学生发布内容。
+
+术语第一次出现时不认识的词，去[术语表](glossary.md)查：它标注了每个术语首次出现的位置。想直接看一套完整可运行的参考项目，`examples/xv6-spec` 子模块里有每个 Lab 的完整 Spec 与实现（参考源码可读，不作为保密边界）；它是学生手写 Spec 的参照锚点，不是替代品。
 
 ## 五类 Spec
 
