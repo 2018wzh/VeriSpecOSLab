@@ -6,6 +6,7 @@ import { Buffer } from "node:buffer";
 import { HttpPortalClient } from "vos-core";
 import { CourseManifestV1Schema } from "vos-core/portal-contracts";
 import { parse } from "yaml";
+import { isProviderFailure } from "./provider-failure.ts";
 
 const source = path.resolve(
   process.env.VOS_GLENDA_SPEC_ROOT ??
@@ -127,6 +128,19 @@ try {
             commit_sha: git(studentCheckout, ["rev-parse", "HEAD"]).trim(),
           });
       }
+    }
+    if (process.env.VOS_GLENDA_REPLAY_CHECKPOINT === "1") {
+      git(studentCheckout, [
+        "commit",
+        "--allow-empty",
+        "-m",
+        `[course][portal] Rebind ${activeStages[0].key} evidence`,
+      ]);
+      recordShowcaseEvent(sessionTimeline, "portal-replay-checkpoint", {
+        status: "passed",
+        stage: activeStages[0].key,
+        commit_sha: git(studentCheckout, ["rev-parse", "HEAD"]).trim(),
+      });
     }
     const privateAgentConfig = path.join(source, ".vos", "config.toml");
     if (await Bun.file(privateAgentConfig).exists()) {
@@ -330,6 +344,12 @@ async function runReplay(
   status: "passed" | "failed" | "passed_with_approved_skips";
   skippedModelSteps: Array<{ name: string; reason: "provider_failure"; approval_env: string }>;
 }> {
+  const replayEnv = {
+    ...env,
+    ...(env.GLENDA_H5_QEMU_COMMAND_JSON && env.GLENDA_H5_QEMU_ROOT
+      ? { GLENDA_H5_QEMU_PROJECT_ROOT: cwd }
+      : {}),
+  };
   const commands: Array<{ name: string; args: string[]; result: unknown; artifacts: Record<string, unknown> }> = [];
   const skippedModelSteps: Array<{ name: string; reason: "provider_failure"; approval_env: string }> = [];
   const allowModelFailureSkip = env.VOS_GLENDA_ALLOW_AGENT_FAILURE_SKIP === "1";
@@ -358,8 +378,15 @@ async function runReplay(
   const execute = async (name: string, args: string[], requireModel = false): Promise<boolean> => {
     let parsed: unknown;
     try {
-      const result = await runCli(cli, cwd, env, args, true);
-      parsed = parseJson(result.stdout);
+      const result = await runCli(cli, cwd, replayEnv, args, true);
+      try {
+        parsed = parseJson(result.stdout);
+      } catch (error) {
+        const detail = redact(result.stderr || result.stdout);
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)}${detail ? `: ${detail}` : ""}`,
+        );
+      }
       const commandRecord = {
         name,
         args,
@@ -591,14 +618,6 @@ function assertModelResult(value: unknown, command: string): void {
     throw new Error(`${command} did not produce real model evidence`);
 }
 
-function isProviderFailure(value: unknown, message: string): boolean {
-  const serialized = `${message}\n${JSON.stringify(value ?? {})}`;
-  const providerFailure = /(?:chat request|provider|model).{0,120}(?:failed|error|unavailable)/is.test(serialized);
-  const transientFailure = /(?:\b5\d{2}\b|internal server error|temporarily unavailable|timeout|timed out)/i.test(serialized);
-  const missingConfiguredCredential = /configured\s+\S+\s+provider credential\s+\S+\s+is missing/i.test(serialized);
-  return (providerFailure && transientFailure) || missingConfiguredCredential;
-}
-
 function sanitizeShowcase(value: unknown, projectRoot: string): unknown {
   const denied = new Set(["raw_text", "project_root", "portal_url", "token", "authorization", "credentials"]);
   const visit = (current: unknown): unknown => {
@@ -678,7 +697,9 @@ async function waitForTeacherApproval(base: string, token: string, submissionId:
 }
 
 async function applyStageDelta(sourceRoot: string, checkout: string, from: string, to: string): Promise<void> {
-  const producer = Bun.spawn(["git", "diff", "--binary", from, to, "--", "."], {
+  const producer = Bun.spawn([
+    "git", "diff", "--binary", from, to, "--", ".", ":(exclude).vos/project.yaml",
+  ], {
     cwd: sourceRoot,
     stdout: "pipe",
     stderr: "pipe",
@@ -883,8 +904,11 @@ function nestedRunStatus(value: unknown): string {
 function parseJson(output: string): unknown {
   try {
     return JSON.parse(output.trim());
-  } catch {
-    throw new Error("CLI did not return JSON output");
+  } catch (error) {
+    const normalized = output.trim();
+    throw new Error(
+      `CLI did not return JSON output (${normalized.length} chars): ${error instanceof Error ? error.message : String(error)}; suffix=${JSON.stringify(normalized.slice(-160))}`,
+    );
   }
 }
 

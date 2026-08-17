@@ -154,7 +154,7 @@ export class DockerRunnerRuntime {
           "-euc",
           "while [ ! -f /tmp/vos-runner-start ]; do sleep 0.1; done; exec bun run /opt/vos/apps/vos-cli/app/runner-server.ts",
         ],
-        Env: [
+        Env: mergeContainerEnvironment(image.Config?.Env, [
           `VOS_SERVE_ACCESS_TOKEN=${accessToken}`,
           "VOS_RUNNER_IDENTITY_FILE=/tmp/vos-runner/identity.json",
           `VOS_RUNNER_PORTAL_URL=${this.portalUrl}`,
@@ -171,7 +171,7 @@ export class DockerRunnerRuntime {
               ]
             : []),
           "HOME=/tmp/runner-home",
-        ],
+        ]),
         Labels: labels,
         User: "10001:10001",
         WorkingDir: "/workspace/project",
@@ -271,13 +271,30 @@ export class DockerRunnerRuntime {
       MemorySwap: this.limits.memoryBytes,
       NanoCpus: Math.floor(this.limits.cpus * 1_000_000_000),
       Tmpfs: {
-        "/tmp": "rw,noexec,nosuid,size=256m,mode=1777",
+        // Course checks compile short-lived host oracles under mktemp(1) and
+        // execute them immediately. The container remains unprivileged,
+        // capability-free, read-only outside tmpfs, and nosuid.
+        "/tmp": "rw,exec,nosuid,size=256m,mode=1777",
         "/workspace/project": `rw,exec,nosuid,size=${this.limits.diskBytes},mode=0700,uid=10001,gid=10001`,
       },
       Init: true,
       AutoRemove: false,
     };
   }
+}
+
+export function mergeContainerEnvironment(
+  imageEnvironment: string[] | undefined,
+  runtimeEnvironment: string[],
+): string[] {
+  const merged = new Map<string, string>();
+  for (const entry of [...(imageEnvironment ?? []), ...runtimeEnvironment]) {
+    const separator = entry.indexOf("=");
+    if (separator <= 0)
+      throw new Error("runner environment contains an invalid entry");
+    merged.set(entry.slice(0, separator), entry);
+  }
+  return [...merged.values()];
 }
 
 async function runnerFiles(container: Container): Promise<string[]> {

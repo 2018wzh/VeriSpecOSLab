@@ -1,0 +1,13 @@
+P8  KNOWLEDGE SOURCES / AI HALLUCINATION
+EVIDENCE: REAL ACCEPTED AGENT ASK
+
+$ vos agent ask  # committed Lab 10 design review
+question: Review the committed Lab 10 verification-closure design before implementation. Focus on exhau…
+structured citations: 14
+citation[1]: spec/modules/verification.yaml
+citation[2]: spec/goals/verification-closure.yaml
+citation[3]: vos.yaml
+citation[4]: AGENTS.md
+
+answer: Lab 10 verification-closure design review (pre-implementation). The committed design is structurally sound on four of the six review axes…
+Boundary: citations make claims inspectable; students still judge them.

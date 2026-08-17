@@ -1,0 +1,20 @@
+P10  QEMU MODEL TO PHYSICAL BOARD
+EVIDENCE: REAL H5 QEMU + REAL ORANGE PI PRIME
+
+$ vos agent qemu execute  # approved candidate, isolated worktree
+h5-firmware-chain-trace: OK
+h5-mmu-trace: OK
+h5-uart-clock-trace: OK
+h5-timer-irq-trace: OK
+h5-smp-ipi-trace: OK
+QEMU result: qemu_only; board gate remains separate
+
+$ vos run hardware  # physical Orange Pi Prime serial evidence
+H5_DTB_OK cores=4 memory_mib=2048
+H5_SMP_OK cores=4 mask=0x0f
+H5_IPI_OK mask=0x0f
+H5_TIMER_IRQ_OK ticks=10
+H5_MMC_DATA_OK
+H5_LAB1_8_WORKLOAD_OK phases=10 mode=el0
+GLENDA_H5_BOOT_OK
+Boundary: QEMU predicts device semantics; only the board closes hardware.

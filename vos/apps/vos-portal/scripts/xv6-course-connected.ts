@@ -25,7 +25,6 @@ const manifest = CourseManifestV1Schema.parse(
 );
 const client = new HttpPortalClient();
 const workspace = await mkdtemp(path.join(os.tmpdir(), "vos-xv6-connected-"));
-const includeCandidate = process.env.VOS_XV6_INCLUDE_CANDIDATES === "1";
 const startStage = process.env.VOS_XV6_START_STAGE?.trim();
 const startSequence = startStage
   ? manifest.stages.find((stage) => stage.key === startStage)?.sequence
@@ -33,10 +32,7 @@ const startSequence = startStage
 if (startStage && startSequence === undefined)
   throw new Error(`unknown VOS_XV6_START_STAGE: ${startStage}`);
 const stages = manifest.stages
-  .filter(
-    (stage) => !stage.source_ref.endsWith("candidate") || includeCandidate,
-  )
-  .slice(0, includeCandidate ? 9 : 8)
+  .filter((stage) => stage.source_ref.endsWith("-complete"))
   .filter((stage) => startSequence === undefined || stage.sequence >= startSequence)
 
 try {
@@ -143,13 +139,6 @@ try {
       git(source, ["worktree", "remove", "--force", checkout]);
     }
   }
-  if (!includeCandidate)
-    console.log(
-      JSON.stringify({
-        candidate_boundary:
-          "Lab 9 and Lab 10 remain candidate; rerun with VOS_XV6_INCLUDE_CANDIDATES=1 only for Lab 9 hardware/manual review preparation",
-      }),
-    );
 } finally {
   await rm(workspace, { recursive: true, force: true });
 }

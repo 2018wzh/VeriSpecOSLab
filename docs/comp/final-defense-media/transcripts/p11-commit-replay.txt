@@ -1,0 +1,18 @@
+P11  COMMIT-BOUND PORTAL RECORD AND REPLAY
+EVIDENCE: REAL CONNECTED XV6 + GLENDA CLOSURE
+
+$ vos portal status <authoritative-run> --watch
+xv6:    stage=lab10 authoritative=passed
+         commit=138cf784d878 run=run-37f300b0-cc01-4004-ad30-a8e33b1d3b0c
+         checks=3/3 result=passed
+glenda: stage=lab10 authoritative=passed
+         commit=aca80468e510 run=run-afdb05b4-3abc-4072-b0a7-425937a764ac
+         checks=3/3 result=passed
+
+$ git checkout --detach 138cf784d878  # Portal xv6 repository
+restored=138cf784d878 tracked_files=349
+$ git checkout --detach aca80468e510  # Portal Glenda repository
+restored=aca80468e510 tracked_files=255
+
+Portal retains public run, authoritative run, artifacts, review and failures.
+Boundary: Git restores tracked state; Portal restores the evidence timeline.

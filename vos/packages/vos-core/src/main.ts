@@ -366,7 +366,7 @@ export async function executeCliInvocation(
         readonlyDisplay,
       });
       if (options.print ?? true) {
-        printResult(
+        await printResult(
           finalOutput as unknown as Record<string, unknown>,
           parsed.global.json,
           parsed.global.verbose,
@@ -404,7 +404,7 @@ export async function executeCliInvocation(
       }
       progress.finish(status, message);
       if (options.print ?? true) {
-        printResult(
+        await printResult(
           finalOutput as unknown as Record<string, unknown>,
           parsed.global.json,
           parsed.global.verbose,
@@ -6870,9 +6870,16 @@ async function executeXv6CourseVerify(
         reason: "xv6 course adapter only supports public and authoritative verification",
       },
     };
+  const project = await loadProjectConfig(context.projectRoot);
+  const bundle = await buildNormalizedSpecBundle({
+    projectRoot: context.projectRoot,
+    specRoot: project.spec_root ?? "spec",
+  });
+  await writeNormalizedBundle(context.projectRoot, bundle, evidence, false);
   const runner = new HostRunner(context.projectRoot, context.signal);
   const manifest = await readStudentManifest(context.projectRoot);
   const build = await runXv6CourseBuild(runner, context);
+  const hardwareEvidencePath = await xv6VisionFive2EvidencePath(context);
   const checks = [] as Array<Awaited<ReturnType<ManifestRunner["check"]>>>;
   if (build.status === "passed") {
     const ids = await xv6CourseCheckIds(context, manifest);
@@ -6899,10 +6906,45 @@ async function executeXv6CourseVerify(
     "xv6-course-verification",
     path.relative(context.projectRoot, summary).replaceAll(path.sep, "/"),
   );
+  if (hardwareEvidencePath) {
+    evidence.addEvidenceRef(
+      "usertests-four-hart",
+      "visionfive2",
+      hardwareEvidencePath,
+    );
+  }
   return {
     status: passed ? "passed" : "validation_failed",
     details: { adapter: "xv6-spec", build, checks, evidence: collected },
   };
+}
+
+async function xv6VisionFive2EvidencePath(
+  context: ExecContext,
+): Promise<string | undefined> {
+  if (!["lab9", "lab10"].includes(process.env.VOS_COURSE_STAGE_KEY ?? ""))
+    return undefined;
+  const relative = "hardware/visionfive2/evidence/vf2-four-hart-usertests-summary.txt";
+  const summary = await readFile(path.join(context.projectRoot, relative), "utf8");
+  validateXv6VisionFive2EvidenceText(summary);
+  return relative;
+}
+
+export function validateXv6VisionFive2EvidenceText(summary: string): void {
+  const requiredMarkers = [
+    "XV6_BOOT_OK",
+    "sd: write test ok",
+    "hart 1 starting",
+    "hart 2 starting",
+    "hart 3 starting",
+    "usertests starting",
+    "ALL TESTS PASSED",
+  ];
+  const missing = requiredMarkers.filter((marker) => !summary.includes(marker));
+  if (missing.length > 0)
+    throw new Error(
+      `VisionFive 2 four-hart evidence is incomplete: missing ${missing.join(", ")}`,
+    );
 }
 
 async function runXv6CourseCheck(
@@ -6932,7 +6974,8 @@ async function runXv6CourseCheck(
         humanReview: "not_required",
       };
   }
-  if (existsSync(path.join(context.projectRoot, "tests", "public", "verify.sh"))) {
+  const publicVerifyIds = await readXv6PublicVerifyCheckIds(context.projectRoot);
+  if (publicVerifyIds.includes(id)) {
     const result = await runStructuredStudentCommand(
       context.projectRoot,
       {
@@ -6965,12 +7008,15 @@ async function xv6CourseCheckIds(
       (id) => id !== "usertests_all_pass",
     );
   }
-  const scriptPath = path.join(
-    context.projectRoot,
-    "tests",
-    "public",
-    "verify.sh",
-  );
+  const ids = await readXv6PublicVerifyCheckIds(context.projectRoot);
+  if (ids.length > 0) return ids;
+  return Object.keys(manifest.manifest.checks);
+}
+
+async function readXv6PublicVerifyCheckIds(
+  projectRoot: string,
+): Promise<string[]> {
+  const scriptPath = path.join(projectRoot, "tests", "public", "verify.sh");
   if (existsSync(scriptPath)) {
     const script = await readFile(scriptPath, "utf8");
     const match = script.match(
@@ -6984,7 +7030,7 @@ async function xv6CourseCheckIds(
       if (ids.length > 0) return ids;
     }
   }
-  return Object.keys(manifest.manifest.checks);
+  return [];
 }
 
 async function runXv6CourseBuild(
@@ -7035,13 +7081,21 @@ async function executeGlendaCourseVerify(
           "glenda course adapter only supports public and authoritative verification",
       },
     };
+  const project = await loadProjectConfig(context.projectRoot);
+  const bundle = await buildNormalizedSpecBundle({
+    projectRoot: context.projectRoot,
+    specRoot: project.spec_root ?? "spec",
+  });
+  await writeNormalizedBundle(context.projectRoot, bundle, evidence, false);
   const runner = new HostRunner(context.projectRoot, context.signal);
   const manifest = await readStudentManifest(context.projectRoot);
   const build = await runner.build("build");
   const checks = [] as Array<Awaited<ReturnType<ManifestRunner["check"]>>>;
+  let deferredExternalChecks: string[] = [];
   if (build.status === "passed") {
-    const ids = await glendaCourseCheckIds(context, manifest);
-    for (const id of ids) checks.push(await runner.check(id));
+    const plan = await glendaCourseCheckPlan(context, manifest);
+    deferredExternalChecks = plan.deferred;
+    for (const id of plan.executed) checks.push(await runner.check(id));
   }
   const collected = await runner.collectEvidence();
   const passed =
@@ -7051,23 +7105,76 @@ async function executeGlendaCourseVerify(
   const summary = await evidence.writeLog(
     "course",
     "glenda-verification.json",
-    `${JSON.stringify({ adapter: "glenda-spec", build, checks, evidence: collected }, null, 2)}\n`,
+    `${JSON.stringify({ adapter: "glenda-spec", build, checks, deferred_external_checks: deferredExternalChecks, evidence: collected }, null, 2)}\n`,
   );
   evidence.addEvidenceRef(
     `${evidence.run_id}:glenda-course-verification`,
     "glenda-course-verification",
     path.relative(context.projectRoot, summary).replaceAll(path.sep, "/"),
   );
+  const hardwareEvidence = await glendaOrangePiPrimeEvidence(context);
+  if (hardwareEvidence) {
+    evidence.addEvidenceRef(
+      hardwareEvidence.caseName,
+      "orangepi-prime",
+      hardwareEvidence.path,
+    );
+  }
   return {
     status: passed ? "passed" : "validation_failed",
-    details: { adapter: "glenda-spec", build, checks, evidence: collected },
+    details: {
+      adapter: "glenda-spec",
+      build,
+      checks,
+      deferred_external_checks: deferredExternalChecks,
+      evidence: collected,
+    },
   };
 }
 
-async function glendaCourseCheckIds(
+async function glendaOrangePiPrimeEvidence(
+  context: ExecContext,
+): Promise<{ caseName: string; path: string } | undefined> {
+  const stage = process.env.VOS_COURSE_STAGE_KEY;
+  if (stage !== "lab9" && stage !== "lab10") return undefined;
+  const relative = "verification/orangepi-prime-serial.log";
+  const serial = await readFile(path.join(context.projectRoot, relative), "utf8");
+  validateGlendaOrangePiPrimeEvidenceText(serial);
+  return {
+    caseName: stage === "lab9" ? "four-core-workload" : "full-workload",
+    path: relative,
+  };
+}
+
+export function validateGlendaOrangePiPrimeEvidenceText(serial: string): void {
+  const requiredMarkers = [
+    "H5_DTB_OK cores=4 memory_mib=2048",
+    "H5_CORE_ONLINE mpidr=0",
+    "H5_CORE_ONLINE mpidr=1",
+    "H5_CORE_ONLINE mpidr=2",
+    "H5_CORE_ONLINE mpidr=3",
+    "H5_SMP_OK cores=4 mask=0x0f",
+    "H5_IPI_OK mask=0x0f",
+    "H5_TIMER_IRQ_OK ticks=10",
+    "H5_MMC_FS_OK",
+    "H5_MMC_DATA_OK",
+    "H5_USERMODE_ENTER_OK",
+    "H5_USER_FD_PIPE_SHELL_OK resources=0",
+    "H5_LAB1_8_WORKLOAD_OK phases=10 mode=el0",
+    "GLENDA_H5_BOOT_OK",
+  ];
+  const missing = requiredMarkers.filter((marker) => !serial.includes(marker));
+  if (missing.length > 0)
+    throw new Error(
+      `Orange Pi Prime physical evidence is incomplete: missing ${missing.join(", ")}`,
+    );
+}
+
+async function glendaCourseCheckPlan(
   context: ExecContext,
   manifest: Awaited<ReturnType<typeof readStudentManifest>>,
-): Promise<string[]> {
+): Promise<{ executed: string[]; deferred: string[] }> {
+  let selected: string[] | undefined;
   const scriptPath = path.join(
     context.projectRoot,
     "tests",
@@ -7084,10 +7191,38 @@ async function glendaCourseCheckIds(
         .split("|")
         .map((id) => id.trim())
         .filter(Boolean);
-      if (ids.length > 0) return ids;
+      if (ids.length > 0) selected = ids;
     }
   }
-  return Object.keys(manifest.manifest.checks);
+  return partitionGlendaCourseChecks(
+    manifest.manifest.checks,
+    selected ?? Object.keys(manifest.manifest.checks),
+    process.env.VOS_COURSE_STAGE_KEY,
+  );
+}
+
+export function partitionGlendaCourseChecks(
+  checks: Record<string, { env?: string[] }>,
+  selected: string[],
+  stage: string | undefined,
+): { executed: string[]; deferred: string[] } {
+  const mayUseReviewArtifacts = stage === "lab9" || stage === "lab10";
+  const externalEvidenceDependents = new Set([
+    "h5-platform-goal",
+    "verification-closure-report",
+    "verification-closure-goal",
+  ]);
+  const deferred = mayUseReviewArtifacts
+    ? selected.filter((id) =>
+        externalEvidenceDependents.has(id) ||
+        checks[id]?.env?.includes("GLENDA_H5_QEMU_COMMAND_JSON"),
+      )
+    : [];
+  const deferredSet = new Set(deferred);
+  return {
+    executed: selected.filter((id) => !deferredSet.has(id)),
+    deferred,
+  };
 }
 
 async function executeStudentVerify(
@@ -7135,6 +7270,12 @@ async function executeStudentVerify(
       },
     };
   }
+  const normalizedCache = await writeNormalizedBundle(
+    projectRoot,
+    bundle,
+    evidence,
+    false,
+  );
   if (command.dryRun) {
     const manifest = await readStudentManifest(projectRoot);
     return {
@@ -7143,6 +7284,7 @@ async function executeStudentVerify(
         diagnostics,
         checks: Object.keys(manifest.manifest.checks),
         build: manifest.manifest.build.program,
+        normalized_cache: path.relative(projectRoot, normalizedCache),
       },
     };
   }
@@ -8768,6 +8910,7 @@ async function writeNormalizedBundle(
   projectRoot: string,
   bundle: NormalizedSpecBundle,
   evidence: EvidenceWriter,
+  recordArtifact = true,
 ): Promise<string> {
   const cachePath = path.join(
     projectRoot,
@@ -8778,11 +8921,12 @@ async function writeNormalizedBundle(
   );
   await mkdir(path.dirname(cachePath), { recursive: true });
   await writeFile(cachePath, `${JSON.stringify(bundle, null, 2)}\n`);
-  evidence.addArtifact(
-    "spec",
-    path.relative(projectRoot, cachePath),
-    "normalized spec bundle",
-  );
+  if (recordArtifact)
+    evidence.addArtifact(
+      "spec",
+      path.relative(projectRoot, cachePath),
+      "normalized spec bundle",
+    );
   return cachePath;
 }
 
@@ -10519,13 +10663,24 @@ function hashString(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function printResult(
+async function printResult(
   result: Record<string, unknown>,
   asJson: boolean,
   verbose: boolean,
-): void {
+): Promise<void> {
   if (asJson) {
-    console.log(JSON.stringify(result, null, 2));
+    const serialized = `${JSON.stringify(result, null, 2)}\n`;
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error): void => {
+        process.stdout.off("error", onError);
+        reject(error);
+      };
+      process.stdout.once("error", onError);
+      process.stdout.write(serialized, () => {
+        process.stdout.off("error", onError);
+        resolve();
+      });
+    });
     return;
   }
   console.log(

@@ -47,11 +47,16 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --pr
   && curl -fsSL "$RISCV_XPACK_URL" | tar -xz -C /opt/riscv --strip-components=1 \
   && for tool in /opt/riscv/bin/riscv-none-elf-*; do ln -s "$tool" "/usr/local/bin/riscv64-unknown-elf-${tool##*/riscv-none-elf-}"; done \
   && chmod -R a+rX /opt/rustup /opt/cargo /opt/riscv
+RUN rustup target add --toolchain nightly aarch64-unknown-none
+RUN apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ripgrep \
+  && rm -rf /var/lib/apt/lists/*
 COPY apps/vos-portal/runner-cache/glenda-cargo-registry.tar.gz /tmp/glenda-cargo-registry.tar.gz
 RUN tar -xzf /tmp/glenda-cargo-registry.tar.gz -C /opt/cargo \
   && rm /tmp/glenda-cargo-registry.tar.gz \
   && chmod -R a+rX /opt/cargo
-ENV CARGO_NET_OFFLINE=true
+ENV CARGO_NET_OFFLINE=true \
+    RUSTUP_TOOLCHAIN=nightly
 WORKDIR /opt/vos
 COPY --from=dependencies /opt/vos /opt/vos
 COPY packages ./packages

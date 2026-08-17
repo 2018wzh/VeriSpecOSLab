@@ -27,6 +27,16 @@ test("Glenda manifest exposes only the Lab 1-10 course model", async () => {
     "orangepi-prime-serial-log",
     "orangepi-prime-hardware-report",
   ]);
+  expect(manifest.stages[8].required_evidence).toContainEqual({
+    suite: "orangepi-prime",
+    case_name: "four-core-workload",
+    required_result: "pass",
+  });
+  expect(manifest.stages[9].required_evidence).toContainEqual({
+    suite: "orangepi-prime",
+    case_name: "full-workload",
+    required_result: "pass",
+  });
   expect(manifest.stages[9].required_review_artifacts).toEqual([
     "lab10-verification-report",
     "lab10-reproducibility-package",
@@ -39,6 +49,10 @@ test("Glenda connected replay preserves command, Git and Portal lineage for show
     path.resolve(import.meta.dirname, "../scripts/glenda-student-cli-connected.ts"),
     "utf8",
   );
+  const providerFailure = await readFile(
+    path.resolve(import.meta.dirname, "../scripts/provider-failure.ts"),
+    "utf8",
+  );
   for (const step of ["spec-lint", "agent-ask", "agent-review", "build", "qemu", "verify", "report"])
     expect(script).toContain(`name: "${step}"`);
   expect(script).toContain('"glenda-replay-bundle.v1"');
@@ -47,12 +61,17 @@ test("Glenda connected replay preserves command, Git and Portal lineage for show
   expect(script).toContain("VOS_GLENDA_STUDENT_THROUGH");
   expect(script).toContain("VOS_GLENDA_ALLOW_CANDIDATE_REFS");
   expect(script).toContain("VOS_GLENDA_RESUME_BASE_REF");
+  expect(script).toContain("VOS_GLENDA_REPLAY_CHECKPOINT");
+  expect(script).toContain('"portal-replay-checkpoint"');
+  expect(script).toContain(":(exclude).vos/project.yaml");
+  expect(script).toContain("GLENDA_H5_QEMU_PROJECT_ROOT: cwd");
   expect(script).toContain("VOS_GLENDA_ALLOW_AGENT_FAILURE_SKIP");
   expect(script).toContain("passed_with_approved_skips");
   expect(script).toContain("model-step-skip");
   expect(script).toContain("isProviderFailure");
-  expect(script).toContain("missingConfiguredCredential");
-  expect(script).toContain("provider credential");
+  expect(providerFailure).toContain("missingConfiguredCredential");
+  expect(providerFailure).toContain("credentialRejected");
+  expect(providerFailure).toContain("provider credential");
   expect(script).toContain("already_applied: true");
   expect(script).toContain("VOS_GLENDA_HISTORY_AUDIT_REQUIRED");
   expect(script).toContain('runGit(process.cwd(), ["--exec-path"]');
@@ -90,6 +109,8 @@ test("Glenda Runner image carries the complete LLVM user-program toolchain", asy
     dockerfile.matchAll(/apt-get install -y --no-install-recommends\s+(.+?)\s+&& rm/g),
     (match) => match[1].trim().split(/\s+/),
   ).flat();
-  for (const toolPackage of ["clang", "lld", "llvm", "python-is-python3"])
+  for (const toolPackage of ["clang", "lld", "llvm", "python-is-python3", "ripgrep"])
     expect(installCommands).toContain(toolPackage);
+  expect(dockerfile).toContain("RUSTUP_TOOLCHAIN=nightly");
+  expect(dockerfile).toContain("rustup target add --toolchain nightly aarch64-unknown-none");
 });

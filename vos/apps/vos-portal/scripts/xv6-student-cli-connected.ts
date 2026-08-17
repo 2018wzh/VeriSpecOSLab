@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { Buffer } from "node:buffer";
 import os from "node:os";
 import path from "node:path";
 import { HttpPortalClient } from "vos-core";
@@ -11,7 +12,7 @@ const source = path.resolve(
   process.env.VOS_XV6_SPEC_ROOT ??
     path.join(import.meta.dirname, "../../../../examples/xv6-spec"),
 );
-const sourceRef = process.env.VOS_XV6_STUDENT_REF ?? "course/lab9-candidate";
+const sourceRef = process.env.VOS_XV6_STUDENT_REF ?? "course/lab9-complete";
 const expectedStage = process.env.VOS_XV6_STUDENT_STAGE ?? "lab9";
 const courseManifest = CourseManifestV1Schema.parse(
   parse(
@@ -56,7 +57,13 @@ try {
   };
   let authenticated = false;
   const results: Array<Record<string, string | number>> = [];
-  for (const stage of stages) {
+  const firstBinding = await client.getProjectBinding(portalUrl, token, projectId);
+  const startIndex = stages.findIndex((stage) => stage.key === firstBinding.current_stage.key);
+  if (startIndex < 0)
+    throw new Error(
+      `project ${projectId} current stage ${firstBinding.current_stage.key} is outside the requested xv6 replay range`,
+    );
+  for (const stage of stages.slice(startIndex)) {
     const binding = await client.getProjectBinding(portalUrl, token, projectId);
     if (binding.current_stage.key !== stage.key)
       throw new Error(
@@ -105,6 +112,14 @@ try {
       const submissionRunId = String(submissionRecord.run_id ?? "");
       if (!submissionId || !submissionRunId)
         throw new Error("CLI submission response did not contain submission and run ids");
+      await uploadRequiredReviewArtifacts(
+        cli,
+        stageCheckout,
+        env,
+        submissionRunId,
+        stage.key,
+        stage.required_review_artifacts,
+      );
       const status = await runCli(cli, stageCheckout, env, [
         "portal", "status", submissionRunId, "--watch",
       ]);
@@ -112,15 +127,13 @@ try {
       const terminal = nestedRunStatus(statusValue);
       if (terminal !== "passed")
         throw new Error(`authoritative student CLI run ended with ${terminal}`);
-      const finalSubmission = (await request(
-        portalUrl,
-        `/submissions/${encodeURIComponent(submissionId)}`,
-        { headers: { authorization: `Bearer ${token}` } },
-      ).then((response) => response.json())) as { status?: string };
-      const expectedStatus = stage.source_ref.endsWith("-candidate") ? "candidate" : "complete";
-      if (finalSubmission.status !== expectedStatus)
+      const evaluated = await submissionStatus(portalUrl, token, submissionId);
+      const finalStatus = stage.manual_review_required
+        ? await waitForTeacherApproval(portalUrl, token, submissionId, evaluated)
+        : evaluated;
+      if (finalStatus !== "complete")
         throw new Error(
-          `${stage.source_ref} submission ended with ${finalSubmission.status ?? "unknown"}, expected ${expectedStatus}`,
+          `${stage.source_ref} submission ended with ${finalStatus}, expected complete`,
         );
       results.push({
         stage: stage.key,
@@ -128,7 +141,7 @@ try {
         public_run_id: publicRunId,
         submission_run_id: submissionRunId,
         evidence_status: String((parseJson(evidence.stdout) as Record<string, unknown>).status ?? "unknown"),
-        submission_status: finalSubmission.status,
+        submission_status: finalStatus,
         pushed_branch: pushedBranch,
       });
     } finally {
@@ -191,6 +204,87 @@ async function runCli(
   return { stdout, stderr, exitCode: code };
 }
 
+async function uploadRequiredReviewArtifacts(
+  cli: string,
+  cwd: string,
+  env: Record<string, string | undefined>,
+  runId: string,
+  stage: string,
+  labels: string[],
+): Promise<void> {
+  if (labels.length === 0) return;
+  const directory = path.join(cwd, ".vos", "review", stage);
+  await mkdir(directory, { recursive: true });
+  for (const label of labels) {
+    const artifact = await materializeReviewArtifact(cwd, directory, label);
+    await runCli(cli, cwd, env, [
+      "portal", "artifact", "upload", runId, path.relative(cwd, artifact), "--label", label,
+    ]);
+  }
+}
+
+async function materializeReviewArtifact(
+  cwd: string,
+  directory: string,
+  label: string,
+): Promise<string> {
+  const variable = `VOS_XV6_ARTIFACT_${label.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}`;
+  const override = process.env[variable]?.trim();
+  if (override) {
+    const target = path.join(directory, `${label}${path.extname(override).slice(0, 16)}`);
+    await copyFile(path.resolve(override), target);
+    return target;
+  }
+  if (label === "visionfive2-serial-log") {
+    const evidence = path.join(cwd, "hardware", "visionfive2", "evidence");
+    const parts = await Promise.all([
+      readFile(path.join(evidence, "vf2-four-hart-usertests-part1.log")),
+      readFile(path.join(evidence, "vf2-four-hart-usertests-part2-resume.log")),
+    ]);
+    const target = path.join(directory, `${label}.log`);
+    await writeFile(target, Buffer.concat([parts[0], Buffer.from("\n"), parts[1]]));
+    return target;
+  }
+  const defaults: Record<string, string> = {
+    "visionfive2-hardware-report": "docs/visionfive2.md",
+    "lab10-verification-report": "tests/verification/coverage.md",
+  };
+  const relative = defaults[label];
+  if (!relative) throw new Error(`no xv6 review artifact source is defined for ${label}`);
+  const target = path.join(directory, `${label}${path.extname(relative)}`);
+  await copyFile(path.join(cwd, relative), target);
+  return target;
+}
+
+async function submissionStatus(base: string, token: string, submissionId: string): Promise<string> {
+  const value = (await request(
+    base,
+    `/submissions/${encodeURIComponent(submissionId)}`,
+    { headers: { authorization: `Bearer ${token}` } },
+  ).then((response) => response.json())) as { status?: string };
+  return String(value.status ?? "unknown");
+}
+
+async function waitForTeacherApproval(
+  base: string,
+  token: string,
+  submissionId: string,
+  initial: string,
+): Promise<string> {
+  if (initial !== "candidate") return initial;
+  const timeoutMs = Number(process.env.VOS_XV6_REVIEW_TIMEOUT_MS ?? 1_800_000);
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 1_000)
+    throw new Error("VOS_XV6_REVIEW_TIMEOUT_MS must be at least 1000");
+  console.error(`submission ${submissionId} is waiting for Portal teacher approval`);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await Bun.sleep(5_000);
+    const status = await submissionStatus(base, token, submissionId);
+    if (status !== "candidate") return status;
+  }
+  throw new Error(`submission ${submissionId} remained candidate until the teacher approval timeout`);
+}
+
 async function push(
   cwd: string,
   branch: string,
@@ -198,26 +292,25 @@ async function push(
 ): Promise<void> {
   const username = process.env.VOS_GITEA_USERNAME ?? "student";
   const password = process.env.VOS_GITEA_PASSWORD ?? process.env.VOS_GITEA_TOKEN ?? "student";
-  const askpass = path.join(cwd, ".vos-askpass.cmd");
-  await writeFile(
-    askpass,
-    `@echo off\r\nif /I not "%~1"=="Password" (echo ${username}) else (echo ${password})\r\n`,
-  );
-  try {
-    const result = Bun.spawnSync(
-      ["git", "push", "portal", `HEAD:refs/heads/${branch}`],
-      {
-        cwd,
-        env: { ...env, GIT_ASKPASS: askpass },
-        stdout: "pipe",
-        stderr: "pipe",
+  const authorization = Buffer.from(`${username}:${password}`).toString("base64");
+  const result = Bun.spawnSync(
+    ["git", "push", "portal", `HEAD:refs/heads/${branch}`],
+    {
+      cwd,
+      env: {
+        ...env,
+        GIT_CONFIG_COUNT: "2",
+        GIT_CONFIG_KEY_0: "http.sslVerify",
+        GIT_CONFIG_VALUE_0: "false",
+        GIT_CONFIG_KEY_1: "http.extraHeader",
+        GIT_CONFIG_VALUE_1: `Authorization: Basic ${authorization}`,
       },
-    );
-    if (result.exitCode !== 0)
-      throw new Error(`git push failed: ${redact(result.stderr.toString())}`);
-  } finally {
-    await unlink(askpass).catch(() => undefined);
-  }
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  if (result.exitCode !== 0)
+    throw new Error(`git push failed: ${redact(result.stderr.toString())}`);
 }
 
 function publicRepositoryUrl(repoUrl: string | undefined): string {
