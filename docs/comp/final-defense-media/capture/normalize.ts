@@ -31,4 +31,3 @@ for (const name of videos) {
 }
 
 console.log(`normalized ${videos.length} videos to H.264 1600x900 at 30 fps`);
-
