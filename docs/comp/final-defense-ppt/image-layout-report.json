@@ -224,28 +224,35 @@
       "source": "agent-transaction.svg"
     },
     {
-      "slide": 19,
+      "slide": 10,
+      "diagram": "agent-generated-behavior-tests",
+      "node_count": 5,
+      "min_font_pt": 11.5,
+      "source": "vos verify behavior-test protocol"
+    },
+    {
+      "slide": 20,
       "diagram": "course-progression",
       "node_count": 10,
       "min_font_pt": 9.5,
       "source": "course-history.svg"
     },
     {
-      "slide": 20,
+      "slide": 21,
       "diagram": "spec-hierarchy",
       "node_count": 6,
       "min_font_pt": 10.5,
       "source": "spec-model.svg"
     },
     {
-      "slide": 21,
+      "slide": 22,
       "diagram": "agent-transaction-boundaries",
       "node_count": 6,
       "min_font_pt": 10.5,
       "source": "agent-transaction.svg"
     },
     {
-      "slide": 22,
+      "slide": 23,
       "diagram": "evidence-closure-chain",
       "node_count": 8,
       "min_font_pt": 10.5,

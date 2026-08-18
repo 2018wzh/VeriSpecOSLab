@@ -62,9 +62,10 @@ const notes = [
   "VeriSpecOSLab 把课程组织成可执行闭环。学生理解问题并亲手写 Spec，Agent 只在明确范围内实现。VOS 独立检查修改，运行构建和测试，再把版本、规格与日志写入报告。成功和失败都有结构化记录，教师可以回到设计与证据，提出意见后进入下一轮。",
   "学生维护五类规格：DesignSpec 记录系统方向，ModuleSpec 描述模块职责、性质和错误，InterfaceSpec 固定跨边界语义，GoalSpec 表达可度量的扩展目标，SpecPatch 说明跨模块修改。ModuleSpec 中的 owns 限定改动范围，properties 和 checks 则进入验证。这样，教师可以据此审查设计，Agent 和 Runner 也能获得一致的任务定义。规格从 L1 到 L3 随课程逐步加深，不要求学生在第一周就写出完整的内核设计。",
   "实现任务从已提交的 Spec 开始。VOS 创建独立的 Git 工作区，并把可修改范围交给 Agent。Agent 必须提交机器可检查的结构化结果；平台随后读取真实 diff，运行 build、public、contract、固定种子 fuzz 和有界 trace。模型声称已经完成不会改变任务状态，测试遗漏或越界修改仍会被拒绝，并回到同一会话修正。全部检查通过且原项目没有漂移后，补丁才会形成独立提交。",
-  "学生先写下模块边界和验收性质，lint 只检查结构，不替学生作技术选择。实现助手随后在独立工作区修改代码，VOS 根据真实 diff 检查范围。verify 不调用模型，而是实际执行构建和多类测试；report 再把提交、规格与日志绑定起来。四段画面依次交代设计、修改、验收和硬件结论由谁负责。证据链也由 QEMU 一直延伸到 VisionFive 2 四核实板。",
+  "学生先写下模块边界和验收性质，lint 只检查结构，不替学生作技术选择。实现助手随后在独立工作区修改代码，VOS 根据真实 diff 检查范围。verify 既执行已有测试，也能让 Agent 把尚未覆盖的 Spec obligation 转成行为样例；无论测试来自哪里，结果都由真实 Runner 裁决。report 再把提交、规格与日志绑定起来。四段画面依次交代设计、修改、验收和硬件结论由谁负责。",
   "学生缺少背景时，裸模型容易把似是而非的解释写得很确定。VOS 让 ask 从课程知识库取材，并用结构化 citation 指回教材、代码或固定版本资料。引用解决的是根据什么回答，正确性仍由学生核对；找不到来源时，也必须如实留空。",
-  "内核故障常只表现为黑屏、超时或一行 trap。Debug Agent 先读取失败 run 的真实日志，再按 trace、GDB、QMP 的顺序补充观测，把外部症状连到寄存器、调用栈和内部路径。它只报告证据、根因候选与下一步命令，不修改源码，也不能把诊断写成修复通过。",
+  "编译错误通常一眼可见，真正消耗教学时间的是运行时故障。这个案例里，用户页第一次写入后不断陷入内核。Debug Agent 先用只读 TCG 观测发现故障指令跳入 trap vector，再用类型化 GDB 探针确认 scause 等于 15、故障地址和 PC，由两条 observation 定位到页表映射遗漏 PTE_W。如果寄存器仍解释不了语义，它才在隔离工作区加入最小插桩。最后，时间线、假设和因果关系进入可交互视图；诊断仍不能代替修复和 verify。",
+  "当 Spec 提出了已有测试尚未覆盖的 generated 或 fuzz obligation，vos verify 会先让 Agent 生成 TestPlan，再根据已确认的计划生成临时测试补丁、suite 与 oracle。补丁只应用到一次性工作区，不能修改 Spec、Git 元数据或运行档案。Runner 随后真实执行命令，并同时检查退出码、超时、成功与失败正则；plan、patch、标准输出、错误输出和 result.json 都进入证据。Agent 扩展测试空间，但它不能自行宣布实现正确。",
   "物理板卡移植往往同时受启动链、设备模型和固件差异影响。VOS 先根据学生提供的材料生成 QEMU candidate，学生审查并提交后，Agent 才在隔离工作区完成模型移植、启动到 shell 和邻居回归。它能提前暴露软件与设备语义问题，但 QEMU 通过绝不替代真实时钟、引脚和外设证据。",
   "每次实现都落到独立 commit，并写入 Run-ID 与 Spec-Hash。report 再绑定测试、配置和证据，submit 保存脱敏归档。复查时可以在 detached worktree 精确回到该 commit，重新执行验证；原始运行日志不进 Git，只能从对应归档取回。这样既能复原代码状态，也不会把 commit 夸大成全部证据。",
   "课程材料分为 Book 和 Lab。Book 用历史与设计争论解释问题，Lab 给出任务、预期现象和自检点。例如 Lab 1 让学生在 Linux 和裸机中读取同一份 flag，观察 OS 承担的文件与设备访问，再带着这一直觉逐步选择内核组织和资源模型。",
@@ -376,21 +377,46 @@ function mediaSlide(index, title, claim, bullets, file, refs, status, statusColo
 }
 
 mediaSlide(8, "背景知识与 AI 幻觉：让回答回到可核对来源", "citation 提供核对入口，不把模型回答自动升级为事实", ["ask 从课程知识库取材", "回答附结构化 citation", "没有来源必须如实留空", "学生仍负责判断正确性"], "p08-kb-citation", "[R3][R6][R14]", "真实、已验收 Agent 结果", C.green, C.greenSoft);
-mediaSlide(9, "定位内核故障：把黑屏还原为证据链", "Debug Agent 只读观测失败 run，不修改源码，也不改写验证状态", ["先绑定真实失败运行", "trace → GDB → QMP", "输出根因候选与下一命令", "诊断结果不能冒充修复"], "p09-kernel-debug", "[R3][R14]", "真实失败 run + 真实诊断", C.green, C.greenSoft);
-mediaSlide(10, "自动生成 QEMU：为物理板卡移植提前验证", "QEMU 解决软件与设备语义问题；真实板卡继续验证时钟、引脚和外设", ["事实只来自学生提供的板卡材料", "candidate 必须人工批准并提交", "隔离执行且不改写 vos.yaml", "qemu_only 与实板证据分栏"], "p10-qemu-port", "[R3][R6][R8][R14]", "QEMU + Orange Pi Prime 实板", C.green, C.greenSoft);
-mediaSlide(11, "按 commit 精确记录，并在同一版本上复原", "Git 复原受控状态；Portal 复原与该版本相连的证据时间线", ["权威 run 绑定精确 commit", "真实 checkout 验证恢复后的 HEAD", "report / submit 绑定检查与归档", "失败历史不会被最终通过覆盖"], "p11-commit-replay", "[R3][R4][R7][R14]", "xv6 + Glenda Lab 10 已闭合", C.green, C.greenSoft);
+mediaSlide(9, "运行时写页故障：从 trap 风暴定位到缺失 PTE_W", "TCG 发现异常控制流，类型化 GDB 确认 trap；语义仍不清楚时才在隔离工作区插桩", ["TCG：有界捕获 trap / TB / MMIO", "GDB：scause、stval、sepc 定点确认", "插桩：detached worktree，最后手段", "可视化：observation → hypothesis → cause"], "p09-kernel-debug", "[R3][R14]", "v2 运行时案例 + 原生 QEMU 验收", C.green, C.greenSoft);
 
-// P12
+// P10
 {
-  const s = addSlide("指导书不先给答案，先给设计所需的背景", "[R6][R12]", notes[11]);
+  const s = addSlide("vos verify：Agent 自动生成样例，Runner 裁决结果", "[R3][R4][R14]", notes[9]);
+  recordNativeDiagram(10, "agent-generated-behavior-tests", 5, 11.5, "vos verify behavior-test protocol");
+  addText(s, "Agent 把尚未覆盖的 Spec obligation 变成测试；实现是否正确仍由真实执行决定", 0.62, 1.22, 12.0, 0.42, { fontSize: 17.5, bold: true, color: C.navy });
+
+  const verifyFlow = [
+    ["1  Spec obligation", "generated / fuzz\n待覆盖性质", C.indigo, C.blueSoft],
+    ["2  TestPlan", "case + stimulus\noracle + timeout", C.indigo2, C.white],
+    ["3  临时测试补丁", "suite + command\n通过 git apply --check", C.yellow, C.yellowSoft],
+    ["4  一次性工作区", "应用补丁\n不污染学生仓库", C.green, C.greenSoft],
+    ["5  Runner 裁决", "exit + timeout\nsuccess / failure regex", C.navy, C.white],
+  ];
+  verifyFlow.forEach((v, i) => {
+    const x = 0.62 + i * 2.5;
+    addCard(s, x, 1.92, 2.12, 1.62, v[0], v[1], { accent: v[2], titleSize: 13.5, bodySize: 11.5, fill: v[3], shadow: false });
+    if (i < 4) addArrow(s, x + 2.2, 2.56, 0.22, i < 2 ? C.indigo : C.green);
+  });
+
+  addCard(s, 0.62, 3.95, 5.58, 2.0, "当前协议中的测试样例", "obligation_id: kalloc_race\ncase.id: race\nphase: generated / fuzz\nstimulus.stdin + success_regex\nfailure_regex + timeout_ms", { accent: C.indigo2, titleSize: 16, bodySize: 13, fill: "F8FAFC", fontFace: "Cascadia Mono" });
+  addCard(s, 6.5, 3.95, 6.2, 2.0, "可复查证据", "generated-plan.json  ·  generated-patch.json\nstdout.log  ·  stderr.log  ·  result.json\n\nSchema 无效、越界补丁或任一 case 失败，verify 都返回 validation_failed。", { accent: C.green, titleSize: 16, bodySize: 12.5, fill: C.greenSoft });
+  addPill(s, "协议示例来自当前 v2 实现与测试；不冒充某次实板成绩", 3.03, 6.35, 7.3, C.yellow, C.yellowSoft, { fontSize: 10.5 });
+}
+
+mediaSlide(11, "自动生成 QEMU：为物理板卡移植提前验证", "QEMU 解决软件与设备语义问题；真实板卡继续验证时钟、引脚和外设", ["事实只来自学生提供的板卡材料", "candidate 必须人工批准并提交", "隔离执行且不改写 vos.yaml", "qemu_only 与实板证据分栏"], "p10-qemu-port", "[R3][R6][R8][R14]", "QEMU + Orange Pi Prime 实板", C.green, C.greenSoft);
+mediaSlide(12, "按 commit 精确记录，并在同一版本上复原", "Git 复原受控状态；Portal 复原与该版本相连的证据时间线", ["权威 run 绑定精确 commit", "真实 checkout 验证恢复后的 HEAD", "report / submit 绑定检查与归档", "失败历史不会被最终通过覆盖"], "p11-commit-replay", "[R3][R4][R7][R14]", "xv6 + Glenda Lab 10 已闭合", C.green, C.greenSoft);
+
+// P13
+{
+  const s = addSlide("指导书不先给答案，先给设计所需的背景", "[R6][R12]", notes[12]);
   addCard(s, 0.62, 1.38, 5.85, 4.6, "Book：为什么会出现这个问题？", "操作系统历史与设计争论\n\n• 从批处理、分时到 Unix\n• 宏内核—微内核争论\n• 进程、资源与文件模型\n• 真实硬件边界\n\n提供背景与取舍，不预设唯一架构。", { accent: C.indigo, titleSize: 18, bodySize: 14, fill: C.blueSoft });
   addCard(s, 6.86, 1.38, 5.85, 4.6, "Lab：怎样把自己的选择做出来？", "任务、预期现象与自检点\n\n• Lab 1 CTF：Linux 与裸机读取同一 flag\n• 逐 Lab 增加 Spec 深度\n• 分层挑战与个性化目标\n• QEMU 与实板独立验收\n\n给出工程抓手，不提供步骤答案。", { accent: C.green, titleSize: 18, bodySize: 14, fill: C.greenSoft });
   addPill(s, "11 组 Book / Lab · 固定输出 22 份学生 PDF", 4.18, 6.32, 4.95, C.indigo, C.white, { line: C.indigo, fontSize: 11 });
 }
 
-// P13
+// P14
 {
-  const s = addSlide("两个内核、两种架构、两套真实板卡证据", "[R7][R8][R9]", notes[12]);
+  const s = addSlide("两个内核、两种架构、两套真实板卡证据", "[R7][R8][R9]", notes[13]);
   addCard(s, 0.58, 1.36, 6.05, 4.94, "xv6 + VisionFive 2", "JH7110 · 4 × SiFive U74\nSPI U-Boot → TFTP kernel / DTB\nSD 文件系统真实读写\n四 hart 完整 usertests\n\nALL TESTS PASSED\nPortal Lab 10：3 / 3", { accent: C.indigo, titleSize: 19, bodySize: 15, fill: C.white });
   addCard(s, 6.78, 1.36, 5.97, 4.94, "Glenda + Orange Pi Prime", "Allwinner H5 · 4 × Cortex-A53\nBROM → SPL → BL31 → U-Boot → Glenda\nGICv2 / timer / MMC / EL0 工作负载\n七项 QEMU trace 独立记录\n\nGLENDA_H5_BOOT_OK\nPortal Lab 10：3 / 3", { accent: C.green, titleSize: 19, bodySize: 15, fill: C.white });
   addPill(s, "实板已闭合", 1.04, 5.77, 1.65, C.green, C.greenSoft);
@@ -399,9 +425,9 @@ mediaSlide(11, "按 commit 精确记录，并在同一版本上复原", "Git 复
   addText(s, "跨内核、跨架构复用的是方法；QEMU 与实板从不合并成同一种证据。", 2.0, 6.43, 9.2, 0.3, { fontSize: 13.5, bold: true, color: C.navy, align: "center" });
 }
 
-// P14
+// P15
 {
-  const s = addSlide("15 名学生的试讲，直接改变了课程入口", "[R12]", notes[13]);
+  const s = addSlide("15 名学生的试讲，直接改变了课程入口", "[R12]", notes[14]);
   addText(s, "华东师大 2025 级计算机拔尖班 · 15 人 · 两节暑期试讲 · 定性观察", 0.62, 1.2, 12.0, 0.38, { fontSize: 14, color: C.muted });
   const rows = [
     ["初版 Spec 过于复杂", "一次性认知负担过高", "五类文件 + L1–L3 + 按 Lab 渐进填写"],
@@ -419,9 +445,9 @@ mediaSlide(11, "按 commit 精确记录，并在同一版本上复原", "Git 复
   addText(s, "边界：这些观察解释了如何改进课程入口，不构成通过率或学习增益的统计结论。", 1.92, 6.35, 9.45, 0.24, { fontSize: 11.5, color: C.yellow, bold: true, align: "center" });
 }
 
-// P15
+// P16
 {
-  const s = addSlide("借鉴、增量贡献与 AI 使用披露", "[R1][R10][R11][R15]", notes[14]);
+  const s = addSlide("借鉴、增量贡献与 AI 使用披露", "[R1][R10][R11][R15]", notes[15]);
   const cols = [
     ["方法来源", "SYSSPEC / SPECFS\n规格驱动思想", C.indigo],
     ["案例来源", "MIT xv6\nGlenda", "6B7FD7"],
@@ -436,9 +462,9 @@ mediaSlide(11, "按 commit 精确记录，并在同一版本上复原", "Git 复
   addPill(s, "所有生成内容均由人审与 Runner 验收", 8.56, 6.35, 3.45, C.yellow, C.yellowSoft, { fontSize: 10 });
 }
 
-// P16
+// P17
 {
-  const s = addSlide("下一学年：用 Glenda-Chimera 检验个性化设计", "[R11]", notes[15]);
+  const s = addSlide("下一学年：用 Glenda-Chimera 检验个性化设计", "[R11]", notes[16]);
   addPill(s, "2026–2027 学年正式教学", 0.65, 1.23, 2.8, C.green, C.greenSoft, { fontSize: 11 });
   addCard(s, 0.65, 2.02, 3.2, 3.4, "Rust 微内核", "seL4 风格\n最小可信内核\n能力与隔离边界", { accent: C.indigo, titleSize: 18, bodySize: 15, fill: C.white });
   addCard(s, 5.06, 2.02, 3.2, 3.4, "稳定 RPC / IPC", "接口、错误、资源语义\n由 Spec 固定\n由跨边界测试验证", { accent: C.green, titleSize: 18, bodySize: 15, fill: C.greenSoft });
@@ -449,9 +475,9 @@ mediaSlide(11, "按 commit 精确记录，并在同一版本上复原", "Git 复
   addPill(s, "未来案例：不宣称系统已经完成", 4.32, 6.46, 4.7, C.yellow, C.yellowSoft, { fontSize: 10.5 });
 }
 
-// P17
+// P18
 {
-  const s = addSlide("重新定义 OS 实验的评价对象", "[R2][R3][R4]", notes[16]);
+  const s = addSlide("重新定义 OS 实验的评价对象", "[R2][R3][R4]", notes[17]);
   addCard(s, 0.72, 1.55, 3.65, 2.5, "学生", "设计自己的 OS\n解释目标、边界与取舍", { accent: C.indigo, titleSize: 20, bodySize: 17, fill: C.blueSoft });
   addCard(s, 4.83, 1.55, 3.65, 2.5, "Agent", "在 Spec 与验证约束下\n参与真实工程", { accent: C.green, titleSize: 20, bodySize: 17, fill: C.greenSoft });
   addCard(s, 8.94, 1.55, 3.65, 2.5, "教师", "依据设计、演化与证据\n进行评审", { accent: C.yellow, titleSize: 20, bodySize: 17, fill: C.yellowSoft });
@@ -487,7 +513,7 @@ function appendix(title, refs = "") {
 // A2
 {
   const s = appendix("A2  Lab 1–10 与 Book / Lab 双线", "[R6][R12]");
-  recordNativeDiagram(19, "course-progression", 10, 9.5, "course-history.svg");
+  recordNativeDiagram(20, "course-progression", 10, 9.5, "course-history.svg");
   addCard(s, 0.62, 1.3, 9.64, 1.03, "Lab 1–8：逐步建立软件系统能力", "CTF 热身 → 启动 → 内存 → 中断 → 用户态 → 文件系统 → 资源 ABI → 个性化目标", { accent: C.indigo, titleSize: 15, bodySize: 12.5, fill: C.blueSoft });
   addArrow(s, 10.38, 1.65, 0.34, C.green);
   addCard(s, 10.84, 1.3, 1.87, 1.03, "Lab 9–10", "移植与证据闭合", { accent: C.green, titleSize: 13.5, bodySize: 10.5, fill: C.greenSoft });
@@ -506,7 +532,7 @@ function appendix(title, refs = "") {
 // A3
 {
   const s = appendix("A3  五类 Spec、L1–L3 与 SpecPatch", "[R5]");
-  recordNativeDiagram(20, "spec-hierarchy", 6, 10.5, "spec-model.svg");
+  recordNativeDiagram(21, "spec-hierarchy", 6, 10.5, "spec-model.svg");
   addCard(s, 1.63, 1.38, 4.1, 1.03, "DesignSpec", "系统方向、全局约束与模块索引", { accent: C.indigo, titleSize: 15, bodySize: 11.5, fill: C.blueSoft });
   addDownArrow(s, 3.5, 2.5, 0.42, C.indigo);
   addCard(s, 0.62, 3.08, 2.68, 1.1, "ModuleSpec", "职责 · owns · properties", { accent: C.indigo2, titleSize: 13.5, bodySize: 10.5 });
@@ -523,7 +549,7 @@ function appendix(title, refs = "") {
 // A4
 {
   const s = appendix("A4  Agent 事务、角色与安全边界", "[R4][R14]");
-  recordNativeDiagram(21, "agent-transaction-boundaries", 6, 10.5, "agent-transaction.svg");
+  recordNativeDiagram(22, "agent-transaction-boundaries", 6, 10.5, "agent-transaction.svg");
   const appendixTransaction = [
     ["Committed Spec", "绑定 HEAD 与 owns", C.indigo],
     ["Worktree", "隔离实现修改", C.indigo2],
@@ -557,7 +583,7 @@ function appendix(title, refs = "") {
 // A5
 {
   const s = appendix("A5  证据分层与闭合规则", "[R3][R7][R8][R14]");
-  recordNativeDiagram(22, "evidence-closure-chain", 8, 10.5, "evidence-chain.svg");
+  recordNativeDiagram(23, "evidence-closure-chain", 8, 10.5, "evidence-chain.svg");
   const evidenceFlow = [
     ["checks", "public · contract\nfuzz · trace · hidden", C.indigo, C.blueSoft],
     ["report", "绑定 commit、Spec\n配置与日志", C.indigo2, C.white],
@@ -615,14 +641,14 @@ function appendix(title, refs = "") {
   const s = appendix("A8  来源、许可证与复现坐标", "[R1]–[R15]");
   addCard(s, 0.58, 1.25, 5.95, 4.85, "主要来源", "1. Liu et al. Sharpen the Spec, Cut the Code, FAST '26.\n2. Cox, Kaashoek, Morris. xv6: a simple, Unix-like teaching OS.\n3. MIT PDOS xv6-riscv repository.\n4. seL4 Reference Manual and verification literature.\n5. Git worktree documentation.\n6. QEMU System Emulation User's Guide.\n7. RISC-V Privileged Architecture.\n8. 2026 操作系统设计赛全国赛技术方案。", { accent: C.indigo, titleSize: 17, bodySize: 11.5, fill: C.white });
   addCard(s, 6.8, 1.25, 5.95, 2.1, "复现坐标", "主分支：codex/final-defense-portal-closure\nPPT 生成脚本：docs/comp/final-defense-ppt/build.cjs\n演示采集：docs/comp/final-defense-media/capture/\n视频：4 × H.264 · 1600×900 · 30 fps", { accent: C.green, titleSize: 17, bodySize: 11.5, fill: C.greenSoft });
-  addCard(s, 6.8, 3.63, 5.95, 2.47, "许可与披露", "第三方源码与文档保留各自许可证。\n答辩 PPT、PDF 与演示素材：CC BY-SA 4.0。\nAI 工具、模型、生成范围、人工修改与验证方式在 P15 独立披露。\nP8 保留真实运行 ID、结构化验收与 citation 数量。", { accent: C.yellow, titleSize: 17, bodySize: 11.5, fill: C.yellowSoft });
+  addCard(s, 6.8, 3.63, 5.95, 2.47, "许可与披露", "第三方源码与文档保留各自许可证。\n答辩 PPT、PDF 与演示素材：CC BY-SA 4.0。\nAI 工具、模型、生成范围、人工修改与验证方式在 P16 独立披露。\nP8 保留真实运行 ID、结构化验收与 citation 数量。", { accent: C.yellow, titleSize: 17, bodySize: 11.5, fill: C.yellowSoft });
   addPill(s, "所有素材均去除凭据、本机绝对路径和私人服务地址", 3.37, 6.4, 6.6, C.red, C.redSoft, { fontSize: 10.5 });
 }
 
 fs.mkdirSync(outDir, { recursive: true });
 async function main() {
-  const undersizedMainDiagram = nativeDiagramLayouts.find((item) => item.slide <= 17 && item.min_font_pt < 11.5);
-  const undersizedAppendixDiagram = nativeDiagramLayouts.find((item) => item.slide > 17 && item.min_font_pt < 9.5);
+  const undersizedMainDiagram = nativeDiagramLayouts.find((item) => item.slide <= 18 && item.min_font_pt < 11.5);
+  const undersizedAppendixDiagram = nativeDiagramLayouts.find((item) => item.slide > 18 && item.min_font_pt < 9.5);
   if (undersizedMainDiagram || undersizedAppendixDiagram)
     throw new Error(`diagram readability gate failed: ${JSON.stringify(undersizedMainDiagram || undersizedAppendixDiagram)}`);
   fs.writeFileSync(imageLayoutReport, `${JSON.stringify({

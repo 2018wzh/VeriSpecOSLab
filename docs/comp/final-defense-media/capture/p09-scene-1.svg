@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <rect width="1600" height="900" fill="#f7f9fc"/><rect width="1600" height="12" fill="#3156d8"/>
+  <text x="70" y="82" font-family="Arial, sans-serif" font-size="24" font-weight="700" fill="#3156d8">P9 · RUNTIME FAULT / 01 OBSERVE</text>
+  <text x="70" y="142" font-family="Arial, sans-serif" font-size="44" font-weight="700" fill="#14213d">A user-page write falls into a trap loop</text>
+  <rect x="70" y="190" width="1460" height="610" rx="20" fill="#111827"/>
+  <circle cx="112" cy="230" r="9" fill="#ff6b6b"/><circle cx="142" cy="230" r="9" fill="#ffd166"/><circle cx="172" cy="230" r="9" fill="#43d9ad"/>
+  <text x="210" y="239" font-family="Consolas, monospace" font-size="21" fill="#aab4c3">vos agent debug · bounded qemu-observation session</text>
+  <text x="112" y="308" font-family="Consolas, monospace" font-size="28" fill="#e8e6e0">hypothesis: first user write does not retire</text>
+  <text x="112" y="364" font-family="Consolas, monospace" font-size="25" fill="#8a98b6">channels = [trap, tb]   budget = 1000 ms / 256 events</text>
+  <rect x="105" y="408" width="1390" height="118" rx="12" fill="#202a3b" stroke="#5b6ee1" stroke-width="2"/>
+  <text x="135" y="450" font-family="Consolas, monospace" font-size="24" font-weight="700" fill="#7ea1ff">tcg-trap-1</text>
+  <text x="135" y="492" font-family="Consolas, monospace" font-size="27" fill="#ffffff">vCPU 0 discontinuity  0x80001234  →  0x80002000</text>
+  <text x="112" y="584" font-family="Consolas, monospace" font-size="25" fill="#43d9ad">stop_reason: trap   event stream: bounded   guest state: read-only</text>
+  <text x="112" y="642" font-family="Consolas, monospace" font-size="23" fill="#aab4c3">The TCG plugin discovers the suspicious PC without changing registers, memory or time.</text>
+  <rect x="105" y="696" width="1050" height="60" rx="30" fill="#183b31"/>
+  <text x="135" y="736" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#77e2b7">REAL NATIVE ACCEPTANCE: tcg-trap + tcg-mmio passed on WSL/QEMU</text>
+  <text x="70" y="850" font-family="Arial, sans-serif" font-size="21" fill="#667085">Tested v2 runtime case and native channel acceptance are intentionally labelled separately.</text>
+</svg>

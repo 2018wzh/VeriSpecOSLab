@@ -1,6 +1,6 @@
 {
   "version": "final-defense-media.v1",
-  "generated_at": "2026-08-18T01:09:52.565Z",
+  "generated_at": "2026-08-18T02:38:59.164Z",
   "artifacts": [
     {
       "file": "videos/p08-kb-citation.mp4",
@@ -15,12 +15,12 @@
     {
       "file": "videos/p09-kernel-debug.mp4",
       "frame": "frames/p09-kernel-debug.png",
-      "duration_seconds": 18.166667,
+      "duration_seconds": 18,
       "codec": "h264",
       "width": 1600,
       "height": 900,
       "frame_rate": "30/1",
-      "bytes": 369367
+      "bytes": 340043
     },
     {
       "file": "videos/p10-qemu-port.mp4",
@@ -30,7 +30,7 @@
       "width": 1600,
       "height": 900,
       "frame_rate": "30/1",
-      "bytes": 213244
+      "bytes": 261037
     },
     {
       "file": "videos/p11-commit-replay.mp4",
@@ -40,7 +40,7 @@
       "width": 1600,
       "height": 900,
       "frame_rate": "30/1",
-      "bytes": 264149
+      "bytes": 232914
     }
   ]
 }

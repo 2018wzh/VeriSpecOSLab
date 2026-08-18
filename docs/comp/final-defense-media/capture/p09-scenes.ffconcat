@@ -1,0 +1,8 @@
+ffconcat version 1.0
+file 'p09-scene-1.png'
+duration 6
+file 'p09-scene-2.png'
+duration 6
+file 'p09-scene-3.png'
+duration 6
+file 'p09-scene-3.png'

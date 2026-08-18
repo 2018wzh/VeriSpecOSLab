@@ -4,7 +4,7 @@
 
 ## 生成
 
-脚本使用成熟的 `PptxGenJS`，参考仓库中的真实架构图，并结合 Portal 验收截图、终端关键帧和 H.264 演示视频，生成 17 页主讲页与 8 页答辩附录：
+脚本使用成熟的 `PptxGenJS`，参考仓库中的真实架构图，并结合 Portal 验收截图、终端关键帧和 H.264 演示视频，生成 18 页主讲页与 8 页答辩附录：
 
 ```sh
 npm install --no-save pptxgenjs
@@ -15,13 +15,13 @@ node docs/comp/final-defense-ppt/build.cjs
 
 交付物：
 
-- `VeriSpecOSLab-final-defense.pptx`：25 页可编辑演示文稿，含 17 页主讲与 8 页附录；
+- `VeriSpecOSLab-final-defense.pptx`：26 页可编辑演示文稿，含 18 页主讲与 8 页附录；
 - `VeriSpecOSLab-final-defense.pdf`：与 PPT 同版的提交及打印版本；
 - `preview/幻灯片*.PNG`：逐页预览，便于快速复核和选取截图；
 - `preview/contact-*.png`：主讲页和附录的联系表。
 - `image-layout-report.json`：记录每处图片的源比例和缩放策略，以及原生结构图的节点数和最小字号；所有图片必须保持统一缩放，复杂结构图必须通过可读性门槛。
 
-P8–P11 内嵌真实视频；导出 PDF 时，PowerPoint 会使用同一段视频的关键帧作为静态画面。所有本地路径仅在生成阶段解析，不写入页面正文。
+P8、P9、P11、P12 内嵌真实视频；P10 使用原生图形解释 `vos verify` 的 Agent 测试生成与 Runner 裁决边界。导出 PDF 时，PowerPoint 会使用同一段视频的关键帧作为静态画面。所有本地路径仅在生成阶段解析，不写入页面正文。
 
 PDF 和逐页 PNG 使用 Microsoft PowerPoint 的标准导出器生成，不由脚本伪造渲染结果。
 
@@ -31,6 +31,6 @@ PDF 和逐页 PNG 使用 Microsoft PowerPoint 的标准导出器生成，不由�
 
 - `docs/comp/final-report/figures/*.svg`：原生结构图重建时使用的系统、Spec、Agent、证据链和课程历史参考；
 - `docs/portal/visual-acceptance/*.png`：Portal 教师与学生工作台验收截图；
-- `docs/comp/final-defense-media/frames/*.png`：P8–P11 真实演示关键帧；
-- `docs/comp/final-defense-media/videos/*.mp4`：P8–P11 真实演示视频；
+- `docs/comp/final-defense-media/frames/*.png`：四段真实演示的关键帧；
+- `docs/comp/final-defense-media/videos/*.mp4`：P8、P9、P11、P12 使用的四段真实演示视频；
 - `docs/comp/final-defense-blueprint.md`：讲稿、证据边界和引用口径。

@@ -90,24 +90,44 @@ function collectKnowledgeEvidence(): void {
 function collectDebugEvidence(): void {
   if (!debugReport) throw new Error("--debug-report is required for p09");
   const report = json(readFileSync(debugReport, "utf8"));
-  const chain = array(report.evidence_chain, "debug evidence_chain");
-  if (chain.length < 3) throw new Error("real debug report has an incomplete evidence chain");
-  const next = array(report.next_diagnostic_commands, "next diagnostic commands")
+  if (string(report.diagnosis_status, "diagnosis_status") !== "localized") {
+    throw new Error("p09 requires a localized debug_output.v2 report");
+  }
+  const failureClass = string(report.failure_class, "failure_class");
+  if (failureClass === "build_error") throw new Error("p09 must demonstrate a runtime failure, not a build error");
+  const observations = array(report.observations, "debug observations").map((value) => object(value, "debug observation"));
+  const tcg = observations.find((value) => string(value.source, "observation source") === "tcg");
+  const gdb = observations.find((value) => string(value.source, "observation source") === "gdb");
+  if (!tcg || !gdb) throw new Error("p09 requires both TCG discovery and typed GDB confirmation");
+  const conclusion = object(report.conclusion, "debug conclusion");
+  const conclusionIds = array(conclusion.observation_ids, "conclusion observation_ids").map((value) => string(value, "conclusion observation id"));
+  for (const observation of [tcg, gdb]) {
+    if (!conclusionIds.includes(string(observation.id, "observation id"))) {
+      throw new Error("p09 conclusion must cite both TCG and GDB observations");
+    }
+  }
+  const hypotheses = array(report.hypotheses, "debug hypotheses");
+  const causalChain = array(report.causal_chain, "debug causal_chain");
+  if (hypotheses.length === 0 || causalChain.length === 0) throw new Error("p09 requires a hypothesis and causal chain");
+  const visualization = string(report.visualization_html, "visualization_html").trim().toLowerCase();
+  if (!(visualization.startsWith("<!doctype html") || visualization.startsWith("<html"))) {
+    throw new Error("p09 requires a complete visualization_html document");
+  }
+  const next = array(report.next_commands, "next commands")
     .map((value) => string(value, "next diagnostic command"))
     .join(" ");
   writeTranscript("p09-kernel-debug.txt", [
-    "P9  KERNEL FAILURE LOCALIZATION",
-    "EVIDENCE: REAL FAILED RUN + REAL AGENT DIAGNOSIS",
+    "P9  RUNTIME PAGE-FAULT LOCALIZATION",
+    "EVIDENCE: DEBUG_OUTPUT.V2 + BOUNDED QEMU OBSERVATIONS",
     "",
-    `failure_class: ${string(report.failure_class, "failure_class")}`,
+    `failure_class: ${failureClass}`,
     `summary: ${compact(string(report.summary, "debug summary"), 150)}`,
     "",
-    ...chain.slice(0, 4).map((item, index) => {
-      const link = object(item, "evidence chain item");
-      return `${index + 1}. ${string(link.label, "evidence label")}: ${compact(string(link.observation, "evidence observation"), 104)}`;
-    }),
-    `next_diagnostic_commands: ${next}`,
-    "Boundary: read-only diagnosis cannot turn a failed run into a pass.",
+    `TCG  ${string(tcg.id, "TCG observation id")}: ${compact(string(tcg.statement, "TCG statement"), 112)}`,
+    `GDB  ${string(gdb.id, "GDB observation id")}: ${compact(string(gdb.statement, "GDB statement"), 112)}`,
+    `ROOT CAUSE: ${string(conclusion.root_cause, "root cause")}`,
+    `NEXT: ${next}`,
+    "Boundary: instrumentation is last-resort and detached; diagnosis is not verify.",
   ]);
 }
 
@@ -143,7 +163,7 @@ function collectBoardEvidence(): void {
   for (const marker of boardMarkers)
     if (!serial.includes(marker)) throw new Error(`Orange Pi Prime evidence is missing ${marker}`);
   writeTranscript("p10-qemu-port.txt", [
-    "P10  QEMU MODEL TO PHYSICAL BOARD",
+    "P11  QEMU MODEL TO PHYSICAL BOARD",
     "EVIDENCE: REAL H5 QEMU + REAL ORANGE PI PRIME",
     "",
     "$ vos agent qemu execute  # approved candidate, isolated worktree",
@@ -188,7 +208,7 @@ async function collectPortalReplayEvidence(): Promise<void> {
     glendaCommit,
   );
   writeTranscript("p11-commit-replay.txt", [
-    "P11  COMMIT-BOUND PORTAL RECORD AND REPLAY",
+    "P12  COMMIT-BOUND PORTAL RECORD AND REPLAY",
     "EVIDENCE: REAL CONNECTED XV6 + GLENDA CLOSURE",
     "",
     "$ vos portal status <authoritative-run> --watch",

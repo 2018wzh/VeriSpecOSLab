@@ -1,4 +1,4 @@
-P10  QEMU MODEL TO PHYSICAL BOARD
+P11  QEMU MODEL TO PHYSICAL BOARD
 EVIDENCE: REAL H5 QEMU + REAL ORANGE PI PRIME
 
 $ vos agent qemu execute  # approved candidate, isolated worktree

@@ -1,15 +1,15 @@
 # Final Defense CLI Media
 
-This directory contains reproducible terminal captures for slides P8–P11. The capture pipeline uses Charmbracelet VHS for scripted terminal rendering, Bun for evidence collection, Git for revision-bound source reads, and FFmpeg/FFprobe for media validation.
+This directory contains four reproducible terminal captures for slides P8, P9, P11, and P12. Slide P10 is a native PowerPoint explanation of Agent-generated behavior tests. The capture pipeline uses Charmbracelet VHS for scripted terminal rendering, Bun for evidence collection, Git for revision-bound source reads, and FFmpeg/FFprobe for media validation.
 
 ## Evidence levels
 
 | Slide | Artifact | Evidence level | Boundary |
 |---|---|---|---|
 | P8 | `videos/p08-kb-citation.mp4` | real accepted Agent result | Reads a provider-produced, schema-accepted `agent ask` result and its repository citations. Citations expose the basis of a claim; they do not make it automatically correct. |
-| P9 | `videos/p09-kernel-debug.mp4` | real failed run and diagnosis | Reads a real failed build, the Agent's evidence chain and its next diagnostic command. The read-only diagnosis does not change verification status. |
-| P10 | `videos/p10-qemu-port.mp4` | real H5 QEMU and Orange Pi Prime evidence | Shows the QEMU trace suite and the separately captured four-core physical-board workload. QEMU remains `qemu_only`; only the serial evidence closes the board gate. |
-| P11 | `videos/p11-commit-replay.mp4` | real connected Portal closure | Queries the live Portal dashboard for xv6 and Glenda, then checks out both exact commits from their Portal repositories and verifies the restored HEADs. |
+| P9 | `videos/p09-kernel-debug.mp4` | tested v2 runtime case + real native QEMU observation acceptance | Shows a RISC-V store-page-fault diagnosis covered by the `debug_output.v2` schema test, then separates it from native WSL acceptance of the read-only `tcg-trap` and `tcg-mmio` channels. TCG discovers, typed GDB confirms, QMP/HMP adds context, and detached-worktree instrumentation is the last resort. Diagnosis never changes verification status. |
+| P11 | `videos/p10-qemu-port.mp4` | real H5 QEMU and Orange Pi Prime evidence | Shows the QEMU trace suite and the separately captured four-core physical-board workload. QEMU remains `qemu_only`; only the serial evidence closes the board gate. |
+| P12 | `videos/p11-commit-replay.mp4` | real connected Portal closure | Queries the live Portal dashboard for xv6 and Glenda, then checks out both exact commits from their Portal repositories and verifies the restored HEADs. |
 
 Do not remove the evidence-level labels or the boundary sentence when editing the videos into the presentation.
 
@@ -32,6 +32,12 @@ docker run --rm -v "$PWD:/vhs" -w /vhs ghcr.io/charmbracelet/vhs docs/comp/final
 docker run --rm -v "$PWD:/vhs" -w /vhs ghcr.io/charmbracelet/vhs docs/comp/final-defense-media/capture/p11-commit-replay.tape
 bun docs/comp/final-defense-media/capture/normalize.ts --only p08
 bun docs/comp/final-defense-media/capture/validate.ts
+```
+
+The P9 runtime-debug clip also has a deterministic, provider-free renderer. It uses three SVG scenes, ImageMagick, and FFmpeg so the QEMU observation, instrumentation boundary, and causal visualization stay legible in the embedded 16:9 frame:
+
+```sh
+sh docs/comp/final-defense-media/capture/render-p09.sh
 ```
 
 To refresh only the knowledge-source demonstration after a new accepted Agent result:

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <rect width="1600" height="900" fill="#f7f9fc"/><rect width="1600" height="12" fill="#3156d8"/>
+  <text x="70" y="82" font-family="Arial, sans-serif" font-size="24" font-weight="700" fill="#3156d8">P9 · RUNTIME FAULT / 03 VISUALIZE</text>
+  <text x="70" y="142" font-family="Arial, sans-serif" font-size="44" font-weight="700" fill="#14213d">Every conclusion is a navigable evidence graph</text>
+  <rect x="70" y="190" width="1460" height="570" rx="20" fill="#ffffff" stroke="#d8dfea" stroke-width="2"/>
+  <text x="115" y="242" font-family="Arial, sans-serif" font-size="21" font-weight="700" fill="#667085">debug_output.v2 · interactive visualization_html</text>
+  <rect x="110" y="300" width="310" height="130" rx="16" fill="#eaf0ff" stroke="#3156d8" stroke-width="2"/>
+  <text x="265" y="347" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#3156d8">TCG observation</text><text x="265" y="389" text-anchor="middle" font-family="Consolas, monospace" font-size="19" fill="#14213d">tcg-trap-1</text>
+  <rect x="110" y="510" width="310" height="130" rx="16" fill="#eaf0ff" stroke="#3156d8" stroke-width="2"/>
+  <text x="265" y="557" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#3156d8">GDB observation</text><text x="265" y="599" text-anchor="middle" font-family="Consolas, monospace" font-size="19" fill="#14213d">gdb-trap-1</text>
+  <path d="M430 365 C540 365,540 420,650 420" fill="none" stroke="#5b6ee1" stroke-width="5" marker-end="url(#arrow)"/><path d="M430 575 C540 575,540 470,650 470" fill="none" stroke="#5b6ee1" stroke-width="5" marker-end="url(#arrow)"/>
+  <rect x="665" y="360" width="340" height="170" rx="16" fill="#fff5d6" stroke="#b7791f" stroke-width="2"/>
+  <text x="835" y="410" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#9a6200">Supported hypothesis</text><text x="835" y="453" text-anchor="middle" font-family="Arial, sans-serif" font-size="21" fill="#14213d">First user write faults</text><text x="835" y="489" text-anchor="middle" font-family="Arial, sans-serif" font-size="21" fill="#14213d">before retirement</text>
+  <path d="M1010 445 L1135 445" fill="none" stroke="#168b5b" stroke-width="5" marker-end="url(#arrowGreen)"/>
+  <rect x="1150" y="360" width="325" height="170" rx="16" fill="#e7f6ef" stroke="#168b5b" stroke-width="3"/>
+  <text x="1312" y="410" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#168b5b">Localized cause</text><text x="1312" y="464" text-anchor="middle" font-family="Consolas, monospace" font-size="30" font-weight="700" fill="#14213d">missing PTE_W</text><text x="1312" y="503" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#667085">confidence: high</text>
+  <rect x="650" y="600" width="835" height="86" rx="14" fill="#111827"/>
+  <text x="680" y="638" font-family="Consolas, monospace" font-size="19" fill="#aab4c3">click an observation → inspect artifact_ref → test the next_probe</text><text x="680" y="670" font-family="Consolas, monospace" font-size="19" fill="#43d9ad">causal references are schema-checked; unknown IDs are rejected</text>
+  <text x="70" y="815" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#14213d">BOUNDARY</text><text x="205" y="815" font-family="Arial, sans-serif" font-size="22" fill="#667085">Diagnosis is evidence for the next engineering step. Only implementation + verify can close the fault.</text>
+  <defs><marker id="arrow" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5b6ee1"/></marker><marker id="arrowGreen" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#168b5b"/></marker></defs>
+</svg>

@@ -6,7 +6,7 @@
 > 队员：汪子昊、徐泽逸、罗豪荣；指导教师：陈渝、石亮。
 > 材料许可：CC BY-SA 4.0。
 
-本文档是决赛演示的唯一蓝图，统一管理 17 页主讲 PPT、近逐字稿、演示分镜、素材来源、引用和 8 页答辩附录。历史文件 `docs/comp/ppt.md` 描述的是已经退役的 v1 方案，只用于回顾初赛叙事，不得从中恢复 ArchitectureSeed、ADR、StageGate、七角色 Agent 或旧在线命令。
+本文档是决赛演示的唯一蓝图，统一管理 18 页主讲 PPT、近逐字稿、演示分镜、素材来源、引用和 8 页答辩附录。历史文件 `docs/comp/ppt.md` 描述的是已经退役的 v1 方案，只用于回顾初赛叙事，不得从中恢复 ArchitectureSeed、ADR、StageGate、七角色 Agent 或旧在线命令。
 
 ---
 
@@ -27,10 +27,10 @@
 | 部分 | 页码 | 时间 | 比例 | 任务 |
 |---|---:|---:|---:|---|
 | 问题与愿景 | 1–3 | 1:05 | 14% | 让评委记住教学范式转型 |
-| 方法与系统 | 4–11 | 3:55 | 50% | 解释 Spec、Agent、验证和 VOS 的四类关键能力 |
-| 教材、案例与试讲 | 12–14 | 1:35 | 20% | 用真实课程、仿真、实板和学生反馈支撑论断 |
-| 合规、展望与总结 | 15–17 | 1:15 | 16% | 交代来源、增量、AI 使用、正式教学与未来案例 |
-| **合计** | **17 页** | **7:50** | **100%** | 留出约 10 秒剪辑余量 |
+| 方法与系统 | 4–12 | 4:10 | 53% | 解释 Spec、Agent、自动测试、验证和 VOS 的关键能力 |
+| 教材、案例与试讲 | 13–15 | 1:25 | 18% | 用真实课程、仿真、实板和学生反馈支撑论断 |
+| 合规、展望与总结 | 16–18 | 1:10 | 15% | 交代来源、增量、AI 使用、正式教学与未来案例 |
+| **合计** | **18 页** | **7:50** | **100%** | 留出约 10 秒剪辑余量 |
 
 ### 1.3 视觉系统
 
@@ -43,7 +43,7 @@
 
 ---
 
-## 2. 17 页主讲 PPT 与近逐字稿
+## 2. 18 页主讲 PPT 与近逐字稿
 
 ### P1　VeriSpecOSLab
 
@@ -254,7 +254,7 @@ HEAD 未漂移后原子应用并提交
 
 ### P7　核心链演示：从学生设计到真实运行
 
-**时间：2:30–3:10（40 秒）**
+**时间：2:30–3:00（30 秒）**
 
 **页面结论**
 
@@ -266,12 +266,12 @@ HEAD 未漂移后原子应用并提交
 |---:|---|---|---|
 | 0–10 秒 | 学生修改精简的 ModuleSpec，运行 `vos spec lint` | “设计由学生提交” | Spec 是学生理解的外化结果 |
 | 10–22 秒 | `vos agent implement <module>`，显示隔离工作区、修改范围和重试状态 | “Agent 在边界内实现” | 未完成补丁不覆盖原项目 |
-| 22–32 秒 | `vos verify` 和 `vos report`，依次出现测试类型与 evidence | “验证不调用模型” | 通过来自 Runner，不来自模型文字 |
+| 22–32 秒 | `vos verify` 和 `vos report`，依次出现已有套件、Agent 行为样例与 evidence | “Agent 生成测试，Runner 裁决” | 通过来自真实执行，不来自模型文字 |
 | 32–40 秒 | QEMU 串口切到 VF2 四 hart 与 `ALL TESTS PASSED` | “仿真与实板分层记录” | 最终结果可追到真实硬件日志 |
 
 **讲稿**
 
-学生先写下模块边界和验收性质，lint 只检查结构，不替学生作技术选择。实现助手随后在独立工作区修改代码，VOS 根据真实 diff 检查范围。verify 不调用模型，而是实际执行构建和多类测试；report 再把提交、规格与日志绑定起来。四段画面依次交代设计、修改、验收和硬件结论由谁负责。证据链也由 QEMU 一直延伸到 VisionFive 2 四核实板。
+学生先写下模块边界和验收性质，lint 只检查结构，不替学生作技术选择。实现助手随后在独立工作区修改代码，VOS 根据真实 diff 检查范围。verify 既执行已有测试，也能让 Agent 为尚未覆盖的 obligation 生成行为样例；无论测试来自哪里，结果都由真实 Runner 裁决。report 再把提交、规格与日志绑定起来。四段画面依次交代设计、修改、验收和硬件结论由谁负责。
 
 **剪辑要求**
 
@@ -285,7 +285,7 @@ HEAD 未漂移后原子应用并提交
 
 ### P8　让 AI 回答回到可核对的知识来源
 
-**时间：3:10–3:35（25 秒）**
+**时间：3:00–3:25（25 秒）**
 
 **页面结论**
 
@@ -326,44 +326,48 @@ HEAD 未漂移后原子应用并提交
 
 ---
 
-### P9　把“内核卡住了”还原为可定位的故障链
+### P9　运行时写页故障：从 trap 风暴定位到缺失 `PTE_W`
 
-**时间：3:35–4:05（30 秒）**
+**时间：3:25–3:55（30 秒）**
 
 **页面结论**
 
-> Debug Agent 先绑定失败运行，再用 trace、GDB 与 QEMU 观测缩小故障范围。
+> Debug Agent 用只读 TCG 观测发现异常控制流，用类型化 GDB 探针确认 trap 上下文；仍有语义歧义时，才在隔离工作区加入最小插桩，并把全过程组织成可交互因果图。
 
 **画面**
 
 ```text
-失败 run ID
+用户页首次写入后反复 trap
+   ↓  TCG：发现 vCPU 0 从故障 PC 跳入 trap vector
+类型化 GDB：scause=15，stval 指向用户页，sepc 回到写指令
+   ↓  若证据仍不足：detached worktree 中加入最小语义插桩
+observation ID → hypothesis → causal chain → visualization_html
    ↓
-串口症状 / 超时点
-   ↓
-trace 事件 → GDB 寄存器与调用栈 → QMP/HMP 机器状态
-   ↓
-根因候选 + 证据链 + 下一条诊断命令
+定位：映射建立时遗漏 PTE_W；回到实现与 verify 闭环
 ```
 
-右侧明确角色边界：Debug Agent 只读诊断；修复仍要回到 Spec、实现和 verify 主链。
+右侧把四种能力并列呈现：有界 QEMU/TCG 观测、类型化 GDB/QMP 探针、隔离插桩、可交互证据图。页脚明确：插桩只在临时工作区执行，诊断不能改写验证状态。
 
 **视频演示（20 秒，预录静音）**
 
-1. 回放一次带 run ID 的 QEMU 超时或 trap 失败；
-2. 执行 `vos agent debug --run <run-id>`；
-3. 展开同一故障位置的 trace 事件、GDB 寄存器/调用栈和诊断结论；
-4. 定格在 `evidence_chain` 与 `next_diagnostic_commands`，不展示未经验证的“已修复”。
+1. 回放用户页写入触发的运行时 trap，不再使用编译错误；
+2. TCG 时间线高亮异常跳转，并显示有界 session、事件数与 stop reason；
+3. 类型化 GDB trap probe 将 `scause=15`、`stval`、`sepc` 绑定到同一 observation ID；
+4. 展示“先观测、后探针、最后插桩”的升级路径，以及 detached worktree 边界；
+5. 定格在 `debug_output.v2` 的交互因果图：观测支持假设，假设指向“missing PTE_W”，但不显示未经 verify 的“已修复”。
 
-当前素材来自一次真实失败构建及其 Agent 诊断。画面从 `build_error` 出发，依次展开编译器主错误、次生错误、构建中止和源码快照差异，最后停在下一条诊断命令。它展示的是证据链如何缩小范围，不把诊断说成已经修复。
+本页案例采用当前 `debug_output.v2` schema 测试中的运行时页故障：TCG 记录故障 PC 到 trap vector 的不连续跳转，GDB 记录 `scause=15`、`stval` 与 `sepc`，两条观测共同支持“映射缺少 `PTE_W`”。能力边界另由原生 WSL 验收闭合：只读 `vos-observe` 插件已实际跑通 `tcg-trap` 与 `tcg-mmio`。视频必须同时标明“受测试覆盖的诊断案例”和“真实原生 QEMU 观测验收”，不得把 schema fixture 伪装成某次学生提交的现场日志。
 
 **讲稿**
 
-内核故障常只表现为黑屏、超时或一行 trap。Debug Agent 先读取失败 run 的真实日志，再按 trace、GDB、QMP 的顺序补充观测，把外部症状连到寄存器、调用栈和内部路径。它只报告证据、根因候选与下一步命令，不修改源码，也不能把诊断写成修复通过。
+编译错误通常一眼可见，真正消耗教学时间的是运行时故障。这个案例里，用户页第一次写入后不断陷入内核。Debug Agent 先用只读 TCG 观测发现故障指令跳入 trap vector，再用类型化 GDB 探针确认 `scause=15`、故障地址和 PC，由两条 observation 定位到页表映射遗漏 `PTE_W`。如果寄存器仍解释不了语义，它才在隔离工作区加入最小插桩。最后，时间线、假设和因果关系进入可交互视图；诊断仍不能代替修复和 verify。
 
 **证据边界**
 
 - 诊断必须绑定具体 run ID 和可读取的 artifact；
+- QEMU session 有时间、事件数、原始流大小和每 vCPU TB 数上限，超限必须显式失败；
+- TCG 用于宽范围发现，GDB 用于定点确认，QMP/HMP 只补充机器状态；
+- 插桩是最后手段，只能应用到 detached worktree，不污染学生原工作区；
 - Debug Agent 结果不能覆盖 `vos verify` 的确定性状态；
 - GDB/QEMU 观测失败时保留失败证据，不用推测补齐。
 
@@ -371,9 +375,48 @@ trace 事件 → GDB 寄存器与调用栈 → QMP/HMP 机器状态
 
 ---
 
-### P10　自动生成 QEMU 板级模型，提前暴露板卡差异
+### P10　`vos verify` 由 Agent 自动生成行为测试，并由 Runner 裁决
 
-**时间：4:05–4:35（30 秒）**
+**时间：3:55–4:20（25 秒）**
+
+**页面结论**
+
+> Agent 将尚未覆盖的 Spec obligation 转成可执行测试样例；实现是否正确仍由隔离环境中的真实命令、oracle 和超时共同决定。
+
+**画面**
+
+```text
+generated / fuzz obligation
+            ↓
+Agent 生成 TestPlan：case + stimulus + oracle + timeout
+            ↓
+根据已验证计划生成临时 patch、suite 与 command
+            ↓
+一次性工作区执行：exit + timeout + success/failure regex
+            ↓
+plan / patch / stdout / stderr / result.json 进入证据
+```
+
+页面左下展示当前测试中的协议样例：`kalloc_race` obligation、case `race`，以及 `stdin`、成功/失败正则和超时字段。右下展示真实产物类型，不填写未经运行确认的通过结果。结论条固定为“Agent 生成测试，Runner 裁决结果”。
+
+**讲稿**
+
+当 Spec 提出了已有测试尚未覆盖的 generated 或 fuzz obligation，`vos verify` 会先让 Agent 生成 TestPlan，再根据已确认的计划生成临时测试补丁、suite 与 oracle。补丁只应用到一次性工作区，不能修改 Spec、Git 元数据或运行档案。Runner 随后真实执行命令，并同时检查退出码、超时、成功与失败正则；plan、patch、标准输出、错误输出和 `result.json` 都进入证据。Agent 扩展测试空间，但它不能自行宣布实现正确。
+
+**证据边界**
+
+- TestPlan 与测试补丁必须通过结构和语义校验；缺少 case、suite 或 command 时直接失败；
+- 临时补丁禁止修改 `spec/`、`.git/` 和 `.vos/`，测试不会写回学生项目；
+- Agent 生成的 oracle 不是天然真理，只有真实命令执行、退出状态、超时和输出匹配共同形成该次验证结果；
+- 页面中的 `kalloc_race` / `race` 是当前 v2 测试使用的协议样例，不冒充 xv6、Glenda 或实板的比赛成绩。
+
+**页脚引用**：`[R3][R4][R14]`
+
+---
+
+### P11　自动生成 QEMU 板级模型，提前暴露板卡差异
+
+**时间：4:20–4:50（30 秒）**
 
 **页面结论**
 
@@ -416,9 +459,9 @@ qemu_only；转入真实板卡验证
 
 ---
 
-### P11　用 commit 精确记录，并在同一版本上复原
+### P12　用 commit 精确记录，并在同一版本上复原
 
-**时间：4:35–5:00（25 秒）**
+**时间：4:50–5:15（25 秒）**
 
 **页面结论**
 
@@ -460,9 +503,9 @@ detached worktree 回到该 commit，重新执行验证
 
 ---
 
-### P12　指导书不先给答案，先给设计所需的背景
+### P13　指导书不先给答案，先给设计所需的背景
 
-**时间：5:00–5:20（20 秒）**
+**时间：5:15–5:35（20 秒）**
 
 **页面结论**
 
@@ -486,9 +529,9 @@ detached worktree 回到该 commit，重新执行验证
 
 ---
 
-### P13　两个内核、两种架构、严格区分两类证据
+### P14　两个内核、两种架构、严格区分两类证据
 
-**时间：5:20–6:05（45 秒）**
+**时间：5:35–6:10（35 秒）**
 
 **页面结论**
 
@@ -528,9 +571,9 @@ xv6 在 VisionFive 2 上启动四个 U74 hart，经 SPI U-Boot、TFTP 与 SD 文
 
 ---
 
-### P14　15 名学生的试讲，直接改变了课程入口
+### P15　15 名学生的试讲，直接改变了课程入口
 
-**时间：6:05–6:35（30 秒）**
+**时间：6:10–6:40（30 秒）**
 
 **页面结论**
 
@@ -560,9 +603,9 @@ xv6 在 VisionFive 2 上启动四个 U74 hart，经 SPI U-Boot、TFTP 与 SD 文
 
 ---
 
-### P15　借鉴、增量贡献与 AI 使用
+### P16　借鉴、增量贡献与 AI 使用
 
-**时间：6:35–6:55（20 秒）**
+**时间：6:40–7:00（20 秒）**
 
 **页面结论**
 
@@ -593,9 +636,9 @@ xv6 在 VisionFive 2 上启动四个 U74 hart，经 SPI U-Boot、TFTP 与 SD 文
 
 ---
 
-### P16　下一学年：用 Glenda-Chimera 检验个性化设计
+### P17　下一学年：用 Glenda-Chimera 检验个性化设计
 
-**时间：6:55–7:25（30 秒）**
+**时间：7:00–7:25（25 秒）**
 
 **页面结论**
 
@@ -633,7 +676,7 @@ Go RPC 风格内核服务
 
 ---
 
-### P17　重新定义 OS 实验的评价对象
+### P18　重新定义 OS 实验的评价对象
 
 **时间：7:25–7:50（25 秒）**
 
@@ -680,21 +723,21 @@ VeriSpecOSLab 改变的是 OS 实验的评价对象。代码和测试证明系�
 |---|---:|---|---|---|
 | D1 | 10 秒 | 编辑一个当前 ModuleSpec 并运行 `vos spec lint` | `owns`、一条 property/check、lint 结果 | 旧 kind、ArchitectureSeed、`arch lint` |
 | D2 | 12 秒 | 运行 `vos agent implement <module>` | detached worktree、目标模块、结构化结果或重试、最终 diff 范围 | 模型 prose 直接作为成功结论 |
-| D3 | 10 秒 | 运行/回放 `vos verify` 与 `vos report` | public/contract/fuzz/trace、明确状态、报告与 commit/Spec 绑定 | 只展示 `agent verify` 的自然语言判断 |
+| D3 | 10 秒 | 运行/回放 `vos verify` 与 `vos report` | public/contract、Agent 生成的 behavior case、Runner 结果、报告与 commit/Spec 绑定 | 用 Agent 的计划或文字替代真实执行结果 |
 | D4 | 8 秒 | QEMU 串口转 VF2 实板摘要 | QEMU 状态、四 hart 行、`ALL TESTS PASSED` | 用 QEMU 截图冒充开发板 |
 
-### 3.3 P8–P11 四段功能演示
+### 3.3 P8–P12 四段录像与一页验证机制
 
-每页只嵌入一段短片，进入页面后自动播放一次，结束帧停在该页的证据结论。建议按下列名称导出，便于 PPT、PDF 关键帧和最终压缩包逐项核对。
+P8、P9、P11、P12 各嵌入一段短片，进入页面后自动播放一次；P10 使用可编辑原生图形展示 `vos verify` 的测试生成协议与证据边界。视频按下列名称导出，便于 PPT、PDF 关键帧和最终压缩包逐项核对。
 
 | 页面 / 文件名 | 成片时长 | 镜头顺序 | 结束帧必须保留 | 不得暗示 |
 |---|---:|---|---|---|
 | P8 / `videos/p08-kb-citation.mp4` | 约 15 秒 | 真实问题 → 结构化回答 → citation 来源 → 核对边界 | `REAL ACCEPTED AGENT ASK`、citation 数量和来源 ID | 有引用就一定正确，或模型可以代替学生判断 |
-| P9 / `videos/p09-kernel-debug.mp4` | 约 20 秒 | 真实失败 run → 四段 evidence chain → 下一条诊断命令 | `REAL FAILED RUN + REAL AGENT DIAGNOSIS`、`build_error` | Debug Agent 修改了源码、完成了修复或改写了 verify 状态 |
-| P10 / `videos/p10-qemu-port.mp4` | 约 20 秒 | H5 七项 QEMU trace → `qemu_only` → Orange Pi Prime 四核串口 | `REAL H5 QEMU + REAL ORANGE PI PRIME` | QEMU 结果等于实板，或只看到启动标记就算完整负载通过 |
-| P11 / `videos/p11-commit-replay.mp4` | 约 15 秒 | Portal 权威 run → 两项目提交坐标 → 检查计数 → 时间线边界 | `REAL CONNECTED XV6 + GLENDA CLOSURE`、commit/run/status | 单个 commit 包含 `.vos/` 原始日志，或 Portal 记录可以脱离提交使用 |
+| P9 / `videos/p09-kernel-debug.mp4` | 约 18 秒 | 运行时写页 trap → TCG 异常跳转 → GDB trap context → 隔离插桩边界 → 可交互因果图 | `TESTED V2 RUNTIME CASE + REAL NATIVE QEMU OBSERVATION`、`riscv-trap`、`missing PTE_W` | schema 测试样例是某次学生现场日志，或 Debug Agent 已完成修复/改写 verify 状态 |
+| P11 / `videos/p10-qemu-port.mp4` | 约 20 秒 | H5 七项 QEMU trace → `qemu_only` → Orange Pi Prime 四核串口 | `REAL H5 QEMU + REAL ORANGE PI PRIME` | QEMU 结果等于实板，或只看到启动标记就算完整负载通过 |
+| P12 / `videos/p11-commit-replay.mp4` | 约 15 秒 | Portal 权威 run → 两项目提交坐标 → 检查计数 → 时间线边界 | `REAL CONNECTED XV6 + GLENDA CLOSURE`、commit/run/status | 单个 commit 包含 `.vos/` 原始日志，或 Portal 记录可以脱离提交使用 |
 
-四段视频合计 70 秒，其中等待、构建和模型响应均可等比加速；命令输入、身份字段、失败状态和最终证据不得删帧。PDF 使用各视频的结束帧，并在右下角标注“视频见答辩 MP4”。
+四段视频合计 70 秒，其中等待、构建和模型响应均可等比加速；命令输入、身份字段、失败状态和最终证据不得删帧。P10 的静态协议样例明确标为“当前 v2 实现与测试”，不伪装成一次真实运行。PDF 使用各视频的结束帧，并在右下角标注“视频见答辩 MP4”。
 
 ### 3.4 案例证据素材
 
@@ -742,8 +785,8 @@ H5_PLATFORM_GOAL_OK reports=7 ... brom_spl_bypassed=true
 - `docs/comp/final-report/figures/system-architecture.svg`：P4 或附录 A4；
 - `docs/comp/final-report/figures/spec-model.svg`：P5；
 - `docs/comp/final-report/figures/agent-transaction.svg`：P6；
-- `docs/comp/final-report/figures/evidence-chain.svg`：P9、P11 或附录 A5；
-- `docs/comp/final-report/figures/course-history.svg`：P12 或附录 A2。
+- `docs/comp/final-report/figures/evidence-chain.svg`：P9、P12 或附录 A5；
+- `docs/comp/final-report/figures/course-history.svg`：P13 或附录 A2。
 
 使用前应删去与当前 v2 不一致的标签，并把长段说明改为结论式短语。不可为了画面完整虚构 UI、日志或测试结果。
 
@@ -869,19 +912,19 @@ H5_PLATFORM_GOAL_OK reports=7 ... brom_spl_bypassed=true
 | 学生主链为手写 Spec → Agent 实现 → 确定性验证 | `README.md`、学生 workflow v2 | P4–P7 | 不恢复 v1 自动架构生成 |
 | 五类 Spec 与 L1–L3 已实现 | spec v2 文档、schema、最终技术报告 | P5、A3 | GoalSpec 可选；等级警告不替代技术评审 |
 | Agent 使用隔离 worktree 与真实 diff | Agent/runtime 文档和源代码映射 | P6、A4 | worktree 不是宿主安全沙箱 |
-| verify 不调用模型 | README、workflow、最终技术报告 | P6–P7、A5 | `agent verify` 是额外只读复核 |
+| `vos verify` 可为 generated/fuzz obligation 调用 Agent 生成行为测试 | verify runtime、Agent prompt 与测试 | P7、P10、A5 | Agent 生成 TestPlan、临时补丁和 oracle；通过与否由真实 Runner 裁决 |
 | 知识问答提供可定位 citation | KB/Agent 文档和结构化结果 schema | P8 | 引用提供核对入口，不自动证明回答正确 |
-| Debug Agent 绑定失败运行并保持只读 | Agent/runtime 文档和 debug evidence | P9、A4 | 诊断不能改写 verify 状态或冒充修复 |
-| QEMU 板级移植生成 candidate 并要求人工批准 | QemuSpec、Lab 9 与 QEMU Agent 文档 | P10、A7 | 只形成 `qemu_only` 证据，不替代实板 |
-| commit、report 与 submit 支持版本复查 | workflow、toolchain 和 report 文档 | P11、A5 | Git 不包含 `.vos/` 原始日志；日志来自匹配归档 |
+| Debug Agent 以 TCG → 类型化 GDB → QMP/HMP → 最小插桩的顺序定位运行时故障，并输出可视化因果图 | QEMU observation 设计、`debug_output.v2` schema 测试、原生 WSL `tcg-trap`/`tcg-mmio` 验收 | P9、A4 | 诊断案例与原生能力验收分开标注；插桩仅在 detached worktree，诊断不能改写 verify 状态或冒充修复 |
+| QEMU 板级移植生成 candidate 并要求人工批准 | QemuSpec、Lab 9 与 QEMU Agent 文档 | P11、A7 | 只形成 `qemu_only` 证据，不替代实板 |
+| commit、report 与 submit 支持版本复查 | workflow、toolchain 和 report 文档 | P12、A5 | Git 不包含 `.vos/` 原始日志；日志来自匹配归档 |
 | Portal 是课程控制面 | Portal architecture 与根指南 | A4 | Portal 不直接执行 QEMU 或 workspace Agent |
-| 指导书重视历史与设计 | Book ch01/ch05/ch07、各 Lab | P12、A2 | 不宣称没有操作步骤；Lab 仍提供可执行指导 |
-| VF2 四核完整 usertests 通过 | VF2 evidence commit `6b1c624` | P7、P13、A6 | 实板结论只绑定该板卡、构建和工作负载 |
-| Glenda H5 七项 QEMU trace 与 Orange Pi Prime 四核负载通过 | H5 simulation report、硬件报告、完整串口日志 | P10、P13、A7 | QEMU 与实体板证据分层；实板结论仍需教师复核 |
-| Glenda Lab 1–10 Portal 闭环 | connected acceptance record、权威 run、评审记录 | P11、P13、A7 | Portal 闭环与 P8 模型问答分别绑定各自运行记录；不互相替代证据 |
-| 15 名学生、两节暑期试讲 | 决赛技术报告试讲章节、团队记录 | P14 | 定性观察，不报告统计增益 |
-| 2026–2027 学年正式教学 | 团队已确认课程安排 | P16 | 不扩写为多校规模化结果 |
-| Chimera 是下一验证案例 | 团队设计目标 | P16、A7 | 不宣称代码、性能或形式化证明已经完成 |
+| 指导书重视历史与设计 | Book ch01/ch05/ch07、各 Lab | P13、A2 | 不宣称没有操作步骤；Lab 仍提供可执行指导 |
+| VF2 四核完整 usertests 通过 | VF2 evidence commit `6b1c624` | P7、P14、A6 | 实板结论只绑定该板卡、构建和工作负载 |
+| Glenda H5 七项 QEMU trace 与 Orange Pi Prime 四核负载通过 | H5 simulation report、硬件报告、完整串口日志 | P11、P14、A7 | QEMU 与实体板证据分层；实板结论仍需教师复核 |
+| Glenda Lab 1–10 Portal 闭环 | connected acceptance record、权威 run、评审记录 | P12、P14、A7 | Portal 闭环与 P8 模型问答分别绑定各自运行记录；不互相替代证据 |
+| 15 名学生、两节暑期试讲 | 决赛技术报告试讲章节、团队记录 | P15 | 定性观察，不报告统计增益 |
+| 2026–2027 学年正式教学 | 团队已确认课程安排 | P17 | 不扩写为多校规模化结果 |
+| Chimera 是下一验证案例 | 团队设计目标 | P17、A7 | 不宣称代码、性能或形式化证明已经完成 |
 
 ---
 
@@ -950,7 +993,7 @@ SYSSPEC/SPECFS 统一引用上述 FAST '26 论文和 USENIX 官方页面。PPT �
 
 - [ ] 视频不超过 8 分钟；
 - [ ] 同时提交可编辑 PPT 和 PDF；
-- [ ] 主讲 P15 是独立的借鉴、创新/增量与 AI 使用页；
+- [ ] 主讲 P16 是独立的借鉴、创新/增量与 AI 使用页；
 - [ ] 第三方代码和文档来源、用途、许可证已说明；
 - [ ] PPT、PDF、视频标注 CC BY-SA 4.0；
 - [ ] AI 工具、模型、场景、生成范围、人工修改和验证方法已披露；

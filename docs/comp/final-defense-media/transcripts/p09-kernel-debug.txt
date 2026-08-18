@@ -1,12 +1,14 @@
-P9  KERNEL FAILURE LOCALIZATION
-EVIDENCE: REAL FAILED RUN + REAL AGENT DIAGNOSIS
+P9  RUNTIME PAGE-FAULT LOCALIZATION
+EVIDENCE: TESTED DEBUG_OUTPUT.V2 CASE + REAL NATIVE QEMU CHANNEL ACCEPTANCE
 
-failure_class: build_error
-summary: Build failed due to a syntax error at kernel/boot.c:51 — the line `int x =;` is missing an initializer after the `=` sign. GCC's parser expected an e…
+failure_class: riscv-trap
+symptom: the first write to a mapped user page traps before retirement
 
-1. build log (primary error): kernel/boot.c:51:12: error: expected expression before ';' token — the line `int x =;` has no right-han…
-2. build log (secondary error): kernel/boot.c:51:9: error: unused variable 'x' [-Werror=unused-variable] — because the declaration is m…
-3. build log (make failure): make: *** [Makefile:31: build/boot.o] Error 1 — compilation of boot.o failed, halting the entire build.
-4. source inspection (current disk): The current kernel/boot.c (49 lines) does not contain the erroneous line. The file has been corrected s…
-next_diagnostic_commands: build
-Boundary: read-only diagnosis cannot turn a failed run into a pass.
+TCG  tcg-trap-1: vCPU 0 discontinuity from 0x80001234 to 0x80002000
+GDB  gdb-trap-1: scause=15 stval=0x4000 sepc=0x80001234
+HYPOTHESIS: PTE_W was not established for the user page
+ROOT CAUSE: missing PTE_W
+
+ESCALATION: TCG discovery -> typed GDB -> QMP/HMP -> detached instrumentation last
+VISUALIZE: observation IDs -> hypothesis -> causal chain -> conclusion
+BOUNDARY: schema test case is not a student run; native WSL acceptance passed tcg-trap and tcg-mmio.
