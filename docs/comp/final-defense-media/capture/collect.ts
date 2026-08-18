@@ -5,21 +5,30 @@ import { join, relative, resolve } from "node:path";
 const repoRoot = resolve(import.meta.dir, "../../../..");
 const mediaRoot = resolve(import.meta.dir, "..");
 const transcriptRoot = join(mediaRoot, "transcripts");
+const evidenceRoot = join(mediaRoot, "evidence");
 const args = process.argv.slice(2);
-const glendaRoot = resolve(repoRoot, requiredOption(args, "--glenda-root"));
-const debugReport = resolve(
-  repoRoot,
-  requiredOption(args, "--debug-report"),
-);
+const selected = selectedSlides(option(args, "--only"));
+const glendaRoot = selected.has("p08") || selected.has("p10")
+  ? resolve(repoRoot, requiredOption(args, "--glenda-root"))
+  : repoRoot;
+const debugReport = selected.has("p09")
+  ? resolve(repoRoot, requiredOption(args, "--debug-report"))
+  : undefined;
+const agentRunId = selected.has("p08")
+  ? requiredOption(args, "--agent-run-id")
+  : undefined;
 mkdirSync(transcriptRoot, { recursive: true });
+mkdirSync(evidenceRoot, { recursive: true });
 
-collectKnowledgeEvidence();
-collectDebugEvidence();
-collectBoardEvidence();
-await collectPortalReplayEvidence();
-console.log(`wrote ${relative(repoRoot, transcriptRoot)} (${new Date().toISOString()})`);
+if (selected.has("p08")) collectKnowledgeEvidence();
+if (selected.has("p09")) collectDebugEvidence();
+if (selected.has("p10")) collectBoardEvidence();
+if (selected.has("p11")) await collectPortalReplayEvidence();
+console.log(`wrote ${[...selected].join(",")} to ${relative(repoRoot, transcriptRoot)} (${new Date().toISOString()})`);
 
 function collectKnowledgeEvidence(): void {
+  if (!agentRunId || !/^\d{15}-[a-z0-9]+$/.test(agentRunId))
+    throw new Error("--agent-run-id must be a VOS run ID");
   const result = json(readFileSync(join(glendaRoot, ".vos", "agent-ask.json"), "utf8"));
   const question = string(result.question, "agent ask question");
   const answer = object(result.answer, "agent ask answer");
@@ -28,11 +37,47 @@ function collectKnowledgeEvidence(): void {
   const sources = citations.slice(0, 4).map((item) =>
     string(object(item, "citation").source_id, "citation source_id"),
   );
+  const events = readFileSync(
+    join(glendaRoot, ".vos", "runs", agentRunId, "events.jsonl"),
+    "utf8",
+  ).trim().split(/\r?\n/).map((line) => json(line));
+  const finished = events.findLast((event) => event.type === "run_finished");
+  const finishedPayload = object(finished?.payload, "agent run finished payload");
+  if (finishedPayload.status !== "passed")
+    throw new Error(`agent run ${agentRunId} is not passed`);
+  const models = new Set(events.flatMap((event) => {
+    const payload = event.payload;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return [];
+    const wrapper = payload as Record<string, unknown>;
+    const eventValue = wrapper.event;
+    if (!eventValue || typeof eventValue !== "object" || Array.isArray(eventValue)) return [];
+    const modelEvent = eventValue as Record<string, unknown>;
+    return modelEvent.type === "model.request" && typeof modelEvent.model === "string"
+      ? [modelEvent.model]
+      : [];
+  }));
+  if (models.size !== 1) throw new Error(`agent run ${agentRunId} has ambiguous model identity`);
+  const model = [...models][0];
+  const completedAt = string(finished.ts, "agent run completion time");
+  writeFileSync(join(evidenceRoot, "p08-agent-run.json"), `${JSON.stringify({
+    version: "final-defense-agent-run.v1",
+    run_id: agentRunId,
+    status: "passed",
+    provider: "openai-compatible",
+    model,
+    completed_at: completedAt,
+    structured_result: "accepted",
+    citation_count: citations.length,
+    citation_source_ids: citations.map((item) => string(object(item, "citation").source_id, "citation source_id")),
+    fixture_used: false,
+  }, null, 2)}\n`, "utf8");
   writeTranscript("p08-kb-citation.txt", [
     "P8  KNOWLEDGE SOURCES / AI HALLUCINATION",
     "EVIDENCE: REAL ACCEPTED AGENT ASK",
     "",
     "$ vos agent ask  # committed Lab 10 design review",
+    `run: ${agentRunId}`,
+    `model: ${model}  status: passed  fixture: no`,
     `question: ${compact(question, 94)}`,
     `structured citations: ${citations.length}`,
     ...sources.map((source, index) => `citation[${index + 1}]: ${source}`),
@@ -43,6 +88,7 @@ function collectKnowledgeEvidence(): void {
 }
 
 function collectDebugEvidence(): void {
+  if (!debugReport) throw new Error("--debug-report is required for p09");
   const report = json(readFileSync(debugReport, "utf8"));
   const chain = array(report.evidence_chain, "debug evidence_chain");
   if (chain.length < 3) throw new Error("real debug report has an incomplete evidence chain");
@@ -246,6 +292,17 @@ async function portalGet(base: string, token: string, route: string): Promise<Re
 function option(values: string[], name: string): string | undefined {
   const index = values.indexOf(name);
   return index >= 0 ? values[index + 1] : undefined;
+}
+
+function selectedSlides(value: string | undefined): Set<string> {
+  const supported = new Set(["p08", "p09", "p10", "p11"]);
+  if (!value) return supported;
+  const selected = new Set(value.split(",").map((item) => item.trim()).filter(Boolean));
+  if (selected.size === 0) throw new Error("--only requires at least one slide ID");
+  for (const slide of selected)
+    if (!supported.has(slide))
+      throw new Error(`unsupported slide ID ${slide}; expected p08,p09,p10,p11`);
+  return selected;
 }
 
 function requiredOption(values: string[], name: string): string {

@@ -1,0 +1,22 @@
+{
+  "version": "final-defense-agent-run.v1",
+  "run_id": "202608180059523-c4c48382",
+  "status": "passed",
+  "provider": "openai-compatible",
+  "model": "ecnu-plus",
+  "completed_at": "2026-08-18T01:02:56.364Z",
+  "structured_result": "accepted",
+  "citation_count": 9,
+  "citation_source_ids": [
+    "AGENTS.md",
+    "spec/design.yaml",
+    "spec/modules/verification.yaml",
+    "spec/goals/verification-closure.yaml",
+    "spec/modules/mem.yaml",
+    "spec/modules/fs-log.yaml",
+    "vos.yaml",
+    "run-202608180051195-fd3cf27c",
+    "run-202608172007188-9a46f6e4"
+  ],
+  "fixture_used": false
+}

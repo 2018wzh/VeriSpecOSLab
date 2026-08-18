@@ -1,16 +1,16 @@
 {
   "version": "final-defense-media.v1",
-  "generated_at": "2026-08-17T22:18:56.668Z",
+  "generated_at": "2026-08-18T01:09:52.565Z",
   "artifacts": [
     {
       "file": "videos/p08-kb-citation.mp4",
       "frame": "frames/p08-kb-citation.png",
-      "duration_seconds": 13,
+      "duration_seconds": 12.833333,
       "codec": "h264",
       "width": 1600,
       "height": 900,
       "frame_rate": "30/1",
-      "bytes": 220356
+      "bytes": 249661
     },
     {
       "file": "videos/p09-kernel-debug.mp4",

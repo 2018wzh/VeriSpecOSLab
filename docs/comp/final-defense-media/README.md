@@ -30,8 +30,23 @@ docker run --rm -v "$PWD:/vhs" -w /vhs ghcr.io/charmbracelet/vhs docs/comp/final
 docker run --rm -v "$PWD:/vhs" -w /vhs ghcr.io/charmbracelet/vhs docs/comp/final-defense-media/capture/p09-kernel-debug.tape
 docker run --rm -v "$PWD:/vhs" -w /vhs ghcr.io/charmbracelet/vhs docs/comp/final-defense-media/capture/p10-qemu-port.tape
 docker run --rm -v "$PWD:/vhs" -w /vhs ghcr.io/charmbracelet/vhs docs/comp/final-defense-media/capture/p11-commit-replay.tape
+bun docs/comp/final-defense-media/capture/normalize.ts --only p08
+bun docs/comp/final-defense-media/capture/validate.ts
+```
+
+To refresh only the knowledge-source demonstration after a new accepted Agent result:
+
+```sh
+bun docs/comp/final-defense-media/capture/collect.ts \
+  --only p08 \
+  --glenda-root ../glenda-spec-lab-v2 \
+  --agent-run-id <passed-agent-run-id>
+docker run --rm -v "$PWD:/vhs" -w /vhs ghcr.io/charmbracelet/vhs \
+  docs/comp/final-defense-media/capture/p08-kb-citation.tape
 bun docs/comp/final-defense-media/capture/normalize.ts
 bun docs/comp/final-defense-media/capture/validate.ts
 ```
 
 The collector fails if the accepted Agent result, failed-run diagnosis, H5 QEMU report, physical serial markers, connected Portal records, or exact Portal Git commits are unavailable. It never falls back to fixtures. Local absolute paths and email addresses are redacted before transcripts are written. The normalization step converts VHS output to presentation-safe H.264, 1600×900, 30 fps, yuv420p MP4 with fast-start metadata.
+
+For P8, `evidence/p08-agent-run.json` records the verified run ID, model, completion status and citation source IDs without storing the credential or raw private request.

@@ -2,12 +2,14 @@ P8  KNOWLEDGE SOURCES / AI HALLUCINATION
 EVIDENCE: REAL ACCEPTED AGENT ASK
 
 $ vos agent ask  # committed Lab 10 design review
-question: Review the committed Lab 10 verification-closure design before implementation. Focus on exhau…
-structured citations: 14
-citation[1]: spec/modules/verification.yaml
-citation[2]: spec/goals/verification-closure.yaml
-citation[3]: vos.yaml
-citation[4]: AGENTS.md
+run: 202608180059523-c4c48382
+model: ecnu-plus  status: passed  fixture: no
+question: Use the indexed course knowledge base to explain why an OS lab Coding Agent must attach inspe…
+structured citations: 9
+citation[1]: AGENTS.md
+citation[2]: spec/design.yaml
+citation[3]: spec/modules/verification.yaml
+citation[4]: spec/goals/verification-closure.yaml
 
-answer: Lab 10 verification-closure design review (pre-implementation). The committed design is structurally sound on four of the six review axes…
+answer: An OS lab Coding Agent must attach inspectable sources to every design claim because the Glenda verification architecture is built on the…
 Boundary: citations make claims inspectable; students still judge them.

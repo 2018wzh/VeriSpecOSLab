@@ -65,7 +65,7 @@ const notes = [
   "课程材料分为 Book 和 Lab。Book 用历史与设计争论解释问题，Lab 给出任务、预期现象和自检点。例如 Lab 1 让学生在 Linux 和裸机中读取同一份 flag，观察 OS 承担的文件与设备访问，再带着这一直觉逐步选择内核组织和资源模型。",
   "xv6 在 VisionFive 2 上启动四个 U74 hart，经 SPI U-Boot、TFTP 与 SD 文件系统跑完完整 usertests，日志给出 ALL TESTS PASSED。Glenda 把同一方法迁移到 AArch64/H5：七项 QEMU trace 先验证软件与设备语义，再由 Orange Pi Prime 串口独立确认四核、GICv2、定时器、MMC 和 EL0 Lab 1–8 工作负载。两个案例都经过 Portal 权威运行、材料上传和教师复核，但 QEMU 与实板证据仍分栏记录。",
   "暑期试讲面向华东师大 2025 级计算机拔尖班的 15 名学生，共两节课。这不是一项教学效果实验，但课堂观察暴露了三个具体问题：Spec 太复杂，学生缺少 OS 背景，大型项目涉及的工具又太多。这些反馈不能证明学习效果提升，却解释了学生为什么难以开始。为此，我们把规格收敛为五类，将设计决定分散到对应 Lab，重写 Book 与 Lab，并用 CTF、统一 CLI 和 doctor 降低起步门槛。",
-  "我们借鉴 SYSSPEC、SPECFS 的规格驱动思想，并以 MIT xv6 和 Glenda 为案例。本队把规格、受控 Agent、真实 Runner、教材、教师复核与硬件路径连成教学流程。研发使用 Codex 和 DeepSeek V4 Pro；生成内容均经人工修改，并由构建、QEMU 或实板结果验收。",
+  "我们借鉴 SYSSPEC、SPECFS 的规格驱动思想，并以 MIT xv6 和 Glenda 为案例。本队把规格、受控 Agent、真实 Runner、教材、教师复核与硬件路径连成教学流程。研发使用 Codex、DeepSeek V4 Pro 和 ChatECNU ecnu-plus；生成内容均经人工修改，并由结构化验收、构建、QEMU 或实板结果验证。",
   "下一学年，这套方案将进入正式课程。我们还计划用它实现和验证 Glenda-Chimera：用 Rust 编写 seL4 风格微内核，用 Go 开发 RPC 风格的系统服务，并通过稳定的 IPC 边界，让同一份服务代码可以在内核态与用户态之间切换。迁移前后，接口、错误和资源语义必须保持一致，正好可以用 Spec 和跨边界测试表达。这个案例将检验平台能否承载跨语言、微内核与学生自主选择的系统设计。",
   "VeriSpecOSLab 改变的是 OS 实验的评价对象。代码和测试证明系统能够运行，Spec、提交与证据则说明学生为什么这样设计，又如何确认 Agent 的实现可信。教师由此获得了可以追问、比较和复核的设计材料。我们不是减少学生思考，而是把学生的思考从重复编码提升到系统设计。谢谢各位老师。",
 ];
@@ -335,11 +335,11 @@ mediaSlide(11, "按 commit 精确记录，并在同一版本上复原", "Git 复
     ["方法来源", "SYSSPEC / SPECFS\n规格驱动思想", C.indigo],
     ["案例来源", "MIT xv6\nGlenda", "6B7FD7"],
     ["本队增量", "v2 Spec\nAgent / Runner / 证据链\nBook / Lab / Portal\nVF2 与跨架构案例", C.green],
-    ["AI 使用", "Codex\nDeepSeek V4 Pro\n人工修改 + 真实验证", C.yellow],
+    ["AI 使用", "Codex\nDeepSeek V4 Pro\nChatECNU ecnu-plus\n人工修改 + 真实验证", C.yellow],
   ];
   cols.forEach((v, i) => addCard(s, 0.55 + i * 3.15, 1.48, 2.85, 3.72, v[0], v[1], { accent: v[2], titleSize: 17, bodySize: 14, fill: C.white }));
-  addText(s, "当前真实凭据状态", 0.65, 5.56, 2.0, 0.3, { fontSize: 12.5, bold: true, color: C.red });
-  addText(s, "本轮模型调用被上游以 HTTP 401 拒绝，保留为 approved skip；P8 使用此前真实、通过 schema 验收的 Agent 结果。", 2.55, 5.48, 9.75, 0.48, { fontSize: 12, color: C.ink });
+  addText(s, "本轮真实模型状态", 0.65, 5.56, 2.0, 0.3, { fontSize: 12.5, bold: true, color: C.green });
+  addText(s, "P8 使用 ChatECNU ecnu-plus 真实调用：run 202608180059523-c4c48382，结构化结果通过验收并返回 9 条 citation；未使用 fixture。", 2.55, 5.48, 9.75, 0.48, { fontSize: 12, color: C.ink });
   addPill(s, "源码许可证按各仓库保留", 2.0, 6.35, 3.0, C.indigo, C.blueSoft, { fontSize: 10 });
   addPill(s, "答辩材料 CC BY-SA 4.0", 5.23, 6.35, 3.1, C.green, C.greenSoft, { fontSize: 10 });
   addPill(s, "所有生成内容均由人审与 Runner 验收", 8.56, 6.35, 3.45, C.yellow, C.yellowSoft, { fontSize: 10 });
@@ -474,7 +474,7 @@ function appendix(title, refs = "") {
   const s = appendix("A8  来源、许可证与复现坐标", "[R1]–[R15]");
   addCard(s, 0.58, 1.25, 5.95, 4.85, "主要来源", "1. Liu et al. Sharpen the Spec, Cut the Code, FAST '26.\n2. Cox, Kaashoek, Morris. xv6: a simple, Unix-like teaching OS.\n3. MIT PDOS xv6-riscv repository.\n4. seL4 Reference Manual and verification literature.\n5. Git worktree documentation.\n6. QEMU System Emulation User's Guide.\n7. RISC-V Privileged Architecture.\n8. 2026 操作系统设计赛全国赛技术方案。", { accent: C.indigo, titleSize: 17, bodySize: 11.5, fill: C.white });
   addCard(s, 6.8, 1.25, 5.95, 2.1, "复现坐标", "主分支：codex/final-defense-portal-closure\nPPT 生成脚本：docs/comp/final-defense-ppt/build.cjs\n演示采集：docs/comp/final-defense-media/capture/\n视频：4 × H.264 · 1600×900 · 30 fps", { accent: C.green, titleSize: 17, bodySize: 11.5, fill: C.greenSoft });
-  addCard(s, 6.8, 3.63, 5.95, 2.47, "许可与披露", "第三方源码与文档保留各自许可证。\n答辩 PPT、PDF 与演示素材：CC BY-SA 4.0。\nAI 工具、模型、生成范围、人工修改与验证方式在 P15 独立披露。\n当前凭据 401 状态未被隐去或改写。", { accent: C.yellow, titleSize: 17, bodySize: 11.5, fill: C.yellowSoft });
+  addCard(s, 6.8, 3.63, 5.95, 2.47, "许可与披露", "第三方源码与文档保留各自许可证。\n答辩 PPT、PDF 与演示素材：CC BY-SA 4.0。\nAI 工具、模型、生成范围、人工修改与验证方式在 P15 独立披露。\nP8 保留真实运行 ID、结构化验收与 citation 数量。", { accent: C.yellow, titleSize: 17, bodySize: 11.5, fill: C.yellowSoft });
   addPill(s, "所有素材均去除凭据、本机绝对路径和私人服务地址", 3.37, 6.4, 6.6, C.red, C.redSoft, { fontSize: 10.5 });
 }
 

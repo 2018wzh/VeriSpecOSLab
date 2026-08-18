@@ -3,12 +3,13 @@ import { join, resolve } from "node:path";
 
 const mediaRoot = resolve(import.meta.dir, "..");
 const videoRoot = join(mediaRoot, "videos");
-const videos = [
+const allVideos = [
   "p08-kb-citation.mp4",
   "p09-kernel-debug.mp4",
   "p10-qemu-port.mp4",
   "p11-commit-replay.mp4",
 ];
+const videos = selectedVideos(allVideos, process.argv.slice(2));
 
 for (const name of videos) {
   const input = join(videoRoot, name);
@@ -31,3 +32,12 @@ for (const name of videos) {
 }
 
 console.log(`normalized ${videos.length} videos to H.264 1600x900 at 30 fps`);
+
+function selectedVideos(all: string[], args: string[]): string[] {
+  const index = args.indexOf("--only");
+  if (index < 0) return all;
+  const slide = args[index + 1];
+  if (!/^p(?:08|09|10|11)$/.test(slide ?? ""))
+    throw new Error("--only expects p08, p09, p10, or p11");
+  return all.filter((name) => name.startsWith(`${slide}-`));
+}

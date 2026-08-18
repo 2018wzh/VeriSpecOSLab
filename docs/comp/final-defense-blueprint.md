@@ -310,7 +310,7 @@ HEAD 未漂移后原子应用并提交
 3. 展开回答中的 citation，回到对应教材段落；
 4. 画面定格在“引用提供核对入口，不等于答案自动正确”。
 
-当前素材读取 Glenda Lab 10 中一次由真实 provider 生成、并通过结构化结果校验的 `agent ask` 记录。画面展示问题、回答摘要、citation 数量与四个可定位来源，不再使用本地夹具。录制时仍要保留边界提示：引用让结论可以核对，却不会让结论自动成立。
+当前素材读取 Glenda Lab 10 中由 ChatECNU `ecnu-plus` 真实生成、并通过结构化结果校验的 `agent ask` 记录（run `202608180059523-c4c48382`）。画面展示问题、回答摘要、9 条 citation 与四个可定位来源，不使用本地夹具。录制时仍要保留边界提示：引用让结论可以核对，却不会让结论自动成立。
 
 **讲稿**
 
@@ -577,6 +577,7 @@ xv6 在 VisionFive 2 上启动四个 U74 hart，经 SPI U-Boot、TFTP 与 SD 文
 | SYSSPEC/SPECFS：规格分解、规格补丁与生成式系统思想 | 面向 OS 教学的 v2 Spec、渐进课程和教师设计评审 | Codex（GPT-5.5）：部分文档、代码与测试生成 |
 | MIT xv6-riscv：教学内核思想与参考源码 | VOS Agent/Runner、修改范围、结构化交付和证据链 | DeepSeek V4 Pro：xv6-spec Demo 中的 Agent 运行 |
 | Glenda：第二套教学内核与课程案例基础 | VF2 实板移植、Glenda H5 跨架构案例、Portal 与教材 | 人工负责设计、审查和修改；真实 build/QEMU/实板验证结论 |
+| ChatECNU：校内模型服务 | P8 真实知识库问答与 citation 演示 | ecnu-plus：真实调用、结构化验收与 9 条 citation |
 
 页面底部：
 
@@ -586,7 +587,7 @@ xv6 在 VisionFive 2 上启动四个 U74 hart，经 SPI U-Boot、TFTP 与 SD 文
 
 **讲稿**
 
-我们借鉴 SYSSPEC、SPECFS 的规格驱动思想，并以 MIT xv6 和 Glenda 为案例。本队把规格、受控 Agent、真实 Runner、教材、教师复核与硬件路径连成教学流程。研发使用 Codex 和 DeepSeek V4 Pro；生成内容均经人工修改，并由构建、QEMU 或实板结果验收。
+我们借鉴 SYSSPEC、SPECFS 的规格驱动思想，并以 MIT xv6 和 Glenda 为案例。本队把规格、受控 Agent、真实 Runner、教材、教师复核与硬件路径连成教学流程。研发使用 Codex、DeepSeek V4 Pro 和 ChatECNU ecnu-plus；生成内容均经人工修改，并由结构化验收、构建、QEMU 或实板结果验证。
 
 **页脚引用**：`[R1][R2][R10][R15]`
 
@@ -853,7 +854,7 @@ H5_PLATFORM_GOAL_OK reports=7 ... brom_spl_bypassed=true
 - MIT xv6-riscv 与 Glenda 的代码和设计来源；
 - seL4 作为微内核与最小可信核心参考；
 - Git worktree、QEMU、RISC-V 特权规范、Bun；
-- Codex（GPT-5.5）和 DeepSeek V4 Pro 的使用场景、人工修改与验证；
+- Codex（GPT-5.5）、DeepSeek V4 Pro 与 ChatECNU ecnu-plus 的使用场景、人工修改与验证；
 - 源码许可证清单入口；
 - PPT、PDF、视频的 CC BY-SA 4.0；
 - 最终代码 commit、xv6 VF2 evidence commit、Glenda H5/Orange Pi Prime evidence identity；
@@ -877,7 +878,7 @@ H5_PLATFORM_GOAL_OK reports=7 ... brom_spl_bypassed=true
 | 指导书重视历史与设计 | Book ch01/ch05/ch07、各 Lab | P12、A2 | 不宣称没有操作步骤；Lab 仍提供可执行指导 |
 | VF2 四核完整 usertests 通过 | VF2 evidence commit `6b1c624` | P7、P13、A6 | 实板结论只绑定该板卡、构建和工作负载 |
 | Glenda H5 七项 QEMU trace 与 Orange Pi Prime 四核负载通过 | H5 simulation report、硬件报告、完整串口日志 | P10、P13、A7 | QEMU 与实体板证据分层；实板结论仍需教师复核 |
-| Glenda Lab 1–10 Portal 闭环 | connected acceptance record、权威 run、评审记录 | P11、P13、A7 | 当前真实凭据被上游拒绝的调用保留为 approved skip；不把该次调用称为模型复核通过 |
+| Glenda Lab 1–10 Portal 闭环 | connected acceptance record、权威 run、评审记录 | P11、P13、A7 | Portal 闭环与 P8 模型问答分别绑定各自运行记录；不互相替代证据 |
 | 15 名学生、两节暑期试讲 | 决赛技术报告试讲章节、团队记录 | P14 | 定性观察，不报告统计增益 |
 | 2026–2027 学年正式教学 | 团队已确认课程安排 | P16 | 不扩写为多校规模化结果 |
 | Chimera 是下一验证案例 | 团队设计目标 | P16、A7 | 不宣称代码、性能或形式化证明已经完成 |
