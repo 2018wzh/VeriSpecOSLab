@@ -48,7 +48,12 @@ const media = path.join(repo, "docs", "comp", "final-defense-media");
 const figures = path.join(repo, "docs", "comp", "final-report", "figures");
 const portal = path.join(repo, "docs", "portal", "visual-acceptance");
 const outDir = __dirname;
-const outFile = path.join(outDir, "VeriSpecOSLab-final-defense.pptx");
+const outputName = process.env.VOS_PPT_OUTPUT_NAME || "VeriSpecOSLab-final-defense.pptx";
+if (!/^[A-Za-z0-9._-]+\.pptx$/.test(outputName))
+  throw new Error("VOS_PPT_OUTPUT_NAME must be a safe .pptx filename");
+const outFile = path.join(outDir, outputName);
+const imageLayoutReport = path.join(outDir, "image-layout-report.json");
+const imageLayouts = [];
 
 const notes = [
   "大家好，我们是华东师范大学 Glenda 队。当 AI 已能编写大量内核代码，OS 实验还该训练什么？我们的答案是：让学生设计自己的 OS，让教师评审设计。",
@@ -131,9 +136,20 @@ function addArrow(slide, x, y, w, color = C.indigo) {
 
 function addImage(slide, file, x, y, w, h, opts = {}) {
   if (!fs.existsSync(file)) throw new Error(`missing image: ${file}`);
+  const fit = opts.fit || "contain";
+  if (!new Set(["contain", "cover"]).has(fit))
+    throw new Error(`unsupported image fit ${fit}: ${file}`);
+  const source = rasterDimensions(file);
+  imageLayouts.push(layoutRecord(file, source, x, y, w, h, fit));
+  slide.addShape(pptx.ShapeType.rect, {
+    x, y, w, h,
+    fill: { color: opts.background || C.white },
+    line: { color: opts.border || opts.background || C.white, width: opts.borderWidth || 0.8 },
+  });
   slide.addImage({
     path: file,
     x, y, w, h,
+    sizing: { type: fit, w, h },
     transparency: opts.transparency || 0,
     rounding: opts.rounding,
     altText: opts.altText || path.basename(file),
@@ -143,8 +159,58 @@ function addImage(slide, file, x, y, w, h, opts = {}) {
 }
 
 function addSvg(slide, file, x, y, w, h) {
+  if (!fs.existsSync(file)) throw new Error(`missing SVG: ${file}`);
+  const source = svgDimensions(file);
+  imageLayouts.push(layoutRecord(file, source, x, y, w, h, "contain"));
   const data = `data:image/svg+xml;base64,${fs.readFileSync(file).toString("base64")}`;
-  slide.addImage({ data, x, y, w, h });
+  slide.addShape(pptx.ShapeType.rect, {
+    x, y, w, h,
+    fill: { color: C.white },
+    line: { color: C.white, transparency: 100 },
+  });
+  slide.addImage({
+    data, x, y, w, h,
+    sizing: { type: "contain", w, h },
+    altText: path.basename(file),
+    objectName: path.parse(file).name,
+  });
+}
+
+function rasterDimensions(file) {
+  const buffer = fs.readFileSync(file);
+  if (buffer.length >= 24 && buffer.toString("ascii", 1, 4) === "PNG")
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+  throw new Error(`unsupported raster image format: ${file}`);
+}
+
+function svgDimensions(file) {
+  const source = fs.readFileSync(file, "utf8");
+  const viewBox = source.match(/viewBox=["']\s*[-\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)\s*["']/i);
+  if (!viewBox) throw new Error(`SVG lacks a numeric viewBox: ${file}`);
+  return { width: Number(viewBox[1]), height: Number(viewBox[2]) };
+}
+
+function layoutRecord(file, source, x, y, w, h, fit) {
+  if (!(source.width > 0 && source.height > 0))
+    throw new Error(`invalid image dimensions: ${file}`);
+  const sourceRatio = source.width / source.height;
+  const boxRatio = w / h;
+  const rendered = sourceRatio > boxRatio
+    ? { width: w, height: w / sourceRatio }
+    : { width: h * sourceRatio, height: h };
+  return {
+    asset: path.relative(repo, file).replaceAll("\\", "/"),
+    source_pixels_or_viewbox: source,
+    source_ratio: Number(sourceRatio.toFixed(4)),
+    box: { x, y, width: w, height: h, ratio: Number(boxRatio.toFixed(4)) },
+    fit,
+    rendered: {
+      width: Number(rendered.width.toFixed(4)),
+      height: Number(rendered.height.toFixed(4)),
+      uniform_scale: true,
+      cropped: fit === "cover" && Math.abs(sourceRatio - boxRatio) > 0.001,
+    },
+  };
 }
 
 function pngDataUri(file) {
@@ -480,6 +546,11 @@ function appendix(title, refs = "") {
 
 fs.mkdirSync(outDir, { recursive: true });
 async function main() {
+  fs.writeFileSync(imageLayoutReport, `${JSON.stringify({
+    version: "final-defense-image-layout.v1",
+    policy: "Images preserve their source aspect ratio. Diagrams use contain; cover is allowed only when explicitly requested.",
+    assets: imageLayouts,
+  }, null, 2)}\n`, "utf8");
   await pptx.writeFile({ fileName: outFile });
   console.log(path.relative(repo, outFile));
 }
