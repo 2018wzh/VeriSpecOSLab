@@ -1,6 +1,6 @@
 {
-  "version": "final-defense-image-layout.v1",
-  "policy": "Images preserve their source aspect ratio. Diagrams use contain; cover is allowed only when explicitly requested.",
+  "version": "final-defense-image-layout.v2",
+  "policy": "Screenshots preserve their source aspect ratio. Dense source diagrams are rebuilt as editable PowerPoint shapes and pass a minimum-font gate.",
   "assets": [
     {
       "asset": "docs/portal/visual-acceptance/teacher-workspace-approved.png",
@@ -20,72 +20,6 @@
       "rendered": {
         "width": 5.95,
         "height": 4.2334,
-        "uniform_scale": true,
-        "cropped": false
-      }
-    },
-    {
-      "asset": "docs/comp/final-report/figures/system-architecture.svg",
-      "source_pixels_or_viewbox": {
-        "width": 1400,
-        "height": 820
-      },
-      "source_ratio": 1.7073,
-      "box": {
-        "x": 0.6,
-        "y": 1.3,
-        "width": 8.15,
-        "height": 4.9,
-        "ratio": 1.6633
-      },
-      "fit": "contain",
-      "rendered": {
-        "width": 8.15,
-        "height": 4.7736,
-        "uniform_scale": true,
-        "cropped": false
-      }
-    },
-    {
-      "asset": "docs/comp/final-report/figures/spec-model.svg",
-      "source_pixels_or_viewbox": {
-        "width": 1400,
-        "height": 800
-      },
-      "source_ratio": 1.75,
-      "box": {
-        "x": 0.65,
-        "y": 3.05,
-        "width": 7.35,
-        "height": 2.95,
-        "ratio": 2.4915
-      },
-      "fit": "contain",
-      "rendered": {
-        "width": 5.1625,
-        "height": 2.95,
-        "uniform_scale": true,
-        "cropped": false
-      }
-    },
-    {
-      "asset": "docs/comp/final-report/figures/agent-transaction.svg",
-      "source_pixels_or_viewbox": {
-        "width": 1500,
-        "height": 700
-      },
-      "source_ratio": 2.1429,
-      "box": {
-        "x": 0.55,
-        "y": 1.28,
-        "width": 8.1,
-        "height": 5.12,
-        "ratio": 1.582
-      },
-      "fit": "contain",
-      "rendered": {
-        "width": 8.1,
-        "height": 3.78,
         "uniform_scale": true,
         "cropped": false
       }
@@ -265,94 +199,57 @@
         "uniform_scale": true,
         "cropped": false
       }
+    }
+  ],
+  "native_diagrams": [
+    {
+      "slide": 4,
+      "diagram": "teaching-loop",
+      "node_count": 6,
+      "min_font_pt": 12,
+      "source": "system-architecture.svg"
     },
     {
-      "asset": "docs/comp/final-report/figures/course-history.svg",
-      "source_pixels_or_viewbox": {
-        "width": 1500,
-        "height": 650
-      },
-      "source_ratio": 2.3077,
-      "box": {
-        "x": 0.6,
-        "y": 1.28,
-        "width": 12.1,
-        "height": 2.55,
-        "ratio": 4.7451
-      },
-      "fit": "contain",
-      "rendered": {
-        "width": 5.8846,
-        "height": 2.55,
-        "uniform_scale": true,
-        "cropped": false
-      }
+      "slide": 5,
+      "diagram": "spec-execution-projection",
+      "node_count": 3,
+      "min_font_pt": 12.5,
+      "source": "spec-model.svg"
     },
     {
-      "asset": "docs/comp/final-report/figures/spec-model.svg",
-      "source_pixels_or_viewbox": {
-        "width": 1400,
-        "height": 800
-      },
-      "source_ratio": 1.75,
-      "box": {
-        "x": 0.55,
-        "y": 1.27,
-        "width": 6.4,
-        "height": 5.35,
-        "ratio": 1.1963
-      },
-      "fit": "contain",
-      "rendered": {
-        "width": 6.4,
-        "height": 3.6571,
-        "uniform_scale": true,
-        "cropped": false
-      }
+      "slide": 6,
+      "diagram": "agent-implementation-transaction",
+      "node_count": 6,
+      "min_font_pt": 11.5,
+      "source": "agent-transaction.svg"
     },
     {
-      "asset": "docs/comp/final-report/figures/agent-transaction.svg",
-      "source_pixels_or_viewbox": {
-        "width": 1500,
-        "height": 700
-      },
-      "source_ratio": 2.1429,
-      "box": {
-        "x": 0.55,
-        "y": 1.25,
-        "width": 7.25,
-        "height": 5.35,
-        "ratio": 1.3551
-      },
-      "fit": "contain",
-      "rendered": {
-        "width": 7.25,
-        "height": 3.3833,
-        "uniform_scale": true,
-        "cropped": false
-      }
+      "slide": 19,
+      "diagram": "course-progression",
+      "node_count": 10,
+      "min_font_pt": 9.5,
+      "source": "course-history.svg"
     },
     {
-      "asset": "docs/comp/final-report/figures/evidence-chain.svg",
-      "source_pixels_or_viewbox": {
-        "width": 1450,
-        "height": 760
-      },
-      "source_ratio": 1.9079,
-      "box": {
-        "x": 0.6,
-        "y": 1.26,
-        "width": 7.15,
-        "height": 5.35,
-        "ratio": 1.3364
-      },
-      "fit": "contain",
-      "rendered": {
-        "width": 7.15,
-        "height": 3.7476,
-        "uniform_scale": true,
-        "cropped": false
-      }
+      "slide": 20,
+      "diagram": "spec-hierarchy",
+      "node_count": 6,
+      "min_font_pt": 10.5,
+      "source": "spec-model.svg"
+    },
+    {
+      "slide": 21,
+      "diagram": "agent-transaction-boundaries",
+      "node_count": 6,
+      "min_font_pt": 10.5,
+      "source": "agent-transaction.svg"
+    },
+    {
+      "slide": 22,
+      "diagram": "evidence-closure-chain",
+      "node_count": 8,
+      "min_font_pt": 10.5,
+      "source": "evidence-chain.svg"
     }
   ]
 }

@@ -45,7 +45,6 @@ const C = {
 
 const repo = path.resolve(__dirname, "../../..");
 const media = path.join(repo, "docs", "comp", "final-defense-media");
-const figures = path.join(repo, "docs", "comp", "final-report", "figures");
 const portal = path.join(repo, "docs", "portal", "visual-acceptance");
 const outDir = __dirname;
 const outputName = process.env.VOS_PPT_OUTPUT_NAME || "VeriSpecOSLab-final-defense.pptx";
@@ -54,6 +53,7 @@ if (!/^[A-Za-z0-9._-]+\.pptx$/.test(outputName))
 const outFile = path.join(outDir, outputName);
 const imageLayoutReport = path.join(outDir, "image-layout-report.json");
 const imageLayouts = [];
+const nativeDiagramLayouts = [];
 
 const notes = [
   "大家好，我们是华东师范大学 Glenda 队。当 AI 已能编写大量内核代码，OS 实验还该训练什么？我们的答案是：让学生设计自己的 OS，让教师评审设计。",
@@ -134,6 +134,18 @@ function addArrow(slide, x, y, w, color = C.indigo) {
   slide.addShape(pptx.ShapeType.chevron, { x, y, w, h: 0.34, fill: { color }, line: { color }, transparency: 2 });
 }
 
+function addLeftArrow(slide, x, y, w, color = C.indigo) {
+  slide.addShape(pptx.ShapeType.chevron, { x, y, w, h: 0.34, rotate: 180, fill: { color }, line: { color }, transparency: 2 });
+}
+
+function addDownArrow(slide, x, y, h, color = C.indigo) {
+  slide.addShape(pptx.ShapeType.downArrow, { x, y, w: 0.34, h, fill: { color }, line: { color }, transparency: 2 });
+}
+
+function recordNativeDiagram(slide, diagram, nodeCount, minFontPt, source) {
+  nativeDiagramLayouts.push({ slide, diagram, node_count: nodeCount, min_font_pt: minFontPt, source });
+}
+
 function addImage(slide, file, x, y, w, h, opts = {}) {
   if (!fs.existsSync(file)) throw new Error(`missing image: ${file}`);
   const fit = opts.fit || "contain";
@@ -158,36 +170,11 @@ function addImage(slide, file, x, y, w, h, opts = {}) {
   if (opts.border) slide.addShape(pptx.ShapeType.roundRect, { x, y, w, h, fill: { color: C.white, transparency: 100 }, line: { color: opts.border, width: opts.borderWidth || 1 } });
 }
 
-function addSvg(slide, file, x, y, w, h) {
-  if (!fs.existsSync(file)) throw new Error(`missing SVG: ${file}`);
-  const source = svgDimensions(file);
-  imageLayouts.push(layoutRecord(file, source, x, y, w, h, "contain"));
-  const data = `data:image/svg+xml;base64,${fs.readFileSync(file).toString("base64")}`;
-  slide.addShape(pptx.ShapeType.rect, {
-    x, y, w, h,
-    fill: { color: C.white },
-    line: { color: C.white, transparency: 100 },
-  });
-  slide.addImage({
-    data, x, y, w, h,
-    sizing: { type: "contain", w, h },
-    altText: path.basename(file),
-    objectName: path.parse(file).name,
-  });
-}
-
 function rasterDimensions(file) {
   const buffer = fs.readFileSync(file);
   if (buffer.length >= 24 && buffer.toString("ascii", 1, 4) === "PNG")
     return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
   throw new Error(`unsupported raster image format: ${file}`);
-}
-
-function svgDimensions(file) {
-  const source = fs.readFileSync(file, "utf8");
-  const viewBox = source.match(/viewBox=["']\s*[-\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)\s*["']/i);
-  if (!viewBox) throw new Error(`SVG lacks a numeric viewBox: ${file}`);
-  return { width: Number(viewBox[1]), height: Number(viewBox[2]) };
 }
 
 function layoutRecord(file, source, x, y, w, h, fit) {
@@ -280,7 +267,20 @@ function bulletRuns(items, color = C.ink) {
 // P4
 {
   const s = addSlide("一个可执行的教学闭环，而非代码生成器", "[R3][R4][R13]", notes[3]);
-  addSvg(s, path.join(figures, "system-architecture.svg"), 0.6, 1.3, 8.15, 4.9);
+  recordNativeDiagram(4, "teaching-loop", 6, 12, "system-architecture.svg");
+  addCard(s, 0.65, 1.48, 2.2, 1.42, "1  理解问题", "学生识别机制、目标与取舍", { accent: C.indigo, titleSize: 15, bodySize: 12.5, fill: C.blueSoft });
+  addArrow(s, 2.95, 2.02, 0.32, C.indigo);
+  addCard(s, 3.38, 1.48, 2.2, 1.42, "2  手写 Spec", "把模块边界与验收性质写清", { accent: C.indigo2, titleSize: 15, bodySize: 12.5 });
+  addArrow(s, 5.68, 2.02, 0.32, C.indigo);
+  addCard(s, 6.11, 1.48, 2.2, 1.42, "3  Agent 实现", "在 owns 限定范围内修改", { accent: C.indigo2, titleSize: 15, bodySize: 12.5 });
+  addDownArrow(s, 7.04, 3.03, 0.44, C.green);
+  addCard(s, 6.11, 3.64, 2.2, 1.42, "4  真实验证", "Runner 读取 diff 并执行检查", { accent: C.green, titleSize: 15, bodySize: 12.5, fill: C.greenSoft });
+  addLeftArrow(s, 5.68, 4.18, 0.32, C.green);
+  addCard(s, 3.38, 3.64, 2.2, 1.42, "5  教师评审", "评设计理由、演化过程与证据", { accent: C.yellow, titleSize: 15, bodySize: 12.5, fill: C.yellowSoft });
+  addLeftArrow(s, 2.95, 4.18, 0.32, C.yellow);
+  addCard(s, 0.65, 3.64, 2.2, 1.42, "6  迭代设计", "意见回到下一轮 Spec", { accent: C.navy, titleSize: 15, bodySize: 12.5 });
+  addText(s, "责任闭环", 3.18, 5.38, 2.55, 0.42, { fontSize: 17, bold: true, color: C.navy, align: "center" });
+  addText(s, "设计输入 → 受控修改 → 可复查证据", 1.47, 5.82, 5.95, 0.32, { fontSize: 13, bold: true, color: C.green, align: "center" });
   addCard(s, 9.0, 1.35, 3.75, 1.05, "学生", "理解问题、手写 Spec、判断取舍", { accent: C.indigo, bodySize: 11.5 });
   addCard(s, 9.0, 2.62, 3.75, 1.05, "Agent", "在限定范围内实现或诊断", { accent: C.indigo2, bodySize: 11.5 });
   addCard(s, 9.0, 3.89, 3.75, 1.05, "VOS / Runner", "读取 diff，执行确定性验证", { accent: C.green, bodySize: 11.5 });
@@ -299,7 +299,12 @@ function bulletRuns(items, color = C.ink) {
     ["SpecPatch", "跨模块修改理由", C.yellow],
   ];
   labels.forEach((v, i) => addCard(s, 0.58 + i * 2.48, 1.42, 2.23, 1.2, v[0], v[1], { accent: v[2], titleSize: 13.5, bodySize: 10.5, fill: C.white }));
-  addSvg(s, path.join(figures, "spec-model.svg"), 0.65, 3.05, 7.35, 2.95);
+  recordNativeDiagram(5, "spec-execution-projection", 3, 12.5, "spec-model.svg");
+  addCard(s, 0.65, 3.2, 2.05, 2.45, "学生设计", "DesignSpec\n定义系统方向\n\n不是表单填空，而是说明为什么这样设计", { accent: C.indigo, titleSize: 16, bodySize: 12.5, fill: C.blueSoft });
+  addArrow(s, 2.82, 4.22, 0.36, C.indigo);
+  addCard(s, 3.3, 3.2, 2.05, 2.45, "可检查契约", "Module / Interface\nGoal / SpecPatch\n\n职责、边界、性质与变更理由", { accent: C.indigo2, titleSize: 16, bodySize: 12.5 });
+  addArrow(s, 5.47, 4.22, 0.36, C.green);
+  addCard(s, 5.95, 3.2, 2.05, 2.45, "执行投影", "vos.yaml + Runner\n\n把设计性质连接到构建、测试与证据", { accent: C.green, titleSize: 16, bodySize: 12.5, fill: C.greenSoft });
   addCard(s, 8.35, 3.05, 4.35, 0.9, "owns", "限定 Agent 可修改的实现范围", { accent: C.red, titleSize: 14, bodySize: 11.5 });
   addCard(s, 8.35, 4.1, 4.35, 0.9, "properties / checks", "把设计性质连接到确定性验证", { accent: C.green, titleSize: 14, bodySize: 11.5 });
   addCard(s, 8.35, 5.15, 4.35, 0.9, "L1 → L2 → L3", "随 Lab 渐进加深，降低一次性规格负担", { accent: C.indigo, titleSize: 14, bodySize: 11.5 });
@@ -309,7 +314,27 @@ function bulletRuns(items, color = C.ink) {
 // P6
 {
   const s = addSlide("模型提交结果，平台决定是否通过", "[R4][R14]", notes[5]);
-  addSvg(s, path.join(figures, "agent-transaction.svg"), 0.55, 1.28, 8.1, 5.12);
+  recordNativeDiagram(6, "agent-implementation-transaction", 6, 11.5, "agent-transaction.svg");
+  const transaction = [
+    ["已提交 Spec", "绑定任务与 owns", C.indigo, C.blueSoft],
+    ["detached worktree", "隔离失败修改", C.indigo2, C.white],
+    ["Agent 实现", "提交结构化结果", C.indigo2, C.white],
+    ["真实 Git diff", "核对实际改动", C.yellow, C.yellowSoft],
+    ["Runner 验证", "build / tests / trace", C.green, C.greenSoft],
+    ["原子落地", "通过才形成提交", C.navy, C.white],
+  ];
+  transaction.forEach((v, i) => {
+    const row = i < 3 ? 0 : 1;
+    const col = i < 3 ? i : 5 - i;
+    const x = 0.62 + col * 2.62;
+    const y = 1.58 + row * 2.22;
+    addCard(s, x, y, 2.12, 1.42, v[0], v[1], { accent: v[2], titleSize: 14.5, bodySize: 11.5, fill: v[3] });
+    if (i < 2) addArrow(s, x + 2.23, y + 0.54, 0.28, C.indigo);
+    if (i > 2 && i < 5) addLeftArrow(s, x - 0.39, y + 0.54, 0.28, C.green);
+  });
+  addDownArrow(s, 6.48, 3.1, 0.5, C.yellow);
+  addText(s, "失败：回到同一模型会话修正", 0.78, 5.47, 3.25, 0.34, { fontSize: 12, bold: true, color: C.red, align: "center" });
+  addText(s, "通过：fast-forward 到学生分支", 4.57, 5.47, 3.25, 0.34, { fontSize: 12, bold: true, color: C.green, align: "center" });
   addCard(s, 8.95, 1.38, 3.75, 1.05, "1  独立工作区", "失败补丁不污染学生原项目", { accent: C.indigo, bodySize: 11.5 });
   addCard(s, 8.95, 2.68, 3.75, 1.05, "2  真实 Git diff", "模型声明不能代替实际修改", { accent: C.yellow, bodySize: 11.5 });
   addCard(s, 8.95, 3.98, 3.75, 1.05, "3  多层 Runner", "build · public · contract · fuzz · trace", { accent: C.green, bodySize: 11.5 });
@@ -462,22 +487,33 @@ function appendix(title, refs = "") {
 // A2
 {
   const s = appendix("A2  Lab 1–10 与 Book / Lab 双线", "[R6][R12]");
-  addSvg(s, path.join(figures, "course-history.svg"), 0.6, 1.28, 12.1, 2.55);
+  recordNativeDiagram(19, "course-progression", 10, 9.5, "course-history.svg");
+  addCard(s, 0.62, 1.3, 9.64, 1.03, "Lab 1–8：逐步建立软件系统能力", "CTF 热身 → 启动 → 内存 → 中断 → 用户态 → 文件系统 → 资源 ABI → 个性化目标", { accent: C.indigo, titleSize: 15, bodySize: 12.5, fill: C.blueSoft });
+  addArrow(s, 10.38, 1.65, 0.34, C.green);
+  addCard(s, 10.84, 1.3, 1.87, 1.03, "Lab 9–10", "移植与证据闭合", { accent: C.green, titleSize: 13.5, bodySize: 10.5, fill: C.greenSoft });
   const labs = ["CTF / 工具", "启动", "内存", "中断", "用户态", "文件系统", "资源 ABI", "个性化目标", "硬件移植", "验证闭合"];
   labs.forEach((t, i) => {
     const x = 0.6 + i * 1.22;
-    s.addShape(pptx.ShapeType.ellipse, { x: x + 0.31, y: 4.17, w: 0.48, h: 0.48, fill: { color: i < 8 ? C.indigo : C.green }, line: { color: C.white, width: 1 } });
-    addText(s, String(i + 1), x + 0.31, 4.24, 0.48, 0.25, { fontFace: "Aptos", fontSize: 10, bold: true, color: C.white, align: "center" });
-    addText(s, t, x, 4.8, 1.1, 0.62, { fontSize: 9.5, color: C.ink, align: "center", valign: "top" });
+    s.addShape(pptx.ShapeType.ellipse, { x: x + 0.31, y: 2.83, w: 0.48, h: 0.48, fill: { color: i < 8 ? C.indigo : C.green }, line: { color: C.white, width: 1 } });
+    addText(s, String(i + 1), x + 0.31, 2.9, 0.48, 0.25, { fontFace: "Aptos", fontSize: 10, bold: true, color: C.white, align: "center" });
+    addText(s, t, x, 3.46, 1.1, 0.62, { fontSize: 9.5, color: C.ink, align: "center", valign: "top" });
   });
-  addCard(s, 1.0, 5.75, 5.25, 0.72, "Book", "历史、争论、背景知识与设计取舍", { accent: C.indigo, bodySize: 11 });
-  addCard(s, 7.07, 5.75, 5.25, 0.72, "Lab", "任务、现象、自检、分层挑战与硬件报告", { accent: C.green, bodySize: 11 });
+  addCard(s, 0.95, 4.63, 5.35, 1.42, "Book：为什么这样设计", "操作系统历史 · 宏内核与微内核争论 · 资源模型 · 真实硬件边界", { accent: C.indigo, titleSize: 15, bodySize: 12.5 });
+  addCard(s, 7.03, 4.63, 5.35, 1.42, "Lab：如何观察与验证", "任务 · 现象 · 自检 · 分层挑战 · 实板材料与报告", { accent: C.green, titleSize: 15, bodySize: 12.5 });
+  addText(s, "同一阶段一份 Book 解释设计背景，一份 Lab 组织可验证实践", 2.4, 6.27, 8.55, 0.32, { fontSize: 13, bold: true, color: C.navy, align: "center" });
 }
 
 // A3
 {
   const s = appendix("A3  五类 Spec、L1–L3 与 SpecPatch", "[R5]");
-  addSvg(s, path.join(figures, "spec-model.svg"), 0.55, 1.27, 6.4, 5.35);
+  recordNativeDiagram(20, "spec-hierarchy", 6, 10.5, "spec-model.svg");
+  addCard(s, 1.63, 1.38, 4.1, 1.03, "DesignSpec", "系统方向、全局约束与模块索引", { accent: C.indigo, titleSize: 15, bodySize: 11.5, fill: C.blueSoft });
+  addDownArrow(s, 3.5, 2.5, 0.42, C.indigo);
+  addCard(s, 0.62, 3.08, 2.68, 1.1, "ModuleSpec", "职责 · owns · properties", { accent: C.indigo2, titleSize: 13.5, bodySize: 10.5 });
+  addCard(s, 3.58, 3.08, 2.68, 1.1, "InterfaceSpec", "跨边界语义与 errors", { accent: C.indigo2, titleSize: 13.5, bodySize: 10.5 });
+  addCard(s, 0.62, 4.48, 2.68, 1.1, "GoalSpec（可选）", "可度量扩展目标", { accent: C.green, titleSize: 13.5, bodySize: 10.5, fill: C.greenSoft });
+  addCard(s, 3.58, 4.48, 2.68, 1.1, "SpecPatch", "手写跨模块修改理由", { accent: C.yellow, titleSize: 13.5, bodySize: 10.5, fill: C.yellowSoft });
+  addCard(s, 1.63, 5.87, 4.1, 0.62, "执行投影", "vos.yaml → Runner（不是 shell 脚本）", { accent: C.navy, titleSize: 11.5, bodySize: 10.5, shadow: false });
   addCard(s, 7.25, 1.35, 5.45, 1.12, "L1：方向", "系统目标、模块身份、最小边界", { accent: C.indigo, bodySize: 12 });
   addCard(s, 7.25, 2.65, 5.45, 1.12, "L2：契约", "properties、errors、InterfaceSpec、稳定 target ID", { accent: C.indigo2, bodySize: 12 });
   addCard(s, 7.25, 3.95, 5.45, 1.12, "L3：验证", "checks、GoalSpec、证据与跨架构目标", { accent: C.green, bodySize: 12 });
@@ -487,7 +523,26 @@ function appendix(title, refs = "") {
 // A4
 {
   const s = appendix("A4  Agent 事务、角色与安全边界", "[R4][R14]");
-  addSvg(s, path.join(figures, "agent-transaction.svg"), 0.55, 1.25, 7.25, 5.35);
+  recordNativeDiagram(21, "agent-transaction-boundaries", 6, 10.5, "agent-transaction.svg");
+  const appendixTransaction = [
+    ["Committed Spec", "绑定 HEAD 与 owns", C.indigo],
+    ["Worktree", "隔离实现修改", C.indigo2],
+    ["Agent result", "结构化工具提交", C.indigo2],
+    ["Git diff", "检查真实变更", C.yellow],
+    ["Runner", "确定性执行", C.green],
+    ["Commit", "通过后原子落地", C.navy],
+  ];
+  appendixTransaction.forEach((v, i) => {
+    const row = i < 3 ? 0 : 1;
+    const col = i < 3 ? i : 5 - i;
+    const x = 0.62 + col * 2.35;
+    const y = 1.48 + row * 2.05;
+    addCard(s, x, y, 1.87, 1.15, v[0], v[1], { accent: v[2], titleSize: 12.5, bodySize: 10.5, shadow: false });
+    if (i < 2) addArrow(s, x + 1.96, y + 0.41, 0.28, C.indigo);
+    if (i > 2 && i < 5) addLeftArrow(s, x - 0.37, y + 0.41, 0.28, C.green);
+  });
+  addDownArrow(s, 5.83, 2.73, 0.52, C.yellow);
+  addCard(s, 0.62, 5.73, 6.57, 0.7, "拒绝即回环", "Schema、语义、越界或测试失败都会返回同一会话修正", { accent: C.red, titleSize: 11.5, bodySize: 10.5, fill: C.redSoft, shadow: false });
   const roles = [
     ["ask", "知识问答 + citation", C.indigo],
     ["review", "只读评审 Spec", C.indigo2],
@@ -502,7 +557,27 @@ function appendix(title, refs = "") {
 // A5
 {
   const s = appendix("A5  证据分层与闭合规则", "[R3][R7][R8][R14]");
-  addSvg(s, path.join(figures, "evidence-chain.svg"), 0.6, 1.26, 7.15, 5.35);
+  recordNativeDiagram(22, "evidence-closure-chain", 8, 10.5, "evidence-chain.svg");
+  const evidenceFlow = [
+    ["checks", "public · contract\nfuzz · trace · hidden", C.indigo, C.blueSoft],
+    ["report", "绑定 commit、Spec\n配置与日志", C.indigo2, C.white],
+    ["submit", "上传脱敏材料\n保留失败记录", C.yellow, C.yellowSoft],
+    ["Portal", "权威时间线\n教师复核", C.green, C.greenSoft],
+  ];
+  evidenceFlow.forEach((v, i) => {
+    const x = 0.62 + i * 1.82;
+    addCard(s, x, 1.48, 1.45, 1.55, v[0], v[1], { accent: v[2], titleSize: 13.5, bodySize: 10.5, fill: v[3], shadow: false });
+    if (i < 3) addArrow(s, x + 1.53, 2.03, 0.22, C.indigo);
+  });
+  addText(s, "不同问题，需要不同等级的证据", 1.18, 3.43, 5.95, 0.34, { fontSize: 15, bold: true, color: C.navy, align: "center" });
+  addCard(s, 0.62, 4.02, 1.45, 1.2, "QEMU", "软件与设备语义", { accent: "4D72C8", titleSize: 13, bodySize: 10.5, shadow: false });
+  addArrow(s, 2.19, 4.45, 0.26, C.green);
+  addCard(s, 2.57, 4.02, 1.45, 1.2, "connected", "Portal 权威运行", { accent: C.green, titleSize: 13, bodySize: 10.5, shadow: false });
+  addArrow(s, 4.14, 4.45, 0.26, C.green);
+  addCard(s, 4.52, 4.02, 1.45, 1.2, "实板", "真实外设与负载", { accent: C.green, titleSize: 13, bodySize: 10.5, fill: C.greenSoft, shadow: false });
+  addArrow(s, 6.09, 4.45, 0.26, C.navy);
+  addCard(s, 6.47, 4.02, 1.25, 1.2, "教师", "设计复核", { accent: C.navy, titleSize: 13, bodySize: 10.5, shadow: false });
+  addCard(s, 1.18, 5.67, 5.95, 0.7, "不可替代", "QEMU ≠ 实板；自动检查 ≠ 教师评审", { accent: C.red, titleSize: 12, bodySize: 11, fill: C.redSoft, shadow: false });
   const levels = [
     ["public / contract", "公开正确性与契约", C.indigo],
     ["fuzz / trace", "固定种子与可观察路径", C.indigo2],
@@ -546,10 +621,15 @@ function appendix(title, refs = "") {
 
 fs.mkdirSync(outDir, { recursive: true });
 async function main() {
+  const undersizedMainDiagram = nativeDiagramLayouts.find((item) => item.slide <= 17 && item.min_font_pt < 11.5);
+  const undersizedAppendixDiagram = nativeDiagramLayouts.find((item) => item.slide > 17 && item.min_font_pt < 9.5);
+  if (undersizedMainDiagram || undersizedAppendixDiagram)
+    throw new Error(`diagram readability gate failed: ${JSON.stringify(undersizedMainDiagram || undersizedAppendixDiagram)}`);
   fs.writeFileSync(imageLayoutReport, `${JSON.stringify({
-    version: "final-defense-image-layout.v1",
-    policy: "Images preserve their source aspect ratio. Diagrams use contain; cover is allowed only when explicitly requested.",
+    version: "final-defense-image-layout.v2",
+    policy: "Screenshots preserve their source aspect ratio. Dense source diagrams are rebuilt as editable PowerPoint shapes and pass a minimum-font gate.",
     assets: imageLayouts,
+    native_diagrams: nativeDiagramLayouts,
   }, null, 2)}\n`, "utf8");
   await pptx.writeFile({ fileName: outFile });
   console.log(path.relative(repo, outFile));
